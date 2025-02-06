@@ -208,7 +208,11 @@ export class DatabaseStorage implements IStorage {
   async updateApproval(id: number, status: string, comments?: string): Promise<Approval> {
     const [updated] = await db
       .update(approvals)
-      .set({ status, comments, updatedAt: new Date() })
+      .set({ 
+        status, 
+        comments, 
+        updatedAt: new Date() 
+      })
       .where(eq(approvals.id, id))
       .returning();
     return updated;
@@ -281,9 +285,15 @@ export class DatabaseStorage implements IStorage {
     requester: User;
   }>> {
     try {
-      const approvals = await db
+      const result = await db
         .select({
-          approval: approvals,
+          id: approvals.id,
+          documentId: approvals.documentId,
+          requesterId: approvals.requesterId,
+          approverId: approvals.approverId,
+          status: approvals.status,
+          comments: approvals.comments,
+          createdAt: approvals.createdAt,
           document: documents,
           requester: users
         })
@@ -293,10 +303,16 @@ export class DatabaseStorage implements IStorage {
         .leftJoin(documents, eq(documents.id, approvals.documentId))
         .leftJoin(users, eq(users.id, approvals.requesterId));
 
-      return approvals.map(({ approval, document, requester }) => ({
-        ...approval,
-        document,
-        requester
+      return result.map(row => ({
+        id: row.id,
+        documentId: row.documentId,
+        requesterId: row.requesterId,
+        approverId: row.approverId,
+        status: row.status,
+        comments: row.comments,
+        createdAt: row.createdAt,
+        document: row.document,
+        requester: row.requester
       }));
     } catch (error) {
       console.error('Error getting pending approvals:', error);

@@ -17,7 +17,7 @@ import { createHash } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import { execSync } from "child_process";
-import { PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -207,7 +207,7 @@ export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
   // Add new middleware for role-based access control
-  const db = { select: () => ({ from: () => ({ where: () => ({}) }) }) }; // Placeholder
+  const db = { select: () => ({ from: () => ({ where: () => ({}), get: () => ({}) }) }) }; // Placeholder
   const approvals = { documentId: '', status: '' }; //Placeholder
   const signatures = { documentId: '', signatureData: { token: '' }, status: '', expiresAt: '' }; //Placeholder
   const and = () => ({}); // Placeholder
@@ -733,8 +733,8 @@ Ensure the output is properly formatted and ready for immediate use.`
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-      if (!document || document.userId !== req.user!.id) {
-        return res.status(403).json({ message: "Access denied" });
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
       }
 
       const { action } = req.body;
@@ -747,93 +747,103 @@ Ensure the output is properly formatted and ready for immediate use.`
           newStatus = "APPROVED";
           break;
         case "sign":
-          newStatus = "SIGNATURE";
+          newStatus = "SIGNATURE_PENDING";
           break;
         default:
           return res.status(400).json({ message: "Invalid action" });
       }
 
-      // Get existing versions before creating a new one
-      const existingVersions = await storage.getVersions(documentId);
-
-      // Check version limit
-      if (existingVersions.length >= 20) {
-        return res.status(400).json({
-          message: "Maximum version limit (20) reached",
-          code: "VERSION_LIMIT_REACHED"
-        });
-      }
-
-      // If action is approve, update any pending approvals
+      // If action is approve, update the approval status
       if (action === "approve") {
-        const [approval] = await db
+        const approval = await db
           .select()
           .from(approvals)
-          .where(
-            and(
-              eq(approvals.documentId, documentId),
-              eq(approvals.status, "PENDING")
-            )
-          );
+          .where(eq(approvals.documentId, documentId))
+          .where(eq(approvals.status, "PENDING"))
+          .get();
 
         if (approval) {
-          await storage.updateApproval(approval.id, "APPROVED", req.body.comments);
+          await storage.updateApproval(approval.id, "APPROVED");
         }
       }
 
-      // If action is sign, generate signature fields and token
+      // If action is sign, prepare the document for signing
       if (action === "sign") {
-        // Load the document content
-        const pdfDoc = await PDFDocument.create();
-        const page = pdfDoc.addPage();
-        const { width, height } = page.getSize();
+        try {
+          // Create a new PDF with signature fields
+          const pdfDoc = await PDFDocument.create();
+          const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+          const page = pdfDoc.addPage();
+          const { width, height } = page.getSize();
 
-        // Add content
-        page.drawText(document.content, {
-          x: 50,
-          y: height - 50,
-          size: 12,
-          color: rgb(0, 0, 0),
-        });
-
-        // Add signature field
-        const signatureField = {
-          x: 50,
-          y: 100,
-          width: 200,
-          height: 50,
-        };
-
-        // Save the prepared PDF
-        const pdfBytes = await pdfDoc.save();
-        const signaturePath = path.join(process.cwd(), 'temp', `${documentId}_signature.pdf`);
-        await fs.writeFile(signaturePath, pdfBytes);
-
-        // Create signature request in database
-        const signatureToken = createHash('sha256')
-          .update(documentId + Date.now().toString())
-          .digest('hex');
-
-        const signature = await storage.createSignature({
-          documentId,
-          status: "PENDING",
-          signatureData: {
-            token: signatureToken,
-            field: signatureField,
-            email: req.body.signerEmail
-          },
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-        });
-
-        // Send email notification
-        if (req.body.signerEmail) {
-          await sendEmail({
-            to: req.body.signerEmail,
-            from: "noreply@legalai.com",
-            subject: "Document Signature Request",
-            text: `You have a new document to sign. Click here to view and sign: ${process.env.APP_URL}/sign/${signature.signatureData.token}`,
-            html: `<p>You have a new document to sign. <a href="${process.env.APP_URL}/sign/${signature.signatureData.token}">Click here</a> to view and sign.</p>`
+          // Add document content
+          page.drawText(document.content, {
+            x: 50,
+            y: height - 100,
+            size: 12,
+            font: helveticaFont
           });
+
+          // Add signature field
+          const signatureY = 100;
+          page.drawText('Signature:', {
+            x: 50,
+            y: signatureY + 20,
+            size: 12,
+            font: helveticaFont
+          });
+
+          page.drawRectangle({
+            x: 120,
+            y: signatureY,
+            width: 200,
+            height: 50,
+            borderColor: rgb(0.75, 0.75, 0.75),
+            borderWidth: 1
+          });
+
+          // Add date field
+          page.drawText('Date:', {
+            x: 350,
+            y: signatureY + 20,
+            size: 12,
+            font: helveticaFont
+          });
+
+          page.drawRectangle({
+            x: 400,
+            y: signatureY,
+            width: 100,
+            height: 50,
+            borderColor: rgb(0.75, 0.75, 0.75),
+            borderWidth: 1
+          });
+
+          // Save the PDF
+          const pdfBytes = await pdfDoc.save();
+          const signaturePath = path.join(process.cwd(), 'temp', `${documentId}_signature.pdf`);
+          await fs.mkdir(path.join(process.cwd(), 'temp'), { recursive: true });
+          await fs.writeFile(signaturePath, pdfBytes);
+
+          // Create signature token
+          const signatureToken = createHash('sha256')
+            .update(`${documentId}-${Date.now()}`)
+            .digest('hex');
+
+          // Store signature request
+          await storage.createSignature({
+            userId: req.user!.id,
+            documentId,
+            status: "PENDING",
+            signatureData: {
+              token: signatureToken,
+              path: signaturePath
+            }
+          });
+
+        } catch (error) {
+          console.error('Error preparing document for signature:', error);
+          throw new Error('Failed to prepare document for signature');
         }
       }
 
@@ -846,11 +856,12 @@ Ensure the output is properly formatted and ready for immediate use.`
             workflowState: {
               status: newStatus,
               currentReviewer: null,
+              updatedAt: new Date().toISOString(),
               comments: [
                 ...(document.analysis.contractDetails?.workflowState?.comments || []),
                 {
                   user: req.user!.username,
-                  text: `Workflow updated to ${newStatus}`,
+                  text: `Document ${action === 'approve' ? 'approved' : action === 'sign' ? 'sent for signature' : 'updated'}`,
                   timestamp: new Date().toISOString()
                 }
               ]
@@ -859,16 +870,53 @@ Ensure the output is properly formatted and ready for immediate use.`
         }
       });
 
-      res.json({
-        ...updatedDocument,
-        status: "SAVED"
-      });
+      res.json(updatedDocument);
 
     } catch (error) {
-      console.error('Error updating workflow:', error);
+      console.error('Error in workflow action:', error);
       res.status(500).json({
-        message: "Failed to update workflow",
+        message: error.message || "Failed to process workflow action",
         code: "WORKFLOW_ERROR"
+      });
+    }
+  });
+
+  // New endpoint for handling document signing
+  app.post("/api/documents/:id/sign", async (req, res) => {
+    try {
+      const documentId = parseInt(req.params.id);
+      const { signatureData, signatureToken } = req.body;
+
+      // Verify signature token
+      const signature = await storage.getSignatureByToken(signatureToken);
+      if (!signature || signature.documentId !== documentId) {
+        return res.status(403).json({ message: "Invalid signature token" });
+      }
+
+      // Update signature with provided data
+      await storage.updateSignature(signature.id, "COMPLETED", signatureData);
+
+      // Update document status
+      const document = await storage.getDocument(documentId);
+      await storage.updateDocument(documentId, {
+        analysis: {
+          ...document!.analysis,
+          contractDetails: {
+            ...document!.analysis.contractDetails,
+            workflowState: {
+              status: "SIGNED",
+              updatedAt: new Date().toISOString()
+            }
+          }
+        }
+      });
+
+      res.json({ message: "Document signed successfully" });
+    } catch (error) {
+      console.error('Error signing document:', error);
+      res.status(500).json({
+        message: "Failed to sign document",
+        code: "SIGNATURE_ERROR"
       });
     }
   });
@@ -971,7 +1019,7 @@ Ensure the output is properly formatted and ready for immediate use.`
       res.status(500).json({
         message: "Failed to request review",
         code: "REVIEW_REQUEST_ERROR"
-      });
+});
     }
   });
 
@@ -991,12 +1039,9 @@ Ensure the output is properly formatted and ready for immediate use.`
       const [approval] = await db
         .select()
         .from(approvals)
-        .where(
-          and(
-            eq(approvals.documentId, documentId),
-            eq(approvals.status, "PENDING")
-          )
-        );
+        .where(eq(approvals.documentId, documentId))
+        .where(eq(approvals.status, "PENDING"))
+        .get();
 
       if (approval) {
         await storage.updateApproval(approval.id, "APPROVED", req.body.comments);
@@ -1113,7 +1158,7 @@ Ensure the output is properly formatted and ready for immediate use.`
 
   // Add route for signing documents
   app.post("/api/documents/sign/:token", async (req, res) => {
-    try{
+    try {
       const { token } = req.params;
       const { signatureData } = req.body;
 
@@ -1121,7 +1166,8 @@ Ensure the output is properly formatted and ready for immediate use.`
       const [signature] = await db
         .select()
         .from(signatures)
-        .where(eq(signatures.signatureData.token, token));
+        .where(eq(signatures.signatureData.token, token))
+        .get();
 
       if (!signature) {
         return res.status(404).json({
@@ -1137,7 +1183,8 @@ Ensure the output is properly formatted and ready for immediate use.`
       const allSignatures = await db
         .select()
         .from(signatures)
-        .where(eq(signatures.documentId, signature.documentId));
+        .where(eq(signatures.documentId, signature.documentId))
+        .get();
 
       const allCompleted = allSignatures.every(s => s.status === "COMPLETED");
 

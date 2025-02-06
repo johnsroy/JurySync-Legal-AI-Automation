@@ -101,6 +101,10 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         throw new Error("Failed to send review request");
       }
 
+      // Invalidate both documents and pending approvals queries
+      queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
+
       toast({
         title: "Review Requested",
         description: "Document has been sent for review",
@@ -131,14 +135,15 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         throw new Error(`Failed to ${action} document`);
       }
 
-      // Refresh data
+      // Refresh both queries
       queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
       onUpdate();
 
       toast({
         title: action === "approve" ? "Document Approved" : "Sent for Signature",
-        description: action === "approve" 
-          ? "The document has been approved successfully" 
+        description: action === "approve"
+          ? "The document has been approved successfully"
           : "Document has been sent for digital signature",
       });
 
@@ -504,14 +509,14 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                   isApproved
                     ? "bg-green-100 text-green-800"
                     : analysis.contractDetails?.workflowState?.status === "REVIEW"
-                    ? "bg-yellow-100 text-yellow-800"
-                    : "bg-blue-100 text-blue-800"
+                      ? "bg-yellow-100 text-yellow-800"
+                      : "bg-blue-100 text-blue-800"
                 }`}>
-                  {isApproved 
-                    ? "Approved" 
+                  {isApproved
+                    ? "Approved"
                     : analysis.contractDetails?.workflowState?.status === "REVIEW"
-                    ? "Waiting on Review"
-                    : "Draft"}
+                      ? "Waiting on Review"
+                      : "Draft"}
                 </span>
               </div>
 
