@@ -216,7 +216,6 @@ export function registerRoutes(app: Express): Server {
     return Promise.resolve();
   }
 
-
   app.post("/api/documents", upload.single('file'), async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({
@@ -720,11 +719,11 @@ Ensure the output is properly formatted and ready for immediate use.`
     }
   });
 
-  // Update the workflow endpoint to handle content updates
+  // Update the workflow endpoint to handle content updates and versioning
   app.post("/api/documents/:id/workflow", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({
-        message: "You must be logged in to access documents",
+        message: "Authentication required",
         code: "NOT_AUTHENTICATED"
       });
     }
@@ -752,10 +751,27 @@ Ensure the output is properly formatted and ready for immediate use.`
           return res.status(400).json({ message: "Invalid action" });
       }
 
-      // If content is provided, update the document content
-      const updatedDocument = await storage.createDocument({
-        ...document,
-        content: content || document.content,
+      // If content is provided, create a new version
+      if (content) {
+        const versions = await storage.getVersions(documentId);
+        const versionNumber = versions.length + 1;
+
+        await storage.createVersion({
+          documentId,
+          version: `${versionNumber}.0`,
+          content,
+          changes: [{
+            user: req.user!.username,
+            timestamp: new Date().toISOString(),
+            description: `Version ${versionNumber}.0 created`
+          }],
+          authorId: req.user!.id
+        });
+      }
+
+      // Update document status and content
+      const updatedDocument = await storage.updateDocument(documentId, {
+        ...(content && { content }),
         analysis: {
           ...document.analysis,
           contractDetails: {
@@ -767,7 +783,7 @@ Ensure the output is properly formatted and ready for immediate use.`
                 ...(document.analysis.contractDetails?.workflowState?.comments || []),
                 {
                   user: req.user!.username,
-                  text: content ? "Document updated and sent for review" : `Document sent for ${action}`,
+                  text: content ? `Version ${versions.length + 1}.0 created and workflow updated to ${newStatus}` : `Workflow updated to ${newStatus}`,
                   timestamp: new Date().toISOString()
                 }
               ]
@@ -1004,7 +1020,7 @@ Ensure the output is properly formatted and ready for immediate use.`
 
   // Add route for signing documents
   app.post("/api/documents/sign/:token", async (req, res) => {
-    try {
+    try{
       const { token } = req.params;
       const { signatureData } = req.body;
 
@@ -1016,50 +1032,42 @@ Ensure the output is properly formatted and ready for immediate use.`
 
       if (!signature) {
         return res.status(404).json({
-          message: "Signature request not found",
-          code: "NOT_FOUND"
+          message: "Invalid or expired signature token",
+          code: "INVALID_TOKEN"
         });
       }
 
-      if (signature.status === "COMPLETED") {
-        return res.status(400).json({
-          message: "Document already signed",
-          code: "ALREADY_SIGNED"
-        });
-      }
-
-      if (new Date() > new Date(signature.expiresAt)) {
-        return res.status(400).json({
-          message: "Signature request expired",
-          code: "EXPIRED"
-        });
-      }
-
-      // Update signature
+      // Update signature status
       await storage.updateSignature(signature.id, "COMPLETED", signatureData);
 
-      // Update document if all signatures are completed
-      const document = await storage.getDocument(signature.documentId);
+      // Check if all signatures are completed
       const allSignatures = await db
         .select()
         .from(signatures)
         .where(eq(signatures.documentId, signature.documentId));
 
-      const allSigned = allSignatures.every(s => s.status === "COMPLETED");
+      const allCompleted = allSignatures.every(s => s.status === "COMPLETED");
 
-      if (allSigned) {
-        await storage.updateDocument(signature.documentId, {
-          analysis: {
-            ...document.analysis,
-            contractDetails: {
-              ...document.analysis.contractDetails,
-              workflowState: {
-                ...document.analysis.contractDetails?.workflowState,
-                status: "COMPLETED"
+      if (allCompleted) {
+        const document = await storage.getDocument(signature.documentId);
+        if (document) {
+          await storage.updateDocument(document.id, {
+            analysis: {
+              ...document.analysis,
+              contractDetails: {
+                ...document.analysis.contractDetails,
+                workflowState: {
+                  ...document.analysis.contractDetails?.workflowState,
+                  status: "COMPLETED",
+                  signatureStatus: {
+                    required: allSignatures.length,
+                    completed: allSignatures.length
+                  }
+                }
               }
             }
-          }
-        });
+          });
+        }
       }
 
       res.json({ message: "Document signed successfully" });

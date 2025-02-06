@@ -21,6 +21,7 @@ import {
 import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
 
 interface ContractEditorProps {
   documentId: string;
@@ -40,38 +41,44 @@ export function ContractEditor({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedDraft, setGeneratedDraft] = useState("");
   const [editableDraft, setEditableDraft] = useState("");
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [progress, setProgress] = useState(0);
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx' | 'txt'>('docx');
   const [selectedApprover, setSelectedApprover] = useState<string>("");
   const [reviewComment, setReviewComment] = useState("");
   const [isApproved, setIsApproved] = useState(false);
 
-  // Fetch admins for approval requests
-  const { data: admins } = useQuery({
-    queryKey: ["/api/users/admins"],
+  // Fetch all users for approval requests
+  const { data: users } = useQuery({
+    queryKey: ["/api/users"],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/users/admins");
+      const response = await apiRequest("GET", "/api/users");
       return response.json();
     },
   });
 
+  // Track changes to editableDraft
   useEffect(() => {
     if (content) {
       setEditableDraft(content);
     }
   }, [content]);
 
-  // Add back the handleGenerateDraft function
+  useEffect(() => {
+    if (editableDraft !== content && editableDraft !== "") {
+      setHasUnsavedChanges(true);
+    }
+  }, [editableDraft]);
+
   const handleGenerateDraft = async () => {
     setIsGenerating(true);
     setProgress(0);
 
     try {
-      // Start progress animation
       const progressInterval = setInterval(() => {
         setProgress(prev => {
-          if (prev >= 90) return prev; // Cap at 90% until complete
-          return prev + Math.floor(Math.random() * 15) + 5; // More dynamic progress
+          if (prev >= 90) return prev;
+          return prev + Math.floor(Math.random() * 15) + 5;
         });
       }, 800);
 
@@ -79,17 +86,15 @@ export function ContractEditor({
         requirements: content,
       });
 
+      clearInterval(progressInterval);
+      setProgress(100);
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to generate draft');
       }
 
       const result = await response.json();
-
-      // Clear interval and complete progress
-      clearInterval(progressInterval);
-      setProgress(100);
-
       if (!result.content) {
         throw new Error('No content received from server');
       }
@@ -97,6 +102,7 @@ export function ContractEditor({
       setGeneratedDraft(result.content);
       setEditableDraft(result.content);
       setActiveTab("draft");
+      setHasUnsavedChanges(false);
       onUpdate();
 
       toast({
@@ -113,7 +119,6 @@ export function ContractEditor({
       });
     } finally {
       setIsGenerating(false);
-      // Reset progress after a delay
       setTimeout(() => setProgress(0), 1000);
     }
   };
@@ -125,17 +130,16 @@ export function ContractEditor({
         content: editableDraft,
       });
       const result = await response.json();
+      setHasUnsavedChanges(false);
       onUpdate();
-
-      // Update redline history
-      if (result.analysis?.contractDetails?.redlineHistory) {
-        setActiveTab("redline");
-      }
 
       toast({
         title: "Draft Saved",
-        description: "Your changes have been saved and a new version has been created.",
+        description: "Your changes have been saved as a new version.",
       });
+
+      // Show the updated versions in redline view
+      setActiveTab("redline");
     } catch (error: any) {
       toast({
         title: "Error",
@@ -145,68 +149,10 @@ export function ContractEditor({
     }
   };
 
-  const handleWorkflowAction = async (action: "review" | "approve" | "sign") => {
-    try {
-      const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
-        action,
-      });
-      const result = await response.json();
-
-      if (action === "approve") {
-        setIsApproved(true);
-      }
-
-      onUpdate();
-      toast({
-        title: "Workflow Updated",
-        description: `Document has been ${action === "approve" ? "approved" : `sent for ${action}`}`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update workflow. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleRequestReview = async () => {
-    try {
-      // If no approver is selected and we have admins, use the first admin
-      const approver = selectedApprover || (admins && admins[0]?.id);
-
-      if (!approver) {
-        toast({
-          title: "Error",
-          description: "No approver available",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      await apiRequest("POST", `/api/documents/${documentId}/request-review`, {
-        approverId: approver,
-        comments: reviewComment,
-      });
-
-      toast({
-        title: "Review Requested",
-        description: "Document has been sent for review",
-      });
-      onUpdate();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to request review",
-        variant: "destructive",
-      });
-    }
-  };
-
   const renderVersions = () => {
-    const redlineHistory = analysis.contractDetails?.redlineHistory || [];
+    const versions = analysis.contractDetails?.versions || [];
 
-    if (redlineHistory.length === 0) {
+    if (versions.length === 0) {
       return (
         <div className="text-center py-8 text-gray-500">
           No revisions available yet. Changes made to the document will appear here.
@@ -214,133 +160,54 @@ export function ContractEditor({
       );
     }
 
-    return redlineHistory.map((redline: any, index: number) => (
-      <div
-        key={index}
-        className={`p-4 rounded-lg border ${
-          redline.riskLevel > 7
-            ? "border-red-200 bg-red-50"
-            : redline.riskLevel > 4
-            ? "border-yellow-200 bg-yellow-50"
-            : "border-green-200 bg-green-50"
-        }`}
-      >
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <p className="font-medium">Original Clause:</p>
-            <p className="text-sm text-gray-600">{redline.clause}</p>
-            <p className="font-medium mt-2">Suggested Change:</p>
-            <p className="text-sm text-gray-600">{redline.suggestion}</p>
-            <p className="text-xs text-gray-500 mt-2">
-              Risk Level: {redline.riskLevel}/10
+    return versions.map((version, index) => (
+      <div key={index} className="p-4 mb-4 rounded-lg border border-gray-200">
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <h4 className="font-medium">Version {version.version}</h4>
+            <p className="text-sm text-gray-500">
+              {format(new Date(version.changes[0].timestamp), "PPpp")}
             </p>
           </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleAnalyzeClause(redline.clause)}
-            >
-              <AlertCircle className="w-4 h-4 mr-2" />
-              Analyze
+          <div className="space-x-2">
+            <Button variant="outline" size="sm" onClick={() => setEditableDraft(version.content)}>
+              <Edit className="w-4 h-4 mr-2" />
+              Edit
             </Button>
           </div>
+        </div>
+        <div className="mt-2 text-sm">
+          {version.changes.map((change, changeIndex) => (
+            <div key={changeIndex} className="mb-1 text-gray-600">
+              • {change.description} by {change.user}
+            </div>
+          ))}
         </div>
       </div>
     ));
   };
 
-  const renderApprovalRequest = () => {
-    return (
-      <div className="space-y-4 mt-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Select Approver</label>
-          <Select
-            value={selectedApprover}
-            onValueChange={setSelectedApprover}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select an admin for review" />
-            </SelectTrigger>
-            <SelectContent>
-              {admins?.map((admin: any) => (
-                <SelectItem key={admin.id} value={admin.id.toString()}>
-                  {admin.username}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Review Comments</label>
-          <Textarea
-            value={reviewComment}
-            onChange={(e) => setReviewComment(e.target.value)}
-            placeholder="Add any comments for the reviewer..."
-            className="min-h-[100px]"
-          />
-        </div>
-      </div>
-    );
-  };
-
-  const handleDownload = async () => {
-    try {
-      window.location.href = `/api/documents/${documentId}/download?format=${downloadFormat}`;
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: "Failed to download document. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleAnalyzeClause = async (clause: string) => {
-    try {
-      const response = await apiRequest("POST", `/api/documents/${documentId}/analyze-clause`, {
-        clause,
-      });
-      const result = await response.json();
-      toast({
-        title: "Clause Analysis Complete",
-        description: result.riskLevel > 7 ? "High-risk clause detected" : "Clause analysis completed",
-        variant: result.riskLevel > 7 ? "destructive" : "default",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to analyze clause. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Show download button only if there's a draft
-  const showDownloadButton = editableDraft || isApproved;
+  // Show the Generated Draft tab only if a draft has been generated
+  const tabs = [
+    { id: "editor", label: "Requirements", icon: FileText },
+    ...(generatedDraft ? [{ id: "draft", label: "Generated Draft", icon: Edit }] : []),
+    { id: "redline", label: "Redline View", icon: AlertTriangle },
+    { id: "workflow", label: "Workflow", icon: History },
+  ];
 
   return (
     <Card className="mt-6">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="editor">
-            <FileText className="w-4 h-4 mr-2" />
-            Requirements
-          </TabsTrigger>
-          <TabsTrigger value="draft">
-            <Edit className="w-4 h-4 mr-2" />
-            Generated Draft
-          </TabsTrigger>
-          <TabsTrigger value="redline">
-            <AlertTriangle className="w-4 h-4 mr-2" />
-            Redline View
-          </TabsTrigger>
-          <TabsTrigger value="workflow">
-            <History className="w-4 h-4 mr-2" />
-            Workflow
-          </TabsTrigger>
+          {tabs.map(tab => (
+            <TabsTrigger key={tab.id} value={tab.id}>
+              <tab.icon className="w-4 h-4 mr-2" />
+              {tab.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
+        {/* Requirements Tab Content */}
         <TabsContent value="editor" className="p-4">
           <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -359,7 +226,7 @@ export function ContractEditor({
                     </>
                   )}
                 </Button>
-                {showDownloadButton && (
+                {editableDraft || isApproved && (
                   <div className="space-x-2">
                     <Select
                       value={downloadFormat}
@@ -404,55 +271,63 @@ export function ContractEditor({
           </div>
         </TabsContent>
 
-        <TabsContent value="draft" className="p-4">
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Contract Draft</h3>
-              <div className="space-x-2">
-                <Button onClick={handleSaveDraft}>
-                  <Check className="w-4 h-4 mr-2" />
-                  Save Changes
-                </Button>
-                {showDownloadButton && (
-                  <div className="space-x-2">
-                    <Select
-                      value={downloadFormat}
-                      onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
-                    >
-                      <SelectTrigger className="w-[100px]">
-                        <SelectValue placeholder="Format" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pdf">PDF</SelectItem>
-                        <SelectItem value="docx">DOCX</SelectItem>
-                        <SelectItem value="txt">TXT</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      onClick={handleDownload}
-                      variant="outline"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Download
+        {/* Generated Draft Tab Content - Only shown if draft exists */}
+        {generatedDraft && (
+          <TabsContent value="draft" className="p-4">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">Contract Draft</h3>
+                <div className="space-x-2">
+                  {hasUnsavedChanges && (
+                    <Button onClick={handleSaveDraft}>
+                      <Check className="w-4 h-4 mr-2" />
+                      Save Changes
                     </Button>
-                  </div>
-                )}
+                  )}
+                  {editableDraft || isApproved && (
+                    <div className="space-x-2">
+                      <Select
+                        value={downloadFormat}
+                        onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
+                      >
+                        <SelectTrigger className="w-[100px]">
+                          <SelectValue placeholder="Format" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pdf">PDF</SelectItem>
+                          <SelectItem value="docx">DOCX</SelectItem>
+                          <SelectItem value="txt">TXT</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        onClick={handleDownload}
+                        variant="outline"
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Download
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
+              <Textarea
+                value={editableDraft}
+                onChange={(e) => {
+                  setEditableDraft(e.target.value);
+                  setHasUnsavedChanges(true);
+                }}
+                className="min-h-[500px] font-mono"
+                placeholder="Generated contract draft will appear here..."
+              />
             </div>
-            <Textarea
-              value={editableDraft}
-              onChange={(e) => setEditableDraft(e.target.value)}
-              className="min-h-[500px] font-mono"
-              placeholder="Generated contract draft will appear here..."
-            />
-          </div>
-        </TabsContent>
+          </TabsContent>
+        )}
 
         <TabsContent value="redline" className="p-4">
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Redline Analysis</h3>
-              {showDownloadButton && (
+              {editableDraft || isApproved && (
                 <div className="space-x-2">
                   <Select
                     value={downloadFormat}
@@ -521,7 +396,7 @@ export function ContractEditor({
                   <UserCheck className="w-4 h-4 mr-2" />
                   Send for Signature
                 </Button>
-                {showDownloadButton && (
+                {editableDraft || isApproved && (
                   <div className="space-x-2">
                     <Select
                       value={downloadFormat}
@@ -548,7 +423,35 @@ export function ContractEditor({
               </div>
             </div>
 
-            {renderApprovalRequest()}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Select Approver</label>
+                <Select
+                  value={selectedApprover}
+                  onValueChange={setSelectedApprover}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an admin for review" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users?.map((user: any) => (
+                      <SelectItem key={user.id} value={user.id.toString()}>
+                        {user.username}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Review Comments</label>
+                <Textarea
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder="Add any comments for the reviewer..."
+                  className="min-h-[100px]"
+                />
+              </div>
+            </div>
 
             {analysis.contractDetails?.workflowState && (
               <div className="space-y-4">
