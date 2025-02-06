@@ -28,7 +28,7 @@ import {
 
 export default function DocumentView() {
   const { id } = useParams();
-  const { data: document, isLoading } = useDocument(id || "");
+  const { data: document, isLoading, error } = useDocument(id || "");
 
   if (isLoading) {
     return (
@@ -38,7 +38,7 @@ export default function DocumentView() {
     );
   }
 
-  if (!document || !document.analysis) {
+  if (error || !document || !document.analysis) {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <Card className="max-w-2xl mx-auto">
@@ -46,11 +46,12 @@ export default function DocumentView() {
             <div className="text-center">
               <AlertTriangle className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-2 text-sm font-semibold text-gray-900">
-                Document not found
+                {error ? "Error loading document" : "Document not found"}
               </h3>
               <p className="mt-1 text-sm text-gray-500">
-                This document may have been deleted or you may not have permission
-                to view it.
+                {error
+                  ? "An error occurred while loading the document. Please try again."
+                  : "This document may have been deleted or you may not have permission to view it."}
               </p>
               <div className="mt-6">
                 <Link href="/">
@@ -68,35 +69,6 @@ export default function DocumentView() {
   }
 
   const analysis = document.analysis as DocumentAnalysis;
-
-  // Validate required fields in analysis
-  if (!analysis.summary || !Array.isArray(analysis.keyPoints) || !Array.isArray(analysis.suggestions) || typeof analysis.riskScore !== 'number') {
-    return (
-      <div className="min-h-screen bg-gray-50 p-4">
-        <Card className="max-w-2xl mx-auto">
-          <CardContent className="p-6">
-            <div className="text-center">
-              <AlertTriangle className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-semibold text-gray-900">
-                Error Loading Document
-              </h3>
-              <p className="mt-1 text-sm text-gray-500">
-                There was an error loading the document analysis. Please try again later.
-              </p>
-              <div className="mt-6">
-                <Link href="/">
-                  <Button>
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Dashboard
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -120,11 +92,14 @@ export default function DocumentView() {
                   <CardTitle className="text-2xl">{document.title}</CardTitle>
                   <CardDescription>
                     Uploaded{" "}
-                    {new Date(document.createdAt || "").toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                    {new Date(document.createdAt || "").toLocaleDateString(
+                      "en-US",
+                      {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      }
+                    )}
                   </CardDescription>
                 </div>
                 <div
@@ -160,7 +135,9 @@ export default function DocumentView() {
                 </h3>
                 <div className="mt-4 space-y-4">
                   <div>
-                    <h4 className="font-medium text-gray-900">Executive Summary</h4>
+                    <h4 className="font-medium text-gray-900">
+                      Executive Summary
+                    </h4>
                     <p className="mt-1 text-gray-600">{analysis.summary}</p>
                   </div>
 

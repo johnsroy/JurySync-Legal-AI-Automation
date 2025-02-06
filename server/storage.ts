@@ -31,7 +31,6 @@ export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
     try {
       const [user] = await db.select().from(users).where(eq(users.id, id));
-      console.log('Retrieved user:', user?.id);
       return user;
     } catch (error) {
       console.error('Error getting user:', error);
@@ -45,7 +44,6 @@ export class DatabaseStorage implements IStorage {
         .select()
         .from(users)
         .where(eq(users.username, username));
-      console.log('Retrieved user by username:', user?.id);
       return user;
     } catch (error) {
       console.error('Error getting user by username:', error);
@@ -56,7 +54,6 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
       const [user] = await db.insert(users).values(insertUser).returning();
-      console.log('Created user:', user.id);
       return user;
     } catch (error) {
       console.error('Error creating user:', error);
@@ -67,11 +64,9 @@ export class DatabaseStorage implements IStorage {
   async getDocuments(userId: number): Promise<Document[]> {
     try {
       const docs = await db.select().from(documents).where(eq(documents.userId, userId));
-      console.log(`Retrieved ${docs.length} documents for user:`, userId);
-      console.log('Documents analysis:', docs.map(d => ({ id: d.id, analysis: d.analysis })));
       return docs.map(doc => ({
         ...doc,
-        analysis: doc.analysis ? JSON.parse(JSON.stringify(doc.analysis)) : null
+        analysis: typeof doc.analysis === 'string' ? JSON.parse(doc.analysis) : doc.analysis
       }));
     } catch (error) {
       console.error('Error getting documents:', error);
@@ -81,19 +76,17 @@ export class DatabaseStorage implements IStorage {
 
   async getDocument(id: number): Promise<Document | undefined> {
     try {
-      const [document] = await db
+      const [doc] = await db
         .select()
         .from(documents)
         .where(eq(documents.id, id));
-      console.log('Retrieved document:', document?.id);
-      console.log('Document analysis:', document?.analysis);
-      if (document) {
-        return {
-          ...document,
-          analysis: document.analysis ? JSON.parse(JSON.stringify(document.analysis)) : null
-        };
-      }
-      return undefined;
+
+      if (!doc) return undefined;
+
+      return {
+        ...doc,
+        analysis: typeof doc.analysis === 'string' ? JSON.parse(doc.analysis) : doc.analysis
+      };
     } catch (error) {
       console.error('Error getting document:', error);
       throw error;
@@ -104,19 +97,21 @@ export class DatabaseStorage implements IStorage {
     document: Omit<Document, "id" | "createdAt">,
   ): Promise<Document> {
     try {
-      const documentToInsert = {
-        ...document,
-        analysis: document.analysis ? JSON.parse(JSON.stringify(document.analysis)) : null
-      };
-      const [newDocument] = await db
+      const [newDoc] = await db
         .insert(documents)
-        .values(documentToInsert)
+        .values({
+          ...document,
+          analysis: typeof document.analysis === 'string' ? 
+            document.analysis : 
+            JSON.stringify(document.analysis)
+        })
         .returning();
-      console.log('Created document:', newDocument.id);
-      console.log('Document analysis:', newDocument.analysis);
+
       return {
-        ...newDocument,
-        analysis: newDocument.analysis ? JSON.parse(JSON.stringify(newDocument.analysis)) : null
+        ...newDoc,
+        analysis: typeof newDoc.analysis === 'string' ? 
+          JSON.parse(newDoc.analysis) : 
+          newDoc.analysis
       };
     } catch (error) {
       console.error('Error creating document:', error);

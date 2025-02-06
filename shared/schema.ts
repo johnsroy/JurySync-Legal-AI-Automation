@@ -8,10 +8,11 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
+// Define document analysis schema first
 export const documentAnalysisSchema = z.object({
-  summary: z.string(),
-  keyPoints: z.array(z.string()),
-  suggestions: z.array(z.string()),
+  summary: z.string().min(1, "Summary is required"),
+  keyPoints: z.array(z.string()).min(1, "At least one key point is required"),
+  suggestions: z.array(z.string()).min(1, "At least one suggestion is required"),
   riskScore: z.number().min(1).max(10),
 });
 
@@ -48,6 +49,7 @@ export const insertDocumentSchema = createInsertSchema(documents)
     content: true,
   });
 
+// Export types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Document = typeof documents.$inferSelect;
