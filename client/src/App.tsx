@@ -9,7 +9,9 @@ import LoginPage from "@/pages/login-page";
 import RegisterPage from "@/pages/register-page";
 import ProductsPage from "@/pages/products-page";
 import Dashboard from "@/pages/dashboard";
-import DocumentView from "@/pages/document-view";
+import ContractAutomation from "@/pages/contract-automation";
+import ComplianceAuditing from "@/pages/compliance-auditing";
+import LegalResearch from "@/pages/legal-research";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
@@ -20,7 +22,9 @@ function Router() {
       <Route path="/register" component={RegisterPage} />
       <Route path="/products" component={ProductsPage} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
-      <ProtectedRoute path="/document/:id" component={DocumentView} />
+      <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
+      <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
+      <ProtectedRoute path="/legal-research" component={LegalResearch} />
       <Route component={NotFound} />
     </Switch>
   );

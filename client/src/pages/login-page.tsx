@@ -21,6 +21,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Loader2, Scale } from "lucide-react";
+import { Gavel } from "lucide-react"; // Added import for Gavel icon
 
 export default function LoginPage() {
   const { user, loginMutation } = useAuth();
@@ -47,8 +48,8 @@ export default function LoginPage() {
       <Card className="w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg shadow-xl border-0">
         <CardHeader className="space-y-1 text-center pb-8">
           <Link href="/" className="flex items-center justify-center space-x-2 mb-2">
-            <Scale className="h-8 w-8 text-green-600" />
-            <span className="text-2xl font-bold font-display">LegalAI</span>
+            <Gavel className="h-8 w-8 text-green-600" />
+            <span className="text-2xl font-bold font-display">JurySync.io</span>
           </Link>
           <CardTitle className="text-3xl font-bold tracking-tight font-display">
             Welcome back
@@ -72,9 +73,9 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel className="text-base">Username</FormLabel>
                     <FormControl>
-                      <Input 
-                        className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" 
-                        {...field} 
+                      <Input
+                        className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm"
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
@@ -88,10 +89,10 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel className="text-base">Password</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="password" 
-                        className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" 
-                        {...field} 
+                      <Input
+                        type="password"
+                        className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm"
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
