@@ -5,7 +5,7 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import { User as SelectUser } from "@shared/schema";
+import { User as SelectUser, insertUserSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 
@@ -88,7 +88,7 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/register", async (req, res, next) => {
+  app.post("/api/register", async (req, res) => {
     try {
       const existingUser = await storage.getUserByUsername(req.body.username);
       if (existingUser) {
@@ -98,23 +98,39 @@ export function setupAuth(app: Express) {
         });
       }
 
-      const user = await storage.createUser({
+      // Validate user data
+      const validatedData = insertUserSchema.parse({
         ...req.body,
-        password: await hashPassword(req.body.password),
+        role: "USER" // Default role
+      });
+
+      const user = await storage.createUser({
+        ...validatedData,
+        password: await hashPassword(validatedData.password),
       });
 
       req.login(user, (err) => {
-        if (err) return next(err);
+        if (err) {
+          console.error("Login error after registration:", err);
+          return res.status(500).json({
+            message: "Registration successful but failed to login",
+            code: "LOGIN_ERROR"
+          });
+        }
         res.status(201).json(user);
       });
     } catch (err) {
+      console.error("Registration error:", err);
       if (err instanceof ZodError) {
         return res.status(400).json({
           message: fromZodError(err).message,
           code: "VALIDATION_ERROR"
         });
       }
-      next(err);
+      res.status(500).json({
+        message: "Failed to register user",
+        code: "REGISTRATION_ERROR"
+      });
     }
   });
 
@@ -122,33 +138,48 @@ export function setupAuth(app: Express) {
     passport.authenticate("local", (err, user, info) => {
       if (err) {
         console.error("Login error:", err);
-        return next(err);
+        return res.status(500).json({
+          message: "Internal server error during login",
+          code: "LOGIN_ERROR"
+        });
       }
+
       if (!user) {
         return res.status(401).json({
           message: info?.message || "Invalid credentials",
           code: "INVALID_CREDENTIALS"
         });
       }
+
       req.login(user, (err) => {
         if (err) {
           console.error("Session error:", err);
-          return next(err);
+          return res.status(500).json({
+            message: "Failed to create session",
+            code: "SESSION_ERROR"
+          });
         }
         res.status(200).json(user);
       });
     })(req, res, next);
   });
 
-  app.post("/api/logout", (req, res, next) => {
+  app.post("/api/logout", (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({
         message: "You must be logged in to logout",
         code: "NOT_AUTHENTICATED"
       });
     }
+
     req.logout((err) => {
-      if (err) return next(err);
+      if (err) {
+        console.error("Logout error:", err);
+        return res.status(500).json({
+          message: "Failed to logout",
+          code: "LOGOUT_ERROR"
+        });
+      }
       res.sendStatus(200);
     });
   });
