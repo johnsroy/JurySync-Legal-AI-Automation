@@ -463,18 +463,17 @@ export function registerRoutes(app: Express): Server {
       }
 
       try {
-        // Single API call for faster response
         const response = await openai.chat.completions.create({
-          model: "gpt-3.5-turbo-16k", // Using larger context model
+          model: "gpt-3.5-turbo-16k",
           messages: [
             {
               role: "system",
-              content: `You are a legal contract drafting assistant. Generate a professional contract based on the requirements. Include:
-1. Clear section numbering
-2. Professional legal language
-3. Standard contract structure
-4. Key clauses and terms
-Format the output as a complete, ready-to-use contract.`
+              content: `You are an expert legal contract drafting assistant. Generate a clear, concise, and professional contract that includes:
+1. Clear section numbering and structure
+2. Professional legal language and terminology
+3. Standard clauses and terms
+4. Key provisions based on requirements
+Ensure the output is properly formatted and ready for immediate use.`
             },
             {
               role: "user",
@@ -482,7 +481,7 @@ Format the output as a complete, ready-to-use contract.`
             }
           ],
           temperature: 0.7,
-          max_tokens: 4000 // Increased for longer contracts
+          max_tokens: 2000
         });
 
         const draftContent = response.choices[0].message.content;
@@ -490,14 +489,14 @@ Format the output as a complete, ready-to-use contract.`
           throw new Error("Empty response from OpenAI");
         }
 
-        // Update document with new draft
-        const updatedDocument = await storage.createDocument({
+        // Update document with generated draft
+        await storage.createDocument({
           ...document,
           content: draftContent,
           analysis: {
-            ...document.analysis,
+            ...document.analysis as any,
             contractDetails: {
-              ...document.analysis.contractDetails,
+              ...(document.analysis as any)?.contractDetails,
               versionControl: {
                 version: "1.0",
                 changes: [{
@@ -517,13 +516,13 @@ Format the output as a complete, ready-to-use contract.`
         console.error('OpenAI API error:', error);
         if (error.response?.status === 429) {
           return res.status(429).json({
-            message: "Too many requests. Please try again in a moment.",
+            message: "Rate limit reached. Please try again in a moment.",
             code: "RATE_LIMIT"
           });
         }
         if (error.response?.status === 400) {
           return res.status(400).json({
-            message: "The requirements are too long. Please break them into smaller sections.",
+            message: "The requirements are too long. Please shorten them.",
             code: "CONTENT_TOO_LONG"
           });
         }
@@ -533,7 +532,7 @@ Format the output as a complete, ready-to-use contract.`
     } catch (error: any) {
       console.error('Error generating draft:', error);
       res.status(500).json({ 
-        message: error.message || "An unexpected error occurred while generating the draft. Please try again.",
+        message: error.message || "Failed to generate draft. Please try again.",
         code: "UNKNOWN_ERROR"
       });
     }

@@ -40,7 +40,7 @@ export function ContractEditor({
   const [editableDraft, setEditableDraft] = useState("");
   const [progress, setProgress] = useState(0);
 
-  // Dynamic drafting
+  // Update the draft generation handler to better handle responses and errors
   const handleGenerateDraft = async () => {
     setIsGenerating(true);
     setProgress(0);
@@ -50,21 +50,27 @@ export function ContractEditor({
       const progressInterval = setInterval(() => {
         setProgress(prev => {
           if (prev >= 90) return prev; // Cap at 90% until complete
-          return prev + 10;
+          return prev + Math.floor(Math.random() * 15) + 5; // More dynamic progress
         });
-      }, 1000);
+      }, 800);
 
       const response = await apiRequest("POST", `/api/documents/${documentId}/generate-draft`, {
         requirements: content,
       });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to generate draft');
+      }
+
       const result = await response.json();
 
       // Clear interval and complete progress
       clearInterval(progressInterval);
       setProgress(100);
 
-      if (result.error) {
-        throw new Error(result.error);
+      if (!result.content) {
+        throw new Error('No content received from server');
       }
 
       setGeneratedDraft(result.content);
@@ -73,12 +79,15 @@ export function ContractEditor({
       onUpdate();
 
       toast({
-        title: "Draft Generated",
-        description: "New contract draft has been created based on your requirements.",
+        title: "Draft Generated Successfully",
+        description: "Your contract draft is ready for review.",
+        variant: "default",
       });
+
     } catch (error: any) {
+      console.error('Draft generation error:', error);
       toast({
-        title: "Error",
+        title: "Error Generating Draft",
         description: error.message || "Failed to generate draft. Please try again.",
         variant: "destructive",
       });
