@@ -29,6 +29,12 @@ export const documentAnalysisSchema = z.object({
     termLength: z.string().optional(),
     keyObligations: z.array(z.string()).optional(),
     terminationClauses: z.array(z.string()).optional(),
+    governingLaw: z.string().optional(),
+    paymentTerms: z.string().optional(),
+    disputeResolution: z.string().optional(),
+    missingClauses: z.array(z.string()).optional(),
+    suggestedClauses: z.array(z.string()).optional(),
+    riskFactors: z.array(z.string()).optional(),
   }).optional(),
 });
 
