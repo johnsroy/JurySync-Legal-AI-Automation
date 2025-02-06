@@ -40,6 +40,20 @@ export interface IStorage {
   // Get users by role
   getUsersByRole(role: string): Promise<User[]>;
 
+  // Added methods
+  getAllUsers(): Promise<User[]>;
+  getPendingApprovals(userId: number): Promise<Array<{
+    id: number;
+    documentId: number;
+    requesterId: number;
+    approverId: number;
+    status: string;
+    comments?: string;
+    createdAt: Date;
+    document: Document;
+    requester: User;
+  }>>;
+
   sessionStore: session.Store;
 }
 
@@ -244,6 +258,50 @@ export class DatabaseStorage implements IStorage {
 
   async getUsersByRole(role: string): Promise<User[]> {
     return db.select().from(users).where(eq(users.role, role));
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    try {
+      return await db.select().from(users);
+    } catch (error) {
+      console.error('Error getting all users:', error);
+      throw error;
+    }
+  }
+
+  async getPendingApprovals(userId: number): Promise<Array<{
+    id: number;
+    documentId: number;
+    requesterId: number;
+    approverId: number;
+    status: string;
+    comments?: string;
+    createdAt: Date;
+    document: Document;
+    requester: User;
+  }>> {
+    try {
+      const approvals = await db
+        .select({
+          approval: approvals,
+          document: documents,
+          requester: users
+        })
+        .from(approvals)
+        .where(eq(approvals.approverId, userId))
+        .where(eq(approvals.status, "PENDING"))
+        .leftJoin(documents, eq(documents.id, approvals.documentId))
+        .leftJoin(users, eq(users.id, approvals.requesterId));
+
+      return approvals.map(({ approval, document, requester }) => ({
+        ...approval,
+        document,
+        requester
+      }));
+    } catch (error) {
+      console.error('Error getting pending approvals:', error);
+      throw error;
+    }
   }
 }
 

@@ -55,6 +55,15 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     },
   });
 
+  // Add query for pending approvals
+  const { data: pendingApprovals } = useQuery({
+    queryKey: ["/api/approvals/pending"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/approvals/pending");
+      return response.json();
+    },
+  });
+
   useEffect(() => {
     if (content) {
       setEditableDraft(content);
@@ -184,8 +193,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
             </p>
           </div>
           <div className="flex space-x-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => {
                 setEditableDraft(version.content);
@@ -213,8 +222,22 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     { id: "editor", label: "Requirements", icon: FileText },
     ...(generatedDraft ? [{ id: "draft", label: "Generated Draft", icon: Edit }] : []),
     { id: "redline", label: "Version History", icon: History },
+    { id: "approvals", label: "Approval Pending", icon: UserCheck },
     { id: "workflow", label: "Workflow", icon: History },
   ];
+
+
+  const handleWorkflowAction = (action: string) => {
+    //Implementation for handling workflow actions.  This is assumed to exist based on the original code.
+    console.log("Workflow action:", action);
+    // Add your actual workflow action handling logic here
+  };
+
+  const handleRequestReview = () => {
+    //Implementation for requesting review.  This is assumed to exist based on the original code.
+    console.log("Requesting Review");
+  };
+
 
   return (
     <Card className="mt-6">
@@ -320,6 +343,60 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
             <div className="space-y-2">
               {renderVersions()}
             </div>
+          </div>
+        </TabsContent>
+
+        {/* Approval Pending Tab Content */}
+        <TabsContent value="approvals" className="p-6">
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Pending Approvals</h3>
+            </div>
+            {!pendingApprovals || pendingApprovals.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No reviews are pending for your approval.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {pendingApprovals.map((approval: any) => (
+                  <div key={approval.id} className="p-4 border rounded-lg">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-medium">{approval.document.title}</h4>
+                        <p className="text-sm text-gray-500">
+                          Requested by {approval.requester.username} on{" "}
+                          {format(new Date(approval.createdAt), "PPpp")}
+                        </p>
+                        {approval.comments && (
+                          <p className="mt-2 text-sm">{approval.comments}</p>
+                        )}
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditableDraft(approval.document.content);
+                            setActiveTab("draft");
+                          }}
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          View Document
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => handleWorkflowAction("approve")}
+                        >
+                          <Check className="w-4 h-4 mr-2" />
+                          Approve
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 

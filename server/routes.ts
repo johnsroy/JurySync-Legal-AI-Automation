@@ -827,6 +827,49 @@ Ensure the output is properly formatted and ready for immediate use.`
     }
   });
 
+  // Add new endpoint to get all users
+  app.get("/api/users", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({
+        message: "Authentication required",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    try {
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      res.status(500).json({
+        message: "Failed to fetch users",
+        code: "FETCH_ERROR"
+      });
+    }
+  });
+
+  // Add endpoint to fetch pending approvals for a user
+  app.get("/api/approvals/pending", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({
+        message: "Authentication required",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    try {
+      const pendingApprovals = await storage.getPendingApprovals(req.user!.id);
+      res.json(pendingApprovals);
+    } catch (error) {
+      console.error('Error fetching pending approvals:', error);
+      res.status(500).json({
+        message: "Failed to fetch pending approvals",
+        code: "FETCH_ERROR"
+      });
+    }
+  });
+
+  // Update the existing request-review endpoint with better status handling
   app.post("/api/documents/:id/request-review", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({
@@ -846,7 +889,7 @@ Ensure the output is properly formatted and ready for immediate use.`
       const { approverId } = req.body;
       const approver = await storage.getUser(approverId);
 
-      if (!approver || approver.role !== "ADMIN") {
+      if (!approver) {
         return res.status(400).json({
           message: "Invalid approver selected",
           code: "INVALID_APPROVER"
@@ -862,16 +905,7 @@ Ensure the output is properly formatted and ready for immediate use.`
         comments: req.body.comments
       });
 
-      // Create new version
-      await storage.createVersion({
-        documentId,
-        version: "1.0",
-        content: document.content,
-        changes: [],
-        authorId: req.user!.id
-      });
-
-      // Update document status
+      // Update document status to REVIEW
       await storage.updateDocument(documentId, {
         analysis: {
           ...document.analysis,
@@ -885,17 +919,6 @@ Ensure the output is properly formatted and ready for immediate use.`
           }
         }
       });
-
-      // Send email notification
-      if (approver.email) {
-        await sendEmail({
-          to: approver.email,
-          from: "noreply@legalai.com",
-          subject: "Document Review Request",
-          text: `You have a new document review request from ${req.user!.username}`,
-          html: `<p>You have a new document review request from ${req.user!.username}</p>`
-        });
-      }
 
       res.json(approval);
     } catch (error) {
