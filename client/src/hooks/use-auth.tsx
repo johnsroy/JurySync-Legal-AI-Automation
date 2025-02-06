@@ -21,6 +21,26 @@ type LoginData = Pick<InsertUser, "username" | "password">;
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
+function getErrorMessage(error: any) {
+  try {
+    const data = JSON.parse(error.message.split(": ")[1]);
+    switch (data.code) {
+      case "USERNAME_EXISTS":
+        return "This username is already taken. Please choose another one.";
+      case "INVALID_CREDENTIALS":
+        return "Invalid username or password. Please try again.";
+      case "NOT_AUTHENTICATED":
+        return "You must be logged in to perform this action.";
+      case "VALIDATION_ERROR":
+        return data.message;
+      default:
+        return data.message || "An unexpected error occurred";
+    }
+  } catch {
+    return error.message || "An unexpected error occurred";
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const {
@@ -30,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   } = useQuery<SelectUser | undefined, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
+    retry: false,
   });
 
   const loginMutation = useMutation({
@@ -39,11 +60,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: (user: SelectUser) => {
       queryClient.setQueryData(["/api/user"], user);
+      toast({
+        title: "Welcome back!",
+        description: `Logged in as ${user.username}`,
+      });
     },
     onError: (error: Error) => {
       toast({
         title: "Login failed",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive",
       });
     },
@@ -56,11 +81,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: (user: SelectUser) => {
       queryClient.setQueryData(["/api/user"], user);
+      toast({
+        title: "Account created",
+        description: `Welcome, ${user.username}!`,
+      });
     },
     onError: (error: Error) => {
       toast({
         title: "Registration failed",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive",
       });
     },
@@ -72,11 +101,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);
+      toast({
+        title: "Logged out",
+        description: "Come back soon!",
+      });
     },
     onError: (error: Error) => {
       toast({
         title: "Logout failed",
-        description: error.message,
+        description: getErrorMessage(error),
         variant: "destructive",
       });
     },
