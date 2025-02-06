@@ -60,7 +60,71 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
-  // Document routes
+  app.post("/api/documents", upload.single('file'), async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ 
+        message: "You must be logged in to create documents",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          message: "No file uploaded",
+          code: "FILE_REQUIRED"
+        });
+      }
+
+      const content = await extractTextFromFile(req.file);
+      const document = {
+        title: req.body.title || req.file.originalname,
+        content,
+      };
+
+      const parsed = insertDocumentSchema.parse(document);
+      console.log("Analyzing document content:", content.substring(0, 100) + "...");
+      const analysis = await analyzeDocument(content);
+
+      const createdDocument = await storage.createDocument({
+        ...parsed,
+        content,
+        userId: req.user!.id,
+        analysis,
+      });
+
+      res.status(201).json(createdDocument);
+    } catch (error) {
+      console.error('Document creation error:', error);
+
+      if (error instanceof ZodError) {
+        return res.status(400).json({ 
+          message: fromZodError(error).message,
+          code: "VALIDATION_ERROR"
+        });
+      }
+
+      if (error instanceof Error && error.message === 'Invalid file type') {
+        return res.status(400).json({
+          message: "Invalid file type. Please upload PDF, DOCX, DOC, or XLSX files only.",
+          code: "FILE_TYPE_ERROR"
+        });
+      }
+
+      if (error instanceof Error && error.message.includes('OpenAI')) {
+        return res.status(503).json({ 
+          message: "Failed to analyze document. Please try again later.",
+          code: "ANALYSIS_ERROR"
+        });
+      }
+
+      res.status(500).json({ 
+        message: "Failed to create document",
+        code: "CREATE_ERROR"
+      });
+    }
+  });
+
   app.get("/api/documents", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ 
@@ -118,70 +182,6 @@ export function registerRoutes(app: Express): Server {
       res.status(500).json({ 
         message: "Failed to fetch document",
         code: "FETCH_ERROR"
-      });
-    }
-  });
-
-  app.post("/api/documents", upload.single('file'), async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ 
-        message: "You must be logged in to create documents",
-        code: "NOT_AUTHENTICATED"
-      });
-    }
-
-    try {
-      if (!req.file) {
-        return res.status(400).json({
-          message: "No file uploaded",
-          code: "FILE_REQUIRED"
-        });
-      }
-
-      const content = await extractTextFromFile(req.file);
-      const document = {
-        title: req.body.title,
-        content,
-      };
-
-      const parsed = insertDocumentSchema.parse(document);
-      const analysis = await analyzeDocument(parsed.content);
-
-      const createdDocument = await storage.createDocument({
-        ...parsed,
-        userId: req.user!.id,
-        analysis,
-      });
-
-      res.status(201).json(createdDocument);
-    } catch (error) {
-      console.error('Document creation error:', error);
-
-      if (error instanceof ZodError) {
-        return res.status(400).json({ 
-          message: fromZodError(error).message,
-          code: "VALIDATION_ERROR"
-        });
-      }
-
-      if (error instanceof Error && error.message === 'Invalid file type') {
-        return res.status(400).json({
-          message: "Invalid file type. Please upload PDF, DOCX, DOC, or XLSX files only.",
-          code: "FILE_TYPE_ERROR"
-        });
-      }
-
-      // Handle OpenAI API errors
-      if (error instanceof Error && error.message.includes('OpenAI')) {
-        return res.status(503).json({ 
-          message: "Failed to analyze document. Please try again later.",
-          code: "ANALYSIS_ERROR"
-        });
-      }
-
-      res.status(500).json({ 
-        message: "Failed to create document",
-        code: "CREATE_ERROR"
       });
     }
   });

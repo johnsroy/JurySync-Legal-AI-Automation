@@ -30,18 +30,23 @@ export function useCreateDocument() {
 
   return useMutation({
     mutationFn: async (formData: FormData) => {
-      const res = await fetch("/api/documents", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
+      try {
+        const res = await fetch("/api/documents", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
 
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message);
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.message || "Failed to create document");
+        }
+
+        return await res.json();
+      } catch (error: any) {
+        console.error("Document creation error:", error);
+        throw error;
       }
-
-      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
@@ -53,7 +58,7 @@ export function useCreateDocument() {
     onError: (error: Error) => {
       let description = "Failed to upload document. Please try again later.";
       try {
-        const data = JSON.parse(error.message.split(": ")[1]);
+        const data = JSON.parse(error.message);
         if (data.code === "ANALYSIS_ERROR") {
           description = "Our AI is currently busy. Please try again in a few minutes.";
         } else if (data.code === "VALIDATION_ERROR") {
@@ -62,7 +67,7 @@ export function useCreateDocument() {
           description = "Invalid file type. Please upload PDF, DOCX, DOC, or XLSX files only.";
         }
       } catch {
-        // Use default error message
+        description = error.message || description;
       }
 
       toast({
