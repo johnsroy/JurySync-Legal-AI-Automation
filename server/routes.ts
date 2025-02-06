@@ -454,30 +454,47 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Generate draft using OpenAI with chunked requirements
+      // Generate draft using OpenAI
       const requirements = req.body.requirements;
-      const maxChunkLength = 4000; // Safe limit for gpt-3.5-turbo
+      if (!requirements || requirements.trim().length === 0) {
+        return res.status(400).json({
+          message: "Requirements cannot be empty",
+          code: "INVALID_INPUT"
+        });
+      }
+
+      const maxChunkLength = 2000; // Reduced for faster response
       const chunks = requirements.match(new RegExp(`.{1,${maxChunkLength}}`, 'g')) || [];
 
       let fullDraft = '';
-      for (const chunk of chunks) {
+      try {
         const response = await openai.chat.completions.create({
           model: "gpt-3.5-turbo",
           messages: [
             {
               role: "system",
-              content: "You are a legal contract drafting assistant. Generate a professional contract section based on the provided requirements. Maintain consistency with any previous sections."
+              content: `You are a legal contract drafting assistant. Generate a professional contract based on the following requirements. Format the contract with clear sections and numbering.`
             },
             {
               role: "user",
-              content: chunk
+              content: requirements
             }
           ],
           temperature: 0.7,
-          max_tokens: 1500
+          max_tokens: 2000
         });
 
-        fullDraft += response.choices[0].message.content + '\n';
+        fullDraft = response.choices[0].message.content || '';
+
+        if (!fullDraft) {
+          throw new Error("Failed to generate contract draft");
+        }
+      } catch (error) {
+        console.error('OpenAI API error:', error);
+        return res.status(503).json({ 
+          message: "Failed to generate draft. Please try again later.",
+          code: "GENERATION_ERROR"
+        });
       }
 
       // Update document with new draft
@@ -505,13 +522,12 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error('Error generating draft:', error);
       res.status(500).json({ 
-        message: "Failed to generate draft",
-        code: "GENERATION_ERROR"
+        message: "An unexpected error occurred while generating the draft",
+        code: "UNKNOWN_ERROR"
       });
     }
   });
 
-  // New endpoint for downloading contract
   app.get("/api/documents/:id/download", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ 

@@ -54,7 +54,7 @@ export function ContractEditor({
         title: "Draft Generated",
         description: "New contract draft has been created based on your requirements.",
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
         description: error.message || "Failed to generate draft. Please try again.",
@@ -78,7 +78,7 @@ export function ContractEditor({
         title: "Draft Saved",
         description: "Your changes have been saved and sent for review.",
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
         description: error.message || "Failed to save draft. Please try again.",
@@ -91,7 +91,7 @@ export function ContractEditor({
   const handleDownload = async () => {
     try {
       window.location.href = `/api/documents/${documentId}/download`;
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
         description: "Failed to download document. Please try again.",
@@ -112,7 +112,7 @@ export function ContractEditor({
         description: result.riskLevel > 7 ? "High-risk clause detected" : "Clause analysis completed",
         variant: result.riskLevel > 7 ? "destructive" : "default",
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
         description: error.message || "Failed to analyze clause. Please try again.",
@@ -133,7 +133,7 @@ export function ContractEditor({
         title: "Workflow Updated",
         description: `Document has been sent for ${action}`,
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
         description: error.message || "Failed to update workflow. Please try again.",
@@ -146,6 +146,9 @@ export function ContractEditor({
   const isApproved = analysis.contractDetails?.workflowState?.status === "APPROVAL" ||
                     analysis.contractDetails?.workflowState?.status === "SIGNATURE" ||
                     analysis.contractDetails?.workflowState?.status === "COMPLETED";
+
+  // Show download button only if there's a draft or the document is approved
+  const showDownloadButton = generatedDraft || isApproved;
 
   return (
     <Card className="mt-6">
@@ -187,13 +190,15 @@ export function ContractEditor({
                     </>
                   )}
                 </Button>
-                <Button
-                  onClick={handleDownload}
-                  variant="outline"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
+                {showDownloadButton && (
+                  <Button
+                    onClick={handleDownload}
+                    variant="outline"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                )}
               </div>
             </div>
             <ScrollArea className="h-[500px] w-full border rounded-md p-4">
@@ -213,13 +218,15 @@ export function ContractEditor({
                   <Check className="w-4 h-4 mr-2" />
                   Save Changes
                 </Button>
-                <Button
-                  onClick={handleDownload}
-                  variant="outline"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
+                {showDownloadButton && (
+                  <Button
+                    onClick={handleDownload}
+                    variant="outline"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                )}
               </div>
             </div>
             <Textarea
@@ -235,13 +242,15 @@ export function ContractEditor({
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Redline Analysis</h3>
-              <Button
-                onClick={handleDownload}
-                variant="outline"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download
-              </Button>
+              {showDownloadButton && (
+                <Button
+                  onClick={handleDownload}
+                  variant="outline"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
+              )}
             </div>
             <div className="space-y-2">
               {analysis.contractDetails?.redlineHistory?.map((redline, index) => (
@@ -305,13 +314,15 @@ export function ContractEditor({
                   <UserCheck className="w-4 h-4 mr-2" />
                   Send for Signature
                 </Button>
-                <Button
-                  onClick={handleDownload}
-                  variant="outline"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
+                {showDownloadButton && (
+                  <Button
+                    onClick={handleDownload}
+                    variant="outline"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                )}
               </div>
             </div>
 
