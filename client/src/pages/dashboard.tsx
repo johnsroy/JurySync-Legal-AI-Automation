@@ -49,9 +49,14 @@ export default function Dashboard() {
   });
 
   async function onSubmit(data: { title: string; content: string }) {
-    await createDocument.mutateAsync(data);
-    form.reset();
-    setOpen(false);
+    try {
+      await createDocument.mutateAsync(data);
+      form.reset();
+      setOpen(false);
+    } catch (error) {
+      // Error handling is already done in useCreateDocument hook
+      console.error('Failed to create document:', error);
+    }
   }
 
   return (
