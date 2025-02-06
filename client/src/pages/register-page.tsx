@@ -49,22 +49,22 @@ export default function RegisterPage() {
   };
 
   if (user) {
-    return <Redirect to="/" />;
+    return <Redirect to="/dashboard" />;
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-4">
-      <Card className="w-full max-w-md bg-white/80 backdrop-blur-lg shadow-xl border-0">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 animate-gradient-x p-4">
+      <Card className="w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg shadow-xl border-0">
         <CardHeader className="space-y-1 text-center pb-8">
           <Link href="/" className="flex items-center justify-center space-x-2 mb-2">
             <Scale className="h-8 w-8 text-blue-600" />
-            <span className="text-2xl font-bold">JurySync</span>
+            <span className="text-2xl font-bold font-display">LegalAI</span>
           </Link>
-          <CardTitle className="text-3xl font-bold tracking-tight">
+          <CardTitle className="text-3xl font-bold tracking-tight font-display">
             Create an account
           </CardTitle>
           <CardDescription className="text-base">
-            Get started with JurySync
+            Get started with LegalAI
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -85,7 +85,7 @@ export default function RegisterPage() {
                     <FormItem>
                       <FormLabel className="text-base">First Name</FormLabel>
                       <FormControl>
-                        <Input className="h-12" {...field} />
+                        <Input className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -98,7 +98,7 @@ export default function RegisterPage() {
                     <FormItem>
                       <FormLabel className="text-base">Last Name</FormLabel>
                       <FormControl>
-                        <Input className="h-12" {...field} />
+                        <Input className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -112,7 +112,7 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel className="text-base">Email</FormLabel>
                     <FormControl>
-                      <Input type="email" className="h-12" {...field} />
+                      <Input type="email" className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -125,7 +125,7 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel className="text-base">Username</FormLabel>
                     <FormControl>
-                      <Input className="h-12" {...field} />
+                      <Input className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -138,7 +138,7 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel className="text-base">Password</FormLabel>
                     <FormControl>
-                      <Input type="password" className="h-12" {...field} />
+                      <Input type="password" className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -146,7 +146,7 @@ export default function RegisterPage() {
               />
               <Button
                 type="submit"
-                className="w-full h-12 text-base bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+                className="w-full h-12 text-base bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 animate-gradient-x"
                 disabled={registerMutation.isPending}
               >
                 {registerMutation.isPending && (
@@ -154,9 +154,9 @@ export default function RegisterPage() {
                 )}
                 Create Account
               </Button>
-              <p className="text-center text-sm text-gray-600">
+              <p className="text-center text-sm text-gray-600 dark:text-gray-400">
                 Already have an account?{" "}
-                <Link href="/login" className="text-blue-600 hover:text-blue-700">
+                <Link href="/login" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
                   Sign in
                 </Link>
               </p>
