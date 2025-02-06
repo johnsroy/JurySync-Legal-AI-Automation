@@ -15,6 +15,7 @@ export interface IStorage {
   getDocuments(userId: number): Promise<Document[]>;
   getDocument(id: number): Promise<Document | undefined>;
   createDocument(document: Omit<Document, "id" | "createdAt">): Promise<Document>;
+  updateDocument(id: number, document: Partial<Omit<Document, "id" | "createdAt">>): Promise<Document>;
   deleteDocument(id: number): Promise<void>;
   sessionStore: session.Store;
 }
@@ -116,6 +117,34 @@ export class DatabaseStorage implements IStorage {
       };
     } catch (error) {
       console.error('Error creating document:', error);
+      throw error;
+    }
+  }
+
+  async updateDocument(
+    id: number,
+    document: Partial<Omit<Document, "id" | "createdAt">>
+  ): Promise<Document> {
+    try {
+      const [updatedDoc] = await db
+        .update(documents)
+        .set({
+          ...document,
+          analysis: typeof document.analysis === 'string' ? 
+            document.analysis : 
+            JSON.stringify(document.analysis)
+        })
+        .where(eq(documents.id, id))
+        .returning();
+
+      return {
+        ...updatedDoc,
+        analysis: typeof updatedDoc.analysis === 'string' ? 
+          JSON.parse(updatedDoc.analysis) : 
+          updatedDoc.analysis
+      };
+    } catch (error) {
+      console.error('Error updating document:', error);
       throw error;
     }
   }

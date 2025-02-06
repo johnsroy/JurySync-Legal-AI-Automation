@@ -489,9 +489,8 @@ Ensure the output is properly formatted and ready for immediate use.`
           throw new Error("Empty response from OpenAI");
         }
 
-        // Update document with generated draft
-        await storage.createDocument({
-          ...document,
+        // Update existing document with generated draft
+        await storage.updateDocument(documentId, {
           content: draftContent,
           analysis: {
             ...document.analysis as any,
