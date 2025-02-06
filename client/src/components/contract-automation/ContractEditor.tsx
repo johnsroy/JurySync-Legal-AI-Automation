@@ -19,6 +19,7 @@ import {
   Edit,
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface ContractEditorProps {
   documentId: string;
@@ -39,6 +40,7 @@ export function ContractEditor({
   const [generatedDraft, setGeneratedDraft] = useState("");
   const [editableDraft, setEditableDraft] = useState("");
   const [progress, setProgress] = useState(0);
+  const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx' | 'txt'>('docx');
 
   // Update the draft generation handler to better handle responses and errors
   const handleGenerateDraft = async () => {
@@ -120,10 +122,10 @@ export function ContractEditor({
     }
   };
 
-  // Download draft
+  // Update download handler
   const handleDownload = async () => {
     try {
-      window.location.href = `/api/documents/${documentId}/download`;
+      window.location.href = `/api/documents/${documentId}/download?format=${downloadFormat}`;
     } catch (error: any) {
       toast({
         title: "Error",
@@ -224,13 +226,28 @@ export function ContractEditor({
                   )}
                 </Button>
                 {showDownloadButton && (
-                  <Button
-                    onClick={handleDownload}
-                    variant="outline"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download
-                  </Button>
+                  <div className="space-x-2">
+                    <Select
+                      value={downloadFormat}
+                      onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
+                    >
+                      <SelectTrigger className="w-[100px]">
+                        <SelectValue placeholder="Format" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pdf">PDF</SelectItem>
+                        <SelectItem value="docx">DOCX</SelectItem>
+                        <SelectItem value="txt">TXT</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={handleDownload}
+                      variant="outline"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Download
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
@@ -263,13 +280,28 @@ export function ContractEditor({
                   Save Changes
                 </Button>
                 {showDownloadButton && (
-                  <Button
-                    onClick={handleDownload}
-                    variant="outline"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download
-                  </Button>
+                  <div className="space-x-2">
+                    <Select
+                      value={downloadFormat}
+                      onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
+                    >
+                      <SelectTrigger className="w-[100px]">
+                        <SelectValue placeholder="Format" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pdf">PDF</SelectItem>
+                        <SelectItem value="docx">DOCX</SelectItem>
+                        <SelectItem value="txt">TXT</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={handleDownload}
+                      variant="outline"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Download
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
@@ -286,13 +318,28 @@ export function ContractEditor({
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Redline Analysis</h3>
               {showDownloadButton && (
-                <Button
-                  onClick={handleDownload}
-                  variant="outline"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
+                <div className="space-x-2">
+                  <Select
+                    value={downloadFormat}
+                    onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
+                  >
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue placeholder="Format" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pdf">PDF</SelectItem>
+                      <SelectItem value="docx">DOCX</SelectItem>
+                      <SelectItem value="txt">TXT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={handleDownload}
+                    variant="outline"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                </div>
               )}
             </div>
             <div className="space-y-2">
@@ -358,13 +405,28 @@ export function ContractEditor({
                   Send for Signature
                 </Button>
                 {showDownloadButton && (
-                  <Button
-                    onClick={handleDownload}
-                    variant="outline"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download
-                  </Button>
+                  <div className="space-x-2">
+                    <Select
+                      value={downloadFormat}
+                      onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
+                    >
+                      <SelectTrigger className="w-[100px]">
+                        <SelectValue placeholder="Format" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pdf">PDF</SelectItem>
+                        <SelectItem value="docx">DOCX</SelectItem>
+                        <SelectItem value="txt">TXT</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={handleDownload}
+                      variant="outline"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Download
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>

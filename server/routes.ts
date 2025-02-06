@@ -11,6 +11,8 @@ import pdf from "pdf-parse/lib/pdf-parse.js";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
 import { openai } from "./openai"; //Import openai for new endpoints
+import { Document, Packer } from "docx";
+import pdfkit from "pdfkit";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -548,34 +550,62 @@ Ensure the output is properly formatted and ready for immediate use.`
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
+      const format = req.query.format || 'docx'; // Default to docx
 
       if (!document || document.userId !== req.user!.id) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Check if document is in an approved state
-      const workflowState = document.analysis?.contractDetails?.workflowState;
-      if (!workflowState || !['APPROVAL', 'SIGNATURE', 'COMPLETED'].includes(workflowState.status)) {
+      // Allow download if draft is generated
+      if (!document.content) {
         return res.status(400).json({ 
-          message: "Document must be approved before downloading",
-          code: "NOT_APPROVED"
+          message: "No draft content available for download",
+          code: "NO_CONTENT"
         });
       }
 
-      // Format the content for download
-      const formattedContent = `
-Contract: ${document.title}
-Generated on: ${new Date().toLocaleDateString()}
-Status: ${workflowState.status}
-Version: ${document.analysis.contractDetails?.versionControl?.version || '1.0'}
+      const fileName = document.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
-${document.content}
-      `.trim();
+      if (format === 'pdf') {
+        const pdf = new pdfkit();
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}.pdf"`);
 
-      res.setHeader('Content-Type', 'text/plain');
-      res.setHeader('Content-Disposition', `attachment; filename="${document.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_v${document.analysis.contractDetails?.versionControl?.version || '1.0'}.txt"`);
+        pdf.pipe(res);
+        pdf.fontSize(16).text(document.title, { align: 'center' });
+        pdf.moveDown();
+        pdf.fontSize(12).text(document.content);
+        pdf.end();
 
-      res.send(formattedContent);
+      } else if (format === 'docx') {
+        const doc = new Document({
+          sections: [{
+            properties: {},
+            children: [
+              {
+                text: document.title,
+                heading: true,
+                bold: true
+              },
+              {
+                text: document.content
+              }
+            ]
+          }]
+        });
+
+        const buffer = await Packer.toBuffer(doc);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}.docx"`);
+        res.send(buffer);
+
+      } else {
+        // Fallback to plain text
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}.txt"`);
+        res.send(document.content);
+      }
+
     } catch (error) {
       console.error('Error downloading document:', error);
       res.status(500).json({ 
