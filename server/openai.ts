@@ -1,6 +1,5 @@
 import OpenAI from "openai";
 
-// Using gpt-4 since gpt-4o is not available
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export interface DocumentAnalysis {
@@ -18,9 +17,13 @@ interface AIResponse {
 }
 
 export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OpenAI API key is not configured");
+  }
+
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
@@ -38,6 +41,7 @@ export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
         },
       ],
       response_format: { type: "json_object" },
+      temperature: 0.7,
     });
 
     const content = response.choices[0].message.content;
@@ -54,6 +58,7 @@ export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
       riskScore: Math.max(1, Math.min(10, analysis.riskScore)),
     };
   } catch (error) {
+    console.error("OpenAI API Error:", error);
     if (error instanceof Error) {
       throw new Error("Failed to analyze document: " + error.message);
     }
