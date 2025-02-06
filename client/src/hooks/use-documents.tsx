@@ -15,16 +15,29 @@ export function useDocument(id: string) {
     enabled: !!id,
     select: (data) => {
       if (!data) return undefined;
-      // Ensure the analysis is properly typed
-      const analysis = data.analysis as DocumentAnalysis;
-      if (!analysis || !analysis.summary || !analysis.keyPoints || !analysis.suggestions || !analysis.riskScore) {
-        console.error("Invalid document analysis format:", analysis);
-        throw new Error("Invalid document analysis format");
+      try {
+        // Ensure the analysis is properly typed
+        const analysis = data.analysis as DocumentAnalysis;
+        if (!analysis || typeof analysis !== 'object') {
+          console.error("Invalid document analysis format:", analysis);
+          return undefined;
+        }
+
+        // Validate required fields
+        if (!analysis.summary || !Array.isArray(analysis.keyPoints) || 
+            !Array.isArray(analysis.suggestions) || typeof analysis.riskScore !== 'number') {
+          console.error("Missing required fields in analysis:", analysis);
+          return undefined;
+        }
+
+        return {
+          ...data,
+          analysis,
+        };
+      } catch (error) {
+        console.error("Error processing document analysis:", error);
+        return undefined;
       }
-      return {
-        ...data,
-        analysis,
-      };
     },
   });
 }

@@ -38,7 +38,7 @@ export default function DocumentView() {
     );
   }
 
-  if (!document) {
+  if (!document || !document.analysis) {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <Card className="max-w-2xl mx-auto">
@@ -67,15 +67,10 @@ export default function DocumentView() {
     );
   }
 
-  // Safely parse the analysis as DocumentAnalysis
-  let analysis: DocumentAnalysis;
-  try {
-    analysis = document.analysis as DocumentAnalysis;
-    if (!analysis || !analysis.summary || !analysis.keyPoints || !analysis.suggestions || !analysis.riskScore) {
-      throw new Error("Invalid analysis data");
-    }
-  } catch (error) {
-    console.error("Error parsing document analysis:", error);
+  const analysis = document.analysis as DocumentAnalysis;
+
+  // Validate analysis data
+  if (!analysis || !analysis.summary || !analysis.keyPoints || !analysis.suggestions || typeof analysis.riskScore !== 'number') {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <Card className="max-w-2xl mx-auto">
