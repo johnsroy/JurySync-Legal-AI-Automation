@@ -47,10 +47,10 @@ export default function Dashboard() {
   const { data: documents, isLoading } = useDocuments();
   const createDocument = useCreateDocument();
   const [open, setOpen] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<FilePondFile[]>([]);
 
   const form = useForm({
-    resolver: zodResolver(insertDocumentSchema),
+    resolver: zodResolver(insertDocumentSchema.pick({ title: true })),
     defaultValues: {
       title: "",
     },
@@ -58,18 +58,18 @@ export default function Dashboard() {
 
   async function onSubmit(data: { title: string }) {
     try {
-      if (!file) {
+      if (!files.length || !files[0].file) {
         form.setError("root", { message: "Please select a file to upload" });
         return;
       }
 
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", files[0].file);
       formData.append("title", data.title);
 
       await createDocument.mutateAsync(formData);
       form.reset();
-      setFile(null);
+      setFiles([]);
       setOpen(false);
     } catch (error) {
       console.error('Failed to create document:', error);
@@ -145,9 +145,9 @@ export default function Dashboard() {
                   <div className="space-y-2">
                     <FormLabel>Document File</FormLabel>
                     <FilePond
-                      files={file ? [file] : []}
+                      files={files}
                       onupdatefiles={(fileItems: FilePondFile[]) => {
-                        setFile(fileItems[0]?.file || null);
+                        setFiles(fileItems);
                       }}
                       allowMultiple={false}
                       acceptedFileTypes={[

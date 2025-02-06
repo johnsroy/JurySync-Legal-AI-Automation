@@ -46,7 +46,9 @@ export const insertUserSchema = createInsertSchema(users)
 export const insertDocumentSchema = createInsertSchema(documents)
   .pick({
     title: true,
-    content: true,
+  })
+  .extend({
+    title: z.string().min(1, "Title is required"),
   });
 
 // Export types
