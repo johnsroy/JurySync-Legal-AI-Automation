@@ -454,7 +454,6 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Generate draft using OpenAI
       const requirements = req.body.requirements;
       if (!requirements || requirements.trim().length === 0) {
         return res.status(400).json({
@@ -463,36 +462,61 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      const maxChunkLength = 2000; // Reduced for faster response
+      // Break down requirements into smaller chunks to avoid token limits
+      const maxChunkLength = 1000; // Conservative limit for safety
       const chunks = requirements.match(new RegExp(`.{1,${maxChunkLength}}`, 'g')) || [];
 
       let fullDraft = '';
-      try {
-        const response = await openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
-          messages: [
-            {
-              role: "system",
-              content: `You are a legal contract drafting assistant. Generate a professional contract based on the following requirements. Format the contract with clear sections and numbering.`
-            },
-            {
-              role: "user",
-              content: requirements
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 2000
-        });
+      let currentSection = 1;
 
-        fullDraft = response.choices[0].message.content || '';
+      for (const chunk of chunks) {
+        try {
+          const response = await openai.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [
+              {
+                role: "system",
+                content: `You are a legal contract drafting assistant. Generate Section ${currentSection} of the contract based on these requirements. Format with clear numbering and maintain professional legal language.${
+                  currentSection > 1 ? ' Ensure consistency with previous sections.' : ''
+                }`
+              },
+              {
+                role: "user",
+                content: chunk
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 1000
+          });
 
-        if (!fullDraft) {
-          throw new Error("Failed to generate contract draft");
+          const sectionContent = response.choices[0].message.content;
+          if (!sectionContent) {
+            throw new Error("Empty response from OpenAI");
+          }
+
+          fullDraft += (currentSection > 1 ? '\n\n' : '') + sectionContent;
+          currentSection++;
+
+          // Add a small delay between chunks to avoid rate limits
+          if (chunks.length > 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+        } catch (error: any) {
+          console.error('OpenAI API error:', error);
+          if (error.code === 'context_length_exceeded') {
+            return res.status(400).json({
+              message: "The requirements are too long. Please break them into smaller sections.",
+              code: "CONTENT_TOO_LONG"
+            });
+          }
+          throw error; // Let the outer catch handle other errors
         }
-      } catch (error) {
-        console.error('OpenAI API error:', error);
-        return res.status(503).json({ 
-          message: "Failed to generate draft. Please try again later.",
+      }
+
+      if (!fullDraft) {
+        return res.status(500).json({
+          message: "Failed to generate contract draft",
           code: "GENERATION_ERROR"
         });
       }
@@ -522,7 +546,7 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error('Error generating draft:', error);
       res.status(500).json({ 
-        message: "An unexpected error occurred while generating the draft",
+        message: "An unexpected error occurred while generating the draft. Please try again.",
         code: "UNKNOWN_ERROR"
       });
     }
