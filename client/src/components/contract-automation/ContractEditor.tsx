@@ -127,13 +127,19 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         action: "review",
         content: editableDraft,
       });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to save draft');
+      }
+
       const result = await response.json();
       setHasUnsavedChanges(false);
       onUpdate();
 
       toast({
         title: "Draft Saved",
-        description: "Your changes have been saved as a new version.",
+        description: `Version ${result.version} has been saved successfully.`,
       });
 
       setActiveTab("redline");
@@ -226,7 +232,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
       );
     }
 
-    return versions.map((version, index) => (
+    return versions.map((version: any, index: number) => (
       <div key={index} className="p-4 mb-4 rounded-lg border border-gray-200">
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -236,14 +242,21 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
             </p>
           </div>
           <div className="space-x-2">
-            <Button variant="outline" size="sm" onClick={() => setEditableDraft(version.content)}>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                setEditableDraft(version.content);
+                setActiveTab("draft");
+              }}
+            >
               <Edit className="w-4 h-4 mr-2" />
               Edit
             </Button>
           </div>
         </div>
         <div className="mt-2 text-sm">
-          {version.changes.map((change, changeIndex) => (
+          {version.changes.map((change: any, changeIndex: number) => (
             <div key={changeIndex} className="mb-1 text-gray-600">
               • {change.description} by {change.user}
             </div>

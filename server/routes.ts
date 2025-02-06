@@ -751,12 +751,22 @@ Ensure the output is properly formatted and ready for immediate use.`
           return res.status(400).json({ message: "Invalid action" });
       }
 
-      // If content is provided, create a new version
-      if (content) {
-        const versions = await storage.getVersions(documentId);
-        const versionNumber = versions.length + 1;
+      // Get existing versions before creating a new one
+      const existingVersions = await storage.getVersions(documentId);
 
-        await storage.createVersion({
+      // Check version limit
+      if (existingVersions.length >= 20) {
+        return res.status(400).json({
+          message: "Maximum version limit (20) reached",
+          code: "VERSION_LIMIT_REACHED"
+        });
+      }
+
+      // If content is provided, create a new version
+      let newVersion;
+      if (content) {
+        const versionNumber = existingVersions.length + 1;
+        newVersion = await storage.createVersion({
           documentId,
           version: `${versionNumber}.0`,
           content,
@@ -783,16 +793,31 @@ Ensure the output is properly formatted and ready for immediate use.`
                 ...(document.analysis.contractDetails?.workflowState?.comments || []),
                 {
                   user: req.user!.username,
-                  text: content ? `Version ${versions.length + 1}.0 created and workflow updated to ${newStatus}` : `Workflow updated to ${newStatus}`,
+                  text: content ? 
+                    `Version ${existingVersions.length + 1}.0 created and workflow updated to ${newStatus}` : 
+                    `Workflow updated to ${newStatus}`,
                   timestamp: new Date().toISOString()
                 }
+              ],
+              versions: [
+                ...(document.analysis.contractDetails?.versions || []),
+                ...(newVersion ? [{
+                  version: newVersion.version,
+                  content: newVersion.content,
+                  changes: newVersion.changes
+                }] : [])
               ]
             }
           }
         }
       });
 
-      res.json(updatedDocument);
+      res.json({
+        ...updatedDocument,
+        status: "SAVED",
+        version: newVersion?.version
+      });
+
     } catch (error) {
       console.error('Error updating workflow:', error);
       res.status(500).json({
@@ -1001,7 +1026,7 @@ Ensure the output is properly formatted and ready for immediate use.`
           to: signature.signatureData.email,
           from: "noreply@legalai.com",
           subject: "Document Signature Request",
-          text: `You have a new document to sign. Click here to view and sign: ${process.env.APP_URL}/sign/${signature.signatureData.token}`,
+          text: `You havea new document to sign. Click here to view and sign: ${process.env.APP_URL}/sign/${signature.signatureData.token}`,
           html: `<p>You have a new document to sign. <a href="${process.env.APP_URL}/sign/${signature.signatureData.token}">Click here</a> to view and sign.</p>`
         })
       );
