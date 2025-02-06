@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { AgentType, DocumentAnalysis } from "@shared/schema";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
@@ -126,7 +126,7 @@ async function analyzeSection(section: DocumentSection, agentType: AgentType): P
       throw new Error("Invalid JSON response from OpenAI");
     }
 
-    if (!analysis.summary || !analysis.keyPoints?.length || !analysis.suggestions?.length || 
+    if (!analysis.summary || !analysis.keyPoints?.length || !analysis.suggestions?.length ||
         typeof analysis.riskScore !== 'number' || analysis.riskScore < 1 || analysis.riskScore > 10) {
       throw new Error("Invalid analysis structure from OpenAI");
     }
@@ -280,7 +280,7 @@ export async function chatWithDocument(
       max_tokens: 500
     });
 
-    return response.choices[0].message.content || 
+    return response.choices[0].message.content ||
            "I apologize, but I couldn't generate a response. Please try rephrasing your question.";
   } catch (error) {
     console.error('Error in chat:', error);

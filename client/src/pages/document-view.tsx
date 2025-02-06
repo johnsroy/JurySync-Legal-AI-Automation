@@ -54,6 +54,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { ContractEditor } from "@/components/contract-automation/ContractEditor";
+import {useQueryClient} from "@tanstack/react-query"
 
 const renderContractDetails = (analysis: DocumentAnalysis) => {
   if (!analysis.contractDetails) return null;
@@ -266,6 +268,7 @@ export default function DocumentView() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const queryClient = useQueryClient();
 
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
@@ -384,6 +387,9 @@ export default function DocumentView() {
                   <TabsTrigger value="content">Document Content</TabsTrigger>
                   <TabsTrigger value="analysis">Legal Analysis</TabsTrigger>
                   <TabsTrigger value="risk">Risk Assessment</TabsTrigger>
+                  {document.agentType === "CONTRACT_AUTOMATION" && (
+                    <TabsTrigger value="contract">Contract Tools</TabsTrigger>
+                  )}
                 </TabsList>
 
                 <TabsContent value="content">
@@ -517,6 +523,20 @@ export default function DocumentView() {
                     </div>
                   </div>
                 </TabsContent>
+
+                {document.agentType === "CONTRACT_AUTOMATION" && (
+                  <TabsContent value="contract">
+                    <ContractEditor
+                      documentId={id}
+                      content={document.content}
+                      analysis={document.analysis}
+                      onUpdate={() => {
+                        // Refetch document data
+                        queryClient.invalidateQueries(["/api/documents", id]);
+                      }}
+                    />
+                  </TabsContent>
+                )}
               </Tabs>
             </CardContent>
           </Card>

@@ -10,6 +10,7 @@ import multer from "multer";
 import pdf from "pdf-parse/lib/pdf-parse.js";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
+import { openai } from "./openai"; //Import openai for new endpoints
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -423,6 +424,218 @@ export function registerRoutes(app: Express): Server {
       res.status(500).json({ 
         message: "Failed to delete document",
         code: "DELETE_ERROR"
+      });
+    }
+  });
+
+  // Generate contract draft
+  app.post("/api/documents/:id/generate-draft", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ 
+        message: "You must be logged in to access documents",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    try {
+      const documentId = parseInt(req.params.id);
+      if (isNaN(documentId)) {
+        return res.status(400).json({ 
+          message: "Invalid document ID",
+          code: "INVALID_ID"
+        });
+      }
+
+      const document = await storage.getDocument(documentId);
+      if (!document || document.userId !== req.user!.id) {
+        return res.status(403).json({ 
+          message: "Access denied",
+          code: "FORBIDDEN"
+        });
+      }
+
+      // Generate draft using OpenAI
+      const requirements = req.body.requirements;
+      const response = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: "You are a legal contract drafting assistant. Generate a professional contract based on the provided requirements."
+          },
+          {
+            role: "user",
+            content: requirements
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000
+      });
+
+      const draftContent = response.choices[0].message.content;
+
+      // Update document with new draft
+      const updatedDocument = await storage.createDocument({
+        ...document,
+        content: draftContent,
+        analysis: {
+          ...document.analysis,
+          contractDetails: {
+            ...document.analysis.contractDetails,
+            versionControl: {
+              version: "1.0",
+              changes: [{
+                timestamp: new Date().toISOString(),
+                user: req.user!.username,
+                description: "Initial draft generated"
+              }],
+              previousVersions: []
+            }
+          }
+        }
+      });
+
+      res.json(updatedDocument);
+    } catch (error) {
+      console.error('Error generating draft:', error);
+      res.status(500).json({ 
+        message: "Failed to generate draft",
+        code: "GENERATION_ERROR"
+      });
+    }
+  });
+
+  // Analyze specific clause
+  app.post("/api/documents/:id/analyze-clause", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ 
+        message: "You must be logged in to access documents",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+      if (!document || document.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const clause = req.body.clause;
+      const response = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: "You are a legal contract analysis assistant. Analyze the provided clause for potential risks and suggest improvements."
+          },
+          {
+            role: "user",
+            content: clause
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 500
+      });
+
+      const analysis = {
+        suggestion: response.choices[0].message.content,
+        riskLevel: Math.floor(Math.random() * 10) + 1, // This should be replaced with actual risk assessment logic
+        timestamp: new Date().toISOString()
+      };
+
+      // Update document with analysis
+      const updatedAnalysis = {
+        ...document.analysis,
+        contractDetails: {
+          ...document.analysis.contractDetails,
+          redlineHistory: [
+            ...(document.analysis.contractDetails?.redlineHistory || []),
+            {
+              clause,
+              ...analysis
+            }
+          ]
+        }
+      };
+
+      await storage.createDocument({
+        ...document,
+        analysis: updatedAnalysis
+      });
+
+      res.json(analysis);
+    } catch (error) {
+      console.error('Error analyzing clause:', error);
+      res.status(500).json({ 
+        message: "Failed to analyze clause",
+        code: "ANALYSIS_ERROR"
+      });
+    }
+  });
+
+  // Handle workflow actions
+  app.post("/api/documents/:id/workflow", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ 
+        message: "You must be logged in to access documents",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+      if (!document || document.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { action } = req.body;
+      let newStatus;
+      switch (action) {
+        case "review":
+          newStatus = "REVIEW";
+          break;
+        case "approve":
+          newStatus = "APPROVAL";
+          break;
+        case "sign":
+          newStatus = "SIGNATURE";
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid action" });
+      }
+
+      const updatedAnalysis = {
+        ...document.analysis,
+        contractDetails: {
+          ...document.analysis.contractDetails,
+          workflowState: {
+            ...document.analysis.contractDetails?.workflowState,
+            status: newStatus,
+            comments: [
+              ...(document.analysis.contractDetails?.workflowState?.comments || []),
+              {
+                user: req.user!.username,
+                text: `Document sent for ${action}`,
+                timestamp: new Date().toISOString()
+              }
+            ]
+          }
+        }
+      };
+
+      const updatedDocument = await storage.createDocument({
+        ...document,
+        analysis: updatedAnalysis
+      });
+
+      res.json(updatedDocument);
+    } catch (error) {
+      console.error('Error updating workflow:', error);
+      res.status(500).json({ 
+        message: "Failed to update workflow",
+        code: "WORKFLOW_ERROR"
       });
     }
   });

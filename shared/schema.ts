@@ -19,25 +19,69 @@ export const AgentType = z.enum([
 
 export type AgentType = z.infer<typeof AgentType>;
 
-// Define document analysis schema first
+// Define contract workflow states
+export const ContractStatus = z.enum([
+  "DRAFT",
+  "REVIEW",
+  "REDLINE",
+  "APPROVAL",
+  "SIGNATURE",
+  "COMPLETED"
+]);
+
+export type ContractStatus = z.infer<typeof ContractStatus>;
+
+// Extended contract details schema
+export const contractDetailsSchema = z.object({
+  parties: z.array(z.string()).optional(),
+  effectiveDate: z.string().optional(),
+  termLength: z.string().optional(),
+  keyObligations: z.array(z.string()).optional(),
+  terminationClauses: z.array(z.string()).optional(),
+  governingLaw: z.string().optional(),
+  paymentTerms: z.string().optional(),
+  disputeResolution: z.string().optional(),
+  missingClauses: z.array(z.string()).optional(),
+  suggestedClauses: z.array(z.string()).optional(),
+  riskFactors: z.array(z.string()).optional(),
+  redlineHistory: z.array(z.object({
+    timestamp: z.string(),
+    clause: z.string(),
+    suggestion: z.string(),
+    riskLevel: z.number(),
+    accepted: z.boolean().optional()
+  })).optional(),
+  workflowState: z.object({
+    status: ContractStatus,
+    currentReviewer: z.string().optional(),
+    comments: z.array(z.object({
+      user: z.string(),
+      text: z.string(),
+      timestamp: z.string()
+    })).optional(),
+    signatureStatus: z.object({
+      required: z.array(z.string()),
+      completed: z.array(z.string())
+    }).optional()
+  }).optional(),
+  versionControl: z.object({
+    version: z.string(),
+    changes: z.array(z.object({
+      timestamp: z.string(),
+      user: z.string(),
+      description: z.string()
+    })),
+    previousVersions: z.array(z.string())
+  }).optional()
+});
+
+// Update document analysis schema
 export const documentAnalysisSchema = z.object({
   summary: z.string().min(1, "Summary is required"),
   keyPoints: z.array(z.string()).min(1, "At least one key point is required"),
   suggestions: z.array(z.string()).min(1, "At least one suggestion is required"),
   riskScore: z.number().min(1).max(10),
-  contractDetails: z.object({
-    parties: z.array(z.string()).optional(),
-    effectiveDate: z.string().optional(),
-    termLength: z.string().optional(),
-    keyObligations: z.array(z.string()).optional(),
-    terminationClauses: z.array(z.string()).optional(),
-    governingLaw: z.string().optional(),
-    paymentTerms: z.string().optional(),
-    disputeResolution: z.string().optional(),
-    missingClauses: z.array(z.string()).optional(),
-    suggestedClauses: z.array(z.string()).optional(),
-    riskFactors: z.array(z.string()).optional(),
-  }).optional(),
+  contractDetails: contractDetailsSchema.optional(),
   complianceDetails: z.object({
     regulatoryFrameworks: z.array(z.string()).optional(),
     complianceStatus: z.string().optional(),
