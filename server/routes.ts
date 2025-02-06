@@ -753,28 +753,22 @@ Ensure the output is properly formatted and ready for immediate use.`
       }
 
       // If content is provided (from save changes), create a new version
+      let newVersion;
       if (content) {
         const versions = await storage.getVersions(documentId);
-        const newVersionNumber = versions.length + 1;
+        const versionNumber = versions.length + 1;
 
-        await storage.createVersion({
+        newVersion = await storage.createVersion({
           documentId,
-          version: newVersionNumber,
+          authorId: req.user!.id,
+          version: `${versionNumber}`,
           content,
           changes: [{
             user: req.user!.username,
-            description: `Version ${newVersionNumber} created`,
+            description: `Version ${versionNumber} created`,
             timestamp: new Date().toISOString()
           }]
         });
-      }
-
-      // If action is approve, update the approval status
-      if (action === "approve") {
-        const approval = await storage.getApprovalByDocument(documentId);
-        if (approval) {
-          await storage.updateApproval(approval.id, "APPROVED");
-        }
       }
 
       // Update document with new status and version information

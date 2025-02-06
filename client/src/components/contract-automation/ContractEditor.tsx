@@ -223,6 +223,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         throw new Error(error.message || 'Failed to save draft');
       }
 
+      const result = await response.json();
       setHasUnsavedChanges(false);
       onUpdate();
 
@@ -231,6 +232,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         description: "Changes have been saved successfully.",
       });
 
+      // Refresh queries to get updated versions
+      queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
       setActiveTab("redline");
     } catch (error: any) {
       toast({
@@ -270,7 +273,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           <div>
             <h4 className="font-medium">Version {version.version}</h4>
             <p className="text-sm text-gray-500">
-              {version.changes?.[0]?.timestamp ? 
+              {version.changes?.[0]?.timestamp ?
                 format(new Date(version.changes[0].timestamp), "PPpp") :
                 "No timestamp available"}
             </p>
