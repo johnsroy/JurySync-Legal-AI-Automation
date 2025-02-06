@@ -17,7 +17,7 @@ export function useDocument(id: string) {
       if (!data) return undefined;
       try {
         // Ensure the analysis is properly typed
-        const analysis = data.analysis as DocumentAnalysis;
+        const analysis = data.analysis as DocumentAnalysis | null;
         if (!analysis || typeof analysis !== 'object') {
           console.error("Invalid document analysis format:", analysis);
           return undefined;

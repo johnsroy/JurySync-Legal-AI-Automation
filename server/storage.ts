@@ -71,7 +71,7 @@ export class DatabaseStorage implements IStorage {
       console.log('Documents analysis:', docs.map(d => ({ id: d.id, analysis: d.analysis })));
       return docs.map(doc => ({
         ...doc,
-        analysis: doc.analysis ? JSON.parse(JSON.stringify(doc.analysis)) : undefined
+        analysis: doc.analysis ? JSON.parse(JSON.stringify(doc.analysis)) : null
       }));
     } catch (error) {
       console.error('Error getting documents:', error);
@@ -90,7 +90,7 @@ export class DatabaseStorage implements IStorage {
       if (document) {
         return {
           ...document,
-          analysis: document.analysis ? JSON.parse(JSON.stringify(document.analysis)) : undefined
+          analysis: document.analysis ? JSON.parse(JSON.stringify(document.analysis)) : null
         };
       }
       return undefined;
@@ -106,7 +106,7 @@ export class DatabaseStorage implements IStorage {
     try {
       const documentToInsert = {
         ...document,
-        analysis: document.analysis ? JSON.parse(JSON.stringify(document.analysis)) : undefined
+        analysis: document.analysis ? JSON.parse(JSON.stringify(document.analysis)) : null
       };
       const [newDocument] = await db
         .insert(documents)
@@ -116,7 +116,7 @@ export class DatabaseStorage implements IStorage {
       console.log('Document analysis:', newDocument.analysis);
       return {
         ...newDocument,
-        analysis: newDocument.analysis ? JSON.parse(JSON.stringify(newDocument.analysis)) : undefined
+        analysis: newDocument.analysis ? JSON.parse(JSON.stringify(newDocument.analysis)) : null
       };
     } catch (error) {
       console.error('Error creating document:', error);
