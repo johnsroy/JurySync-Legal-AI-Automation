@@ -116,6 +116,135 @@ export default function DocumentView() {
 
   const analysis = document.analysis as DocumentAnalysis;
 
+  const renderContractDetails = (analysis: DocumentAnalysis) => {
+    if (!analysis.contractDetails) return null;
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h4 className="font-medium text-gray-900">Contract Information</h4>
+          <div className="mt-2 space-y-4">
+            {analysis.contractDetails.parties?.length > 0 && (
+              <div>
+                <h5 className="text-sm font-medium text-gray-700">Parties Involved</h5>
+                <ul className="mt-1 list-disc pl-5 text-gray-600">
+                  {analysis.contractDetails.parties.map((party, i) => (
+                    <li key={i}>{party}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {analysis.contractDetails.effectiveDate && (
+              <div>
+                <h5 className="text-sm font-medium text-gray-700">Effective Date</h5>
+                <p className="text-gray-600">{analysis.contractDetails.effectiveDate}</p>
+              </div>
+            )}
+
+            {analysis.contractDetails.termLength && (
+              <div>
+                <h5 className="text-sm font-medium text-gray-700">Term Length</h5>
+                <p className="text-gray-600">{analysis.contractDetails.termLength}</p>
+              </div>
+            )}
+
+            {analysis.contractDetails.governingLaw && (
+              <div>
+                <h5 className="text-sm font-medium text-gray-700">Governing Law</h5>
+                <p className="text-gray-600">{analysis.contractDetails.governingLaw}</p>
+              </div>
+            )}
+
+            {analysis.contractDetails.paymentTerms && (
+              <div>
+                <h5 className="text-sm font-medium text-gray-700">Payment Terms</h5>
+                <p className="text-gray-600">{analysis.contractDetails.paymentTerms}</p>
+              </div>
+            )}
+
+            {analysis.contractDetails.disputeResolution && (
+              <div>
+                <h5 className="text-sm font-medium text-gray-700">Dispute Resolution</h5>
+                <p className="text-gray-600">{analysis.contractDetails.disputeResolution}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {analysis.contractDetails.keyObligations?.length > 0 && (
+          <div>
+            <h4 className="font-medium text-gray-900">Key Obligations</h4>
+            <ul className="mt-2 space-y-2">
+              {analysis.contractDetails.keyObligations.map((obligation, index) => (
+                <li key={index} className="flex items-start gap-2 text-gray-600">
+                  <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+                  {obligation}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {analysis.contractDetails.terminationClauses?.length > 0 && (
+          <div>
+            <h4 className="font-medium text-gray-900">Termination Clauses</h4>
+            <ul className="mt-2 space-y-2">
+              {analysis.contractDetails.terminationClauses.map((clause, index) => (
+                <li key={index} className="flex items-start gap-2 text-gray-600">
+                  <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+                  {clause}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {analysis.contractDetails.missingClauses?.length > 0 && (
+          <div>
+            <h4 className="font-medium text-gray-900">Missing Clauses</h4>
+            <ul className="mt-2 space-y-2">
+              {analysis.contractDetails.missingClauses.map((clause, index) => (
+                <li key={index} className="flex items-start gap-2 text-red-600">
+                  <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+                  {clause}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {analysis.contractDetails.suggestedClauses?.length > 0 && (
+          <div>
+            <h4 className="font-medium text-gray-900">Suggested Clauses</h4>
+            <ul className="mt-2 space-y-2">
+              {analysis.contractDetails.suggestedClauses.map((clause, index) => (
+                <li key={index} className="flex items-start gap-2 text-gray-600">
+                  <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+                  {clause}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {analysis.contractDetails.riskFactors?.length > 0 && (
+          <div>
+            <h4 className="font-medium text-gray-900">Risk Factors</h4>
+            <ul className="mt-2 space-y-2">
+              {analysis.contractDetails.riskFactors.map((factor, index) => (
+                <li key={index} className="flex items-start gap-2 text-gray-600">
+                  <AlertTriangle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
+                  {factor}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b">
@@ -189,13 +318,15 @@ export default function DocumentView() {
                       <Bookmark className="h-5 w-5" />
                       Legal Analysis
                     </h3>
-                    <div className="mt-4 space-y-4">
+                    <div className="mt-4 space-y-6">
                       <div>
                         <h4 className="font-medium text-gray-900">
                           Executive Summary
                         </h4>
                         <p className="mt-1 text-gray-600">{analysis.summary}</p>
                       </div>
+
+                      {document.agentType === "CONTRACT_AUTOMATION" && renderContractDetails(analysis)}
 
                       <Accordion type="single" collapsible className="w-full">
                         <AccordionItem value="key-points">

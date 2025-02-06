@@ -80,11 +80,12 @@ export function registerRoutes(app: Express): Server {
       const document = {
         title: req.body.title || req.file.originalname,
         content,
+        agentType: req.body.agentType || "CONTRACT_AUTOMATION", 
       };
 
       const parsed = insertDocumentSchema.parse(document);
-      console.log("Analyzing document content:", content.substring(0, 100) + "...");
-      const analysis = await analyzeDocument(content);
+      console.log("Processing document with agent:", parsed.agentType);
+      const analysis = await analyzeDocument(content, parsed.agentType);
 
       const createdDocument = await storage.createDocument({
         ...parsed,
