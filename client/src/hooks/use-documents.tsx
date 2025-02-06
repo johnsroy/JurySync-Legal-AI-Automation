@@ -32,9 +32,21 @@ export function useCreateDocument() {
       });
     },
     onError: (error: Error) => {
+      let description = "Failed to upload document. Please try again later.";
+      try {
+        const data = JSON.parse(error.message.split(": ")[1]);
+        if (data.code === "ANALYSIS_ERROR") {
+          description = "Our AI is currently busy. Please try again in a few minutes.";
+        } else if (data.code === "VALIDATION_ERROR") {
+          description = data.message;
+        }
+      } catch {
+        // Use default error message
+      }
+
       toast({
         title: "Upload failed",
-        description: error.message,
+        description,
         variant: "destructive",
       });
     },

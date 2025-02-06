@@ -26,20 +26,31 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/documents", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     const parsed = insertDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid document data" });
+      return res.status(400).json({ 
+        message: "Invalid document data",
+        code: "VALIDATION_ERROR" 
+      });
     }
 
-    const analysis = await analyzeDocument(parsed.data.content);
-    const document = await storage.createDocument({
-      ...parsed.data,
-      userId: req.user!.id,
-      analysis,
-    });
+    try {
+      const analysis = await analyzeDocument(parsed.data.content);
+      const document = await storage.createDocument({
+        ...parsed.data,
+        userId: req.user!.id,
+        analysis,
+      });
 
-    res.status(201).json(document);
+      res.status(201).json(document);
+    } catch (error) {
+      console.error('Document analysis error:', error);
+      return res.status(500).json({ 
+        message: "Failed to analyze document. Please try again later.",
+        code: "ANALYSIS_ERROR"
+      });
+    }
   });
 
   const httpServer = createServer(app);
