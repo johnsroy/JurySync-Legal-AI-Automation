@@ -779,28 +779,28 @@ Ensure the output is properly formatted and ready for immediate use.`
         });
       }
 
-      // Update document status and content
+      // Update document status
       const updatedDocument = await storage.updateDocument(documentId, {
-        ...(content && { content }),
+        content: content || document.content,
         analysis: {
           ...document.analysis,
           contractDetails: {
             ...document.analysis.contractDetails,
             workflowState: {
-              ...document.analysis.contractDetails?.workflowState,
               status: newStatus,
+              currentReviewer: null,
               comments: [
                 ...(document.analysis.contractDetails?.workflowState?.comments || []),
                 {
                   user: req.user!.username,
-                  text: content ? 
-                    `Version ${existingVersions.length + 1}.0 created and workflow updated to ${newStatus}` : 
+                  text: content ?
+                    `Version ${existingVersions.length + 1}.0 created` :
                     `Workflow updated to ${newStatus}`,
                   timestamp: new Date().toISOString()
                 }
               ],
               versions: [
-                ...(document.analysis.contractDetails?.versions || []),
+                ...(document.analysis.contractDetails?.workflowState?.versions || []),
                 ...(newVersion ? [{
                   version: newVersion.version,
                   content: newVersion.content,
@@ -815,7 +815,7 @@ Ensure the output is properly formatted and ready for immediate use.`
       res.json({
         ...updatedDocument,
         status: "SAVED",
-        version: newVersion?.version
+        version: newVersion?.version || existingVersions[existingVersions.length - 1]?.version
       });
 
     } catch (error) {
@@ -1026,7 +1026,7 @@ Ensure the output is properly formatted and ready for immediate use.`
           to: signature.signatureData.email,
           from: "noreply@legalai.com",
           subject: "Document Signature Request",
-          text: `You havea new document to sign. Click here to view and sign: ${process.env.APP_URL}/sign/${signature.signatureData.token}`,
+          text: `You havea new document to sign. Click here toview and sign: ${process.env.APP_URL}/sign/${signature.signatureData.token}`,
           html: `<p>You have a new document to sign. <a href="${process.env.APP_URL}/sign/${signature.signatureData.token}">Click here</a> to view and sign.</p>`
         })
       );

@@ -8,14 +8,13 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import {
-  AlertTriangle,
-  Check,
   FileText,
   History,
   Send,
   UserCheck,
   Download,
   Edit,
+  Check,
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -100,7 +99,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
       setGeneratedDraft(result.content);
       setEditableDraft(result.content);
       setActiveTab("draft");
-      setHasUnsavedChanges(false);
+      setHasUnsavedChanges(true);
       onUpdate();
 
       toast({
@@ -139,7 +138,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
 
       toast({
         title: "Draft Saved",
-        description: `Version ${result.version} has been saved successfully.`,
+        description: `Version ${result.version} has been created successfully.`,
       });
 
       setActiveTab("redline");
@@ -147,63 +146,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
       toast({
         title: "Error",
         description: error.message || "Failed to save draft. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleRequestReview = async () => {
-    try {
-      const approver = selectedApprover || (users && users[0]?.id);
-
-      if (!approver) {
-        toast({
-          title: "Error",
-          description: "No approver available",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      await apiRequest("POST", `/api/documents/${documentId}/request-review`, {
-        approverId: approver,
-        comments: reviewComment,
-      });
-
-      toast({
-        title: "Review Requested",
-        description: "Document has been sent for review",
-      });
-      onUpdate();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to request review",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleWorkflowAction = async (action: "review" | "approve" | "sign") => {
-    try {
-      const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
-        action,
-      });
-      const result = await response.json();
-
-      if (action === "approve") {
-        setIsApproved(true);
-      }
-
-      onUpdate();
-      toast({
-        title: "Workflow Updated",
-        description: `Document has been ${action === "approve" ? "approved" : `sent for ${action}`}`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update workflow. Please try again.",
         variant: "destructive",
       });
     }
@@ -222,12 +164,12 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   };
 
   const renderVersions = () => {
-    const versions = analysis.contractDetails?.versions || [];
+    const versions = analysis.contractDetails?.workflowState?.versions || [];
 
     if (versions.length === 0) {
       return (
         <div className="text-center py-8 text-gray-500">
-          No revisions available yet. Changes made to the document will appear here.
+          No versions available yet. Save changes to create a new version.
         </div>
       );
     }
@@ -241,13 +183,14 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
               {format(new Date(version.changes[0].timestamp), "PPpp")}
             </p>
           </div>
-          <div className="space-x-2">
+          <div className="flex space-x-2">
             <Button 
               variant="outline" 
-              size="sm" 
+              size="sm"
               onClick={() => {
                 setEditableDraft(version.content);
                 setActiveTab("draft");
+                setHasUnsavedChanges(false);
               }}
             >
               <Edit className="w-4 h-4 mr-2" />
@@ -266,11 +209,10 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     ));
   };
 
-  // Define tabs - Generated Draft tab only appears after generation
   const tabs = [
     { id: "editor", label: "Requirements", icon: FileText },
     ...(generatedDraft ? [{ id: "draft", label: "Generated Draft", icon: Edit }] : []),
-    { id: "redline", label: "Redline View", icon: AlertTriangle },
+    { id: "redline", label: "Version History", icon: History },
     { id: "workflow", label: "Workflow", icon: History },
   ];
 
@@ -307,30 +249,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                     </>
                   )}
                 </Button>
-                {(editableDraft || isApproved) && (
-                  <div className="flex items-center space-x-2">
-                    <Select
-                      value={downloadFormat}
-                      onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
-                    >
-                      <SelectTrigger className="w-[100px]">
-                        <SelectValue placeholder="Format" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pdf">PDF</SelectItem>
-                        <SelectItem value="docx">DOCX</SelectItem>
-                        <SelectItem value="txt">TXT</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      onClick={handleDownload}
-                      variant="outline"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Download
-                    </Button>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -351,7 +269,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </div>
         </TabsContent>
 
-        {/* Generated Draft Tab Content - Only shown if draft exists */}
+        {/* Generated Draft Tab Content */}
         {generatedDraft && (
           <TabsContent value="draft" className="p-6">
             <div className="space-y-6">
@@ -364,30 +282,13 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                       Save Changes
                     </Button>
                   )}
-                  {(editableDraft || isApproved) && (
-                    <div className="flex items-center space-x-2">
-                      <Select
-                        value={downloadFormat}
-                        onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
-                      >
-                        <SelectTrigger className="w-[100px]">
-                          <SelectValue placeholder="Format" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pdf">PDF</SelectItem>
-                          <SelectItem value="docx">DOCX</SelectItem>
-                          <SelectItem value="txt">TXT</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        onClick={handleDownload}
-                        variant="outline"
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Download
-                      </Button>
-                    </div>
-                  )}
+                  <Button
+                    onClick={handleDownload}
+                    variant="outline"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
                 </div>
               </div>
               <Textarea
@@ -403,34 +304,18 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </TabsContent>
         )}
 
+        {/* Redline View Tab Content */}
         <TabsContent value="redline" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Redline Analysis</h3>
-              {editableDraft || isApproved && (
-                <div className="flex items-center space-x-2">
-                  <Select
-                    value={downloadFormat}
-                    onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
-                  >
-                    <SelectTrigger className="w-[100px]">
-                      <SelectValue placeholder="Format" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pdf">PDF</SelectItem>
-                      <SelectItem value="docx">DOCX</SelectItem>
-                      <SelectItem value="txt">TXT</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    onClick={handleDownload}
-                    variant="outline"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download
-                  </Button>
-                </div>
-              )}
+              <h3 className="text-lg font-semibold">Version History</h3>
+              <Button
+                onClick={handleDownload}
+                variant="outline"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </Button>
             </div>
             <div className="space-y-2">
               {renderVersions()}
@@ -438,6 +323,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </div>
         </TabsContent>
 
+        {/* Workflow Tab Content */}
         <TabsContent value="workflow" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -456,17 +342,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                   onClick={() => handleWorkflowAction("approve")}
                   disabled={isApproved}
                 >
-                  {isApproved ? (
-                    <>
-                      <Check className="w-4 h-4 mr-2" />
-                      Approved
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4 mr-2" />
-                      Approve
-                    </>
-                  )}
+                  <Check className="w-4 h-4 mr-2" />
+                  {isApproved ? "Approved" : "Approve"}
                 </Button>
                 <Button
                   variant="default"
@@ -476,30 +353,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                   <UserCheck className="w-4 h-4 mr-2" />
                   Send for Signature
                 </Button>
-                {editableDraft || isApproved && (
-                  <div className="flex items-center space-x-2">
-                    <Select
-                      value={downloadFormat}
-                      onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
-                    >
-                      <SelectTrigger className="w-[100px]">
-                        <SelectValue placeholder="Format" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pdf">PDF</SelectItem>
-                        <SelectItem value="docx">DOCX</SelectItem>
-                        <SelectItem value="txt">TXT</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      onClick={handleDownload}
-                      variant="outline"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Download
-                    </Button>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -511,7 +364,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                   onValueChange={setSelectedApprover}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select an admin for review" />
+                    <SelectValue placeholder="Select a user for review" />
                   </SelectTrigger>
                   <SelectContent>
                     {users?.map((user: any) => (
@@ -532,35 +385,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                 />
               </div>
             </div>
-
-            {analysis.contractDetails?.workflowState && (
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <span className="font-medium">Current Status:</span>
-                  <span className={`px-2 py-1 rounded-full text-sm ${
-                    analysis.contractDetails?.workflowState?.status === "APPROVAL"
-                      ? "bg-green-100 text-green-800"
-                      : "bg-blue-100 text-blue-800"
-                  }`}>
-                    {analysis.contractDetails?.workflowState?.status || "NEW"}
-                  </span>
-                </div>
-
-                {analysis.contractDetails?.workflowState?.comments && (
-                  <div className="space-y-2">
-                    <h4 className="font-medium">Comments</h4>
-                    {analysis.contractDetails?.workflowState?.comments.map((comment: any, index: number) => (
-                      <div key={index} className="p-3 rounded-lg bg-gray-50">
-                        <p className="text-sm text-gray-600">{comment.text}</p>
-                        <div className="mt-1 text-xs text-gray-500">
-                          {comment.user} - {new Date(comment.timestamp).toLocaleString()}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </TabsContent>
       </Tabs>
