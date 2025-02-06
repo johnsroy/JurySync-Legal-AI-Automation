@@ -12,40 +12,16 @@ export function useDocuments() {
 export function useDocument(id: string) {
   return useQuery<Document>({
     queryKey: ["/api/documents", id],
-    enabled: !!id,
-    select: (data) => {
-      if (!data) return undefined;
-
-      // Don't try to parse analysis if it doesn't exist
-      if (!data.analysis) {
-        console.error("Document has no analysis data");
-        return data;
+    queryFn: async () => {
+      const res = await fetch(`/api/documents/${id}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch document: ${res.statusText}`);
       }
-
-      try {
-        // Validate analysis structure
-        const analysis = data.analysis as DocumentAnalysis;
-
-        // Validate required fields
-        if (
-          !analysis.summary ||
-          !Array.isArray(analysis.keyPoints) || analysis.keyPoints.length === 0 ||
-          !Array.isArray(analysis.suggestions) || analysis.suggestions.length === 0 ||
-          typeof analysis.riskScore !== 'number'
-        ) {
-          console.error("Document analysis is missing required fields:", analysis);
-          return data;
-        }
-
-        return {
-          ...data,
-          analysis,
-        };
-      } catch (error) {
-        console.error("Error processing document analysis:", error);
-        return data;
-      }
+      return res.json();
     },
+    enabled: !!id,
   });
 }
 
