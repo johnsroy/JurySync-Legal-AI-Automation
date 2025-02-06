@@ -628,7 +628,7 @@ ${document.content}
     }
   });
 
-  // Handle workflow actions
+  // Update the workflow endpoint to handle content updates
   app.post("/api/documents/:id/workflow", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ 
@@ -644,7 +644,7 @@ ${document.content}
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { action } = req.body;
+      const { action, content } = req.body;
       let newStatus;
       switch (action) {
         case "review":
@@ -660,28 +660,28 @@ ${document.content}
           return res.status(400).json({ message: "Invalid action" });
       }
 
-      const updatedAnalysis = {
-        ...document.analysis,
-        contractDetails: {
-          ...document.analysis.contractDetails,
-          workflowState: {
-            ...document.analysis.contractDetails?.workflowState,
-            status: newStatus,
-            comments: [
-              ...(document.analysis.contractDetails?.workflowState?.comments || []),
-              {
-                user: req.user!.username,
-                text: `Document sent for ${action}`,
-                timestamp: new Date().toISOString()
-              }
-            ]
-          }
-        }
-      };
-
+      // If content is provided, update the document content
       const updatedDocument = await storage.createDocument({
         ...document,
-        analysis: updatedAnalysis
+        content: content || document.content,
+        analysis: {
+          ...document.analysis,
+          contractDetails: {
+            ...document.analysis.contractDetails,
+            workflowState: {
+              ...document.analysis.contractDetails?.workflowState,
+              status: newStatus,
+              comments: [
+                ...(document.analysis.contractDetails?.workflowState?.comments || []),
+                {
+                  user: req.user!.username,
+                  text: content ? "Document updated and sent for review" : `Document sent for ${action}`,
+                  timestamp: new Date().toISOString()
+                }
+              ]
+            }
+          }
+        }
       });
 
       res.json(updatedDocument);

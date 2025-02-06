@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import {
@@ -14,6 +15,7 @@ import {
   UserCheck,
   AlertCircle,
   Download,
+  Edit,
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 
@@ -33,7 +35,8 @@ export function ContractEditor({
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("editor");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isDrafting, setIsDrafting] = useState(false);
+  const [generatedDraft, setGeneratedDraft] = useState("");
+  const [editableDraft, setEditableDraft] = useState("");
 
   // Dynamic drafting
   const handleGenerateDraft = async () => {
@@ -43,6 +46,9 @@ export function ContractEditor({
         requirements: content,
       });
       const result = await response.json();
+      setGeneratedDraft(result.content);
+      setEditableDraft(result.content);
+      setActiveTab("draft");
       onUpdate();
       toast({
         title: "Draft Generated",
@@ -59,7 +65,29 @@ export function ContractEditor({
     }
   };
 
-  // Download approved draft
+  // Save edited draft
+  const handleSaveDraft = async () => {
+    try {
+      const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
+        action: "review",
+        content: editableDraft,
+      });
+      await response.json();
+      onUpdate();
+      toast({
+        title: "Draft Saved",
+        description: "Your changes have been saved and sent for review.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save draft. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Download draft
   const handleDownload = async () => {
     try {
       window.location.href = `/api/documents/${documentId}/download`;
@@ -125,7 +153,11 @@ export function ContractEditor({
         <TabsList>
           <TabsTrigger value="editor">
             <FileText className="w-4 h-4 mr-2" />
-            Editor
+            Requirements
+          </TabsTrigger>
+          <TabsTrigger value="draft">
+            <Edit className="w-4 h-4 mr-2" />
+            Generated Draft
           </TabsTrigger>
           <TabsTrigger value="redline">
             <AlertTriangle className="w-4 h-4 mr-2" />
@@ -140,7 +172,7 @@ export function ContractEditor({
         <TabsContent value="editor" className="p-4">
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Contract Editor</h3>
+              <h3 className="text-lg font-semibold">Contract Requirements</h3>
               <div className="space-x-2">
                 <Button
                   onClick={handleGenerateDraft}
@@ -155,15 +187,13 @@ export function ContractEditor({
                     </>
                   )}
                 </Button>
-                {isApproved && (
-                  <Button
-                    onClick={handleDownload}
-                    variant="outline"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download
-                  </Button>
-                )}
+                <Button
+                  onClick={handleDownload}
+                  variant="outline"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
               </div>
             </div>
             <ScrollArea className="h-[500px] w-full border rounded-md p-4">
@@ -174,9 +204,45 @@ export function ContractEditor({
           </div>
         </TabsContent>
 
+        <TabsContent value="draft" className="p-4">
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Contract Draft</h3>
+              <div className="space-x-2">
+                <Button onClick={handleSaveDraft}>
+                  <Check className="w-4 h-4 mr-2" />
+                  Save Changes
+                </Button>
+                <Button
+                  onClick={handleDownload}
+                  variant="outline"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
+              </div>
+            </div>
+            <Textarea
+              value={editableDraft}
+              onChange={(e) => setEditableDraft(e.target.value)}
+              className="min-h-[500px] font-mono"
+              placeholder="Generated contract draft will appear here..."
+            />
+          </div>
+        </TabsContent>
+
         <TabsContent value="redline" className="p-4">
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Redline Analysis</h3>
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Redline Analysis</h3>
+              <Button
+                onClick={handleDownload}
+                variant="outline"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </Button>
+            </div>
             <div className="space-y-2">
               {analysis.contractDetails?.redlineHistory?.map((redline, index) => (
                 <div
@@ -239,15 +305,13 @@ export function ContractEditor({
                   <UserCheck className="w-4 h-4 mr-2" />
                   Send for Signature
                 </Button>
-                {isApproved && (
-                  <Button
-                    variant="outline"
-                    onClick={handleDownload}
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download
-                  </Button>
-                )}
+                <Button
+                  onClick={handleDownload}
+                  variant="outline"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
               </div>
             </div>
 
@@ -271,28 +335,6 @@ export function ContractEditor({
                         </div>
                       </div>
                     ))}
-                  </div>
-                )}
-
-                {analysis.contractDetails.workflowState.signatureStatus && (
-                  <div className="space-y-2">
-                    <h4 className="font-medium">Signatures Required</h4>
-                    <div className="grid grid-cols-2 gap-2">
-                      {analysis.contractDetails.workflowState.signatureStatus.required.map((signer) => (
-                        <div
-                          key={signer}
-                          className={`p-2 rounded-lg ${
-                            analysis.contractDetails?.workflowState?.signatureStatus?.completed.includes(
-                              signer
-                            )
-                              ? "bg-green-50 text-green-700"
-                              : "bg-gray-50 text-gray-700"
-                          }`}
-                        >
-                          {signer}
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 )}
               </div>
