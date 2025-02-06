@@ -723,18 +723,14 @@ Ensure the output is properly formatted and ready for immediate use.`
 
   // Update the workflow endpoint to handle content updates and versioning
   app.post("/api/documents/:id/workflow", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({
-        message: "Authentication required",
-        code: "NOT_AUTHENTICATED"
-      });
-    }
-
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
       if (!document) {
-        return res.status(404).json({ message: "Document not found" });
+        return res.status(404).json({ 
+          message: "Document not found",
+          code: "NOT_FOUND"
+        });
       }
 
       const { action, content } = req.body;
@@ -750,7 +746,10 @@ Ensure the output is properly formatted and ready for immediate use.`
           newStatus = "SIGNATURE_PENDING";
           break;
         default:
-          return res.status(400).json({ message: "Invalid action" });
+          return res.status(400).json({ 
+            message: "Invalid action",
+            code: "INVALID_ACTION"
+          });
       }
 
       // If content is provided (from save changes), create a new version
@@ -772,89 +771,9 @@ Ensure the output is properly formatted and ready for immediate use.`
 
       // If action is approve, update the approval status
       if (action === "approve") {
-        const approval = await storage.getApproval(documentId);
+        const approval = await storage.getApprovalByDocument(documentId);
         if (approval) {
           await storage.updateApproval(approval.id, "APPROVED");
-        }
-      }
-
-      // If action is sign, prepare the document for signing
-      if (action === "sign") {
-        try {
-          // Create a new PDF with signature fields
-          const pdfDoc = await PDFDocument.create();
-          const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-          const page = pdfDoc.addPage();
-          const { width, height } = page.getSize();
-
-          // Add document content
-          page.drawText(document.content, {
-            x: 50,
-            y: height - 100,
-            size: 12,
-            font: helveticaFont
-          });
-
-          // Add signature field
-          const signatureY = 100;
-          page.drawText('Signature:', {
-            x: 50,
-            y: signatureY + 20,
-            size: 12,
-            font: helveticaFont
-          });
-
-          page.drawRectangle({
-            x: 120,
-            y: signatureY,
-            width: 200,
-            height: 50,
-            borderColor: rgb(0.75, 0.75, 0.75),
-            borderWidth: 1
-          });
-
-          // Add date field
-          page.drawText('Date:', {
-            x: 350,
-            y: signatureY + 20,
-            size: 12,
-            font: helveticaFont
-          });
-
-          page.drawRectangle({
-            x: 400,
-            y: signatureY,
-            width: 100,
-            height: 50,
-            borderColor: rgb(0.75, 0.75, 0.75),
-            borderWidth: 1
-          });
-
-          // Save the PDF
-          const pdfBytes = await pdfDoc.save();
-          const signaturePath = path.join(process.cwd(), 'temp', `${documentId}_signature.pdf`);
-          await fs.mkdir(path.join(process.cwd(), 'temp'), { recursive: true });
-          await fs.writeFile(signaturePath, pdfBytes);
-
-          // Create signature token
-          const signatureToken = createHash('sha256')
-            .update(`${documentId}-${Date.now()}`)
-            .digest('hex');
-
-          // Store signature request
-          await storage.createSignature({
-            documentId,
-            userId: req.user!.id,
-            status: "PENDING",
-            signatureData: {
-              token: signatureToken,
-              path: signaturePath
-            }
-          });
-
-        } catch (error) {
-          console.error('Error preparing document for signature:', error);
-          throw new Error('Failed to prepare document for signature');
         }
       }
 

@@ -25,11 +25,13 @@ export interface IStorage {
   // New methods for approvals
   createApproval(approval: Omit<InsertApproval, "id" | "createdAt">): Promise<Approval>;
   getApproval(id: number): Promise<Approval | undefined>;
+  getApprovalByDocument(documentId: number): Promise<Approval | undefined>;
   updateApproval(id: number, status: string, comments?: string): Promise<Approval>;
 
   // Methods for signatures
   createSignature(signature: Omit<InsertSignature, "id" | "createdAt">): Promise<Signature>;
   getSignature(id: number): Promise<Signature | undefined>;
+  getSignatureByToken(token: string): Promise<Signature | undefined>;
   updateSignature(id: number, status: string, signatureData?: any): Promise<Signature>;
 
   // Methods for versions
@@ -39,8 +41,6 @@ export interface IStorage {
 
   // Get users by role
   getUsersByRole(role: string): Promise<User[]>;
-
-  // Added methods
   getAllUsers(): Promise<User[]>;
   getPendingApprovals(userId: number): Promise<Array<{
     id: number;
@@ -205,6 +205,15 @@ export class DatabaseStorage implements IStorage {
     return approval;
   }
 
+  async getApprovalByDocument(documentId: number): Promise<Approval | undefined> {
+    const [approval] = await db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.documentId, documentId))
+      .where(eq(approvals.status, "PENDING"));
+    return approval;
+  }
+
   async updateApproval(id: number, status: string, comments?: string): Promise<Approval> {
     const [updated] = await db
       .update(approvals)
@@ -228,10 +237,22 @@ export class DatabaseStorage implements IStorage {
     return signature;
   }
 
+  async getSignatureByToken(token: string): Promise<Signature | undefined> {
+    const [signature] = await db
+      .select()
+      .from(signatures)
+      .where(eq(signatures.signatureData.token, token));
+    return signature;
+  }
+
   async updateSignature(id: number, status: string, signatureData?: any): Promise<Signature> {
     const [updated] = await db
       .update(signatures)
-      .set({ status, signatureData, signedAt: status === 'COMPLETED' ? new Date() : null })
+      .set({ 
+        status, 
+        signatureData, 
+        signedAt: status === 'COMPLETED' ? new Date() : null 
+      })
       .where(eq(signatures.id, id))
       .returning();
     return updated;
