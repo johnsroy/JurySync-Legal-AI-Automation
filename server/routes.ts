@@ -7,11 +7,10 @@ import { insertDocumentSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import multer from "multer";
-import pdf from "pdf-parse";
+import * as pdfParse from "pdf-parse/lib/pdf-parse.js";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
 
-// Configure multer for handling file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
@@ -28,88 +27,124 @@ const upload = multer({
     } else {
       cb(new Error('Invalid file type'));
     }
-  },
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
   }
 });
 
-async function extractTextFromFile(file: Express.Multer.File): Promise<{
+interface ExtractedContent {
   text: string;
-  sections: { title: string; content: string; level: number }[];
+  sections: {
+    title: string;
+    content: string;
+    level: number;
+  }[];
   metadata: {
     title?: string;
     author?: string;
     creationDate?: string;
     lastModified?: string;
   };
-}> {
+}
+
+async function extractTextFromFile(file: Express.Multer.File): Promise<ExtractedContent> {
   try {
     switch (file.mimetype) {
       case 'application/pdf': {
-        console.log('Processing PDF file:', file.originalname);
+        const pdfData = await pdfParse(file.buffer);
+        const sections = [];
+        let currentSection = { title: '', content: '', level: 1 };
 
-        // Basic PDF processing configuration
-        const options = {
-          pagerender: null, // Disable custom page rendering
-          max: 0, // No page limit
-        };
-
-        const data = await pdf(Buffer.from(file.buffer), options);
-        console.log('PDF extraction completed. Text length:', data.text?.length || 0);
-
-        if (!data.text || data.text.trim().length === 0) {
-          throw new Error('No text content extracted from PDF');
+        // Split by potential section headers
+        const lines = pdfData.text.split('\n');
+        for (const line of lines) {
+          // Detect headers based on formatting (this is a simple example)
+          if (line.match(/^[A-Z\d]+[\.\)]\s+[A-Z]/)) {
+            if (currentSection.content) {
+              sections.push(currentSection);
+            }
+            currentSection = {
+              title: line.trim(),
+              content: '',
+              level: 1
+            };
+          } else {
+            currentSection.content += line + '\n';
+          }
+        }
+        if (currentSection.content) {
+          sections.push(currentSection);
         }
 
         return {
-          text: data.text,
-          sections: [{
-            title: 'Document Content',
-            content: data.text,
-            level: 1
-          }],
+          text: pdfData.text,
+          sections,
           metadata: {
-            title: data.info?.Title,
-            author: data.info?.Author,
-            creationDate: data.info?.CreationDate,
-            lastModified: data.info?.ModDate
+            title: pdfData.info?.Title,
+            author: pdfData.info?.Author,
+            creationDate: pdfData.info?.CreationDate,
+            lastModified: pdfData.info?.ModDate,
           }
         };
       }
+
       case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
       case 'application/msword': {
         const result = await mammoth.extractRawText({ buffer: file.buffer });
+        const sections = [];
+        let currentSection = { title: '', content: '', level: 1 };
+
+        // Split by potential section headers
+        const lines = result.value.split('\n');
+        for (const line of lines) {
+          if (line.match(/^[A-Z\d]+[\.\)]\s+[A-Z]/)) {
+            if (currentSection.content) {
+              sections.push(currentSection);
+            }
+            currentSection = {
+              title: line.trim(),
+              content: '',
+              level: 1
+            };
+          } else {
+            currentSection.content += line + '\n';
+          }
+        }
+        if (currentSection.content) {
+          sections.push(currentSection);
+        }
+
         return {
           text: result.value,
-          sections: [{
-            title: 'Document Content',
-            content: result.value,
-            level: 1
-          }],
+          sections,
           metadata: {}
         };
       }
+
       case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
       case 'application/vnd.ms-excel': {
         const workbook = XLSX.read(file.buffer);
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const text = XLSX.utils.sheet_to_txt(worksheet);
 
+        // For spreadsheets, treat each non-empty row as a section
+        const sections = text.split('\n')
+          .filter(line => line.trim())
+          .map(line => ({
+            title: line.split('\t')[0] || 'Untitled Section',
+            content: line,
+            level: 1
+          }));
+
         return {
           text,
-          sections: [{
-            title: 'Spreadsheet Content',
-            content: text,
-            level: 1
-          }],
+          sections,
           metadata: {
             title: workbook.Props?.Title,
             author: workbook.Props?.Author,
-            lastModified: workbook.Props?.ModifiedDate?.toString()
+            lastModified: workbook.Props?.ModifiedDate,
           }
         };
       }
+
       default:
         throw new Error('Unsupported file type');
     }
@@ -138,7 +173,7 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      let extractedContent;
+      let extractedContent: ExtractedContent;
       try {
         extractedContent = await extractTextFromFile(req.file);
         if (!extractedContent.text || extractedContent.text.trim().length === 0) {
@@ -174,6 +209,7 @@ export function registerRoutes(app: Express): Server {
       let analysis;
       try {
         console.log("Processing document with agent:", parsed.agentType);
+        // Pass the structured content to the analysis
         analysis = await analyzeDocument(
           extractedContent.text,
           parsed.agentType,
@@ -192,7 +228,8 @@ export function registerRoutes(app: Express): Server {
           ...parsed,
           content: extractedContent.text,
           userId: req.user!.id,
-          analysis
+          analysis,
+          metadata: extractedContent.metadata
         });
 
         res.status(201).json(createdDocument);
