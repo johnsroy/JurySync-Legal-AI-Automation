@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useDocument } from "@/hooks/use-documents";
 import { Link, useParams } from "wouter";
 import { DocumentAnalysis } from "@shared/schema";
@@ -7,9 +8,13 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
+  CardFooter,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { apiRequest } from "@/lib/queryClient";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -43,6 +48,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 const renderContractDetails = (analysis: DocumentAnalysis) => {
   if (!analysis.contractDetails) return null;
