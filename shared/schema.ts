@@ -8,12 +8,28 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
+// Define agent types
+export const AgentType = z.enum([
+  "CONTRACT_AUTOMATION",
+  "COMPLIANCE_AUDITING",
+  "LEGAL_RESEARCH",
+]);
+
+export type AgentType = z.infer<typeof AgentType>;
+
 // Define document analysis schema first
 export const documentAnalysisSchema = z.object({
   summary: z.string().min(1, "Summary is required"),
   keyPoints: z.array(z.string()).min(1, "At least one key point is required"),
   suggestions: z.array(z.string()).min(1, "At least one suggestion is required"),
   riskScore: z.number().min(1).max(10),
+  contractDetails: z.object({
+    parties: z.array(z.string()).optional(),
+    effectiveDate: z.string().optional(),
+    termLength: z.string().optional(),
+    keyObligations: z.array(z.string()).optional(),
+    terminationClauses: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 export const documents = pgTable("documents", {
@@ -22,8 +38,14 @@ export const documents = pgTable("documents", {
   title: text("title").notNull(),
   content: text("content").notNull(),
   analysis: jsonb("analysis").notNull(),
+  agentType: text("agent_type").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Export types
+export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
+export type User = typeof users.$inferSelect;
+export type Document = typeof documents.$inferSelect;
 
 // Enhanced validation for user registration
 export const insertUserSchema = createInsertSchema(users)
@@ -46,14 +68,12 @@ export const insertUserSchema = createInsertSchema(users)
 export const insertDocumentSchema = createInsertSchema(documents)
   .pick({
     title: true,
+    agentType: true,
   })
   .extend({
     title: z.string().min(1, "Title is required"),
+    agentType: AgentType,
   });
 
-// Export types
 export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
-export type Document = typeof documents.$inferSelect;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
-export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;

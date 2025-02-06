@@ -22,9 +22,16 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertDocumentSchema, type DocumentAnalysis } from "@shared/schema";
+import { insertDocumentSchema, type DocumentAnalysis, AgentType } from "@shared/schema";
 import {
   FileText,
   LogOut,
@@ -32,15 +39,32 @@ import {
   UploadCloud,
   AlertTriangle,
   ChevronRight,
+  Bot,
 } from "lucide-react";
-// Import FilePond
 import { FilePond, registerPlugin } from "react-filepond";
 import "filepond/dist/filepond.min.css";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import type { FilePondFile } from "filepond";
 
-// Register FilePond plugins
 registerPlugin(FilePondPluginFileValidateType);
+
+const agentDescriptions = {
+  CONTRACT_AUTOMATION: {
+    title: "Contract Automation",
+    description: "Automatically draft, review, and manage legal contracts with AI that understands industry-standard templates.",
+    icon: Bot
+  },
+  COMPLIANCE_AUDITING: {
+    title: "Compliance Auditing",
+    description: "Scan and audit documents for regulatory compliance, flagging inconsistencies automatically.",
+    icon: AlertTriangle
+  },
+  LEGAL_RESEARCH: {
+    title: "Legal Research & Summarization",
+    description: "Analyze legal databases, extract precedents, and summarize complex case law.",
+    icon: FileText
+  }
+};
 
 export default function Dashboard() {
   const { user, logoutMutation } = useAuth();
@@ -50,13 +74,14 @@ export default function Dashboard() {
   const [files, setFiles] = useState<FilePondFile[]>([]);
 
   const form = useForm({
-    resolver: zodResolver(insertDocumentSchema.pick({ title: true })),
+    resolver: zodResolver(insertDocumentSchema),
     defaultValues: {
       title: "",
+      agentType: "CONTRACT_AUTOMATION" as AgentType,
     },
   });
 
-  async function onSubmit(data: { title: string }) {
+  async function onSubmit(data: { title: string; agentType: AgentType }) {
     try {
       if (!files.length || !files[0].file) {
         form.setError("root", { message: "Please select a file to upload" });
@@ -66,6 +91,7 @@ export default function Dashboard() {
       const formData = new FormData();
       formData.append("file", files[0].file);
       formData.append("title", data.title);
+      formData.append("agentType", data.agentType);
 
       await createDocument.mutateAsync(formData);
       form.reset();
@@ -123,8 +149,7 @@ export default function Dashboard() {
               <DialogHeader>
                 <DialogTitle>Upload Legal Document</DialogTitle>
                 <DialogDescription>
-                  Upload your document for AI-powered analysis and insights.
-                  Supported formats: PDF, DOCX, DOC, XLSX
+                  Choose an AI agent and upload your document for specialized analysis.
                 </DialogDescription>
               </DialogHeader>
               <Form {...form}>
@@ -138,6 +163,43 @@ export default function Dashboard() {
                         <FormControl>
                           <Input {...field} />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="agentType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>AI Agent</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select an AI agent" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {Object.entries(agentDescriptions).map(([key, value]) => (
+                              <SelectItem
+                                key={key}
+                                value={key}
+                                className="flex flex-col space-y-1 p-2"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <value.icon className="h-4 w-4" />
+                                  <span className="font-medium">{value.title}</span>
+                                </div>
+                                <span className="text-xs text-gray-500">
+                                  {value.description}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -205,12 +267,19 @@ export default function Dashboard() {
               if (!analysis || !analysis.riskScore) {
                 return null;
               }
+
+              const agentInfo = agentDescriptions[doc.agentType as AgentType];
+              const AgentIcon = agentInfo?.icon || Bot;
+
               return (
                 <Link key={doc.id} href={`/document/${doc.id}`}>
                   <Card className="cursor-pointer hover:border-primary transition-colors">
                     <CardHeader>
                       <CardTitle className="flex items-center justify-between">
-                        <span className="truncate">{doc.title}</span>
+                        <div className="flex items-center gap-2 truncate">
+                          <AgentIcon className="h-5 w-5 text-gray-500" />
+                          <span className="truncate">{doc.title}</span>
+                        </div>
                         <ChevronRight className="h-4 w-4 text-gray-400" />
                       </CardTitle>
                     </CardHeader>

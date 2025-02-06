@@ -1,32 +1,19 @@
 import OpenAI from "openai";
+import type { AgentType, DocumentAnalysis } from "@shared/schema";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY = 1000; // 1 second
-const MAX_CHUNK_LENGTH = 2000; // Reduced from 4000 for faster processing
-const MAX_CONCURRENT_REQUESTS = 3; // Number of parallel requests
+const INITIAL_RETRY_DELAY = 1000;
+const MAX_CHUNK_LENGTH = 2000;
+const MAX_CONCURRENT_REQUESTS = 3;
 
-export interface DocumentAnalysis {
-  summary: string;
-  keyPoints: string[];
-  suggestions: string[];
-  riskScore: number;
-}
-
-interface AIResponse {
-  summary: string;
-  keyPoints: string[];
-  suggestions: string[];
-  riskScore: number;
-}
-
+// Helper functions remain unchanged
 async function wait(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function splitIntoChunks(text: string): string[] {
-  // Split into semantic sections using common legal document markers
   const sections = text.split(/(?=SECTION|Article|ARTICLE|\d+\.|^\d+\s)/gm);
   const chunks: string[] = [];
   let currentChunk = '';
@@ -44,22 +31,69 @@ function splitIntoChunks(text: string): string[] {
   return chunks;
 }
 
-async function analyzeChunk(chunk: string, attempt: number = 0): Promise<AIResponse> {
+function getSystemPromptForAgent(agentType: AgentType) {
+  switch (agentType) {
+    case "CONTRACT_AUTOMATION":
+      return `You are a specialized legal contract analysis AI. Your tasks include:
+1. Identify contract type and structure
+2. Extract key contract elements (parties, dates, terms)
+3. Analyze obligations and responsibilities
+4. Flag potential risks and ambiguities
+5. Suggest improvements based on industry standards
+6. Provide risk assessment on a scale of 1-10
+
+Return JSON: {
+  "summary": string,
+  "keyPoints": string[],
+  "suggestions": string[],
+  "riskScore": number,
+  "contractDetails": {
+    "parties": string[],
+    "effectiveDate": string,
+    "termLength": string,
+    "keyObligations": string[],
+    "terminationClauses": string[]
+  }
+}`;
+
+    case "COMPLIANCE_AUDITING":
+      return `You are a compliance auditing AI. Analyze documents for:
+1. Regulatory compliance status
+2. Policy adherence
+3. Documentation completeness
+4. Risk areas and gaps
+5. Required actions for compliance
+
+Return JSON: {"summary": string, "keyPoints": string[], "suggestions": string[], "riskScore": number}`;
+
+    case "LEGAL_RESEARCH":
+      return `You are a legal research AI. Focus on:
+1. Case law relevance
+2. Legal precedent analysis
+3. Jurisdiction-specific requirements
+4. Citations and references
+5. Application to current case
+
+Return JSON: {"summary": string, "keyPoints": string[], "suggestions": string[], "riskScore": number}`;
+
+    default:
+      return `You are a legal analyst. Analyze the document section and provide:
+1. Brief summary
+2. Key legal points
+3. Suggestions
+4. Risk assessment (1-10)
+
+Return JSON: {"summary": string, "keyPoints": string[], "suggestions": string[], "riskScore": number}`;
+  }
+}
+
+async function analyzeChunk(chunk: string, agentType: AgentType, attempt: number = 0): Promise<any> {
   const response = await openai.chat.completions.create({
     model: "gpt-3.5-turbo",
     messages: [
       {
         role: "system",
-        content: `You are a legal analyst. Analyze the document section and provide:
-1. Brief summary (1-2 sentences)
-2. Key legal points (max 2 points)
-3. Suggestions (max 2)
-4. Risk score (1-10) based on:
-   - Regulatory compliance (1-3)
-   - Contractual clarity (4-6)
-   - Litigation risk (7-8)
-   - Critical issues (9-10)
-Return JSON: {"summary": string, "keyPoints": string[], "suggestions": string[], "riskScore": number}`
+        content: getSystemPromptForAgent(agentType)
       },
       {
         role: "user",
@@ -67,8 +101,8 @@ Return JSON: {"summary": string, "keyPoints": string[], "suggestions": string[],
       },
     ],
     response_format: { type: "json_object" },
-    temperature: 0.3, // Reduced for more consistent and faster responses
-    max_tokens: 500, // Limiting response length
+    temperature: 0.3,
+    max_tokens: 500,
   });
 
   const content = response.choices[0].message.content;
@@ -76,13 +110,13 @@ Return JSON: {"summary": string, "keyPoints": string[], "suggestions": string[],
     throw new Error("No response from OpenAI");
   }
 
-  return JSON.parse(content) as AIResponse;
+  return JSON.parse(content);
 }
 
-async function processChunkWithRetry(chunk: string): Promise<AIResponse> {
+async function processChunkWithRetry(chunk: string, agentType: AgentType): Promise<any> {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      return await analyzeChunk(chunk, attempt);
+      return await analyzeChunk(chunk, agentType, attempt);
     } catch (error) {
       console.error(`Attempt ${attempt + 1} failed:`, error);
       if (attempt === MAX_RETRIES - 1) throw error;
@@ -92,7 +126,7 @@ async function processChunkWithRetry(chunk: string): Promise<AIResponse> {
   throw new Error("Failed after maximum retries");
 }
 
-export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
+export async function analyzeDocument(text: string, agentType: AgentType): Promise<DocumentAnalysis> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OpenAI API key is not configured");
   }
@@ -100,33 +134,44 @@ export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
   const chunks = splitIntoChunks(text);
   console.log(`Split document into ${chunks.length} chunks`);
 
-  const results: AIResponse[] = [];
+  const results: any[] = [];
 
-  // Process chunks in parallel with rate limiting
   for (let i = 0; i < chunks.length; i += MAX_CONCURRENT_REQUESTS) {
     const batch = chunks.slice(i, i + MAX_CONCURRENT_REQUESTS);
     const batchResults = await Promise.all(
       batch.map((chunk, index) => {
         console.log(`Processing chunk ${i + index + 1}/${chunks.length}`);
-        return processChunkWithRetry(chunk);
+        return processChunkWithRetry(chunk, agentType);
       })
     );
     results.push(...batchResults);
   }
 
-  // Combine results with weighted averaging for risk scores
+  // Combine results with special handling for contract automation
   const combinedAnalysis: DocumentAnalysis = {
     summary: results.map(r => r.summary).join(" "),
     keyPoints: Array.from(new Set(results.flatMap(r => r.keyPoints))),
     suggestions: Array.from(new Set(results.flatMap(r => r.suggestions))),
     riskScore: Math.round(
-      results.reduce((acc, r, idx) => {
-        // Give more weight to higher risk scores
+      results.reduce((acc, r) => {
         const weight = r.riskScore > 7 ? 1.5 : 1;
         return acc + (r.riskScore * weight);
       }, 0) / (results.length + (results.filter(r => r.riskScore > 7).length * 0.5))
     ),
   };
+
+  // Add contract details if using contract automation agent
+  if (agentType === "CONTRACT_AUTOMATION") {
+    const contractDetails = results.reduce((acc, r) => ({
+      parties: [...new Set([...(acc.parties || []), ...(r.contractDetails?.parties || [])])],
+      effectiveDate: r.contractDetails?.effectiveDate || acc.effectiveDate,
+      termLength: r.contractDetails?.termLength || acc.termLength,
+      keyObligations: [...new Set([...(acc.keyObligations || []), ...(r.contractDetails?.keyObligations || [])])],
+      terminationClauses: [...new Set([...(acc.terminationClauses || []), ...(r.contractDetails?.terminationClauses || [])])],
+    }), {});
+
+    combinedAnalysis.contractDetails = contractDetails;
+  }
 
   return combinedAnalysis;
 }
@@ -134,7 +179,8 @@ export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
 export async function chatWithDocument(
   message: string,
   context: string,
-  analysis: DocumentAnalysis
+  analysis: DocumentAnalysis,
+  agentType: AgentType = "CONTRACT_AUTOMATION"
 ): Promise<string> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OpenAI API key is not configured");
@@ -146,14 +192,21 @@ export async function chatWithDocument(
       messages: [
         {
           role: "system",
-          content: `You are a legal document analysis assistant. You have access to the document content and its analysis. 
+          content: `You are a specialized ${agentType.toLowerCase().replace('_', ' ')} assistant. 
           Current analysis summary: ${analysis.summary}
           Risk score: ${analysis.riskScore}/10
+          ${agentType === "CONTRACT_AUTOMATION" && analysis.contractDetails ? `
+          Contract Details:
+          - Parties: ${analysis.contractDetails.parties?.join(', ')}
+          - Effective Date: ${analysis.contractDetails.effectiveDate}
+          - Term Length: ${analysis.contractDetails.termLength}
+          - Key Obligations: ${analysis.contractDetails.keyObligations?.join(', ')}
+          - Termination Clauses: ${analysis.contractDetails.terminationClauses?.join(', ')}
+          ` : ''}
 
-          Answer user questions about the document with specific, accurate information. If asked for analytics or numbers, provide clear statistics and explain your calculations.
-          If the user asks to modify the analysis, explain your reasoning and suggest specific changes.
-
-          Keep responses concise and focused on the legal implications and practical insights.`
+          Answer user questions with specific, accurate information. Provide clear statistics and explain calculations when asked.
+          If asked about modifying the analysis, explain your reasoning and suggest specific changes.
+          Keep responses focused on legal implications and practical insights.`
         },
         {
           role: "user",
