@@ -46,7 +46,6 @@ export function setupAuth(app: Express) {
 
   if (app.get("env") === "production") {
     app.set("trust proxy", 1);
-    sessionSettings.cookie!.secure = true;
   }
 
   app.use(session(sessionSettings));
@@ -91,8 +90,11 @@ export function setupAuth(app: Express) {
 
   app.post("/api/register", async (req, res) => {
     try {
+      // Validate user data first
+      const validatedData = insertUserSchema.parse(req.body);
+
       // Check for existing username
-      const existingUsername = await storage.getUserByUsername(req.body.username);
+      const existingUsername = await storage.getUserByUsername(validatedData.username);
       if (existingUsername) {
         return res.status(400).json({
           message: "Username already exists",
@@ -101,7 +103,7 @@ export function setupAuth(app: Express) {
       }
 
       // Check for existing email
-      const existingEmail = await storage.getUserByEmail(req.body.email);
+      const existingEmail = await storage.getUserByEmail(validatedData.email);
       if (existingEmail) {
         return res.status(400).json({
           message: "Email already registered",
@@ -109,25 +111,17 @@ export function setupAuth(app: Express) {
         });
       }
 
-      // Validate user data
-      const validatedData = insertUserSchema.parse({
-        ...req.body,
-        role: req.body.role || "CLIENT"
-      });
-
+      // Create user with hashed password
+      const hashedPassword = await hashPassword(validatedData.password);
       const user = await storage.createUser({
         ...validatedData,
-        password: await hashPassword(validatedData.password),
+        password: hashedPassword,
       });
 
-      req.login(user, (err) => {
-        if (err) {
-          return res.status(500).json({
-            message: "Registration successful but failed to login",
-            code: "LOGIN_ERROR"
-          });
-        }
-        res.status(201).json(user);
+      // Send success response without logging in
+      res.status(201).json({
+        message: "Registration successful. Please login to continue.",
+        code: "REGISTRATION_SUCCESS"
       });
     } catch (err) {
       if (err instanceof ZodError) {
@@ -136,6 +130,7 @@ export function setupAuth(app: Express) {
           code: "VALIDATION_ERROR"
         });
       }
+      console.error('Registration error:', err);
       res.status(500).json({
         message: "Failed to register user",
         code: "REGISTRATION_ERROR"
@@ -174,7 +169,7 @@ export function setupAuth(app: Express) {
   app.post("/api/logout", (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({
-        message: "You must be logged in to logout",
+        message: "Not authenticated",
         code: "NOT_AUTHENTICATED"
       });
     }

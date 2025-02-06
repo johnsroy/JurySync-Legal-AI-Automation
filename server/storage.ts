@@ -1,7 +1,4 @@
-import { 
-  users, documents, approvals, signatures, documentVersions,
-  type User, type Document, type Approval, type Signature, type DocumentVersion, type InsertApproval, type InsertSignature, type InsertDocumentVersion
-} from "@shared/schema";
+import { users, type User } from "@shared/schema";
 import { type InsertUser } from "@shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
@@ -17,35 +14,6 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<User>): Promise<User>;
-  getDocuments(userId: number): Promise<Document[]>;
-  getDocument(id: number): Promise<Document | undefined>;
-  createDocument(document: Omit<Document, "id" | "createdAt">): Promise<Document>;
-  updateDocument(id: number, document: Partial<Omit<Document, "id" | "createdAt">>): Promise<Document>;
-  deleteDocument(id: number): Promise<void>;
-  createApproval(approval: Omit<InsertApproval, "id" | "createdAt">): Promise<Approval>;
-  getApproval(id: number): Promise<Approval | undefined>;
-  getApprovalByDocument(documentId: number): Promise<Approval | undefined>;
-  updateApproval(id: number, status: string, comments?: string): Promise<Approval>;
-  createSignature(signature: Omit<InsertSignature, "id" | "createdAt">): Promise<Signature>;
-  getSignature(id: number): Promise<Signature | undefined>;
-  getSignatureByToken(token: string): Promise<Signature | undefined>;
-  updateSignature(id: number, status: string, signatureData?: any): Promise<Signature>;
-  createVersion(version: Omit<InsertDocumentVersion, "id" | "createdAt">): Promise<DocumentVersion>;
-  getVersions(documentId: number): Promise<DocumentVersion[]>;
-  getLatestVersion(documentId: number): Promise<DocumentVersion | undefined>;
-  getUsersByRole(role: string): Promise<User[]>;
-  getAllUsers(): Promise<User[]>;
-  getPendingApprovals(userId: number): Promise<Array<{
-    id: number;
-    documentId: number;
-    requesterId: number;
-    approverId: number;
-    status: string;
-    comments?: string;
-    createdAt: Date;
-    document: Document;
-    requester: User;
-  }>>;
   sessionStore: session.Store;
 }
 
@@ -104,6 +72,7 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
+      console.log('Creating user:', { ...insertUser, password: '[REDACTED]' });
       const [user] = await db
         .insert(users)
         .values({
@@ -112,6 +81,7 @@ export class DatabaseStorage implements IStorage {
           updatedAt: new Date()
         })
         .returning();
+      console.log('User created successfully:', { id: user.id });
       return user;
     } catch (error) {
       console.error('Error creating user:', error);
@@ -132,246 +102,6 @@ export class DatabaseStorage implements IStorage {
       return user;
     } catch (error) {
       console.error('Error updating user:', error);
-      throw error;
-    }
-  }
-  async getDocuments(userId: number): Promise<Document[]> {
-    try {
-      const docs = await db.select().from(documents).where(eq(documents.userId, userId));
-      return docs.map(doc => ({
-        ...doc,
-        analysis: typeof doc.analysis === 'string' ? JSON.parse(doc.analysis) : doc.analysis
-      }));
-    } catch (error) {
-      console.error('Error getting documents:', error);
-      throw error;
-    }
-  }
-
-  async getDocument(id: number): Promise<Document | undefined> {
-    try {
-      const [doc] = await db
-        .select()
-        .from(documents)
-        .where(eq(documents.id, id));
-
-      if (!doc) return undefined;
-
-      return {
-        ...doc,
-        analysis: typeof doc.analysis === 'string' ? JSON.parse(doc.analysis) : doc.analysis
-      };
-    } catch (error) {
-      console.error('Error getting document:', error);
-      throw error;
-    }
-  }
-
-  async createDocument(
-    document: Omit<Document, "id" | "createdAt">,
-  ): Promise<Document> {
-    try {
-      const [newDoc] = await db
-        .insert(documents)
-        .values({
-          ...document,
-          analysis: typeof document.analysis === 'string' ? 
-            document.analysis : 
-            JSON.stringify(document.analysis)
-        })
-        .returning();
-
-      return {
-        ...newDoc,
-        analysis: typeof newDoc.analysis === 'string' ? 
-          JSON.parse(newDoc.analysis) : 
-          newDoc.analysis
-      };
-    } catch (error) {
-      console.error('Error creating document:', error);
-      throw error;
-    }
-  }
-
-  async updateDocument(
-    id: number,
-    document: Partial<Omit<Document, "id" | "createdAt">>
-  ): Promise<Document> {
-    try {
-      const [updatedDoc] = await db
-        .update(documents)
-        .set({
-          ...document,
-          analysis: typeof document.analysis === 'string' ? 
-            document.analysis : 
-            JSON.stringify(document.analysis)
-        })
-        .where(eq(documents.id, id))
-        .returning();
-
-      return {
-        ...updatedDoc,
-        analysis: typeof updatedDoc.analysis === 'string' ? 
-          JSON.parse(updatedDoc.analysis) : 
-          updatedDoc.analysis
-      };
-    } catch (error) {
-      console.error('Error updating document:', error);
-      throw error;
-    }
-  }
-
-  async deleteDocument(id: number): Promise<void> {
-    try {
-      await db.delete(documents).where(eq(documents.id, id));
-    } catch (error) {
-      console.error('Error deleting document:', error);
-      throw error;
-    }
-  }
-
-  async createApproval(approval: Omit<InsertApproval, "id" | "createdAt">): Promise<Approval> {
-    const [newApproval] = await db.insert(approvals).values(approval).returning();
-    return newApproval;
-  }
-
-  async getApproval(id: number): Promise<Approval | undefined> {
-    const [approval] = await db.select().from(approvals).where(eq(approvals.id, id));
-    return approval;
-  }
-
-  async getApprovalByDocument(documentId: number): Promise<Approval | undefined> {
-    const [approval] = await db
-      .select()
-      .from(approvals)
-      .where(eq(approvals.documentId, documentId))
-      .where(eq(approvals.status, "PENDING"));
-    return approval;
-  }
-
-  async updateApproval(id: number, status: string, comments?: string): Promise<Approval> {
-    const [updated] = await db
-      .update(approvals)
-      .set({ 
-        status, 
-        comments, 
-        updatedAt: new Date() 
-      })
-      .where(eq(approvals.id, id))
-      .returning();
-    return updated;
-  }
-
-  async createSignature(signature: Omit<InsertSignature, "id" | "createdAt">): Promise<Signature> {
-    const [newSignature] = await db.insert(signatures).values(signature).returning();
-    return newSignature;
-  }
-
-  async getSignature(id: number): Promise<Signature | undefined> {
-    const [signature] = await db.select().from(signatures).where(eq(signatures.id, id));
-    return signature;
-  }
-
-  async getSignatureByToken(token: string): Promise<Signature | undefined> {
-    const [signature] = await db
-      .select()
-      .from(signatures)
-      .where(eq(signatures.signatureData.token, token));
-    return signature;
-  }
-
-  async updateSignature(id: number, status: string, signatureData?: any): Promise<Signature> {
-    const [updated] = await db
-      .update(signatures)
-      .set({ 
-        status, 
-        signatureData, 
-        signedAt: status === 'COMPLETED' ? new Date() : null 
-      })
-      .where(eq(signatures.id, id))
-      .returning();
-    return updated;
-  }
-
-  async createVersion(version: Omit<InsertDocumentVersion, "id" | "createdAt">): Promise<DocumentVersion> {
-    const [newVersion] = await db.insert(documentVersions).values(version).returning();
-    return newVersion;
-  }
-
-  async getVersions(documentId: number): Promise<DocumentVersion[]> {
-    return db
-      .select()
-      .from(documentVersions)
-      .where(eq(documentVersions.documentId, documentId))
-      .orderBy(documentVersions.createdAt);
-  }
-
-  async getLatestVersion(documentId: number): Promise<DocumentVersion | undefined> {
-    const [latest] = await db
-      .select()
-      .from(documentVersions)
-      .where(eq(documentVersions.documentId, documentId))
-      .orderBy(documentVersions.createdAt, "desc")
-      .limit(1);
-    return latest;
-  }
-
-  async getUsersByRole(role: string): Promise<User[]> {
-    return db.select().from(users).where(eq(users.role, role));
-  }
-
-  async getAllUsers(): Promise<User[]> {
-    try {
-      return await db.select().from(users);
-    } catch (error) {
-      console.error('Error getting all users:', error);
-      throw error;
-    }
-  }
-
-  async getPendingApprovals(userId: number): Promise<Array<{
-    id: number;
-    documentId: number;
-    requesterId: number;
-    approverId: number;
-    status: string;
-    comments?: string;
-    createdAt: Date;
-    document: Document;
-    requester: User;
-  }>> {
-    try {
-      const result = await db
-        .select({
-          id: approvals.id,
-          documentId: approvals.documentId,
-          requesterId: approvals.requesterId,
-          approverId: approvals.approverId,
-          status: approvals.status,
-          comments: approvals.comments,
-          createdAt: approvals.createdAt,
-          document: documents,
-          requester: users
-        })
-        .from(approvals)
-        .where(eq(approvals.approverId, userId))
-        .where(eq(approvals.status, "PENDING"))
-        .leftJoin(documents, eq(documents.id, approvals.documentId))
-        .leftJoin(users, eq(users.id, approvals.requesterId));
-
-      return result.map(row => ({
-        id: row.id,
-        documentId: row.documentId,
-        requesterId: row.requesterId,
-        approverId: row.approverId,
-        status: row.status,
-        comments: row.comments,
-        createdAt: row.createdAt,
-        document: row.document,
-        requester: row.requester
-      }));
-    } catch (error) {
-      console.error('Error getting pending approvals:', error);
       throw error;
     }
   }

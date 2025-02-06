@@ -12,7 +12,7 @@ export const UserRole = z.enum([
 
 export type UserRole = z.infer<typeof UserRole>;
 
-// Enhanced users table
+// Users table with essential fields
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -26,15 +26,15 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Enhanced validation for user registration
+// Validation schema for user registration
 export const insertUserSchema = createInsertSchema(users)
   .pick({
     username: true,
-    password: true,
     email: true,
-    role: true,
+    password: true,
     firstName: true,
-    lastName: true
+    lastName: true,
+    role: true
   })
   .extend({
     username: z.string()
@@ -49,12 +49,11 @@ export const insertUserSchema = createInsertSchema(users)
       .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
       .regex(/[a-z]/, "Password must contain at least one lowercase letter")
       .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
-    firstName: z.string().min(1, "First name is required").optional(),
-    lastName: z.string().min(1, "Last name is required").optional(),
-    role: UserRole
+    role: UserRole.optional().default("CLIENT"),
+    firstName: z.string().min(1, "First name is required"),
+    lastName: z.string().min(1, "Last name is required"),
   });
 
-// Export types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
