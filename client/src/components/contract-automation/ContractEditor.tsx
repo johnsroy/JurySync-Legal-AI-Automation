@@ -45,6 +45,7 @@ export function ContractEditor({
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx' | 'txt'>('docx');
   const [selectedApprover, setSelectedApprover] = useState<string>("");
   const [reviewComment, setReviewComment] = useState("");
+  const [isApproved, setIsApproved] = useState(false);
 
   // Fetch admins for approval requests
   const { data: admins } = useQuery({
@@ -55,76 +56,31 @@ export function ContractEditor({
     },
   });
 
-  // Update the draft generation handler to better handle responses and errors
-  const handleGenerateDraft = async () => {
-    setIsGenerating(true);
-    setProgress(0);
-
-    try {
-      // Start progress animation
-      const progressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) return prev; // Cap at 90% until complete
-          return prev + Math.floor(Math.random() * 15) + 5; // More dynamic progress
-        });
-      }, 800);
-
-      const response = await apiRequest("POST", `/api/documents/${documentId}/generate-draft`, {
-        requirements: content,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to generate draft');
-      }
-
-      const result = await response.json();
-
-      // Clear interval and complete progress
-      clearInterval(progressInterval);
-      setProgress(100);
-
-      if (!result.content) {
-        throw new Error('No content received from server');
-      }
-
-      setGeneratedDraft(result.content);
-      setEditableDraft(result.content);
-      setActiveTab("draft");
-      onUpdate();
-
-      toast({
-        title: "Draft Generated Successfully",
-        description: "Your contract draft is ready for review.",
-        variant: "default",
-      });
-
-    } catch (error: any) {
-      console.error('Draft generation error:', error);
-      toast({
-        title: "Error Generating Draft",
-        description: error.message || "Failed to generate draft. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGenerating(false);
-      // Reset progress after a delay
-      setTimeout(() => setProgress(0), 1000);
+  // Update useEffect to set initial draft content
+  useEffect(() => {
+    if (content) {
+      setEditableDraft(content);
     }
-  };
+  }, [content]);
 
-  // Save edited draft
+  // Modified save draft to handle versioning
   const handleSaveDraft = async () => {
     try {
       const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
         action: "review",
         content: editableDraft,
       });
-      await response.json();
+      const result = await response.json();
       onUpdate();
+
+      // Update redline history
+      if (result.analysis?.contractDetails?.redlineHistory) {
+        setActiveTab("redline");
+      }
+
       toast({
         title: "Draft Saved",
-        description: "Your changes have been saved and sent for review.",
+        description: "Your changes have been saved and a new version has been created.",
       });
     } catch (error: any) {
       toast({
@@ -135,51 +91,22 @@ export function ContractEditor({
     }
   };
 
-  // Update download handler
-  const handleDownload = async () => {
-    try {
-      window.location.href = `/api/documents/${documentId}/download?format=${downloadFormat}`;
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: "Failed to download document. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Real-time redlining
-  const handleAnalyzeClause = async (clause: string) => {
-    try {
-      const response = await apiRequest("POST", `/api/documents/${documentId}/analyze-clause`, {
-        clause,
-      });
-      const result = await response.json();
-      toast({
-        title: "Clause Analysis Complete",
-        description: result.riskLevel > 7 ? "High-risk clause detected" : "Clause analysis completed",
-        variant: result.riskLevel > 7 ? "destructive" : "default",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to analyze clause. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Workflow integration
+  // Modified workflow action handler with approval state
   const handleWorkflowAction = async (action: "review" | "approve" | "sign") => {
     try {
       const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
         action,
       });
       const result = await response.json();
+
+      if (action === "approve") {
+        setIsApproved(true);
+      }
+
       onUpdate();
       toast({
         title: "Workflow Updated",
-        description: `Document has been sent for ${action}`,
+        description: `Document has been ${action === "approve" ? "approved" : `sent for ${action}`}`,
       });
     } catch (error: any) {
       toast({
@@ -190,20 +117,23 @@ export function ContractEditor({
     }
   };
 
-  // Request review handler
+  // Request review handler with single user as approver
   const handleRequestReview = async () => {
-    if (!selectedApprover) {
-      toast({
-        title: "Error",
-        description: "Please select an approver",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
+      // If no approver is selected and we have admins, use the first admin
+      const approver = selectedApprover || (admins && admins[0]?.id);
+
+      if (!approver) {
+        toast({
+          title: "Error",
+          description: "No approver available",
+          variant: "destructive",
+        });
+        return;
+      }
+
       await apiRequest("POST", `/api/documents/${documentId}/request-review`, {
-        approverId: selectedApprover,
+        approverId: approver,
         comments: reviewComment,
       });
 
@@ -303,10 +233,42 @@ export function ContractEditor({
   };
 
 
-  // Check if document is in an approved state
-  const isApproved = analysis.contractDetails?.workflowState?.status === "APPROVAL" ||
-                    analysis.contractDetails?.workflowState?.status === "SIGNATURE" ||
-                    analysis.contractDetails?.workflowState?.status === "COMPLETED";
+  // Update download handler
+  const handleDownload = async () => {
+    try {
+      window.location.href = `/api/documents/${documentId}/download?format=${downloadFormat}`;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: "Failed to download document. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Real-time redlining
+  const handleAnalyzeClause = async (clause: string) => {
+    try {
+      const response = await apiRequest("POST", `/api/documents/${documentId}/analyze-clause`, {
+        clause,
+      });
+      const result = await response.json();
+      toast({
+        title: "Clause Analysis Complete",
+        description: result.riskLevel > 7 ? "High-risk clause detected" : "Clause analysis completed",
+        variant: result.riskLevel > 7 ? "destructive" : "default",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to analyze clause. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Workflow integration (moved up)
+
 
   // Show download button only if there's a draft or the document is approved
   const showDownloadButton = generatedDraft || isApproved;
@@ -482,21 +444,32 @@ export function ContractEditor({
                 <Button
                   variant="outline"
                   onClick={() => handleRequestReview()}
-                  disabled={!selectedApprover}
+                  disabled={isApproved}
                 >
                   <Send className="w-4 h-4 mr-2" />
                   Send for Review
                 </Button>
                 <Button
-                  variant="outline"
+                  variant={isApproved ? "default" : "outline"}
                   onClick={() => handleWorkflowAction("approve")}
+                  disabled={isApproved}
                 >
-                  <Check className="w-4 h-4 mr-2" />
-                  Approve
+                  {isApproved ? (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Approved
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Approve
+                    </>
+                  )}
                 </Button>
                 <Button
                   variant="default"
                   onClick={() => handleWorkflowAction("sign")}
+                  disabled={!isApproved}
                 >
                   <UserCheck className="w-4 h-4 mr-2" />
                   Send for Signature
@@ -534,7 +507,11 @@ export function ContractEditor({
               <div className="space-y-4">
                 <div className="flex items-center space-x-2">
                   <span className="font-medium">Current Status:</span>
-                  <span className="px-2 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
+                  <span className={`px-2 py-1 rounded-full text-sm ${
+                    analysis.contractDetails.workflowState.status === "APPROVAL"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-blue-100 text-blue-800"
+                  }`}>
                     {analysis.contractDetails.workflowState.status}
                   </span>
                 </div>
@@ -542,7 +519,7 @@ export function ContractEditor({
                 {analysis.contractDetails.workflowState.comments && (
                   <div className="space-y-2">
                     <h4 className="font-medium">Comments</h4>
-                    {analysis.contractDetails.workflowState.comments.map((comment, index) => (
+                    {analysis.contractDetails.workflowState.comments.map((comment: any, index: number) => (
                       <div key={index} className="p-3 rounded-lg bg-gray-50">
                         <p className="text-sm text-gray-600">{comment.text}</p>
                         <div className="mt-1 text-xs text-gray-500">
