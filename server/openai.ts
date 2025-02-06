@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024
+// Using gpt-4 since gpt-4o is not available
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export interface DocumentAnalysis {
@@ -20,7 +20,7 @@ interface AIResponse {
 export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages: [
         {
           role: "system",
