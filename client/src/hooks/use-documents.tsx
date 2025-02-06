@@ -29,9 +29,18 @@ export function useCreateDocument() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (document: { title: string; content: string }) => {
-      const parsed = insertDocumentSchema.parse(document);
-      const res = await apiRequest("POST", "/api/documents", parsed);
+    mutationFn: async (formData: FormData) => {
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message);
+      }
+
       return await res.json();
     },
     onSuccess: () => {
@@ -49,6 +58,8 @@ export function useCreateDocument() {
           description = "Our AI is currently busy. Please try again in a few minutes.";
         } else if (data.code === "VALIDATION_ERROR") {
           description = data.message;
+        } else if (data.code === "FILE_TYPE_ERROR") {
+          description = "Invalid file type. Please upload PDF, DOCX, DOC, or XLSX files only.";
         }
       } catch {
         // Use default error message

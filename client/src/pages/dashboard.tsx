@@ -4,7 +4,6 @@ import { useDocuments, useCreateDocument } from "@/hooks/use-documents";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -34,28 +33,45 @@ import {
   AlertTriangle,
   ChevronRight,
 } from "lucide-react";
+// Import FilePond
+import { FilePond, registerPlugin } from "react-filepond";
+import "filepond/dist/filepond.min.css";
+import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
+import type { FilePondFile } from "filepond";
+
+// Register FilePond plugins
+registerPlugin(FilePondPluginFileValidateType);
 
 export default function Dashboard() {
   const { user, logoutMutation } = useAuth();
   const { data: documents, isLoading } = useDocuments();
   const createDocument = useCreateDocument();
   const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
 
   const form = useForm({
     resolver: zodResolver(insertDocumentSchema),
     defaultValues: {
       title: "",
-      content: "",
     },
   });
 
-  async function onSubmit(data: { title: string; content: string }) {
+  async function onSubmit(data: { title: string }) {
     try {
-      await createDocument.mutateAsync(data);
+      if (!file) {
+        form.setError("root", { message: "Please select a file to upload" });
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", data.title);
+
+      await createDocument.mutateAsync(formData);
       form.reset();
+      setFile(null);
       setOpen(false);
     } catch (error) {
-      // Error handling is already done in useCreateDocument hook
       console.error('Failed to create document:', error);
     }
   }
@@ -108,6 +124,7 @@ export default function Dashboard() {
                 <DialogTitle>Upload Legal Document</DialogTitle>
                 <DialogDescription>
                   Upload your document for AI-powered analysis and insights.
+                  Supported formats: PDF, DOCX, DOC, XLSX
                 </DialogDescription>
               </DialogHeader>
               <Form {...form}>
@@ -125,23 +142,24 @@ export default function Dashboard() {
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="content"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Document Content</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            {...field}
-                            rows={10}
-                            placeholder="Paste your document content here..."
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="space-y-2">
+                    <FormLabel>Document File</FormLabel>
+                    <FilePond
+                      files={file ? [file] : []}
+                      onupdatefiles={(fileItems: FilePondFile[]) => {
+                        setFile(fileItems[0]?.file || null);
+                      }}
+                      allowMultiple={false}
+                      acceptedFileTypes={[
+                        'application/pdf',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'application/msword',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        'application/vnd.ms-excel'
+                      ]}
+                      labelIdle='Drag & Drop your document or <span class="filepond--label-action">Browse</span>'
+                    />
+                  </div>
                   <Button
                     type="submit"
                     className="w-full"

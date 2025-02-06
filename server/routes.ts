@@ -6,6 +6,56 @@ import { analyzeDocument } from "./openai";
 import { insertDocumentSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
+import multer from "multer";
+import * as pdfParse from "pdf-parse/lib/pdf-parse.js";
+import * as XLSX from "xlsx";
+import mammoth from "mammoth";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel'
+    ];
+
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type'));
+    }
+  }
+});
+
+async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
+  try {
+    switch (file.mimetype) {
+      case 'application/pdf':
+        const pdfData = await pdfParse(file.buffer);
+        return pdfData.text;
+
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      case 'application/msword':
+        const result = await mammoth.extractRawText({ buffer: file.buffer });
+        return result.value;
+
+      case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      case 'application/vnd.ms-excel':
+        const workbook = XLSX.read(file.buffer);
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        return XLSX.utils.sheet_to_txt(worksheet);
+
+      default:
+        throw new Error('Unsupported file type');
+    }
+  } catch (error) {
+    console.error('Error extracting text:', error);
+    throw error;
+  }
+}
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -72,7 +122,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/documents", async (req, res) => {
+  app.post("/api/documents", upload.single('file'), async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ 
         message: "You must be logged in to create documents",
@@ -81,16 +131,29 @@ export function registerRoutes(app: Express): Server {
     }
 
     try {
-      const parsed = insertDocumentSchema.parse(req.body);
+      if (!req.file) {
+        return res.status(400).json({
+          message: "No file uploaded",
+          code: "FILE_REQUIRED"
+        });
+      }
+
+      const content = await extractTextFromFile(req.file);
+      const document = {
+        title: req.body.title,
+        content,
+      };
+
+      const parsed = insertDocumentSchema.parse(document);
       const analysis = await analyzeDocument(parsed.content);
 
-      const document = await storage.createDocument({
+      const createdDocument = await storage.createDocument({
         ...parsed,
         userId: req.user!.id,
         analysis,
       });
 
-      res.status(201).json(document);
+      res.status(201).json(createdDocument);
     } catch (error) {
       console.error('Document creation error:', error);
 
@@ -98,6 +161,13 @@ export function registerRoutes(app: Express): Server {
         return res.status(400).json({ 
           message: fromZodError(error).message,
           code: "VALIDATION_ERROR"
+        });
+      }
+
+      if (error instanceof Error && error.message === 'Invalid file type') {
+        return res.status(400).json({
+          message: "Invalid file type. Please upload PDF, DOCX, DOC, or XLSX files only.",
+          code: "FILE_TYPE_ERROR"
         });
       }
 
