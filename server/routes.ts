@@ -76,26 +76,29 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      const content = await extractTextFromFile(req.file);
+      let content: string;
+      try {
+        content = await extractTextFromFile(req.file);
+        if (!content || content.trim().length === 0) {
+          throw new Error("Empty document content");
+        }
+      } catch (error) {
+        console.error('Text extraction error:', error);
+        return res.status(400).json({
+          message: "Failed to extract text from document. Please ensure the file is not corrupted or empty.",
+          code: "EXTRACTION_ERROR"
+        });
+      }
+
       const document = {
         title: req.body.title || req.file.originalname,
         content,
         agentType: req.body.agentType || "CONTRACT_AUTOMATION",
       };
 
+      let parsed;
       try {
-        const parsed = insertDocumentSchema.parse(document);
-        console.log("Processing document with agent:", parsed.agentType);
-        const analysis = await analyzeDocument(content, parsed.agentType);
-
-        const createdDocument = await storage.createDocument({
-          ...parsed,
-          content,
-          userId: req.user!.id,
-          analysis,
-        });
-
-        res.status(201).json(createdDocument);
+        parsed = insertDocumentSchema.parse(document);
       } catch (error) {
         if (error instanceof ZodError) {
           return res.status(400).json({ 
@@ -105,6 +108,36 @@ export function registerRoutes(app: Express): Server {
         }
         throw error;
       }
+
+      let analysis;
+      try {
+        console.log("Processing document with agent:", parsed.agentType);
+        analysis = await analyzeDocument(content, parsed.agentType);
+      } catch (error) {
+        console.error('Analysis error:', error);
+        return res.status(503).json({ 
+          message: "Our AI system is currently experiencing high load. Please try again in a few moments.",
+          code: "ANALYSIS_ERROR"
+        });
+      }
+
+      try {
+        const createdDocument = await storage.createDocument({
+          ...parsed,
+          content,
+          userId: req.user!.id,
+          analysis,
+        });
+
+        res.status(201).json(createdDocument);
+      } catch (error) {
+        console.error('Storage error:', error);
+        return res.status(500).json({ 
+          message: "Failed to save document",
+          code: "STORAGE_ERROR"
+        });
+      }
+
     } catch (error) {
       console.error('Document creation error:', error);
 
@@ -115,16 +148,9 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      if (error instanceof Error && error.message.includes('OpenAI')) {
-        return res.status(503).json({ 
-          message: "Failed to analyze document. Please try again later.",
-          code: "ANALYSIS_ERROR"
-        });
-      }
-
       res.status(500).json({ 
-        message: "Failed to create document",
-        code: "CREATE_ERROR"
+        message: "An unexpected error occurred while processing your document",
+        code: "UNKNOWN_ERROR"
       });
     }
   });
