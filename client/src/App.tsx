@@ -4,7 +4,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/use-auth";
 import NotFound from "@/pages/not-found";
-import AuthPage from "@/pages/auth-page";
+import LandingPage from "@/pages/landing-page";
+import LoginPage from "@/pages/login-page";
+import RegisterPage from "@/pages/register-page";
 import Dashboard from "@/pages/dashboard";
 import DocumentView from "@/pages/document-view";
 import { ProtectedRoute } from "./lib/protected-route";
@@ -12,9 +14,11 @@ import { ProtectedRoute } from "./lib/protected-route";
 function Router() {
   return (
     <Switch>
-      <ProtectedRoute path="/" component={Dashboard} />
+      <Route path="/" component={LandingPage} />
+      <Route path="/login" component={LoginPage} />
+      <Route path="/register" component={RegisterPage} />
+      <ProtectedRoute path="/dashboard" component={Dashboard} />
       <ProtectedRoute path="/document/:id" component={DocumentView} />
-      <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
   );
