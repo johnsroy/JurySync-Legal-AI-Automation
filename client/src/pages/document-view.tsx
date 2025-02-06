@@ -69,8 +69,8 @@ export default function DocumentView() {
 
   const analysis = document.analysis as DocumentAnalysis;
 
-  // Validate analysis data
-  if (!analysis || !analysis.summary || !analysis.keyPoints || !analysis.suggestions || typeof analysis.riskScore !== 'number') {
+  // Validate required fields in analysis
+  if (!analysis.summary || !Array.isArray(analysis.keyPoints) || !Array.isArray(analysis.suggestions) || typeof analysis.riskScore !== 'number') {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <Card className="max-w-2xl mx-auto">

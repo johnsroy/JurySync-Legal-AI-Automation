@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Document, insertDocumentSchema, DocumentAnalysis } from "@shared/schema";
+import { Document, insertDocumentSchema, type DocumentAnalysis } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -15,19 +15,26 @@ export function useDocument(id: string) {
     enabled: !!id,
     select: (data) => {
       if (!data) return undefined;
+
+      // Don't try to parse analysis if it doesn't exist
+      if (!data.analysis) {
+        console.error("Document has no analysis data");
+        return data;
+      }
+
       try {
-        // Ensure the analysis is properly typed
-        const analysis = data.analysis as DocumentAnalysis | null;
-        if (!analysis || typeof analysis !== 'object') {
-          console.error("Invalid document analysis format:", analysis);
-          return undefined;
-        }
+        // Validate analysis structure
+        const analysis = data.analysis as DocumentAnalysis;
 
         // Validate required fields
-        if (!analysis.summary || !Array.isArray(analysis.keyPoints) || 
-            !Array.isArray(analysis.suggestions) || typeof analysis.riskScore !== 'number') {
-          console.error("Missing required fields in analysis:", analysis);
-          return undefined;
+        if (
+          !analysis.summary ||
+          !Array.isArray(analysis.keyPoints) || analysis.keyPoints.length === 0 ||
+          !Array.isArray(analysis.suggestions) || analysis.suggestions.length === 0 ||
+          typeof analysis.riskScore !== 'number'
+        ) {
+          console.error("Document analysis is missing required fields:", analysis);
+          return data;
         }
 
         return {
@@ -36,7 +43,7 @@ export function useDocument(id: string) {
         };
       } catch (error) {
         console.error("Error processing document analysis:", error);
-        return undefined;
+        return data;
       }
     },
   });
