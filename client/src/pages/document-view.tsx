@@ -4,6 +4,7 @@ import { DocumentAnalysis } from "@shared/schema";
 import {
   Card,
   CardContent,
+  CardFooter,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -19,6 +20,8 @@ import {
   Scale,
   Bookmark,
   Info,
+  Send,
+  MessageSquare,
 } from "lucide-react";
 import {
   Accordion,
@@ -32,10 +35,46 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { apiRequest } from "@/lib/queryClient";
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export default function DocumentView() {
   const { id } = useParams();
   const { data: document, isLoading, error } = useDocument(id || "");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputMessage, setInputMessage] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inputMessage.trim() || !document) return;
+
+    const newUserMessage = { role: "user" as const, content: inputMessage };
+    setMessages(prev => [...prev, newUserMessage]);
+    setInputMessage("");
+    setIsAnalyzing(true);
+
+    try {
+      const response = await apiRequest("POST", `/api/documents/${id}/chat`, {
+        message: inputMessage,
+        context: document.content
+      });
+      const answer = await response.json();
+
+      setMessages(prev => [...prev, { role: "assistant", content: answer.response }]);
+    } catch (error) {
+      console.error("Failed to get response:", error);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -263,6 +302,63 @@ export default function DocumentView() {
                 </TabsContent>
               </Tabs>
             </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5" />
+                Interactive Analysis
+              </CardTitle>
+              <CardDescription>
+                Ask questions, request specific analytics, or get custom insights about this document
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[400px] pr-4">
+                <div className="space-y-4">
+                  {messages.map((message, index) => (
+                    <div
+                      key={index}
+                      className={`flex ${
+                        message.role === "user" ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-lg p-3 ${
+                          message.role === "user"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted"
+                        }`}
+                      >
+                        {message.content}
+                      </div>
+                    </div>
+                  ))}
+                  {isAnalyzing && (
+                    <div className="flex justify-start">
+                      <div className="bg-muted rounded-lg p-3">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+            <CardFooter>
+              <form onSubmit={handleSendMessage} className="w-full">
+                <div className="flex gap-2">
+                  <Input
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    placeholder="Ask about specific points, request analytics, or get clarification..."
+                    className="flex-1"
+                  />
+                  <Button type="submit" disabled={isAnalyzing}>
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </form>
+            </CardFooter>
           </Card>
         </div>
       </main>

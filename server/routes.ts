@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
-import { analyzeDocument } from "./openai";
+import { analyzeDocument, chatWithDocument } from "./openai";
 import { insertDocumentSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -182,6 +182,51 @@ export function registerRoutes(app: Express): Server {
       res.status(500).json({ 
         message: "Failed to fetch document",
         code: "FETCH_ERROR"
+      });
+    }
+  });
+
+  app.post("/api/documents/:id/chat", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ 
+        message: "You must be logged in to access documents",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    try {
+      const documentId = parseInt(req.params.id);
+      if (isNaN(documentId)) {
+        return res.status(400).json({ 
+          message: "Invalid document ID",
+          code: "INVALID_ID"
+        });
+      }
+
+      const document = await storage.getDocument(documentId);
+      if (!document) {
+        return res.status(404).json({ 
+          message: "Document not found",
+          code: "NOT_FOUND"
+        });
+      }
+
+      if (document.userId !== req.user!.id) {
+        return res.status(403).json({ 
+          message: "You don't have permission to access this document",
+          code: "FORBIDDEN"
+        });
+      }
+
+      const { message, context } = req.body;
+      const response = await chatWithDocument(message, context, document.analysis);
+      res.json({ response });
+
+    } catch (error) {
+      console.error('Error in chat endpoint:', error);
+      res.status(500).json({ 
+        message: "Failed to process chat request",
+        code: "CHAT_ERROR"
       });
     }
   });
