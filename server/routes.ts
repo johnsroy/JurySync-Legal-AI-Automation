@@ -7,7 +7,7 @@ import { insertDocumentSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import multer from "multer";
-import * as pdfParse from "pdf-parse/lib/pdf-parse.js";
+import pdf from "pdf-parse/lib/pdf-parse.js";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
 
@@ -49,28 +49,50 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<Extracted
   try {
     switch (file.mimetype) {
       case 'application/pdf': {
-        const pdfData = await pdfParse(file.buffer);
+        const pdfData = await pdf(file.buffer);
         const sections = [];
         let currentSection = { title: '', content: '', level: 1 };
 
-        // Split by potential section headers
+        // Enhanced PDF parsing logic for better structure detection
         const lines = pdfData.text.split('\n');
+        let inHeader = true;
+        let headerText = '';
+
         for (const line of lines) {
-          // Detect headers based on formatting (this is a simple example)
-          if (line.match(/^[A-Z\d]+[\.\)]\s+[A-Z]/)) {
-            if (currentSection.content) {
+          // Detect headers based on various patterns common in legal documents
+          const isHeader = (
+            line.match(/^[A-Z\d]+[\.\)]\s+[A-Z]/) ||  // "1. SECTION" or "A) SECTION"
+            line.match(/^[A-Z][A-Z\s]{4,}/) ||        // "SECTION TITLE"
+            line.match(/^Article\s+\d+/i) ||           // "Article 1"
+            line.match(/^Section\s+\d+/i)              // "Section 1"
+          );
+
+          if (isHeader) {
+            // Save previous section if exists
+            if (currentSection.content.trim()) {
               sections.push(currentSection);
             }
             currentSection = {
               title: line.trim(),
               content: '',
-              level: 1
+              level: line.search(/\S/) / 2, // Indentation level
             };
+            inHeader = true;
+            headerText = line;
           } else {
-            currentSection.content += line + '\n';
+            if (inHeader && line.trim()) {
+              // This line is part of the header
+              headerText += ' ' + line.trim();
+            } else if (line.trim()) {
+              // Regular content
+              inHeader = false;
+              currentSection.content += line + '\n';
+            }
           }
         }
-        if (currentSection.content) {
+
+        // Add the last section
+        if (currentSection.content.trim()) {
           sections.push(currentSection);
         }
 
@@ -92,7 +114,6 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<Extracted
         const sections = [];
         let currentSection = { title: '', content: '', level: 1 };
 
-        // Split by potential section headers
         const lines = result.value.split('\n');
         for (const line of lines) {
           if (line.match(/^[A-Z\d]+[\.\)]\s+[A-Z]/)) {
@@ -125,7 +146,6 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<Extracted
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const text = XLSX.utils.sheet_to_txt(worksheet);
 
-        // For spreadsheets, treat each non-empty row as a section
         const sections = text.split('\n')
           .filter(line => line.trim())
           .map(line => ({
@@ -140,7 +160,7 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<Extracted
           metadata: {
             title: workbook.Props?.Title,
             author: workbook.Props?.Author,
-            lastModified: workbook.Props?.ModifiedDate,
+            lastModified: workbook.Props?.ModifiedDate?.toString(),
           }
         };
       }
