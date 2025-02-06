@@ -63,13 +63,18 @@ export class DatabaseStorage implements IStorage {
   constructor() {
     this.sessionStore = new PostgresSessionStore({
       pool,
+      tableName: 'session', 
       createTableIfMissing: true,
     });
   }
 
   async getUser(id: number): Promise<User | undefined> {
     try {
-      const [user] = await db.select().from(users).where(eq(users.id, id));
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
       return user;
     } catch (error) {
       console.error('Error getting user:', error);
@@ -82,7 +87,8 @@ export class DatabaseStorage implements IStorage {
       const [user] = await db
         .select()
         .from(users)
-        .where(eq(users.username, username));
+        .where(eq(users.username, username))
+        .limit(1);
       return user;
     } catch (error) {
       console.error('Error getting user by username:', error);
@@ -92,7 +98,12 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
-      const [user] = await db.insert(users).values(insertUser).returning();
+      console.log('Creating user:', { ...insertUser, password: '[REDACTED]' });
+      const [user] = await db
+        .insert(users)
+        .values(insertUser)
+        .returning();
+      console.log('User created successfully:', { id: user.id, username: user.username });
       return user;
     } catch (error) {
       console.error('Error creating user:', error);
