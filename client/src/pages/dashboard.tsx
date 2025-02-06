@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertDocumentSchema } from "@shared/schema";
+import { insertDocumentSchema, type DocumentAnalysis } from "@shared/schema";
 import {
   FileText,
   LogOut,
@@ -178,38 +178,41 @@ export default function Dashboard() {
           </Card>
         ) : (
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-            {documents.map((doc) => (
-              <Link key={doc.id} href={`/document/${doc.id}`}>
-                <Card className="cursor-pointer hover:border-primary transition-colors">
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <span className="truncate">{doc.title}</span>
-                      <ChevronRight className="h-4 w-4 text-gray-400" />
-                    </CardTitle>
-                  </CardHeader>
-                  <Separator />
-                  <CardContent className="pt-4">
-                    <p className="text-sm text-gray-600 line-clamp-3">
-                      {doc.content}
-                    </p>
-                    {doc.analysis && (
-                      <div className="mt-4 flex items-center text-sm">
-                        <div
-                          className={`w-2 h-2 rounded-full mr-2 ${
-                            doc.analysis.riskScore > 7
-                              ? "bg-red-500"
-                              : doc.analysis.riskScore > 4
-                              ? "bg-yellow-500"
-                              : "bg-green-500"
-                          }`}
-                        />
-                        Risk Score: {doc.analysis.riskScore}/10
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+            {documents.map((doc) => {
+              const analysis = doc.analysis as DocumentAnalysis;
+              return (
+                <Link key={doc.id} href={`/document/${doc.id}`}>
+                  <Card className="cursor-pointer hover:border-primary transition-colors">
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between">
+                        <span className="truncate">{doc.title}</span>
+                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                      </CardTitle>
+                    </CardHeader>
+                    <Separator />
+                    <CardContent className="pt-4">
+                      <p className="text-sm text-gray-600 line-clamp-3">
+                        {doc.content}
+                      </p>
+                      {analysis && (
+                        <div className="mt-4 flex items-center text-sm">
+                          <div
+                            className={`w-2 h-2 rounded-full mr-2 ${
+                              analysis.riskScore > 7
+                                ? "bg-red-500"
+                                : analysis.riskScore > 4
+                                ? "bg-yellow-500"
+                                : "bg-green-500"
+                            }`}
+                          />
+                          Risk Score: {analysis.riskScore}/10
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         )}
       </main>
