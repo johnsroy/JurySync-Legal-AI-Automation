@@ -39,13 +39,14 @@ export function setupAuth(app: Express) {
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       httpOnly: true,
-      secure: app.get("env") === "production",
+      secure: false, // Changed to false for development
       sameSite: "lax"
     },
   };
 
   if (app.get("env") === "production") {
     app.set("trust proxy", 1);
+    sessionSettings.cookie!.secure = true;
   }
 
   app.use(session(sessionSettings));
@@ -55,43 +56,54 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
+        console.log('Login attempt for username:', username);
         const user = await storage.getUserByUsername(username);
         if (!user) {
+          console.log('User not found:', username);
           return done(null, false, { message: "Invalid username or password" });
         }
 
         const isValidPassword = await comparePasswords(password, user.password);
         if (!isValidPassword) {
+          console.log('Invalid password for user:', username);
           return done(null, false, { message: "Invalid username or password" });
         }
 
+        console.log('Login successful for user:', username);
         return done(null, user);
       } catch (err) {
+        console.error('Login error:', err);
         return done(err);
       }
     }),
   );
 
   passport.serializeUser((user, done) => {
+    console.log('Serializing user:', user.id);
     done(null, user.id);
   });
 
   passport.deserializeUser(async (id: number, done) => {
     try {
+      console.log('Deserializing user:', id);
       const user = await storage.getUser(id);
       if (!user) {
+        console.log('User not found during deserialization:', id);
         return done(null, false);
       }
       done(null, user);
     } catch (err) {
+      console.error('Deserialization error:', err);
       done(err);
     }
   });
 
   app.post("/api/register", async (req, res) => {
     try {
+      console.log('Registration attempt:', { ...req.body, password: '[REDACTED]' });
       const existingUser = await storage.getUserByUsername(req.body.username);
       if (existingUser) {
+        console.log('Username already exists:', req.body.username);
         return res.status(400).json({ 
           message: "Username already exists",
           code: "USERNAME_EXISTS"
@@ -117,6 +129,7 @@ export function setupAuth(app: Express) {
             code: "LOGIN_ERROR"
           });
         }
+        console.log('Registration and login successful:', user.username);
         res.status(201).json(user);
       });
     } catch (err) {
@@ -135,6 +148,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
+    console.log('Login request received:', { ...req.body, password: '[REDACTED]' });
     passport.authenticate("local", (err, user, info) => {
       if (err) {
         console.error("Login error:", err);
@@ -145,6 +159,7 @@ export function setupAuth(app: Express) {
       }
 
       if (!user) {
+        console.log('Authentication failed:', info?.message);
         return res.status(401).json({
           message: info?.message || "Invalid credentials",
           code: "INVALID_CREDENTIALS"
@@ -159,6 +174,7 @@ export function setupAuth(app: Express) {
             code: "SESSION_ERROR"
           });
         }
+        console.log('Login successful:', user.username);
         res.status(200).json(user);
       });
     })(req, res, next);
@@ -172,6 +188,7 @@ export function setupAuth(app: Express) {
       });
     }
 
+    const username = req.user?.username;
     req.logout((err) => {
       if (err) {
         console.error("Logout error:", err);
@@ -180,11 +197,13 @@ export function setupAuth(app: Express) {
           code: "LOGOUT_ERROR"
         });
       }
+      console.log('Logout successful:', username);
       res.sendStatus(200);
     });
   });
 
   app.get("/api/user", (req, res) => {
+    console.log('User session check:', req.isAuthenticated() ? 'Authenticated' : 'Not authenticated');
     if (!req.isAuthenticated()) {
       return res.status(401).json({
         message: "You must be logged in to access this resource",
