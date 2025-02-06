@@ -2,22 +2,28 @@ import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizz
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Define user roles
+// Define user roles for JurySync
 export const UserRole = z.enum([
   "ADMIN",
-  "USER",
-  "VISITOR"
+  "LAWYER",
+  "PARALEGAL",
+  "CLIENT"
 ]);
 
 export type UserRole = z.infer<typeof UserRole>;
 
-// Update users table with role and make email optional
+// Enhanced users table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
+  email: text("email").notNull().unique(),
   password: text("password").notNull(),
-  role: text("role").notNull().default("USER"),
-  email: text("email"),  // Making email optional to match current database state
+  role: text("role").notNull().default("CLIENT"),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  profileImage: text("profile_image"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Enhanced validation for user registration
@@ -26,21 +32,31 @@ export const insertUserSchema = createInsertSchema(users)
     username: true,
     password: true,
     email: true,
-    role: true
+    role: true,
+    firstName: true,
+    lastName: true
   })
   .extend({
     username: z.string()
-      .min(3, "Username must be at least 3 characters long")
+      .min(3, "Username must be at least 3 characters")
       .max(50, "Username cannot exceed 50 characters")
       .regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, underscores, and hyphens"),
+    email: z.string()
+      .email("Please enter a valid email address"),
     password: z.string()
-      .min(8, "Password must be at least 8 characters long")
+      .min(8, "Password must be at least 8 characters")
       .regex(/[0-9]/, "Password must contain at least one number")
       .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-      .regex(/[a-z]/, "Password must contain at least one lowercase letter"),
-    email: z.string().email().optional(),  // Make email optional in validation
+      .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+      .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
+    firstName: z.string().min(1, "First name is required").optional(),
+    lastName: z.string().min(1, "Last name is required").optional(),
     role: UserRole
   });
+
+// Export types
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
 
 // Define version control types
 export const DocumentVersion = z.object({
@@ -177,7 +193,6 @@ export const documents = pgTable("documents", {
 
 // Export types
 export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
-export type User = typeof users.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 
 export const insertDocumentSchema = createInsertSchema(documents)
@@ -190,7 +205,6 @@ export const insertDocumentSchema = createInsertSchema(documents)
     agentType: AgentType,
   });
 
-export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 
 

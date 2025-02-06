@@ -1,6 +1,6 @@
 import { 
   users, documents, approvals, signatures, documentVersions,
-  User, Document, Approval, Signature, DocumentVersion
+  type User, type Document, type Approval, type Signature, type DocumentVersion, type InsertApproval, type InsertSignature, type InsertDocumentVersion
 } from "@shared/schema";
 import { type InsertUser } from "@shared/schema";
 import { db } from "./db";
@@ -14,7 +14,9 @@ const PostgresSessionStore = connectPg(session);
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, user: Partial<User>): Promise<User>;
   getDocuments(userId: number): Promise<Document[]>;
   getDocument(id: number): Promise<Document | undefined>;
   createDocument(document: Omit<Document, "id" | "createdAt">): Promise<Document>;
@@ -53,7 +55,7 @@ export class DatabaseStorage implements IStorage {
   constructor() {
     this.sessionStore = new PostgresSessionStore({
       pool,
-      tableName: 'session', 
+      tableName: 'session',
       createTableIfMissing: true,
     });
   }
@@ -65,7 +67,6 @@ export class DatabaseStorage implements IStorage {
         .from(users)
         .where(eq(users.id, id))
         .limit(1);
-      console.log('getUser result:', user ? 'Found user' : 'No user found', { id });
       return user;
     } catch (error) {
       console.error('Error getting user:', error);
@@ -75,13 +76,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     try {
-      console.log('Looking up user by username:', username);
       const [user] = await db
         .select()
         .from(users)
         .where(eq(users.username, username))
         .limit(1);
-      console.log('User lookup result:', user ? 'Found' : 'Not found');
       return user;
     } catch (error) {
       console.error('Error getting user by username:', error);
@@ -89,14 +88,30 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    try {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+      return user;
+    } catch (error) {
+      console.error('Error getting user by email:', error);
+      throw error;
+    }
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
-      console.log('Creating user in database:', { ...insertUser, password: '[REDACTED]' });
       const [user] = await db
         .insert(users)
-        .values(insertUser)
+        .values({
+          ...insertUser,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
         .returning();
-      console.log('User created successfully:', { id: user.id, username: user.username });
       return user;
     } catch (error) {
       console.error('Error creating user:', error);
@@ -104,6 +119,22 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async updateUser(id: number, updates: Partial<User>): Promise<User> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({
+          ...updates,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, id))
+        .returning();
+      return user;
+    } catch (error) {
+      console.error('Error updating user:', error);
+      throw error;
+    }
+  }
   async getDocuments(userId: number): Promise<Document[]> {
     try {
       const docs = await db.select().from(documents).where(eq(documents.userId, userId));
