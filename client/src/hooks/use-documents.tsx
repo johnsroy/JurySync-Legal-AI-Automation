@@ -12,6 +12,7 @@ export function useDocuments() {
 export function useDocument(id: string) {
   return useQuery<Document>({
     queryKey: ["/api/documents", id],
+    enabled: !!id, // Only fetch if we have an ID
   });
 }
 
