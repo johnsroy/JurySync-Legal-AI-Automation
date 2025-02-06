@@ -5,40 +5,28 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
-const MAX_CHUNK_LENGTH = 1500; // Reduced from 2000
-const MAX_CONCURRENT_REQUESTS = 2; // Reduced from 3
+const MAX_CHUNK_LENGTH = 1500;
+const MAX_CONCURRENT_REQUESTS = 2;
+
+interface DocumentSection {
+  title: string;
+  content: string;
+  level: number;
+}
 
 // Helper functions
 async function wait(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function splitIntoChunks(text: string): string[] {
-  const sections = text.split(/(?=SECTION|Article|ARTICLE|\d+\.|^\d+\s)/gm);
-  const chunks: string[] = [];
-  let currentChunk = '';
-
-  for (const section of sections) {
-    if ((currentChunk + section).length > MAX_CHUNK_LENGTH) {
-      if (currentChunk) chunks.push(currentChunk.trim());
-      currentChunk = section;
-    } else {
-      currentChunk += section;
-    }
-  }
-
-  if (currentChunk) chunks.push(currentChunk.trim());
-  return chunks;
-}
-
 function getSystemPromptForAgent(agentType: AgentType) {
-  const basePrompt = `You are a legal AI assistant. Analyze the provided text and return a JSON object. Keep all responses concise and focused on key points. Ensure all arrays have at least one item.`;
+  const basePrompt = `You are a legal AI assistant. Analyze the provided text section and return a JSON object. Keep all responses concise and focused on key points. Ensure all arrays have at least one item.`;
 
   switch (agentType) {
     case "CONTRACT_AUTOMATION":
-      return `${basePrompt} Return ONLY a JSON object with this structure:
+      return `${basePrompt} The text is structured in sections with titles. Pay special attention to section headers and their hierarchy. Return ONLY a JSON object with this structure:
 {
-  "summary": "2-3 sentence summary",
+  "summary": "2-3 sentence summary focusing on key sections",
   "keyPoints": ["point 1", "point 2"],
   "suggestions": ["suggestion 1", "suggestion 2"],
   "riskScore": number between 1-10,
@@ -46,8 +34,8 @@ function getSystemPromptForAgent(agentType: AgentType) {
     "parties": ["party 1"],
     "effectiveDate": "date",
     "termLength": "duration",
-    "keyObligations": ["obligation"],
-    "terminationClauses": ["clause"],
+    "keyObligations": ["obligation with section reference"],
+    "terminationClauses": ["clause with section reference"],
     "governingLaw": "jurisdiction",
     "paymentTerms": "terms",
     "disputeResolution": "method",
@@ -60,7 +48,7 @@ function getSystemPromptForAgent(agentType: AgentType) {
     default:
       return `${basePrompt} Return ONLY a JSON object with this structure:
 {
-  "summary": "2-3 sentence summary",
+  "summary": "2-3 sentence summary focusing on key sections",
   "keyPoints": ["point 1", "point 2"],
   "suggestions": ["suggestion 1", "suggestion 2"],
   "riskScore": number between 1-10
@@ -68,7 +56,7 @@ function getSystemPromptForAgent(agentType: AgentType) {
   }
 }
 
-async function analyzeChunk(chunk: string, agentType: AgentType): Promise<DocumentAnalysis> {
+async function analyzeSection(section: DocumentSection, agentType: AgentType): Promise<DocumentAnalysis> {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
@@ -79,7 +67,7 @@ async function analyzeChunk(chunk: string, agentType: AgentType): Promise<Docume
         },
         {
           role: "user",
-          content: `Analyze this text section: ${chunk}`
+          content: `Analyze this section titled "${section.title}":\n\n${section.content}`
         }
       ],
       response_format: { type: "json_object" },
@@ -100,7 +88,6 @@ async function analyzeChunk(chunk: string, agentType: AgentType): Promise<Docume
       throw new Error("Invalid JSON response from OpenAI");
     }
 
-    // Validate the analysis structure
     if (!analysis.summary || !analysis.keyPoints?.length || !analysis.suggestions?.length || 
         typeof analysis.riskScore !== 'number' || analysis.riskScore < 1 || analysis.riskScore > 10) {
       throw new Error("Invalid analysis structure from OpenAI");
@@ -113,54 +100,48 @@ async function analyzeChunk(chunk: string, agentType: AgentType): Promise<Docume
   }
 }
 
-async function processChunkWithRetry(chunk: string, agentType: AgentType): Promise<DocumentAnalysis> {
+async function processWithRetry(section: DocumentSection, agentType: AgentType): Promise<DocumentAnalysis> {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      return await analyzeChunk(chunk, agentType);
+      return await analyzeSection(section, agentType);
     } catch (error) {
       console.error(`Attempt ${attempt + 1} failed:`, error);
       if (attempt === MAX_RETRIES - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, INITIAL_RETRY_DELAY * Math.pow(2, attempt)));
+      await wait(INITIAL_RETRY_DELAY * Math.pow(2, attempt));
     }
   }
   throw new Error("Failed after maximum retries");
 }
 
-export async function analyzeDocument(text: string, agentType: AgentType): Promise<DocumentAnalysis> {
+export async function analyzeDocument(text: string, agentType: AgentType, sections: DocumentSection[] = []): Promise<DocumentAnalysis> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OpenAI API key is not configured");
   }
 
-  // Split text into smaller chunks
-  const sections = text.split(/(?=SECTION|Article|ARTICLE|\d+\.|^\d+\s)/gm);
-  const chunks: string[] = [];
-  let currentChunk = '';
-
-  for (const section of sections) {
-    if ((currentChunk + section).length > MAX_CHUNK_LENGTH) {
-      if (currentChunk) chunks.push(currentChunk.trim());
-      currentChunk = section;
-    } else {
-      currentChunk += section;
-    }
+  // If no sections provided, create one from the full text
+  if (sections.length === 0) {
+    sections = [{
+      title: "Main Content",
+      content: text,
+      level: 1
+    }];
   }
-  if (currentChunk) chunks.push(currentChunk.trim());
 
-  console.log(`Split document into ${chunks.length} chunks`);
+  console.log(`Analyzing ${sections.length} sections`);
 
   const results: DocumentAnalysis[] = [];
-  for (let i = 0; i < chunks.length; i += MAX_CONCURRENT_REQUESTS) {
-    const batch = chunks.slice(i, i + MAX_CONCURRENT_REQUESTS);
+  for (let i = 0; i < sections.length; i += MAX_CONCURRENT_REQUESTS) {
+    const batch = sections.slice(i, i + MAX_CONCURRENT_REQUESTS);
     try {
       const batchResults = await Promise.all(
-        batch.map(async (chunk, index) => {
-          console.log(`Processing chunk ${i + index + 1}/${chunks.length}`);
-          return processChunkWithRetry(chunk, agentType);
+        batch.map(async (section) => {
+          console.log(`Processing section: ${section.title}`);
+          return processWithRetry(section, agentType);
         })
       );
       results.push(...batchResults);
     } catch (error) {
-      console.error("Failed to process document chunk:", error);
+      console.error("Failed to process section:", error);
       throw new Error("Failed to analyze document completely");
     }
   }

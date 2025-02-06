@@ -30,23 +30,120 @@ const upload = multer({
   }
 });
 
-async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
+interface ExtractedContent {
+  text: string;
+  sections: {
+    title: string;
+    content: string;
+    level: number;
+  }[];
+  metadata: {
+    title?: string;
+    author?: string;
+    creationDate?: string;
+    lastModified?: string;
+  };
+}
+
+async function extractTextFromFile(file: Express.Multer.File): Promise<ExtractedContent> {
   try {
     switch (file.mimetype) {
-      case 'application/pdf':
+      case 'application/pdf': {
         const pdfData = await pdfParse(file.buffer);
-        return pdfData.text;
+        const sections = [];
+        let currentSection = { title: '', content: '', level: 1 };
+
+        // Split by potential section headers
+        const lines = pdfData.text.split('\n');
+        for (const line of lines) {
+          // Detect headers based on formatting (this is a simple example)
+          if (line.match(/^[A-Z\d]+[\.\)]\s+[A-Z]/)) {
+            if (currentSection.content) {
+              sections.push(currentSection);
+            }
+            currentSection = {
+              title: line.trim(),
+              content: '',
+              level: 1
+            };
+          } else {
+            currentSection.content += line + '\n';
+          }
+        }
+        if (currentSection.content) {
+          sections.push(currentSection);
+        }
+
+        return {
+          text: pdfData.text,
+          sections,
+          metadata: {
+            title: pdfData.info?.Title,
+            author: pdfData.info?.Author,
+            creationDate: pdfData.info?.CreationDate,
+            lastModified: pdfData.info?.ModDate,
+          }
+        };
+      }
 
       case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-      case 'application/msword':
+      case 'application/msword': {
         const result = await mammoth.extractRawText({ buffer: file.buffer });
-        return result.value;
+        const sections = [];
+        let currentSection = { title: '', content: '', level: 1 };
+
+        // Split by potential section headers
+        const lines = result.value.split('\n');
+        for (const line of lines) {
+          if (line.match(/^[A-Z\d]+[\.\)]\s+[A-Z]/)) {
+            if (currentSection.content) {
+              sections.push(currentSection);
+            }
+            currentSection = {
+              title: line.trim(),
+              content: '',
+              level: 1
+            };
+          } else {
+            currentSection.content += line + '\n';
+          }
+        }
+        if (currentSection.content) {
+          sections.push(currentSection);
+        }
+
+        return {
+          text: result.value,
+          sections,
+          metadata: {}
+        };
+      }
 
       case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-      case 'application/vnd.ms-excel':
+      case 'application/vnd.ms-excel': {
         const workbook = XLSX.read(file.buffer);
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        return XLSX.utils.sheet_to_txt(worksheet);
+        const text = XLSX.utils.sheet_to_txt(worksheet);
+
+        // For spreadsheets, treat each non-empty row as a section
+        const sections = text.split('\n')
+          .filter(line => line.trim())
+          .map(line => ({
+            title: line.split('\t')[0] || 'Untitled Section',
+            content: line,
+            level: 1
+          }));
+
+        return {
+          text,
+          sections,
+          metadata: {
+            title: workbook.Props?.Title,
+            author: workbook.Props?.Author,
+            lastModified: workbook.Props?.ModifiedDate,
+          }
+        };
+      }
 
       default:
         throw new Error('Unsupported file type');
@@ -76,10 +173,10 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      let content: string;
+      let extractedContent: ExtractedContent;
       try {
-        content = await extractTextFromFile(req.file);
-        if (!content || content.trim().length === 0) {
+        extractedContent = await extractTextFromFile(req.file);
+        if (!extractedContent.text || extractedContent.text.trim().length === 0) {
           throw new Error("Empty document content");
         }
       } catch (error) {
@@ -91,8 +188,8 @@ export function registerRoutes(app: Express): Server {
       }
 
       const document = {
-        title: req.body.title || req.file.originalname,
-        content,
+        title: req.body.title || extractedContent.metadata.title || req.file.originalname,
+        content: extractedContent.text,
         agentType: req.body.agentType || "CONTRACT_AUTOMATION",
       };
 
@@ -112,7 +209,12 @@ export function registerRoutes(app: Express): Server {
       let analysis;
       try {
         console.log("Processing document with agent:", parsed.agentType);
-        analysis = await analyzeDocument(content, parsed.agentType);
+        // Pass the structured content to the analysis
+        analysis = await analyzeDocument(
+          extractedContent.text,
+          parsed.agentType,
+          extractedContent.sections
+        );
       } catch (error) {
         console.error('Analysis error:', error);
         return res.status(503).json({ 
@@ -124,9 +226,10 @@ export function registerRoutes(app: Express): Server {
       try {
         const createdDocument = await storage.createDocument({
           ...parsed,
-          content,
+          content: extractedContent.text,
           userId: req.user!.id,
           analysis,
+          metadata: extractedContent.metadata
         });
 
         res.status(201).json(createdDocument);
