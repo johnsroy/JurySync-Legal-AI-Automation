@@ -454,30 +454,36 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Generate draft using OpenAI
+      // Generate draft using OpenAI with chunked requirements
       const requirements = req.body.requirements;
-      const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          {
-            role: "system",
-            content: "You are a legal contract drafting assistant. Generate a professional contract based on the provided requirements."
-          },
-          {
-            role: "user",
-            content: requirements
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 2000
-      });
+      const maxChunkLength = 4000; // Safe limit for gpt-3.5-turbo
+      const chunks = requirements.match(new RegExp(`.{1,${maxChunkLength}}`, 'g')) || [];
 
-      const draftContent = response.choices[0].message.content;
+      let fullDraft = '';
+      for (const chunk of chunks) {
+        const response = await openai.chat.completions.create({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "system",
+              content: "You are a legal contract drafting assistant. Generate a professional contract section based on the provided requirements. Maintain consistency with any previous sections."
+            },
+            {
+              role: "user",
+              content: chunk
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 1500
+        });
+
+        fullDraft += response.choices[0].message.content + '\n';
+      }
 
       // Update document with new draft
       const updatedDocument = await storage.createDocument({
         ...document,
-        content: draftContent,
+        content: fullDraft,
         analysis: {
           ...document.analysis,
           contractDetails: {
@@ -505,7 +511,55 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Analyze specific clause
+  // New endpoint for downloading contract
+  app.get("/api/documents/:id/download", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ 
+        message: "You must be logged in to access documents",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    try {
+      const documentId = parseInt(req.params.id);
+      const document = await storage.getDocument(documentId);
+
+      if (!document || document.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Check if document is in an approved state
+      const workflowState = document.analysis?.contractDetails?.workflowState;
+      if (!workflowState || !['APPROVAL', 'SIGNATURE', 'COMPLETED'].includes(workflowState.status)) {
+        return res.status(400).json({ 
+          message: "Document must be approved before downloading",
+          code: "NOT_APPROVED"
+        });
+      }
+
+      // Format the content for download
+      const formattedContent = `
+Contract: ${document.title}
+Generated on: ${new Date().toLocaleDateString()}
+Status: ${workflowState.status}
+Version: ${document.analysis.contractDetails?.versionControl?.version || '1.0'}
+
+${document.content}
+      `.trim();
+
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Disposition', `attachment; filename="${document.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_v${document.analysis.contractDetails?.versionControl?.version || '1.0'}.txt"`);
+
+      res.send(formattedContent);
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      res.status(500).json({ 
+        message: "Failed to download document",
+        code: "DOWNLOAD_ERROR"
+      });
+    }
+  });
+
   app.post("/api/documents/:id/analyze-clause", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ 

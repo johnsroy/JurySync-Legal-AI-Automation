@@ -13,6 +13,7 @@ import {
   Send,
   UserCheck,
   AlertCircle,
+  Download,
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 
@@ -50,11 +51,24 @@ export function ContractEditor({
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to generate draft. Please try again.",
+        description: error.message || "Failed to generate draft. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  // Download approved draft
+  const handleDownload = async () => {
+    try {
+      window.location.href = `/api/documents/${documentId}/download`;
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to download document. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -73,7 +87,7 @@ export function ContractEditor({
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to analyze clause. Please try again.",
+        description: error.message || "Failed to analyze clause. Please try again.",
         variant: "destructive",
       });
     }
@@ -94,11 +108,16 @@ export function ContractEditor({
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to update workflow. Please try again.",
+        description: error.message || "Failed to update workflow. Please try again.",
         variant: "destructive",
       });
     }
   };
+
+  // Check if document is in an approved state
+  const isApproved = analysis.contractDetails?.workflowState?.status === "APPROVAL" ||
+                    analysis.contractDetails?.workflowState?.status === "SIGNATURE" ||
+                    analysis.contractDetails?.workflowState?.status === "COMPLETED";
 
   return (
     <Card className="mt-6">
@@ -122,23 +141,33 @@ export function ContractEditor({
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Contract Editor</h3>
-              <Button
-                onClick={handleGenerateDraft}
-                disabled={isGenerating}
-              >
-                {isGenerating ? (
-                  <>Generating...</>
-                ) : (
-                  <>
-                    <FileText className="w-4 h-4 mr-2" />
-                    Generate Draft
-                  </>
+              <div className="space-x-2">
+                <Button
+                  onClick={handleGenerateDraft}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <>Generating...</>
+                  ) : (
+                    <>
+                      <FileText className="w-4 h-4 mr-2" />
+                      Generate Draft
+                    </>
+                  )}
+                </Button>
+                {isApproved && (
+                  <Button
+                    onClick={handleDownload}
+                    variant="outline"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
                 )}
-              </Button>
+              </div>
             </div>
             <ScrollArea className="h-[500px] w-full border rounded-md p-4">
               <div className="prose max-w-none">
-                {/* Content editor goes here */}
                 <div className="whitespace-pre-wrap">{content}</div>
               </div>
             </ScrollArea>
@@ -210,6 +239,15 @@ export function ContractEditor({
                   <UserCheck className="w-4 h-4 mr-2" />
                   Send for Signature
                 </Button>
+                {isApproved && (
+                  <Button
+                    variant="outline"
+                    onClick={handleDownload}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                )}
               </div>
             </div>
 
