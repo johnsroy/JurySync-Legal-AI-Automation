@@ -48,7 +48,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   const [reviewComment, setReviewComment] = useState("");
 
   // Determine if document is approved
-  const isApproved = analysis.contractDetails?.workflowState?.status === "APPROVED";
+  const workflowState = analysis.contractDetails?.workflowState || {};
+  const isApproved = workflowState.status === "APPROVED";
 
   // Fetch all users for approval requests
   const { data: users } = useQuery({
@@ -132,7 +133,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to ${action} document`);
+        const error = await response.json();
+        throw new Error(error.message || `Failed to ${action} document`);
       }
 
       // Refresh both queries
@@ -221,13 +223,12 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         throw new Error(error.message || 'Failed to save draft');
       }
 
-      const result = await response.json();
       setHasUnsavedChanges(false);
       onUpdate();
 
       toast({
         title: "Draft Saved",
-        description: `Version ${result.version} has been created successfully.`,
+        description: "Changes have been saved successfully.",
       });
 
       setActiveTab("redline");
@@ -253,7 +254,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   };
 
   const renderVersions = () => {
-    const versions = analysis.contractDetails?.workflowState?.versions || [];
+    const versions = workflowState.versions || [];
 
     if (versions.length === 0) {
       return (
@@ -269,7 +270,9 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           <div>
             <h4 className="font-medium">Version {version.version}</h4>
             <p className="text-sm text-gray-500">
-              {format(new Date(version.changes[0].timestamp), "PPpp")}
+              {version.changes?.[0]?.timestamp ? 
+                format(new Date(version.changes[0].timestamp), "PPpp") :
+                "No timestamp available"}
             </p>
           </div>
           <div className="flex space-x-2">
@@ -288,11 +291,15 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </div>
         </div>
         <div className="mt-2 text-sm">
-          {version.changes.map((change: any, changeIndex: number) => (
+          {version.changes?.map((change: any, changeIndex: number) => (
             <div key={changeIndex} className="mb-1 text-gray-600">
               • {change.description} by {change.user}
             </div>
-          ))}
+          )) || (
+            <div className="mb-1 text-gray-600">
+              No change history available
+            </div>
+          )}
         </div>
       </div>
     ));
@@ -394,7 +401,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </TabsContent>
         )}
 
-        {/* Redline View Tab Content */}
+        {/* Version History Tab Content */}
         <TabsContent value="redline" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -508,13 +515,13 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                 <span className={`px-2 py-1 rounded-full text-sm ${
                   isApproved
                     ? "bg-green-100 text-green-800"
-                    : analysis.contractDetails?.workflowState?.status === "REVIEW"
+                    : workflowState.status === "REVIEW"
                       ? "bg-yellow-100 text-yellow-800"
                       : "bg-blue-100 text-blue-800"
                 }`}>
                   {isApproved
                     ? "Approved"
-                    : analysis.contractDetails?.workflowState?.status === "REVIEW"
+                    : workflowState.status === "REVIEW"
                       ? "Waiting on Review"
                       : "Draft"}
                 </span>
