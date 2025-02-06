@@ -14,7 +14,6 @@ import {
   History,
   Send,
   UserCheck,
-  AlertCircle,
   Download,
   Edit,
 } from "lucide-react";
@@ -57,7 +56,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     },
   });
 
-  // Track changes to editableDraft
   useEffect(() => {
     if (content) {
       setEditableDraft(content);
@@ -138,12 +136,80 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         description: "Your changes have been saved as a new version.",
       });
 
-      // Show the updated versions in redline view
       setActiveTab("redline");
     } catch (error: any) {
       toast({
         title: "Error",
         description: error.message || "Failed to save draft. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRequestReview = async () => {
+    try {
+      const approver = selectedApprover || (users && users[0]?.id);
+
+      if (!approver) {
+        toast({
+          title: "Error",
+          description: "No approver available",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await apiRequest("POST", `/api/documents/${documentId}/request-review`, {
+        approverId: approver,
+        comments: reviewComment,
+      });
+
+      toast({
+        title: "Review Requested",
+        description: "Document has been sent for review",
+      });
+      onUpdate();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to request review",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleWorkflowAction = async (action: "review" | "approve" | "sign") => {
+    try {
+      const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
+        action,
+      });
+      const result = await response.json();
+
+      if (action === "approve") {
+        setIsApproved(true);
+      }
+
+      onUpdate();
+      toast({
+        title: "Workflow Updated",
+        description: `Document has been ${action === "approve" ? "approved" : `sent for ${action}`}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update workflow. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      window.location.href = `/api/documents/${documentId}/download?format=${downloadFormat}`;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: "Failed to download document. Please try again.",
         variant: "destructive",
       });
     }
@@ -187,7 +253,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     ));
   };
 
-  // Show the Generated Draft tab only if a draft has been generated
+  // Define tabs - Generated Draft tab only appears after generation
   const tabs = [
     { id: "editor", label: "Requirements", icon: FileText },
     ...(generatedDraft ? [{ id: "draft", label: "Generated Draft", icon: Edit }] : []),
@@ -195,37 +261,26 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     { id: "workflow", label: "Workflow", icon: History },
   ];
 
-  const handleDownload = () => {
-    //Implementation for handleDownload
-  };
-
-  const handleRequestReview = () => {
-    //Implementation for handleRequestReview
-  };
-
-  const handleWorkflowAction = (action: string) => {
-    //Implementation for handleWorkflowAction
-  };
-
-
   return (
     <Card className="mt-6">
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          {tabs.map(tab => (
-            <TabsTrigger key={tab.id} value={tab.id}>
-              <tab.icon className="w-4 h-4 mr-2" />
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <div className="border-b px-4">
+          <TabsList className="h-12">
+            {tabs.map(tab => (
+              <TabsTrigger key={tab.id} value={tab.id} className="px-4">
+                <tab.icon className="w-4 h-4 mr-2" />
+                <span>{tab.label}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         {/* Requirements Tab Content */}
-        <TabsContent value="editor" className="p-4">
-          <div className="space-y-4">
+        <TabsContent value="editor" className="p-6">
+          <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Contract Requirements</h3>
-              <div className="space-x-2">
+              <div className="flex items-center space-x-4">
                 <Button
                   onClick={handleGenerateDraft}
                   disabled={isGenerating}
@@ -239,8 +294,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                     </>
                   )}
                 </Button>
-                {editableDraft || isApproved && (
-                  <div className="space-x-2">
+                {(editableDraft || isApproved) && (
+                  <div className="flex items-center space-x-2">
                     <Select
                       value={downloadFormat}
                       onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
@@ -266,7 +321,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
               </div>
             </div>
 
-            {/* Progress bar */}
             {isGenerating && (
               <div className="w-full space-y-2">
                 <Progress value={progress} className="w-full" />
@@ -286,19 +340,19 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
 
         {/* Generated Draft Tab Content - Only shown if draft exists */}
         {generatedDraft && (
-          <TabsContent value="draft" className="p-4">
-            <div className="space-y-4">
+          <TabsContent value="draft" className="p-6">
+            <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold">Contract Draft</h3>
-                <div className="space-x-2">
+                <div className="flex items-center space-x-4">
                   {hasUnsavedChanges && (
                     <Button onClick={handleSaveDraft}>
                       <Check className="w-4 h-4 mr-2" />
                       Save Changes
                     </Button>
                   )}
-                  {editableDraft || isApproved && (
-                    <div className="space-x-2">
+                  {(editableDraft || isApproved) && (
+                    <div className="flex items-center space-x-2">
                       <Select
                         value={downloadFormat}
                         onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
@@ -329,19 +383,19 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                   setEditableDraft(e.target.value);
                   setHasUnsavedChanges(true);
                 }}
-                className="min-h-[500px] font-mono"
+                className="min-h-[500px] font-mono text-sm"
                 placeholder="Generated contract draft will appear here..."
               />
             </div>
           </TabsContent>
         )}
 
-        <TabsContent value="redline" className="p-4">
-          <div className="space-y-4">
+        <TabsContent value="redline" className="p-6">
+          <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Redline Analysis</h3>
               {editableDraft || isApproved && (
-                <div className="space-x-2">
+                <div className="flex items-center space-x-2">
                   <Select
                     value={downloadFormat}
                     onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
@@ -371,11 +425,11 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </div>
         </TabsContent>
 
-        <TabsContent value="workflow" className="p-4">
-          <div className="space-y-4">
+        <TabsContent value="workflow" className="p-6">
+          <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Workflow Status</h3>
-              <div className="space-x-2">
+              <div className="flex items-center space-x-4">
                 <Button
                   variant="outline"
                   onClick={() => handleRequestReview()}
@@ -410,7 +464,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                   Send for Signature
                 </Button>
                 {editableDraft || isApproved && (
-                  <div className="space-x-2">
+                  <div className="flex items-center space-x-2">
                     <Select
                       value={downloadFormat}
                       onValueChange={(value: 'pdf' | 'docx' | 'txt') => setDownloadFormat(value)}
