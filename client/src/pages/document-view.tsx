@@ -4,10 +4,9 @@ import { DocumentAnalysis } from "@shared/schema";
 import {
   Card,
   CardContent,
-  CardFooter,
-  CardDescription,
   CardHeader,
   CardTitle,
+  CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -23,23 +22,17 @@ import {
   Send,
   MessageSquare,
   ChevronRight,
+  Clock,
+  Building,
+  Banknote,
+  ShieldAlert,
 } from "lucide-react";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { useState } from "react";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { apiRequest } from "@/lib/queryClient";
 import {
   HoverCard,
   HoverCardContent,
@@ -50,6 +43,206 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+
+const renderContractDetails = (analysis: DocumentAnalysis) => {
+  if (!analysis.contractDetails) return null;
+
+  const basicInfo = [
+    {
+      icon: Building,
+      title: "Parties Involved",
+      value: analysis.contractDetails.parties?.join(", ") || "Not specified",
+      color: "text-blue-600"
+    },
+    {
+      icon: Clock,
+      title: "Effective Date",
+      value: analysis.contractDetails.effectiveDate || "Not specified",
+      color: "text-purple-600"
+    },
+    {
+      icon: Clock,
+      title: "Term Length",
+      value: analysis.contractDetails.termLength || "Not specified",
+      color: "text-indigo-600"
+    },
+    {
+      icon: Banknote,
+      title: "Payment Terms",
+      value: analysis.contractDetails.paymentTerms || "Not specified",
+      color: "text-green-600"
+    },
+    {
+      icon: ShieldAlert,
+      title: "Governing Law",
+      value: analysis.contractDetails.governingLaw || "Not specified",
+      color: "text-orange-600"
+    }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {basicInfo.map((info, index) => (
+          <div
+            key={index}
+            className="p-4 rounded-lg border bg-white shadow-sm hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <info.icon className={`h-5 w-5 ${info.color}`} />
+              <h5 className="font-medium text-gray-700">{info.title}</h5>
+            </div>
+            <p className="text-gray-600">{info.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {analysis.contractDetails.keyObligations?.length > 0 && (
+        <Collapsible className="border rounded-lg overflow-hidden">
+          <CollapsibleTrigger className="flex w-full items-center justify-between p-4 bg-white hover:bg-gray-50">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-500" />
+              <span className="font-medium text-gray-900">Key Obligations</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-gray-500 transition-transform ui-expanded:rotate-90" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="divide-y border-t">
+              {analysis.contractDetails.keyObligations.map((obligation, index) => (
+                <HoverCard key={index}>
+                  <HoverCardTrigger asChild>
+                    <div className="flex items-start gap-3 p-4 hover:bg-gray-50 cursor-help">
+                      <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-gray-700">{obligation}</p>
+                        <p className="text-sm text-gray-500">Section {index + 1}</p>
+                      </div>
+                    </div>
+                  </HoverCardTrigger>
+                  <HoverCardContent className="text-sm">
+                    This obligation must be fulfilled according to the contract terms.
+                    Click to view the full section in the document.
+                  </HoverCardContent>
+                </HoverCard>
+              ))}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {analysis.contractDetails.terminationClauses?.length > 0 && (
+        <Collapsible className="border rounded-lg overflow-hidden">
+          <CollapsibleTrigger className="flex w-full items-center justify-between p-4 bg-white hover:bg-gray-50">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              <span className="font-medium text-gray-900">Termination Clauses</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-gray-500 transition-transform ui-expanded:rotate-90" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="divide-y border-t">
+              {analysis.contractDetails.terminationClauses.map((clause, index) => (
+                <HoverCard key={index}>
+                  <HoverCardTrigger asChild>
+                    <div className="flex items-start gap-3 p-4 hover:bg-gray-50 cursor-help">
+                      <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-gray-700">{clause}</p>
+                        <p className="text-sm text-gray-500">Section {index + 1}</p>
+                      </div>
+                    </div>
+                  </HoverCardTrigger>
+                  <HoverCardContent className="text-sm">
+                    This clause outlines conditions that could lead to contract termination.
+                    Review carefully for risk assessment.
+                  </HoverCardContent>
+                </HoverCard>
+              ))}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {analysis.contractDetails.missingClauses?.length > 0 && (
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="text-red-700 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              Missing Critical Clauses
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {analysis.contractDetails.missingClauses.map((clause, index) => (
+                <div key={index} className="flex items-start gap-2 text-red-700">
+                  <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+                  <div>
+                    <p>{clause}</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      Recommended: Add this clause to strengthen the contract.
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {analysis.contractDetails.suggestedClauses?.length > 0 && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="text-blue-700 flex items-center gap-2">
+              <Info className="h-5 w-5" />
+              Suggested Improvements
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {analysis.contractDetails.suggestedClauses.map((clause, index) => (
+                <div key={index} className="flex items-start gap-2 text-blue-700">
+                  <Info className="h-5 w-5 shrink-0 mt-0.5" />
+                  <div>
+                    <p>{clause}</p>
+                    <p className="text-sm text-blue-600 mt-1">
+                      Consider adding this clause to enhance the contract.
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {analysis.contractDetails.riskFactors?.length > 0 && (
+        <Card className="border-orange-200 bg-orange-50">
+          <CardHeader>
+            <CardTitle className="text-orange-700 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              Risk Assessment
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {analysis.contractDetails.riskFactors.map((factor, index) => (
+                <div key={index} className="flex items-start gap-2 text-orange-700">
+                  <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+                  <div>
+                    <p>{factor}</p>
+                    <p className="text-sm text-orange-600 mt-1">
+                      Consider addressing this risk factor.
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
 
 interface Message {
   role: "user" | "assistant";
@@ -126,189 +319,6 @@ export default function DocumentView() {
   }
 
   const analysis = document.analysis as DocumentAnalysis;
-
-  const renderContractDetails = (analysis: DocumentAnalysis) => {
-    if (!analysis.contractDetails) return null;
-
-    return (
-      <div className="space-y-6">
-        <div>
-          <h4 className="font-medium text-gray-900">Contract Information</h4>
-          <div className="mt-2 space-y-4">
-            {analysis.contractDetails.parties?.length > 0 && (
-              <div>
-                <h5 className="text-sm font-medium text-gray-700">Parties Involved</h5>
-                <ul className="mt-1 list-disc pl-5 text-gray-600">
-                  {analysis.contractDetails.parties.map((party, i) => (
-                    <li key={i}>{party}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {analysis.contractDetails.effectiveDate && (
-              <div>
-                <h5 className="text-sm font-medium text-gray-700">Effective Date</h5>
-                <p className="text-gray-600">{analysis.contractDetails.effectiveDate}</p>
-              </div>
-            )}
-
-            {analysis.contractDetails.termLength && (
-              <div>
-                <h5 className="text-sm font-medium text-gray-700">Term Length</h5>
-                <p className="text-gray-600">{analysis.contractDetails.termLength}</p>
-              </div>
-            )}
-
-            {analysis.contractDetails.governingLaw && (
-              <div>
-                <h5 className="text-sm font-medium text-gray-700">Governing Law</h5>
-                <p className="text-gray-600">{analysis.contractDetails.governingLaw}</p>
-              </div>
-            )}
-
-            {analysis.contractDetails.paymentTerms && (
-              <div>
-                <h5 className="text-sm font-medium text-gray-700">Payment Terms</h5>
-                <p className="text-gray-600">{analysis.contractDetails.paymentTerms}</p>
-              </div>
-            )}
-
-            {analysis.contractDetails.disputeResolution && (
-              <div>
-                <h5 className="text-sm font-medium text-gray-700">Dispute Resolution</h5>
-                <p className="text-gray-600">{analysis.contractDetails.disputeResolution}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {analysis.contractDetails.keyObligations?.length > 0 && (
-          <Collapsible>
-            <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border p-4 text-left hover:bg-gray-50">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="font-medium">Key Obligations</span>
-              </div>
-              <ChevronRight className="h-4 w-4 transition-transform ui-expanded:rotate-90" />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-2 space-y-2 p-4">
-                {analysis.contractDetails.keyObligations.map((obligation, index) => (
-                  <HoverCard key={index}>
-                    <HoverCardTrigger asChild>
-                      <div className="flex items-start gap-2 p-2 rounded-md hover:bg-gray-50 cursor-help">
-                        <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
-                        <span className="text-gray-600">{obligation}</span>
-                      </div>
-                    </HoverCardTrigger>
-                    <HoverCardContent className="text-sm">
-                      This is a key obligation specified in section {index + 1} of the contract that needs to be fulfilled.
-                    </HoverCardContent>
-                  </HoverCard>
-                ))}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        )}
-
-        {analysis.contractDetails.terminationClauses?.length > 0 && (
-          <Collapsible>
-            <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border p-4 text-left hover:bg-gray-50">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-yellow-500" />
-                <span className="font-medium">Termination Clauses</span>
-              </div>
-              <ChevronRight className="h-4 w-4 transition-transform ui-expanded:rotate-90" />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-2 space-y-2 p-4">
-                {analysis.contractDetails.terminationClauses.map((clause, index) => (
-                  <HoverCard key={index}>
-                    <HoverCardTrigger asChild>
-                      <div className="flex items-start gap-2 p-2 rounded-md hover:bg-gray-50 cursor-help">
-                        <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
-                        <span className="text-gray-600">{clause}</span>
-                      </div>
-                    </HoverCardTrigger>
-                    <HoverCardContent className="text-sm">
-                      This clause outlines conditions under which the contract can be terminated.
-                    </HoverCardContent>
-                  </HoverCard>
-                ))}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        )}
-
-        {analysis.contractDetails.missingClauses?.length > 0 && (
-          <Collapsible>
-            <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border p-4 text-left hover:bg-gray-50">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-red-500" />
-                <span className="font-medium">Missing Clauses</span>
-              </div>
-              <ChevronRight className="h-4 w-4 transition-transform ui-expanded:rotate-90" />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-2 space-y-2 p-4">
-                {analysis.contractDetails.missingClauses.map((clause, index) => (
-                  <div key={index} className="flex items-start gap-2 text-red-600">
-                    <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-                    {clause}
-                  </div>
-                ))}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        )}
-
-        {analysis.contractDetails.suggestedClauses?.length > 0 && (
-          <Collapsible>
-            <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border p-4 text-left hover:bg-gray-50">
-              <div className="flex items-center gap-2">
-                <Info className="h-5 w-5 text-blue-500" />
-                <span className="font-medium">Suggested Clauses</span>
-              </div>
-              <ChevronRight className="h-4 w-4 transition-transform ui-expanded:rotate-90" />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-2 space-y-2 p-4">
-                {analysis.contractDetails.suggestedClauses.map((clause, index) => (
-                  <div key={index} className="flex items-start gap-2 text-gray-600">
-                    <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
-                    {clause}
-                  </div>
-                ))}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        )}
-
-        {analysis.contractDetails.riskFactors?.length > 0 && (
-          <Collapsible>
-            <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border p-4 text-left hover:bg-gray-50">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-orange-500" />
-                <span className="font-medium">Risk Factors</span>
-              </div>
-              <ChevronRight className="h-4 w-4 transition-transform ui-expanded:rotate-90" />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-2 space-y-2 p-4">
-                {analysis.contractDetails.riskFactors.map((factor, index) => (
-                  <div key={index} className="flex items-start gap-2 text-gray-600">
-                    <AlertTriangle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
-                    {factor}
-                  </div>
-                ))}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className="min-h-screen bg-gray-50">

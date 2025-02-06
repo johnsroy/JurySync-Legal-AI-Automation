@@ -364,6 +364,49 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  app.delete("/api/documents/:id", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ 
+        message: "You must be logged in to delete documents",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    try {
+      const documentId = parseInt(req.params.id);
+      if (isNaN(documentId)) {
+        return res.status(400).json({ 
+          message: "Invalid document ID",
+          code: "INVALID_ID"
+        });
+      }
+
+      const document = await storage.getDocument(documentId);
+      if (!document) {
+        return res.status(404).json({ 
+          message: "Document not found",
+          code: "NOT_FOUND"
+        });
+      }
+
+      if (document.userId !== req.user!.id) {
+        return res.status(403).json({ 
+          message: "You don't have permission to delete this document",
+          code: "FORBIDDEN"
+        });
+      }
+
+      await storage.deleteDocument(documentId);
+      res.sendStatus(204);
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      res.status(500).json({ 
+        message: "Failed to delete document",
+        code: "DELETE_ERROR"
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
