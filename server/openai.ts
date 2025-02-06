@@ -10,6 +10,13 @@ export interface DocumentAnalysis {
   riskScore: number;
 }
 
+interface AIResponse {
+  summary: string;
+  keyPoints: string[];
+  suggestions: string[];
+  riskScore: number;
+}
+
 export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
   try {
     const response = await openai.chat.completions.create({
@@ -17,7 +24,13 @@ export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
       messages: [
         {
           role: "system",
-          content: "You are a legal document analysis expert. Analyze the provided document and return a structured analysis with a summary, key points, suggestions for improvement, and a risk score from 1-10.",
+          content: `You are a legal document analysis expert. Analyze the provided document and return a JSON object with the following structure:
+{
+  "summary": "Brief summary of the document",
+  "keyPoints": ["Array of key points"],
+  "suggestions": ["Array of suggestions for improvement"],
+  "riskScore": number from 1-10
+}`,
         },
         {
           role: "user",
@@ -27,7 +40,13 @@ export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
       response_format: { type: "json_object" },
     });
 
-    const analysis = JSON.parse(response.choices[0].message.content);
+    const content = response.choices[0].message.content;
+    if (!content) {
+      throw new Error("No response from OpenAI");
+    }
+
+    const analysis = JSON.parse(content) as AIResponse;
+
     return {
       summary: analysis.summary,
       keyPoints: analysis.keyPoints,
@@ -35,6 +54,9 @@ export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
       riskScore: Math.max(1, Math.min(10, analysis.riskScore)),
     };
   } catch (error) {
-    throw new Error("Failed to analyze document: " + error.message);
+    if (error instanceof Error) {
+      throw new Error("Failed to analyze document: " + error.message);
+    }
+    throw new Error("Failed to analyze document: Unknown error");
   }
 }
