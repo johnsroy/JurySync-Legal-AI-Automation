@@ -27,7 +27,11 @@ export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
 
   const loginForm = useForm<InsertUser>({
-    resolver: zodResolver(insertUserSchema),
+    resolver: zodResolver(
+      insertUserSchema.extend({
+        password: insertUserSchema.shape.password
+      })
+    ),
     defaultValues: {
       username: "",
       password: "",
@@ -35,13 +39,18 @@ export default function AuthPage() {
   });
 
   const registerForm = useForm<InsertUser>({
-    resolver: zodResolver(insertUserSchema),
+    resolver: zodResolver(
+      insertUserSchema.extend({
+        password: insertUserSchema.shape.password
+      })
+    ),
     defaultValues: {
       username: "",
       password: "",
     },
   });
 
+  // If user is already logged in, redirect to dashboard
   if (user) {
     return <Redirect to="/" />;
   }
