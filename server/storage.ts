@@ -15,6 +15,7 @@ export interface IStorage {
   getDocuments(userId: number): Promise<Document[]>;
   getDocument(id: number): Promise<Document | undefined>;
   createDocument(document: Omit<Document, "id" | "createdAt">): Promise<Document>;
+  deleteDocument(id: number): Promise<void>;
   sessionStore: session.Store;
 }
 
@@ -115,6 +116,15 @@ export class DatabaseStorage implements IStorage {
       };
     } catch (error) {
       console.error('Error creating document:', error);
+      throw error;
+    }
+  }
+
+  async deleteDocument(id: number): Promise<void> {
+    try {
+      await db.delete(documents).where(eq(documents.id, id));
+    } catch (error) {
+      console.error('Error deleting document:', error);
       throw error;
     }
   }
