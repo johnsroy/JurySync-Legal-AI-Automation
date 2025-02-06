@@ -1,5 +1,6 @@
 import { useDocument } from "@/hooks/use-documents";
 import { Link, useParams } from "wouter";
+import { DocumentAnalysis } from "@shared/schema";
 import {
   Card,
   CardContent,
@@ -15,6 +16,8 @@ import {
   CheckCircle,
   FileText,
   Loader2,
+  Scale,
+  Bookmark,
 } from "lucide-react";
 import {
   Accordion,
@@ -25,7 +28,7 @@ import {
 
 export default function DocumentView() {
   const { id } = useParams();
-  const { data: document, isLoading } = useDocument(id);
+  const { data: document, isLoading } = useDocument(id || "");
 
   if (isLoading) {
     return (
@@ -35,7 +38,7 @@ export default function DocumentView() {
     );
   }
 
-  if (!document) {
+  if (!document || !document.analysis) {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <Card className="max-w-2xl mx-auto">
@@ -63,6 +66,8 @@ export default function DocumentView() {
       </div>
     );
   }
+
+  const analysis = document.analysis as DocumentAnalysis;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -94,15 +99,16 @@ export default function DocumentView() {
                   </CardDescription>
                 </div>
                 <div
-                  className={`px-3 py-1 rounded-full text-sm ${
-                    document.analysis.riskScore > 7
+                  className={`px-3 py-1 rounded-full text-sm flex items-center gap-2 ${
+                    analysis.riskScore > 7
                       ? "bg-red-100 text-red-700"
-                      : document.analysis.riskScore > 4
+                      : analysis.riskScore > 4
                       ? "bg-yellow-100 text-yellow-700"
                       : "bg-green-100 text-green-700"
                   }`}
                 >
-                  Risk Score: {document.analysis.riskScore}/10
+                  <Scale className="h-4 w-4" />
+                  Risk Score: {analysis.riskScore}/10
                 </div>
               </div>
             </CardHeader>
@@ -119,19 +125,22 @@ export default function DocumentView() {
 
                 <Separator className="my-6" />
 
-                <h3 className="text-lg font-semibold">AI Analysis</h3>
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Bookmark className="h-5 w-5" />
+                  Legal Analysis
+                </h3>
                 <div className="mt-4 space-y-4">
                   <div>
-                    <h4 className="font-medium text-gray-900">Summary</h4>
-                    <p className="mt-1 text-gray-600">{document.analysis.summary}</p>
+                    <h4 className="font-medium text-gray-900">Executive Summary</h4>
+                    <p className="mt-1 text-gray-600">{analysis.summary}</p>
                   </div>
 
                   <Accordion type="single" collapsible className="w-full">
                     <AccordionItem value="key-points">
-                      <AccordionTrigger>Key Points</AccordionTrigger>
+                      <AccordionTrigger>Key Legal Points</AccordionTrigger>
                       <AccordionContent>
                         <ul className="space-y-2">
-                          {document.analysis.keyPoints.map((point, index) => (
+                          {analysis.keyPoints.map((point, index) => (
                             <li
                               key={index}
                               className="flex items-start gap-2 text-gray-600"
@@ -145,13 +154,13 @@ export default function DocumentView() {
                     </AccordionItem>
 
                     <AccordionItem value="suggestions">
-                      <AccordionTrigger>Suggestions</AccordionTrigger>
+                      <AccordionTrigger>Legal Recommendations</AccordionTrigger>
                       <AccordionContent>
                         <ul className="space-y-2">
-                          {document.analysis.suggestions.map((suggestion, index) => (
+                          {analysis.suggestions.map((suggestion, index) => (
                             <li
                               key={index}
-                              className="flex items-start gap-2 text-gray-600"
+                              className="flex items-center gap-2 text-gray-600"
                             >
                               <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
                               {suggestion}
