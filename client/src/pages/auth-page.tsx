@@ -21,7 +21,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Scale, Gavel } from "lucide-react";
+import { Loader2, Scale, Gavel, CheckCircle, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 
@@ -56,42 +56,81 @@ export default function AuthPage() {
     },
   });
 
-  // Handle successful registration
   const onRegisterSuccess = () => {
     toast({
       title: "Registration successful",
       description: "Please login with your credentials",
+      icon: <CheckCircle className="h-5 w-5 text-green-500" />
     });
     setActiveTab("login");
     registerForm.reset();
   };
 
-  // If user is already logged in, redirect to dashboard
   if (user) {
     return <Redirect to="/" />;
   }
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2">
-      <div className="flex items-center justify-center p-8 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-1">
-            <div className="flex items-center space-x-2">
-              <Scale className="h-6 w-6 text-primary" />
-              <CardTitle className="text-2xl font-bold">JurySync.io</CardTitle>
+    <div className="min-h-screen flex">
+      {/* Left Side - Hero Section */}
+      <div className="hidden lg:flex lg:w-1/2 relative bg-gradient-to-br from-blue-600 to-purple-700">
+        <div className="absolute inset-0 bg-black/10" />
+        <div className="relative z-10 flex flex-col justify-center px-16 text-white">
+          <div className="flex items-center space-x-4 mb-8">
+            <Gavel className="h-16 w-16" />
+            <h1 className="text-5xl font-bold tracking-tight">JurySync.io</h1>
+          </div>
+          <p className="text-3xl font-light mb-8 leading-relaxed">
+            Transform your legal practice with AI-powered document analysis
+          </p>
+          <div className="space-y-6">
+            <div className="flex items-start space-x-4">
+              <Shield className="h-6 w-6 mt-1 text-blue-300" />
+              <div>
+                <h3 className="text-xl font-semibold mb-2">Enterprise-Grade Security</h3>
+                <p className="text-white/80">Advanced encryption and secure document handling</p>
+              </div>
             </div>
-            <CardDescription>
-              Your AI-powered legal document assistant
+            <div className="flex items-start space-x-4">
+              <Scale className="h-6 w-6 mt-1 text-blue-300" />
+              <div>
+                <h3 className="text-xl font-semibold mb-2">AI-Powered Analysis</h3>
+                <p className="text-white/80">Real-time document processing and insights</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-4">
+              <CheckCircle className="h-6 w-6 mt-1 text-blue-300" />
+              <div>
+                <h3 className="text-xl font-semibold mb-2">Smart Automation</h3>
+                <p className="text-white/80">Streamlined workflows and document management</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Side - Auth Forms */}
+      <div className="flex-1 flex items-center justify-center p-8 bg-gradient-to-br from-gray-50 to-gray-100">
+        <Card className="w-full max-w-md bg-white/80 backdrop-blur-lg shadow-xl border-0">
+          <CardHeader className="space-y-1 text-center pb-8">
+            <div className="flex items-center justify-center space-x-2 mb-2">
+              <Scale className="h-8 w-8 text-blue-600" />
+            </div>
+            <CardTitle className="text-3xl font-bold tracking-tight">
+              Welcome to JurySync
+            </CardTitle>
+            <CardDescription className="text-base">
+              Access your AI-powered legal assistant
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="login">Login</TabsTrigger>
-                <TabsTrigger value="register">Register</TabsTrigger>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+              <TabsList className="grid w-full grid-cols-2 mb-8">
+                <TabsTrigger value="login" className="text-base py-3">Sign In</TabsTrigger>
+                <TabsTrigger value="register" className="text-base py-3">Create Account</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="login">
+              <TabsContent value="login" className="space-y-4">
                 <Form {...loginForm}>
                   <form
                     onSubmit={loginForm.handleSubmit((data) =>
@@ -104,9 +143,9 @@ export default function AuthPage() {
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Username</FormLabel>
+                          <FormLabel className="text-base">Username</FormLabel>
                           <FormControl>
-                            <Input {...field} />
+                            <Input className="h-12" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -117,9 +156,9 @@ export default function AuthPage() {
                       name="password"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Password</FormLabel>
+                          <FormLabel className="text-base">Password</FormLabel>
                           <FormControl>
-                            <Input type="password" {...field} />
+                            <Input type="password" className="h-12" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -127,7 +166,7 @@ export default function AuthPage() {
                     />
                     <Button
                       type="submit"
-                      className="w-full"
+                      className="w-full h-12 text-base bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
                       disabled={loginMutation.isPending}
                     >
                       {loginMutation.isPending && (
@@ -139,7 +178,7 @@ export default function AuthPage() {
                 </Form>
               </TabsContent>
 
-              <TabsContent value="register">
+              <TabsContent value="register" className="space-y-4">
                 <Form {...registerForm}>
                   <form
                     onSubmit={registerForm.handleSubmit((data) =>
@@ -149,40 +188,42 @@ export default function AuthPage() {
                     )}
                     className="space-y-4"
                   >
-                    <FormField
-                      control={registerForm.control}
-                      name="firstName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>First Name</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={registerForm.control}
-                      name="lastName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Last Name</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={registerForm.control}
+                        name="firstName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-base">First Name</FormLabel>
+                            <FormControl>
+                              <Input className="h-12" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={registerForm.control}
+                        name="lastName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-base">Last Name</FormLabel>
+                            <FormControl>
+                              <Input className="h-12" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                     <FormField
                       control={registerForm.control}
                       name="email"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Email</FormLabel>
+                          <FormLabel className="text-base">Email</FormLabel>
                           <FormControl>
-                            <Input type="email" {...field} />
+                            <Input type="email" className="h-12" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -193,9 +234,9 @@ export default function AuthPage() {
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Username</FormLabel>
+                          <FormLabel className="text-base">Username</FormLabel>
                           <FormControl>
-                            <Input {...field} />
+                            <Input className="h-12" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -206,9 +247,9 @@ export default function AuthPage() {
                       name="password"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Password</FormLabel>
+                          <FormLabel className="text-base">Password</FormLabel>
                           <FormControl>
-                            <Input type="password" {...field} />
+                            <Input type="password" className="h-12" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -216,7 +257,7 @@ export default function AuthPage() {
                     />
                     <Button
                       type="submit"
-                      className="w-full"
+                      className="w-full h-12 text-base bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
                       disabled={registerMutation.isPending}
                     >
                       {registerMutation.isPending && (
@@ -230,31 +271,6 @@ export default function AuthPage() {
             </Tabs>
           </CardContent>
         </Card>
-      </div>
-
-      <div className="hidden lg:block relative bg-slate-100">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/90 to-primary/50 flex items-center justify-center p-12">
-          <div className="max-w-lg">
-            <div className="flex items-center space-x-4 mb-6">
-              <Gavel className="h-12 w-12 text-white" />
-              <h1 className="text-4xl font-bold text-white">JurySync.io</h1>
-            </div>
-            <p className="text-xl text-white/90 mb-4">
-              Transform your legal practice with AI-powered document analysis
-            </p>
-            <ul className="space-y-4 text-white/80">
-              <li className="flex items-center">
-                • Advanced contract automation
-              </li>
-              <li className="flex items-center">
-                • Real-time document analysis
-              </li>
-              <li className="flex items-center">
-                • Intelligent legal research assistance
-              </li>
-            </ul>
-          </div>
-        </div>
       </div>
     </div>
   );
