@@ -737,7 +737,7 @@ Ensure the output is properly formatted and ready for immediate use.`
         return res.status(404).json({ message: "Document not found" });
       }
 
-      const { action } = req.body;
+      const { action, content } = req.body;
       let newStatus;
       switch (action) {
         case "review":
@@ -753,15 +753,26 @@ Ensure the output is properly formatted and ready for immediate use.`
           return res.status(400).json({ message: "Invalid action" });
       }
 
+      // If content is provided (from save changes), create a new version
+      if (content) {
+        const versions = await storage.getVersions(documentId);
+        const newVersionNumber = versions.length + 1;
+
+        await storage.createVersion({
+          documentId,
+          version: newVersionNumber,
+          content,
+          changes: [{
+            user: req.user!.username,
+            description: `Version ${newVersionNumber} created`,
+            timestamp: new Date().toISOString()
+          }]
+        });
+      }
+
       // If action is approve, update the approval status
       if (action === "approve") {
-        const approval = await db
-          .select()
-          .from(approvals)
-          .where(eq(approvals.documentId, documentId))
-          .where(eq(approvals.status, "PENDING"))
-          .get();
-
+        const approval = await storage.getApproval(documentId);
         if (approval) {
           await storage.updateApproval(approval.id, "APPROVED");
         }
@@ -832,8 +843,8 @@ Ensure the output is properly formatted and ready for immediate use.`
 
           // Store signature request
           await storage.createSignature({
-            userId: req.user!.id,
             documentId,
+            userId: req.user!.id,
             status: "PENDING",
             signatureData: {
               token: signatureToken,
@@ -847,8 +858,9 @@ Ensure the output is properly formatted and ready for immediate use.`
         }
       }
 
-      // Update document status
+      // Update document with new status and version information
       const updatedDocument = await storage.updateDocument(documentId, {
+        content: content || document.content,
         analysis: {
           ...document.analysis,
           contractDetails: {
@@ -861,10 +873,11 @@ Ensure the output is properly formatted and ready for immediate use.`
                 ...(document.analysis.contractDetails?.workflowState?.comments || []),
                 {
                   user: req.user!.username,
-                  text: `Document ${action === 'approve' ? 'approved' : action === 'sign' ? 'sent for signature' : 'updated'}`,
+                  text: `Document ${content ? 'updated' : action === 'approve' ? 'approved' : action === 'sign' ? 'sent for signature' : 'updated'}`,
                   timestamp: new Date().toISOString()
                 }
-              ]
+              ],
+              versions: await storage.getVersions(documentId)
             }
           }
         }
@@ -881,7 +894,6 @@ Ensure the output is properly formatted and ready for immediate use.`
     }
   });
 
-  // New endpoint for handling document signing
   app.post("/api/documents/:id/sign", async (req, res) => {
     try {
       const documentId = parseInt(req.params.id);
@@ -1019,7 +1031,7 @@ Ensure the output is properly formatted and ready for immediate use.`
       res.status(500).json({
         message: "Failed to request review",
         code: "REVIEW_REQUEST_ERROR"
-});
+      });
     }
   });
 
