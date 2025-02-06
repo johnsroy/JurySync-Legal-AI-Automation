@@ -80,30 +80,33 @@ export function registerRoutes(app: Express): Server {
       const document = {
         title: req.body.title || req.file.originalname,
         content,
-        agentType: req.body.agentType || "CONTRACT_AUTOMATION", 
+        agentType: req.body.agentType || "CONTRACT_AUTOMATION",
       };
 
-      const parsed = insertDocumentSchema.parse(document);
-      console.log("Processing document with agent:", parsed.agentType);
-      const analysis = await analyzeDocument(content, parsed.agentType);
+      try {
+        const parsed = insertDocumentSchema.parse(document);
+        console.log("Processing document with agent:", parsed.agentType);
+        const analysis = await analyzeDocument(content, parsed.agentType);
 
-      const createdDocument = await storage.createDocument({
-        ...parsed,
-        content,
-        userId: req.user!.id,
-        analysis,
-      });
+        const createdDocument = await storage.createDocument({
+          ...parsed,
+          content,
+          userId: req.user!.id,
+          analysis,
+        });
 
-      res.status(201).json(createdDocument);
+        res.status(201).json(createdDocument);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          return res.status(400).json({ 
+            message: fromZodError(error).message,
+            code: "VALIDATION_ERROR"
+          });
+        }
+        throw error;
+      }
     } catch (error) {
       console.error('Document creation error:', error);
-
-      if (error instanceof ZodError) {
-        return res.status(400).json({ 
-          message: fromZodError(error).message,
-          code: "VALIDATION_ERROR"
-        });
-      }
 
       if (error instanceof Error && error.message === 'Invalid file type') {
         return res.status(400).json({
