@@ -11,14 +11,36 @@ export const UserRole = z.enum([
 
 export type UserRole = z.infer<typeof UserRole>;
 
-// Update users table with role
+// Update users table with role and make email optional
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   role: text("role").notNull().default("USER"),
-  email: text("email").notNull(),
+  email: text("email"),  // Making email optional to match current database state
 });
+
+// Enhanced validation for user registration
+export const insertUserSchema = createInsertSchema(users)
+  .pick({
+    username: true,
+    password: true,
+    email: true,
+    role: true
+  })
+  .extend({
+    username: z.string()
+      .min(3, "Username must be at least 3 characters long")
+      .max(50, "Username cannot exceed 50 characters")
+      .regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, underscores, and hyphens"),
+    password: z.string()
+      .min(8, "Password must be at least 8 characters long")
+      .regex(/[0-9]/, "Password must contain at least one number")
+      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+      .regex(/[a-z]/, "Password must contain at least one lowercase letter"),
+    email: z.string().email().optional(),  // Make email optional in validation
+    role: UserRole
+  });
 
 // Define version control types
 export const DocumentVersion = z.object({
@@ -107,11 +129,11 @@ export const contractDetailsSchema = z.object({
       text: z.string(),
       timestamp: z.string()
     })).optional(),
-    signatureStatus: SignatureStatus, 
-    approvalStatus: ApprovalStatus, 
-    version: z.string() 
+    signatureStatus: SignatureStatus,
+    approvalStatus: ApprovalStatus,
+    version: z.string()
   }).optional(),
-  versionControl: DocumentVersion.optional() 
+  versionControl: DocumentVersion.optional()
 });
 
 // Update document analysis schema
@@ -157,28 +179,6 @@ export const documents = pgTable("documents", {
 export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
 export type User = typeof users.$inferSelect;
 export type Document = typeof documents.$inferSelect;
-
-// Enhanced validation for user registration
-export const insertUserSchema = createInsertSchema(users)
-  .pick({
-    username: true,
-    password: true,
-    email: true,
-    role: true
-  })
-  .extend({
-    username: z.string()
-      .min(3, "Username must be at least 3 characters long")
-      .max(50, "Username cannot exceed 50 characters")
-      .regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, underscores, and hyphens"),
-    password: z.string()
-      .min(8, "Password must be at least 8 characters long")
-      .regex(/[0-9]/, "Password must contain at least one number")
-      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-      .regex(/[a-z]/, "Password must contain at least one lowercase letter"),
-    email: z.string().email(),
-    role: UserRole
-  });
 
 export const insertDocumentSchema = createInsertSchema(documents)
   .pick({

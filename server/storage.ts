@@ -2,9 +2,9 @@ import {
   users, documents, approvals, signatures, documentVersions,
   User, Document, Approval, Signature, DocumentVersion
 } from "@shared/schema";
-import type { InsertUser, InsertApproval, InsertSignature, InsertDocumentVersion } from "@shared/schema";
+import { type InsertUser } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
@@ -12,7 +12,6 @@ import { pool } from "./db";
 const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
-  // Existing methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
@@ -21,25 +20,17 @@ export interface IStorage {
   createDocument(document: Omit<Document, "id" | "createdAt">): Promise<Document>;
   updateDocument(id: number, document: Partial<Omit<Document, "id" | "createdAt">>): Promise<Document>;
   deleteDocument(id: number): Promise<void>;
-
-  // New methods for approvals
   createApproval(approval: Omit<InsertApproval, "id" | "createdAt">): Promise<Approval>;
   getApproval(id: number): Promise<Approval | undefined>;
   getApprovalByDocument(documentId: number): Promise<Approval | undefined>;
   updateApproval(id: number, status: string, comments?: string): Promise<Approval>;
-
-  // Methods for signatures
   createSignature(signature: Omit<InsertSignature, "id" | "createdAt">): Promise<Signature>;
   getSignature(id: number): Promise<Signature | undefined>;
   getSignatureByToken(token: string): Promise<Signature | undefined>;
   updateSignature(id: number, status: string, signatureData?: any): Promise<Signature>;
-
-  // Methods for versions
   createVersion(version: Omit<InsertDocumentVersion, "id" | "createdAt">): Promise<DocumentVersion>;
   getVersions(documentId: number): Promise<DocumentVersion[]>;
   getLatestVersion(documentId: number): Promise<DocumentVersion | undefined>;
-
-  // Get users by role
   getUsersByRole(role: string): Promise<User[]>;
   getAllUsers(): Promise<User[]>;
   getPendingApprovals(userId: number): Promise<Array<{
@@ -53,7 +44,6 @@ export interface IStorage {
     document: Document;
     requester: User;
   }>>;
-
   sessionStore: session.Store;
 }
 
@@ -75,6 +65,7 @@ export class DatabaseStorage implements IStorage {
         .from(users)
         .where(eq(users.id, id))
         .limit(1);
+      console.log('getUser result:', user ? 'Found user' : 'No user found', { id });
       return user;
     } catch (error) {
       console.error('Error getting user:', error);
@@ -84,11 +75,13 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     try {
+      console.log('Looking up user by username:', username);
       const [user] = await db
         .select()
         .from(users)
         .where(eq(users.username, username))
         .limit(1);
+      console.log('User lookup result:', user ? 'Found' : 'Not found');
       return user;
     } catch (error) {
       console.error('Error getting user by username:', error);
@@ -98,7 +91,7 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
-      console.log('Creating user:', { ...insertUser, password: '[REDACTED]' });
+      console.log('Creating user in database:', { ...insertUser, password: '[REDACTED]' });
       const [user] = await db
         .insert(users)
         .values(insertUser)
