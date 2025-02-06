@@ -1,9 +1,12 @@
-import { User, Document } from "@shared/schema";
+import { users, documents, User, Document } from "@shared/schema";
 import type { InsertUser } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 import session from "express-session";
-import createMemoryStore from "memorystore";
+import connectPg from "connect-pg-simple";
+import { pool } from "./db";
 
-const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -15,59 +18,55 @@ export interface IStorage {
   sessionStore: session.Store;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private documents: Map<number, Document>;
+export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
-  private userId: number;
-  private documentId: number;
 
   constructor() {
-    this.users = new Map();
-    this.documents = new Map();
-    this.userId = 1;
-    this.documentId = 1;
-    this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000,
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true,
     });
   }
 
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userId++;
-    const user = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
 
   async getDocuments(userId: number): Promise<Document[]> {
-    return Array.from(this.documents.values()).filter(
-      (doc) => doc.userId === userId,
-    );
+    return await db.select().from(documents).where(eq(documents.userId, userId));
   }
 
   async getDocument(id: number): Promise<Document | undefined> {
-    return this.documents.get(id);
+    const [document] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, id));
+    return document;
   }
 
   async createDocument(
     document: Omit<Document, "id" | "createdAt">,
   ): Promise<Document> {
-    const id = this.documentId++;
-    const createdAt = new Date();
-    const newDocument = { ...document, id, createdAt };
-    this.documents.set(id, newDocument);
+    const [newDocument] = await db
+      .insert(documents)
+      .values(document)
+      .returning();
     return newDocument;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
