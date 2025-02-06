@@ -15,10 +15,11 @@ import {
   Download,
   Edit,
   Check,
+  PenTool
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 
 interface ContractEditorProps {
@@ -35,6 +36,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   onUpdate,
 }) => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("editor");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedDraft, setGeneratedDraft] = useState("");
@@ -44,7 +46,9 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx' | 'txt'>('docx');
   const [selectedApprover, setSelectedApprover] = useState<string>("");
   const [reviewComment, setReviewComment] = useState("");
-  const [isApproved, setIsApproved] = useState(false);
+
+  // Determine if document is approved
+  const isApproved = analysis.contractDetails?.workflowState?.status === "APPROVED";
 
   // Fetch all users for approval requests
   const { data: users } = useQuery({
@@ -75,6 +79,77 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
       setHasUnsavedChanges(true);
     }
   }, [editableDraft]);
+
+  // Handle review request
+  const handleRequestReview = async () => {
+    try {
+      if (!selectedApprover) {
+        toast({
+          title: "Error",
+          description: "Please select an approver",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const response = await apiRequest("POST", `/api/documents/${documentId}/request-review`, {
+        approverId: selectedApprover,
+        comments: reviewComment,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to send review request");
+      }
+
+      toast({
+        title: "Review Requested",
+        description: "Document has been sent for review",
+      });
+
+      // Reset form fields
+      setSelectedApprover("");
+      setReviewComment("");
+      onUpdate();
+
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to request review",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle workflow actions (approve, sign)
+  const handleWorkflowAction = async (action: "approve" | "sign") => {
+    try {
+      const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
+        action,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to ${action} document`);
+      }
+
+      // Refresh data
+      queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
+      onUpdate();
+
+      toast({
+        title: action === "approve" ? "Document Approved" : "Sent for Signature",
+        description: action === "approve" 
+          ? "The document has been approved successfully" 
+          : "Document has been sent for digital signature",
+      });
+
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || `Failed to ${action} document`,
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleGenerateDraft = async () => {
     setIsGenerating(true);
@@ -225,19 +300,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     { id: "approvals", label: "Approval Pending", icon: UserCheck },
     { id: "workflow", label: "Workflow", icon: History },
   ];
-
-
-  const handleWorkflowAction = (action: string) => {
-    //Implementation for handling workflow actions.  This is assumed to exist based on the original code.
-    console.log("Workflow action:", action);
-    // Add your actual workflow action handling logic here
-  };
-
-  const handleRequestReview = () => {
-    //Implementation for requesting review.  This is assumed to exist based on the original code.
-    console.log("Requesting Review");
-  };
-
 
   return (
     <Card className="mt-6">
@@ -408,7 +470,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
               <div className="flex items-center space-x-4">
                 <Button
                   variant="outline"
-                  onClick={() => handleRequestReview()}
+                  onClick={handleRequestReview}
                   disabled={isApproved}
                 >
                   <Send className="w-4 h-4 mr-2" />
@@ -422,18 +484,37 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                   <Check className="w-4 h-4 mr-2" />
                   {isApproved ? "Approved" : "Approve"}
                 </Button>
-                <Button
-                  variant="default"
-                  onClick={() => handleWorkflowAction("sign")}
-                  disabled={!isApproved}
-                >
-                  <UserCheck className="w-4 h-4 mr-2" />
-                  Send for Signature
-                </Button>
+                {isApproved && (
+                  <Button
+                    variant="default"
+                    onClick={() => handleWorkflowAction("sign")}
+                  >
+                    <PenTool className="w-4 h-4 mr-2" />
+                    Send for Signature
+                  </Button>
+                )}
               </div>
             </div>
 
             <div className="space-y-4">
+              {/* Current Status Display */}
+              <div className="flex items-center space-x-2">
+                <span className="font-medium">Current Status:</span>
+                <span className={`px-2 py-1 rounded-full text-sm ${
+                  isApproved
+                    ? "bg-green-100 text-green-800"
+                    : analysis.contractDetails?.workflowState?.status === "REVIEW"
+                    ? "bg-yellow-100 text-yellow-800"
+                    : "bg-blue-100 text-blue-800"
+                }`}>
+                  {isApproved 
+                    ? "Approved" 
+                    : analysis.contractDetails?.workflowState?.status === "REVIEW"
+                    ? "Waiting on Review"
+                    : "Draft"}
+                </span>
+              </div>
+
               <div className="space-y-2">
                 <label className="text-sm font-medium">Select Approver</label>
                 <Select

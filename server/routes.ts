@@ -16,6 +16,8 @@ import pdfkit from "pdfkit";
 import { createHash } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
+import { execSync } from "child_process";
+import { PDFDocument, rgb } from "pdf-lib";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -735,14 +737,14 @@ Ensure the output is properly formatted and ready for immediate use.`
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { action, content } = req.body;
+      const { action } = req.body;
       let newStatus;
       switch (action) {
         case "review":
           newStatus = "REVIEW";
           break;
         case "approve":
-          newStatus = "APPROVAL";
+          newStatus = "APPROVED";
           break;
         case "sign":
           newStatus = "SIGNATURE";
@@ -762,26 +764,81 @@ Ensure the output is properly formatted and ready for immediate use.`
         });
       }
 
-      // If content is provided, create a new version
-      let newVersion;
-      if (content) {
-        const versionNumber = existingVersions.length + 1;
-        newVersion = await storage.createVersion({
-          documentId,
-          version: `${versionNumber}.0`,
-          content,
-          changes: [{
-            user: req.user!.username,
-            timestamp: new Date().toISOString(),
-            description: `Version ${versionNumber}.0 created`
-          }],
-          authorId: req.user!.id
+      // If action is approve, update any pending approvals
+      if (action === "approve") {
+        const [approval] = await db
+          .select()
+          .from(approvals)
+          .where(
+            and(
+              eq(approvals.documentId, documentId),
+              eq(approvals.status, "PENDING")
+            )
+          );
+
+        if (approval) {
+          await storage.updateApproval(approval.id, "APPROVED", req.body.comments);
+        }
+      }
+
+      // If action is sign, generate signature fields and token
+      if (action === "sign") {
+        // Load the document content
+        const pdfDoc = await PDFDocument.create();
+        const page = pdfDoc.addPage();
+        const { width, height } = page.getSize();
+
+        // Add content
+        page.drawText(document.content, {
+          x: 50,
+          y: height - 50,
+          size: 12,
+          color: rgb(0, 0, 0),
         });
+
+        // Add signature field
+        const signatureField = {
+          x: 50,
+          y: 100,
+          width: 200,
+          height: 50,
+        };
+
+        // Save the prepared PDF
+        const pdfBytes = await pdfDoc.save();
+        const signaturePath = path.join(process.cwd(), 'temp', `${documentId}_signature.pdf`);
+        await fs.writeFile(signaturePath, pdfBytes);
+
+        // Create signature request in database
+        const signatureToken = createHash('sha256')
+          .update(documentId + Date.now().toString())
+          .digest('hex');
+
+        const signature = await storage.createSignature({
+          documentId,
+          status: "PENDING",
+          signatureData: {
+            token: signatureToken,
+            field: signatureField,
+            email: req.body.signerEmail
+          },
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+        });
+
+        // Send email notification
+        if (req.body.signerEmail) {
+          await sendEmail({
+            to: req.body.signerEmail,
+            from: "noreply@legalai.com",
+            subject: "Document Signature Request",
+            text: `You have a new document to sign. Click here to view and sign: ${process.env.APP_URL}/sign/${signature.signatureData.token}`,
+            html: `<p>You have a new document to sign. <a href="${process.env.APP_URL}/sign/${signature.signatureData.token}">Click here</a> to view and sign.</p>`
+          });
+        }
       }
 
       // Update document status
       const updatedDocument = await storage.updateDocument(documentId, {
-        content: content || document.content,
         analysis: {
           ...document.analysis,
           contractDetails: {
@@ -793,19 +850,9 @@ Ensure the output is properly formatted and ready for immediate use.`
                 ...(document.analysis.contractDetails?.workflowState?.comments || []),
                 {
                   user: req.user!.username,
-                  text: content ?
-                    `Version ${existingVersions.length + 1}.0 created` :
-                    `Workflow updated to ${newStatus}`,
+                  text: `Workflow updated to ${newStatus}`,
                   timestamp: new Date().toISOString()
                 }
-              ],
-              versions: [
-                ...(document.analysis.contractDetails?.workflowState?.versions || []),
-                ...(newVersion ? [{
-                  version: newVersion.version,
-                  content: newVersion.content,
-                  changes: newVersion.changes
-                }] : [])
               ]
             }
           }
@@ -814,8 +861,7 @@ Ensure the output is properly formatted and ready for immediate use.`
 
       res.json({
         ...updatedDocument,
-        status: "SAVED",
-        version: newVersion?.version || existingVersions[existingVersions.length - 1]?.version
+        status: "SAVED"
       });
 
     } catch (error) {
@@ -827,7 +873,6 @@ Ensure the output is properly formatted and ready for immediate use.`
     }
   });
 
-  // Add new endpoint to get all users
   app.get("/api/users", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({
