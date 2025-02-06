@@ -8,7 +8,7 @@ const INITIAL_RETRY_DELAY = 1000;
 const MAX_CHUNK_LENGTH = 2000;
 const MAX_CONCURRENT_REQUESTS = 3;
 
-// Helper functions remain unchanged
+// Helper functions
 async function wait(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -34,13 +34,43 @@ function splitIntoChunks(text: string): string[] {
 function getSystemPromptForAgent(agentType: AgentType) {
   switch (agentType) {
     case "CONTRACT_AUTOMATION":
-      return `You are a specialized legal contract analysis AI. Your tasks include:
-1. Identify contract type and structure
-2. Extract key contract elements (parties, dates, terms)
-3. Analyze obligations and responsibilities
-4. Flag potential risks and ambiguities
-5. Suggest improvements based on industry standards
-6. Provide risk assessment on a scale of 1-10
+      return `You are a specialized legal contract analysis AI with expertise in contract drafting, review, and management. Your tasks include:
+
+1. Contract Structure Analysis:
+   - Identify contract type and template structure
+   - Validate against industry standards
+   - Ensure all essential clauses are present
+
+2. Key Elements Extraction:
+   - Identify and list all parties involved
+   - Extract key dates and deadlines
+   - Map all obligations and responsibilities
+   - Identify consideration and payment terms
+
+3. Risk Assessment:
+   - Analyze liability exposure
+   - Review indemnification clauses
+   - Evaluate termination conditions
+   - Check force majeure provisions
+   - Assess regulatory compliance
+
+4. Language and Clarity:
+   - Flag ambiguous or conflicting terms
+   - Suggest clearer alternative language
+   - Ensure consistency in terminology
+   - Check for industry-standard definitions
+
+5. Compliance Verification:
+   - Validate jurisdictional requirements
+   - Check for required disclosures
+   - Verify signature requirements
+   - Ensure proper formatting
+
+6. Provide Actionable Recommendations:
+   - Suggest specific improvements
+   - Highlight missing clauses
+   - Propose alternative language
+   - Risk mitigation strategies
 
 Return JSON: {
   "summary": string,
@@ -52,7 +82,13 @@ Return JSON: {
     "effectiveDate": string,
     "termLength": string,
     "keyObligations": string[],
-    "terminationClauses": string[]
+    "terminationClauses": string[],
+    "governingLaw": string,
+    "paymentTerms": string,
+    "disputeResolution": string,
+    "missingClauses": string[],
+    "suggestedClauses": string[],
+    "riskFactors": string[]
   }
 }`;
 
@@ -168,6 +204,12 @@ export async function analyzeDocument(text: string, agentType: AgentType): Promi
       termLength: r.contractDetails?.termLength || acc.termLength,
       keyObligations: [...new Set([...(acc.keyObligations || []), ...(r.contractDetails?.keyObligations || [])])],
       terminationClauses: [...new Set([...(acc.terminationClauses || []), ...(r.contractDetails?.terminationClauses || [])])],
+      governingLaw: r.contractDetails?.governingLaw || acc.governingLaw,
+      paymentTerms: r.contractDetails?.paymentTerms || acc.paymentTerms,
+      disputeResolution: r.contractDetails?.disputeResolution || acc.disputeResolution,
+      missingClauses: [...new Set([...(acc.missingClauses || []), ...(r.contractDetails?.missingClauses || [])])],
+      suggestedClauses: [...new Set([...(acc.suggestedClauses || []), ...(r.contractDetails?.suggestedClauses || [])])],
+      riskFactors: [...new Set([...(acc.riskFactors || []), ...(r.contractDetails?.riskFactors || [])])],
     }), {});
 
     combinedAnalysis.contractDetails = contractDetails;
@@ -202,6 +244,12 @@ export async function chatWithDocument(
           - Term Length: ${analysis.contractDetails.termLength}
           - Key Obligations: ${analysis.contractDetails.keyObligations?.join(', ')}
           - Termination Clauses: ${analysis.contractDetails.terminationClauses?.join(', ')}
+          - Governing Law: ${analysis.contractDetails.governingLaw}
+          - Payment Terms: ${analysis.contractDetails.paymentTerms}
+          - Dispute Resolution: ${analysis.contractDetails.disputeResolution}
+          - Missing Clauses: ${analysis.contractDetails.missingClauses?.join(', ')}
+          - Suggested Clauses: ${analysis.contractDetails.suggestedClauses?.join(', ')}
+          - Risk Factors: ${analysis.contractDetails.riskFactors?.join(', ')}
           ` : ''}
 
           Answer user questions with specific, accurate information. Provide clear statistics and explain calculations when asked.
