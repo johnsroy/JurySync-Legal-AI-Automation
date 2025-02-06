@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing-page";
 import LoginPage from "@/pages/login-page";
 import RegisterPage from "@/pages/register-page";
+import ProductsPage from "@/pages/products-page";
 import Dashboard from "@/pages/dashboard";
 import DocumentView from "@/pages/document-view";
 import { ProtectedRoute } from "./lib/protected-route";
@@ -17,6 +18,7 @@ function Router() {
       <Route path="/" component={LandingPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
+      <Route path="/products" component={ProductsPage} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
       <ProtectedRoute path="/document/:id" component={DocumentView} />
       <Route component={NotFound} />
