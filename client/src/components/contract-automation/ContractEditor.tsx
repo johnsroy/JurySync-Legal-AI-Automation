@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ComboboxDemo } from "@/components/ui/combobox";
 import { useQuery } from "@tanstack/react-query";
 
 interface ContractEditorProps {
@@ -56,14 +55,69 @@ export function ContractEditor({
     },
   });
 
-  // Update useEffect to set initial draft content
   useEffect(() => {
     if (content) {
       setEditableDraft(content);
     }
   }, [content]);
 
-  // Modified save draft to handle versioning
+  // Add back the handleGenerateDraft function
+  const handleGenerateDraft = async () => {
+    setIsGenerating(true);
+    setProgress(0);
+
+    try {
+      // Start progress animation
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) return prev; // Cap at 90% until complete
+          return prev + Math.floor(Math.random() * 15) + 5; // More dynamic progress
+        });
+      }, 800);
+
+      const response = await apiRequest("POST", `/api/documents/${documentId}/generate-draft`, {
+        requirements: content,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to generate draft');
+      }
+
+      const result = await response.json();
+
+      // Clear interval and complete progress
+      clearInterval(progressInterval);
+      setProgress(100);
+
+      if (!result.content) {
+        throw new Error('No content received from server');
+      }
+
+      setGeneratedDraft(result.content);
+      setEditableDraft(result.content);
+      setActiveTab("draft");
+      onUpdate();
+
+      toast({
+        title: "Draft Generated Successfully",
+        description: "Your contract draft is ready for review.",
+      });
+
+    } catch (error: any) {
+      console.error('Draft generation error:', error);
+      toast({
+        title: "Error Generating Draft",
+        description: error.message || "Failed to generate draft. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+      // Reset progress after a delay
+      setTimeout(() => setProgress(0), 1000);
+    }
+  };
+
   const handleSaveDraft = async () => {
     try {
       const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
@@ -91,7 +145,6 @@ export function ContractEditor({
     }
   };
 
-  // Modified workflow action handler with approval state
   const handleWorkflowAction = async (action: "review" | "approve" | "sign") => {
     try {
       const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
@@ -117,7 +170,6 @@ export function ContractEditor({
     }
   };
 
-  // Request review handler with single user as approver
   const handleRequestReview = async () => {
     try {
       // If no approver is selected and we have admins, use the first admin
@@ -151,9 +203,10 @@ export function ContractEditor({
     }
   };
 
-  // Render versions in redline view
   const renderVersions = () => {
-    if (!analysis.contractDetails?.redlineHistory?.length) {
+    const redlineHistory = analysis.contractDetails?.redlineHistory || [];
+
+    if (redlineHistory.length === 0) {
       return (
         <div className="text-center py-8 text-gray-500">
           No revisions available yet. Changes made to the document will appear here.
@@ -161,7 +214,7 @@ export function ContractEditor({
       );
     }
 
-    return analysis.contractDetails.redlineHistory.map((redline, index) => (
+    return redlineHistory.map((redline: any, index: number) => (
       <div
         key={index}
         className={`p-4 rounded-lg border ${
@@ -197,7 +250,6 @@ export function ContractEditor({
     ));
   };
 
-  // Approval request section
   const renderApprovalRequest = () => {
     return (
       <div className="space-y-4 mt-4">
@@ -232,8 +284,6 @@ export function ContractEditor({
     );
   };
 
-
-  // Update download handler
   const handleDownload = async () => {
     try {
       window.location.href = `/api/documents/${documentId}/download?format=${downloadFormat}`;
@@ -246,7 +296,6 @@ export function ContractEditor({
     }
   };
 
-  // Real-time redlining
   const handleAnalyzeClause = async (clause: string) => {
     try {
       const response = await apiRequest("POST", `/api/documents/${documentId}/analyze-clause`, {
@@ -267,11 +316,8 @@ export function ContractEditor({
     }
   };
 
-  // Workflow integration (moved up)
-
-
-  // Show download button only if there's a draft or the document is approved
-  const showDownloadButton = generatedDraft || isApproved;
+  // Show download button only if there's a draft
+  const showDownloadButton = editableDraft || isApproved;
 
   return (
     <Card className="mt-6">
@@ -401,6 +447,7 @@ export function ContractEditor({
             />
           </div>
         </TabsContent>
+
         <TabsContent value="redline" className="p-4">
           <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -508,18 +555,18 @@ export function ContractEditor({
                 <div className="flex items-center space-x-2">
                   <span className="font-medium">Current Status:</span>
                   <span className={`px-2 py-1 rounded-full text-sm ${
-                    analysis.contractDetails.workflowState.status === "APPROVAL"
+                    analysis.contractDetails?.workflowState?.status === "APPROVAL"
                       ? "bg-green-100 text-green-800"
                       : "bg-blue-100 text-blue-800"
                   }`}>
-                    {analysis.contractDetails.workflowState.status}
+                    {analysis.contractDetails?.workflowState?.status || "NEW"}
                   </span>
                 </div>
 
-                {analysis.contractDetails.workflowState.comments && (
+                {analysis.contractDetails?.workflowState?.comments && (
                   <div className="space-y-2">
                     <h4 className="font-medium">Comments</h4>
-                    {analysis.contractDetails.workflowState.comments.map((comment: any, index: number) => (
+                    {analysis.contractDetails?.workflowState?.comments.map((comment: any, index: number) => (
                       <div key={index} className="p-3 rounded-lg bg-gray-50">
                         <p className="text-sm text-gray-600">{comment.text}</p>
                         <div className="mt-1 text-xs text-gray-500">
