@@ -6,27 +6,27 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Navigation */}
-      <nav className="fixed w-full z-50 bg-white/80 backdrop-blur-lg border-b border-gray-100">
+      <nav className="fixed w-full z-50 bg-white/80 backdrop-blur-lg border-b border-green-100">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Scale className="h-6 w-6 text-blue-600" />
+            <Scale className="h-6 w-6 text-green-600" />
             <span className="text-xl font-semibold text-gray-900">LegalAI</span>
           </div>
           <div className="flex items-center space-x-8">
-            <Link href="/products" className="text-gray-700 hover:text-blue-600">Products</Link>
-            <Link href="/customers" className="text-gray-700 hover:text-blue-600">Customers</Link>
-            <Link href="/security" className="text-gray-700 hover:text-blue-600">Security</Link>
-            <Link href="/news" className="text-gray-700 hover:text-blue-600">News</Link>
-            <Link href="/company" className="text-gray-700 hover:text-blue-600">Company</Link>
+            <Link href="/products" className="text-gray-700 hover:text-green-600">Products</Link>
+            <Link href="/customers" className="text-gray-700 hover:text-green-600">Customers</Link>
+            <Link href="/security" className="text-gray-700 hover:text-green-600">Security</Link>
+            <Link href="/news" className="text-gray-700 hover:text-green-600">News</Link>
+            <Link href="/company" className="text-gray-700 hover:text-green-600">Company</Link>
             <Link href="/login">
-              <Button variant="ghost" className="text-gray-700 hover:text-blue-600">Login</Button>
+              <Button variant="ghost" className="text-gray-700 hover:text-green-600">Login</Button>
             </Link>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 px-4 bg-gradient-to-br from-blue-50 to-indigo-50 animate-gradient-x">
+      <section className="pt-32 pb-20 px-4 bg-gradient-to-br from-yellow-50 to-green-50 animate-gradient-x">
         <div className="container mx-auto max-w-6xl">
           <h1 className="text-7xl font-bold text-center mb-6 text-gray-900 font-display">
             Legal AI Agent <br />
@@ -37,7 +37,7 @@ export default function LandingPage() {
           </p>
           <div className="flex justify-center">
             <Link href="/register">
-              <Button className="bg-blue-600 hover:bg-blue-700 text-lg py-6 px-8 rounded-lg shadow-lg">
+              <Button className="bg-green-600 hover:bg-green-700 text-lg py-6 px-8 rounded-lg shadow-lg">
                 Start Free Trial
               </Button>
             </Link>
@@ -52,22 +52,22 @@ export default function LandingPage() {
             Powerful AI Solutions for Legal Professionals
           </h2>
           <div className="grid md:grid-cols-3 gap-8">
-            <div className="bg-blue-50 p-8 rounded-xl border border-blue-100 hover:shadow-lg transition-all">
-              <GitCompare className="h-12 w-12 mb-6 text-blue-600" />
+            <div className="bg-yellow-50 p-8 rounded-xl border border-yellow-100 hover:shadow-lg transition-all">
+              <GitCompare className="h-12 w-12 mb-6 text-green-600" />
               <h3 className="text-2xl font-semibold mb-4 text-gray-900">Contract Automation</h3>
               <p className="text-gray-600">
                 Automatically draft, review, and manage legal contracts using AI agents that understand industry-standard templates and language nuances.
               </p>
             </div>
-            <div className="bg-blue-50 p-8 rounded-xl border border-blue-100 hover:shadow-lg transition-all">
-              <Shield className="h-12 w-12 mb-6 text-blue-600" />
+            <div className="bg-green-50 p-8 rounded-xl border border-green-100 hover:shadow-lg transition-all">
+              <Shield className="h-12 w-12 mb-6 text-green-600" />
               <h3 className="text-2xl font-semibold mb-4 text-gray-900">Compliance Auditing</h3>
               <p className="text-gray-600">
                 Scan and audit documents or regulatory updates, flagging inconsistencies and automating report generation.
               </p>
             </div>
-            <div className="bg-blue-50 p-8 rounded-xl border border-blue-100 hover:shadow-lg transition-all">
-              <Book className="h-12 w-12 mb-6 text-blue-600" />
+            <div className="bg-yellow-50 p-8 rounded-xl border border-yellow-100 hover:shadow-lg transition-all">
+              <Book className="h-12 w-12 mb-6 text-green-600" />
               <h3 className="text-2xl font-semibold mb-4 text-gray-900">Legal Research & Summarization</h3>
               <p className="text-gray-600">
                 Analyze vast legal databases, extract relevant precedents, and summarize complex case law for quick decision-making.
@@ -78,7 +78,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section className="py-20 bg-gradient-to-br from-blue-50 to-indigo-50 animate-gradient-x">
+      <section className="py-20 bg-gradient-to-br from-yellow-50 to-green-50 animate-gradient-x">
         <div className="container mx-auto max-w-6xl">
           <h2 className="text-4xl font-bold text-center mb-16 text-gray-900">
             Augment All of Your Work on <br />
@@ -86,21 +86,21 @@ export default function LandingPage() {
           </h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-12">
             <div className="bg-white/80 p-8 rounded-xl shadow-sm">
-              <Scale className="h-12 w-12 mb-6 text-blue-600" />
+              <Scale className="h-12 w-12 mb-6 text-green-600" />
               <h3 className="text-2xl font-semibold mb-4 text-gray-900">AI-Powered Analysis</h3>
               <p className="text-gray-600">
                 Get instant insights and analysis on legal documents with our advanced AI technology.
               </p>
             </div>
             <div className="bg-white/80 p-8 rounded-xl shadow-sm">
-              <Shield className="h-12 w-12 mb-6 text-blue-600" />
+              <Shield className="h-12 w-12 mb-6 text-green-600" />
               <h3 className="text-2xl font-semibold mb-4 text-gray-900">Enterprise Security</h3>
               <p className="text-gray-600">
                 Bank-grade encryption and security measures to protect your sensitive data.
               </p>
             </div>
             <div className="bg-white/80 p-8 rounded-xl shadow-sm">
-              <CheckCircle className="h-12 w-12 mb-6 text-blue-600" />
+              <CheckCircle className="h-12 w-12 mb-6 text-green-600" />
               <h3 className="text-2xl font-semibold mb-4 text-gray-900">Smart Automation</h3>
               <p className="text-gray-600">
                 Streamline your workflow with intelligent document processing and management.
