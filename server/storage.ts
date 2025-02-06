@@ -29,43 +29,80 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    try {
+      const [user] = await db.select().from(users).where(eq(users.id, id));
+      console.log('Retrieved user:', user?.id);
+      return user;
+    } catch (error) {
+      console.error('Error getting user:', error);
+      throw error;
+    }
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.username, username));
-    return user;
+    try {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username));
+      console.log('Retrieved user by username:', user?.id);
+      return user;
+    } catch (error) {
+      console.error('Error getting user by username:', error);
+      throw error;
+    }
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
-    return user;
+    try {
+      const [user] = await db.insert(users).values(insertUser).returning();
+      console.log('Created user:', user.id);
+      return user;
+    } catch (error) {
+      console.error('Error creating user:', error);
+      throw error;
+    }
   }
 
   async getDocuments(userId: number): Promise<Document[]> {
-    return await db.select().from(documents).where(eq(documents.userId, userId));
+    try {
+      const docs = await db.select().from(documents).where(eq(documents.userId, userId));
+      console.log(`Retrieved ${docs.length} documents for user:`, userId);
+      return docs;
+    } catch (error) {
+      console.error('Error getting documents:', error);
+      throw error;
+    }
   }
 
   async getDocument(id: number): Promise<Document | undefined> {
-    const [document] = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.id, id));
-    return document;
+    try {
+      const [document] = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, id));
+      console.log('Retrieved document:', document?.id);
+      return document;
+    } catch (error) {
+      console.error('Error getting document:', error);
+      throw error;
+    }
   }
 
   async createDocument(
     document: Omit<Document, "id" | "createdAt">,
   ): Promise<Document> {
-    const [newDocument] = await db
-      .insert(documents)
-      .values(document)
-      .returning();
-    return newDocument;
+    try {
+      const [newDocument] = await db
+        .insert(documents)
+        .values(document)
+        .returning();
+      console.log('Created document:', newDocument.id);
+      return newDocument;
+    } catch (error) {
+      console.error('Error creating document:', error);
+      throw error;
+    }
   }
 }
 

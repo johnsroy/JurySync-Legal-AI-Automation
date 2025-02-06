@@ -38,7 +38,7 @@ export default function DocumentView() {
     );
   }
 
-  if (!document || !document.analysis) {
+  if (!document) {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <Card className="max-w-2xl mx-auto">
@@ -67,7 +67,41 @@ export default function DocumentView() {
     );
   }
 
-  const analysis = document.analysis as DocumentAnalysis;
+  // Safely parse the analysis as DocumentAnalysis
+  let analysis: DocumentAnalysis;
+  try {
+    analysis = document.analysis as DocumentAnalysis;
+    if (!analysis || !analysis.summary || !analysis.keyPoints || !analysis.suggestions || !analysis.riskScore) {
+      throw new Error("Invalid analysis data");
+    }
+  } catch (error) {
+    console.error("Error parsing document analysis:", error);
+    return (
+      <div className="min-h-screen bg-gray-50 p-4">
+        <Card className="max-w-2xl mx-auto">
+          <CardContent className="p-6">
+            <div className="text-center">
+              <AlertTriangle className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-semibold text-gray-900">
+                Error Loading Document
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                There was an error loading the document analysis. Please try again later.
+              </p>
+              <div className="mt-6">
+                <Link href="/">
+                  <Button>
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to Dashboard
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -91,7 +125,7 @@ export default function DocumentView() {
                   <CardTitle className="text-2xl">{document.title}</CardTitle>
                   <CardDescription>
                     Uploaded{" "}
-                    {new Date(document.createdAt).toLocaleDateString("en-US", {
+                    {new Date(document.createdAt || "").toLocaleDateString("en-US", {
                       month: "long",
                       day: "numeric",
                       year: "numeric",
