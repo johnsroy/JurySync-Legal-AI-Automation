@@ -7,10 +7,11 @@ import { insertDocumentSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import multer from "multer";
-import * as pdfParse from "pdf-parse/lib/pdf-parse.js";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
+import { parsePDF } from "./pdf-parser";
 
+// Configure multer for handling file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
@@ -27,6 +28,9 @@ const upload = multer({
     } else {
       cb(new Error('Invalid file type'));
     }
+  },
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
   }
 });
 
@@ -49,43 +53,9 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<Extracted
   try {
     switch (file.mimetype) {
       case 'application/pdf': {
-        const pdfData = await pdfParse(file.buffer);
-        const sections = [];
-        let currentSection = { title: '', content: '', level: 1 };
-
-        // Split by potential section headers
-        const lines = pdfData.text.split('\n');
-        for (const line of lines) {
-          // Detect headers based on formatting (this is a simple example)
-          if (line.match(/^[A-Z\d]+[\.\)]\s+[A-Z]/)) {
-            if (currentSection.content) {
-              sections.push(currentSection);
-            }
-            currentSection = {
-              title: line.trim(),
-              content: '',
-              level: 1
-            };
-          } else {
-            currentSection.content += line + '\n';
-          }
-        }
-        if (currentSection.content) {
-          sections.push(currentSection);
-        }
-
-        return {
-          text: pdfData.text,
-          sections,
-          metadata: {
-            title: pdfData.info?.Title,
-            author: pdfData.info?.Author,
-            creationDate: pdfData.info?.CreationDate,
-            lastModified: pdfData.info?.ModDate,
-          }
-        };
+        console.log('Processing PDF file:', file.originalname);
+        return await parsePDF(file.buffer);
       }
-
       case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
       case 'application/msword': {
         const result = await mammoth.extractRawText({ buffer: file.buffer });
@@ -118,7 +88,6 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<Extracted
           metadata: {}
         };
       }
-
       case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
       case 'application/vnd.ms-excel': {
         const workbook = XLSX.read(file.buffer);
@@ -140,11 +109,10 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<Extracted
           metadata: {
             title: workbook.Props?.Title,
             author: workbook.Props?.Author,
-            lastModified: workbook.Props?.ModifiedDate,
+            lastModified: workbook.Props?.ModifiedDate?.toString(),
           }
         };
       }
-
       default:
         throw new Error('Unsupported file type');
     }
