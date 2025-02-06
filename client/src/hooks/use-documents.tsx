@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Document, insertDocumentSchema } from "@shared/schema";
+import { Document, insertDocumentSchema, DocumentAnalysis } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,7 +12,20 @@ export function useDocuments() {
 export function useDocument(id: string) {
   return useQuery<Document>({
     queryKey: ["/api/documents", id],
-    enabled: !!id, // Only fetch if we have an ID
+    enabled: !!id,
+    select: (data) => {
+      if (!data) return undefined;
+      // Ensure the analysis is properly typed
+      const analysis = data.analysis as DocumentAnalysis;
+      if (!analysis || !analysis.summary || !analysis.keyPoints || !analysis.suggestions || !analysis.riskScore) {
+        console.error("Invalid document analysis format:", analysis);
+        throw new Error("Invalid document analysis format");
+      }
+      return {
+        ...data,
+        analysis,
+      };
+    },
   });
 }
 

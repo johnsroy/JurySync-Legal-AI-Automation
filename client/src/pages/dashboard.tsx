@@ -180,6 +180,9 @@ export default function Dashboard() {
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {documents.map((doc) => {
               const analysis = doc.analysis as DocumentAnalysis;
+              if (!analysis || !analysis.riskScore) {
+                return null;
+              }
               return (
                 <Link key={doc.id} href={`/document/${doc.id}`}>
                   <Card className="cursor-pointer hover:border-primary transition-colors">
@@ -194,20 +197,18 @@ export default function Dashboard() {
                       <p className="text-sm text-gray-600 line-clamp-3">
                         {doc.content}
                       </p>
-                      {analysis && (
-                        <div className="mt-4 flex items-center text-sm">
-                          <div
-                            className={`w-2 h-2 rounded-full mr-2 ${
-                              analysis.riskScore > 7
-                                ? "bg-red-500"
-                                : analysis.riskScore > 4
-                                ? "bg-yellow-500"
-                                : "bg-green-500"
-                            }`}
-                          />
-                          Risk Score: {analysis.riskScore}/10
-                        </div>
-                      )}
+                      <div className="mt-4 flex items-center text-sm">
+                        <div
+                          className={`w-2 h-2 rounded-full mr-2 ${
+                            analysis.riskScore > 7
+                              ? "bg-red-500"
+                              : analysis.riskScore > 4
+                              ? "bg-yellow-500"
+                              : "bg-green-500"
+                          }`}
+                        />
+                        Risk Score: {analysis.riskScore}/10
+                      </div>
                     </CardContent>
                   </Card>
                 </Link>
