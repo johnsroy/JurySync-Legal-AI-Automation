@@ -1,12 +1,60 @@
-import { pgTable, text, serial, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Define user roles
+export const UserRole = z.enum([
+  "ADMIN",
+  "USER",
+  "VISITOR"
+]);
+
+export type UserRole = z.infer<typeof UserRole>;
+
+// Update users table with role
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  role: text("role").notNull().default("USER"),
+  email: text("email").notNull(),
 });
+
+// Define version control types
+export const DocumentVersion = z.object({
+  version: z.string(),
+  content: z.string(),
+  timestamp: z.string(),
+  author: z.object({
+    id: z.number(),
+    username: z.string(),
+  }),
+  changes: z.array(z.object({
+    type: z.enum(["ADDITION", "DELETION", "MODIFICATION"]),
+    content: z.string(),
+    lineNumber: z.number().optional(),
+  })),
+});
+
+export type DocumentVersion = z.infer<typeof DocumentVersion>;
+
+// Define approval status
+export const ApprovalStatus = z.enum([
+  "PENDING",
+  "APPROVED",
+  "REJECTED"
+]);
+
+export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
+
+// Define signature status
+export const SignatureStatus = z.enum([
+  "PENDING",
+  "COMPLETED",
+  "EXPIRED"
+]);
+
+export type SignatureStatus = z.infer<typeof SignatureStatus>;
 
 // Define agent types
 export const AgentType = z.enum([
@@ -59,20 +107,11 @@ export const contractDetailsSchema = z.object({
       text: z.string(),
       timestamp: z.string()
     })).optional(),
-    signatureStatus: z.object({
-      required: z.array(z.string()),
-      completed: z.array(z.string())
-    }).optional()
+    signatureStatus: SignatureStatus, 
+    approvalStatus: ApprovalStatus, 
+    version: z.string() 
   }).optional(),
-  versionControl: z.object({
-    version: z.string(),
-    changes: z.array(z.object({
-      timestamp: z.string(),
-      user: z.string(),
-      description: z.string()
-    })),
-    previousVersions: z.array(z.string())
-  }).optional()
+  versionControl: DocumentVersion.optional() 
 });
 
 // Update document analysis schema
@@ -124,6 +163,8 @@ export const insertUserSchema = createInsertSchema(users)
   .pick({
     username: true,
     password: true,
+    email: true,
+    role: true
   })
   .extend({
     username: z.string()
@@ -135,6 +176,8 @@ export const insertUserSchema = createInsertSchema(users)
       .regex(/[0-9]/, "Password must contain at least one number")
       .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
       .regex(/[a-z]/, "Password must contain at least one lowercase letter"),
+    email: z.string().email(),
+    role: UserRole
   });
 
 export const insertDocumentSchema = createInsertSchema(documents)
@@ -149,3 +192,52 @@ export const insertDocumentSchema = createInsertSchema(documents)
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+
+
+// Additional tables after the existing ones...
+
+export const approvals = pgTable("approvals", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  requesterId: integer("requester_id").notNull(),
+  approverId: integer("approver_id").notNull(),
+  status: text("status").notNull(),
+  comments: text("comments"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const signatures = pgTable("signatures", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  userId: integer("user_id").notNull(),
+  status: text("status").notNull(),
+  signatureData: jsonb("signature_data"),
+  signedAt: timestamp("signed_at"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const documentVersions = pgTable("document_versions", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  version: text("version").notNull(),
+  content: text("content").notNull(),
+  changes: jsonb("changes").notNull(),
+  authorId: integer("author_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Add types for the new tables
+export type Approval = typeof approvals.$inferSelect;
+export type Signature = typeof signatures.$inferSelect;
+export type DocumentVersion = typeof documentVersions.$inferSelect;
+
+// Create insert schemas for the new tables
+export const insertApprovalSchema = createInsertSchema(approvals);
+export const insertSignatureSchema = createInsertSchema(signatures);
+export const insertDocumentVersionSchema = createInsertSchema(documentVersions);
+
+export type InsertApproval = z.infer<typeof insertApprovalSchema>;
+export type InsertSignature = z.infer<typeof insertSignatureSchema>;
+export type InsertDocumentVersion = z.infer<typeof insertDocumentVersionSchema>;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ComboboxDemo } from "@/components/ui/combobox";
+import { useQuery } from "@tanstack/react-query";
 
 interface ContractEditorProps {
   documentId: string;
@@ -41,6 +43,17 @@ export function ContractEditor({
   const [editableDraft, setEditableDraft] = useState("");
   const [progress, setProgress] = useState(0);
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx' | 'txt'>('docx');
+  const [selectedApprover, setSelectedApprover] = useState<string>("");
+  const [reviewComment, setReviewComment] = useState("");
+
+  // Fetch admins for approval requests
+  const { data: admins } = useQuery({
+    queryKey: ["/api/users/admins"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/users/admins");
+      return response.json();
+    },
+  });
 
   // Update the draft generation handler to better handle responses and errors
   const handleGenerateDraft = async () => {
@@ -176,6 +189,119 @@ export function ContractEditor({
       });
     }
   };
+
+  // Request review handler
+  const handleRequestReview = async () => {
+    if (!selectedApprover) {
+      toast({
+        title: "Error",
+        description: "Please select an approver",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await apiRequest("POST", `/api/documents/${documentId}/request-review`, {
+        approverId: selectedApprover,
+        comments: reviewComment,
+      });
+
+      toast({
+        title: "Review Requested",
+        description: "Document has been sent for review",
+      });
+      onUpdate();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to request review",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Render versions in redline view
+  const renderVersions = () => {
+    if (!analysis.contractDetails?.redlineHistory?.length) {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          No revisions available yet. Changes made to the document will appear here.
+        </div>
+      );
+    }
+
+    return analysis.contractDetails.redlineHistory.map((redline, index) => (
+      <div
+        key={index}
+        className={`p-4 rounded-lg border ${
+          redline.riskLevel > 7
+            ? "border-red-200 bg-red-50"
+            : redline.riskLevel > 4
+            ? "border-yellow-200 bg-yellow-50"
+            : "border-green-200 bg-green-50"
+        }`}
+      >
+        <div className="flex items-start justify-between">
+          <div className="space-y-1">
+            <p className="font-medium">Original Clause:</p>
+            <p className="text-sm text-gray-600">{redline.clause}</p>
+            <p className="font-medium mt-2">Suggested Change:</p>
+            <p className="text-sm text-gray-600">{redline.suggestion}</p>
+            <p className="text-xs text-gray-500 mt-2">
+              Risk Level: {redline.riskLevel}/10
+            </p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleAnalyzeClause(redline.clause)}
+            >
+              <AlertCircle className="w-4 h-4 mr-2" />
+              Analyze
+            </Button>
+          </div>
+        </div>
+      </div>
+    ));
+  };
+
+  // Approval request section
+  const renderApprovalRequest = () => {
+    return (
+      <div className="space-y-4 mt-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Select Approver</label>
+          <Select
+            value={selectedApprover}
+            onValueChange={setSelectedApprover}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select an admin for review" />
+            </SelectTrigger>
+            <SelectContent>
+              {admins?.map((admin: any) => (
+                <SelectItem key={admin.id} value={admin.id.toString()}>
+                  {admin.username}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Review Comments</label>
+          <Textarea
+            value={reviewComment}
+            onChange={(e) => setReviewComment(e.target.value)}
+            placeholder="Add any comments for the reviewer..."
+            className="min-h-[100px]"
+          />
+        </div>
+      </div>
+    );
+  };
+
 
   // Check if document is in an approved state
   const isApproved = analysis.contractDetails?.workflowState?.status === "APPROVAL" ||
@@ -343,37 +469,7 @@ export function ContractEditor({
               )}
             </div>
             <div className="space-y-2">
-              {analysis.contractDetails?.redlineHistory?.map((redline, index) => (
-                <div
-                  key={index}
-                  className={`p-4 rounded-lg border ${
-                    redline.riskLevel > 7
-                      ? "border-red-200 bg-red-50"
-                      : redline.riskLevel > 4
-                      ? "border-yellow-200 bg-yellow-50"
-                      : "border-green-200 bg-green-50"
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1">
-                      <p className="font-medium">Original Clause:</p>
-                      <p className="text-sm text-gray-600">{redline.clause}</p>
-                      <p className="font-medium mt-2">Suggested Change:</p>
-                      <p className="text-sm text-gray-600">{redline.suggestion}</p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleAnalyzeClause(redline.clause)}
-                      >
-                        <AlertCircle className="w-4 h-4 mr-2" />
-                        Analyze
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              {renderVersions()}
             </div>
           </div>
         </TabsContent>
@@ -385,7 +481,8 @@ export function ContractEditor({
               <div className="space-x-2">
                 <Button
                   variant="outline"
-                  onClick={() => handleWorkflowAction("review")}
+                  onClick={() => handleRequestReview()}
+                  disabled={!selectedApprover}
                 >
                   <Send className="w-4 h-4 mr-2" />
                   Send for Review
@@ -430,6 +527,8 @@ export function ContractEditor({
                 )}
               </div>
             </div>
+
+            {renderApprovalRequest()}
 
             {analysis.contractDetails?.workflowState && (
               <div className="space-y-4">
