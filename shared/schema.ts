@@ -13,6 +13,8 @@ export const AgentType = z.enum([
   "CONTRACT_AUTOMATION",
   "COMPLIANCE_AUDITING",
   "LEGAL_RESEARCH",
+  "NEW_AGENT_TYPE_1",
+  "NEW_AGENT_TYPE_2"
 ]);
 
 export type AgentType = z.infer<typeof AgentType>;
@@ -35,6 +37,26 @@ export const documentAnalysisSchema = z.object({
     missingClauses: z.array(z.string()).optional(),
     suggestedClauses: z.array(z.string()).optional(),
     riskFactors: z.array(z.string()).optional(),
+  }).optional(),
+  complianceDetails: z.object({
+    regulatoryFrameworks: z.array(z.string()).optional(),
+    complianceStatus: z.string().optional(),
+    violations: z.array(z.string()).optional(),
+    requiredActions: z.array(z.string()).optional(),
+    deadlines: z.array(z.string()).optional(),
+    auditTrail: z.array(z.string()).optional(),
+    riskAreas: z.array(z.string()).optional(),
+    recommendedControls: z.array(z.string()).optional(),
+  }).optional(),
+  researchDetails: z.object({
+    relevantCases: z.array(z.string()).optional(),
+    precedents: z.array(z.string()).optional(),
+    statutes: z.array(z.string()).optional(),
+    legalPrinciples: z.array(z.string()).optional(),
+    jurisdictions: z.array(z.string()).optional(),
+    timelineSummary: z.string().optional(),
+    argumentAnalysis: z.array(z.string()).optional(),
+    citationNetwork: z.array(z.string()).optional(),
   }).optional(),
 });
 

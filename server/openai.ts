@@ -45,6 +45,44 @@ function getSystemPromptForAgent(agentType: AgentType) {
   }
 }`;
 
+    case "COMPLIANCE_AUDITING":
+      return `${basePrompt} Focus on regulatory compliance and audit requirements. Return ONLY a JSON object with this structure:
+{
+  "summary": "2-3 sentence summary focusing on compliance status",
+  "keyPoints": ["point 1", "point 2"],
+  "suggestions": ["suggestion 1", "suggestion 2"],
+  "riskScore": number between 1-10,
+  "complianceDetails": {
+    "regulatoryFrameworks": ["framework 1"],
+    "complianceStatus": "status summary",
+    "violations": ["violation 1"],
+    "requiredActions": ["action 1"],
+    "deadlines": ["deadline 1"],
+    "auditTrail": ["audit point 1"],
+    "riskAreas": ["risk area 1"],
+    "recommendedControls": ["control 1"]
+  }
+}`;
+
+    case "LEGAL_RESEARCH":
+      return `${basePrompt} Focus on legal research, precedents, and case law analysis. Return ONLY a JSON object with this structure:
+{
+  "summary": "2-3 sentence summary focusing on legal principles",
+  "keyPoints": ["point 1", "point 2"],
+  "suggestions": ["suggestion 1", "suggestion 2"],
+  "riskScore": number between 1-10,
+  "researchDetails": {
+    "relevantCases": ["case 1"],
+    "precedents": ["precedent 1"],
+    "statutes": ["statute 1"],
+    "legalPrinciples": ["principle 1"],
+    "jurisdictions": ["jurisdiction 1"],
+    "timelineSummary": "chronological summary",
+    "argumentAnalysis": ["argument 1"],
+    "citationNetwork": ["citation 1"]
+  }
+}`;
+
     default:
       return `${basePrompt} Return ONLY a JSON object with this structure:
 {
@@ -72,7 +110,7 @@ async function analyzeSection(section: DocumentSection, agentType: AgentType): P
       ],
       response_format: { type: "json_object" },
       temperature: 0.2,
-      max_tokens: 500
+      max_tokens: 800
     });
 
     const content = response.choices[0].message.content;
@@ -127,7 +165,7 @@ export async function analyzeDocument(text: string, agentType: AgentType, sectio
     }];
   }
 
-  console.log(`Analyzing ${sections.length} sections`);
+  console.log(`Analyzing ${sections.length} sections with ${agentType} agent`);
 
   const results: DocumentAnalysis[] = [];
   for (let i = 0; i < sections.length; i += MAX_CONCURRENT_REQUESTS) {
@@ -146,7 +184,7 @@ export async function analyzeDocument(text: string, agentType: AgentType, sectio
     }
   }
 
-  // Combine results
+  // Combine results based on agent type
   const combinedAnalysis: DocumentAnalysis = {
     summary: results.map(r => r.summary).join(" "),
     keyPoints: Array.from(new Set(results.flatMap(r => r.keyPoints))),
@@ -154,26 +192,58 @@ export async function analyzeDocument(text: string, agentType: AgentType, sectio
     riskScore: Math.round(results.reduce((acc, r) => acc + r.riskScore, 0) / results.length)
   };
 
-  // Combine contract details if present
-  if (agentType === "CONTRACT_AUTOMATION") {
-    const details = results.reduce((acc, r) => {
-      if (!r.contractDetails) return acc;
-      return {
-        parties: Array.from(new Set([...(acc.parties || []), ...(r.contractDetails.parties || [])])),
-        effectiveDate: r.contractDetails.effectiveDate || acc.effectiveDate,
-        termLength: r.contractDetails.termLength || acc.termLength,
-        keyObligations: Array.from(new Set([...(acc.keyObligations || []), ...(r.contractDetails.keyObligations || [])])),
-        terminationClauses: Array.from(new Set([...(acc.terminationClauses || []), ...(r.contractDetails.terminationClauses || [])])),
-        governingLaw: r.contractDetails.governingLaw || acc.governingLaw,
-        paymentTerms: r.contractDetails.paymentTerms || acc.paymentTerms,
-        disputeResolution: r.contractDetails.disputeResolution || acc.disputeResolution,
-        missingClauses: Array.from(new Set([...(acc.missingClauses || []), ...(r.contractDetails.missingClauses || [])])),
-        suggestedClauses: Array.from(new Set([...(acc.suggestedClauses || []), ...(r.contractDetails.suggestedClauses || [])])),
-        riskFactors: Array.from(new Set([...(acc.riskFactors || []), ...(r.contractDetails.riskFactors || [])]))
-      };
-    }, {} as DocumentAnalysis['contractDetails']);
+  // Add specific details based on agent type
+  switch (agentType) {
+    case "CONTRACT_AUTOMATION":
+      combinedAnalysis.contractDetails = results.reduce((acc, r) => {
+        if (!r.contractDetails) return acc;
+        return {
+          parties: Array.from(new Set([...(acc?.parties || []), ...(r.contractDetails.parties || [])])),
+          effectiveDate: r.contractDetails.effectiveDate || acc?.effectiveDate,
+          termLength: r.contractDetails.termLength || acc?.termLength,
+          keyObligations: Array.from(new Set([...(acc?.keyObligations || []), ...(r.contractDetails.keyObligations || [])])),
+          terminationClauses: Array.from(new Set([...(acc?.terminationClauses || []), ...(r.contractDetails.terminationClauses || [])])),
+          governingLaw: r.contractDetails.governingLaw || acc?.governingLaw,
+          paymentTerms: r.contractDetails.paymentTerms || acc?.paymentTerms,
+          disputeResolution: r.contractDetails.disputeResolution || acc?.disputeResolution,
+          missingClauses: Array.from(new Set([...(acc?.missingClauses || []), ...(r.contractDetails.missingClauses || [])])),
+          suggestedClauses: Array.from(new Set([...(acc?.suggestedClauses || []), ...(r.contractDetails.suggestedClauses || [])])),
+          riskFactors: Array.from(new Set([...(acc?.riskFactors || []), ...(r.contractDetails.riskFactors || [])]))
+        };
+      }, {} as NonNullable<DocumentAnalysis['contractDetails']>);
+      break;
 
-    combinedAnalysis.contractDetails = details;
+    case "COMPLIANCE_AUDITING":
+      combinedAnalysis.complianceDetails = results.reduce((acc, r) => {
+        if (!r.complianceDetails) return acc;
+        return {
+          regulatoryFrameworks: Array.from(new Set([...(acc?.regulatoryFrameworks || []), ...(r.complianceDetails.regulatoryFrameworks || [])])),
+          complianceStatus: r.complianceDetails.complianceStatus || acc?.complianceStatus,
+          violations: Array.from(new Set([...(acc?.violations || []), ...(r.complianceDetails.violations || [])])),
+          requiredActions: Array.from(new Set([...(acc?.requiredActions || []), ...(r.complianceDetails.requiredActions || [])])),
+          deadlines: Array.from(new Set([...(acc?.deadlines || []), ...(r.complianceDetails.deadlines || [])])),
+          auditTrail: Array.from(new Set([...(acc?.auditTrail || []), ...(r.complianceDetails.auditTrail || [])])),
+          riskAreas: Array.from(new Set([...(acc?.riskAreas || []), ...(r.complianceDetails.riskAreas || [])])),
+          recommendedControls: Array.from(new Set([...(acc?.recommendedControls || []), ...(r.complianceDetails.recommendedControls || [])]))
+        };
+      }, {} as NonNullable<DocumentAnalysis['complianceDetails']>);
+      break;
+
+    case "LEGAL_RESEARCH":
+      combinedAnalysis.researchDetails = results.reduce((acc, r) => {
+        if (!r.researchDetails) return acc;
+        return {
+          relevantCases: Array.from(new Set([...(acc?.relevantCases || []), ...(r.researchDetails.relevantCases || [])])),
+          precedents: Array.from(new Set([...(acc?.precedents || []), ...(r.researchDetails.precedents || [])])),
+          statutes: Array.from(new Set([...(acc?.statutes || []), ...(r.researchDetails.statutes || [])])),
+          legalPrinciples: Array.from(new Set([...(acc?.legalPrinciples || []), ...(r.researchDetails.legalPrinciples || [])])),
+          jurisdictions: Array.from(new Set([...(acc?.jurisdictions || []), ...(r.researchDetails.jurisdictions || [])])),
+          timelineSummary: r.researchDetails.timelineSummary || acc?.timelineSummary,
+          argumentAnalysis: Array.from(new Set([...(acc?.argumentAnalysis || []), ...(r.researchDetails.argumentAnalysis || [])])),
+          citationNetwork: Array.from(new Set([...(acc?.citationNetwork || []), ...(r.researchDetails.citationNetwork || [])]))
+        };
+      }, {} as NonNullable<DocumentAnalysis['researchDetails']>);
+      break;
   }
 
   return combinedAnalysis;
