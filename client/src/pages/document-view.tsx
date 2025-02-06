@@ -18,6 +18,7 @@ import {
   Loader2,
   Scale,
   Bookmark,
+  Info,
 } from "lucide-react";
 import {
   Accordion,
@@ -25,6 +26,12 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 export default function DocumentView() {
   const { id } = useParams();
@@ -118,66 +125,143 @@ export default function DocumentView() {
             </CardHeader>
             <Separator />
             <CardContent className="p-6">
-              <div className="prose max-w-none">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Document Content
-                </h3>
-                <div className="mt-2 p-4 bg-gray-50 rounded-lg whitespace-pre-wrap">
-                  {document.content}
-                </div>
+              <Tabs defaultValue="content" className="space-y-4">
+                <TabsList>
+                  <TabsTrigger value="content">Document Content</TabsTrigger>
+                  <TabsTrigger value="analysis">Legal Analysis</TabsTrigger>
+                  <TabsTrigger value="risk">Risk Assessment</TabsTrigger>
+                </TabsList>
 
-                <Separator className="my-6" />
-
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <Bookmark className="h-5 w-5" />
-                  Legal Analysis
-                </h3>
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <h4 className="font-medium text-gray-900">
-                      Executive Summary
-                    </h4>
-                    <p className="mt-1 text-gray-600">{analysis.summary}</p>
+                <TabsContent value="content">
+                  <div className="prose max-w-none">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Document Content
+                    </h3>
+                    <div className="mt-2 p-4 bg-gray-50 rounded-lg whitespace-pre-wrap">
+                      {document.content}
+                    </div>
                   </div>
+                </TabsContent>
 
-                  <Accordion type="single" collapsible className="w-full">
-                    <AccordionItem value="key-points">
-                      <AccordionTrigger>Key Legal Points</AccordionTrigger>
-                      <AccordionContent>
-                        <ul className="space-y-2">
-                          {analysis.keyPoints.map((point, index) => (
-                            <li
-                              key={index}
-                              className="flex items-start gap-2 text-gray-600"
-                            >
-                              <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
-                              {point}
-                            </li>
-                          ))}
-                        </ul>
-                      </AccordionContent>
-                    </AccordionItem>
+                <TabsContent value="analysis">
+                  <div className="prose max-w-none">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Bookmark className="h-5 w-5" />
+                      Legal Analysis
+                    </h3>
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <h4 className="font-medium text-gray-900">
+                          Executive Summary
+                        </h4>
+                        <p className="mt-1 text-gray-600">{analysis.summary}</p>
+                      </div>
 
-                    <AccordionItem value="suggestions">
-                      <AccordionTrigger>Legal Recommendations</AccordionTrigger>
-                      <AccordionContent>
-                        <ul className="space-y-2">
-                          {analysis.suggestions.map((suggestion, index) => (
-                            <li
-                              key={index}
-                              className="flex items-center gap-2 text-gray-600"
-                            >
-                              <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
-                              {suggestion}
-                            </li>
-                          ))}
+                      <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="key-points">
+                          <AccordionTrigger>Key Legal Points</AccordionTrigger>
+                          <AccordionContent>
+                            <ul className="space-y-2">
+                              {analysis.keyPoints.map((point, index) => (
+                                <li
+                                  key={index}
+                                  className="flex items-start gap-2 text-gray-600"
+                                >
+                                  <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+                                  {point}
+                                </li>
+                              ))}
+                            </ul>
+                          </AccordionContent>
+                        </AccordionItem>
+
+                        <AccordionItem value="suggestions">
+                          <AccordionTrigger>Legal Recommendations</AccordionTrigger>
+                          <AccordionContent>
+                            <ul className="space-y-2">
+                              {analysis.suggestions.map((suggestion, index) => (
+                                <li
+                                  key={index}
+                                  className="flex items-start gap-2 text-gray-600"
+                                >
+                                  <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+                                  {suggestion}
+                                </li>
+                              ))}
+                            </ul>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="risk">
+                  <div className="prose max-w-none">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Info className="h-5 w-5" />
+                      Risk Score Breakdown
+                    </h3>
+                    <div className="mt-4 space-y-6">
+                      <div>
+                        <h4 className="font-medium text-gray-900">How is the Risk Score Calculated?</h4>
+                        <p className="mt-2 text-gray-600">
+                          The risk score is calculated on a scale of 1-10 based on four key factors:
+                        </p>
+                        <ul className="mt-2 space-y-2">
+                          <li className="flex items-start gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500 mt-2" />
+                            <div>
+                              <span className="font-medium">Regulatory Compliance (1-3):</span>
+                              <p className="text-gray-600">Assesses adherence to relevant laws, regulations, and industry standards.</p>
+                            </div>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <div className="w-2 h-2 rounded-full bg-yellow-500 mt-2" />
+                            <div>
+                              <span className="font-medium">Contractual Clarity (4-6):</span>
+                              <p className="text-gray-600">Evaluates the clarity, completeness, and enforceability of terms and conditions.</p>
+                            </div>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <div className="w-2 h-2 rounded-full bg-orange-500 mt-2" />
+                            <div>
+                              <span className="font-medium">Potential Litigation Risk (7-8):</span>
+                              <p className="text-gray-600">Identifies potential legal disputes and liability exposure.</p>
+                            </div>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <div className="w-2 h-2 rounded-full bg-red-500 mt-2" />
+                            <div>
+                              <span className="font-medium">Immediate Action Required (9-10):</span>
+                              <p className="text-gray-600">Indicates critical issues requiring immediate legal attention.</p>
+                            </div>
+                          </li>
                         </ul>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                </div>
-              </div>
+                      </div>
+
+                      <div>
+                        <h4 className="font-medium text-gray-900">Current Risk Assessment</h4>
+                        <div className="mt-2 p-4 bg-gray-50 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium">Overall Risk Score</span>
+                            <span className={`px-2 py-1 rounded-full text-sm ${
+                              analysis.riskScore > 7
+                                ? "bg-red-100 text-red-700"
+                                : analysis.riskScore > 4
+                                ? "bg-yellow-100 text-yellow-700"
+                                : "bg-green-100 text-green-700"
+                            }`}>
+                              {analysis.riskScore}/10
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>
