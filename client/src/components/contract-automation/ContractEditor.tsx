@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,12 +30,12 @@ interface ContractEditorProps {
   onUpdate: () => void;
 }
 
-export function ContractEditor({
+export const ContractEditor: React.FC<ContractEditorProps> = ({
   documentId,
   content,
   analysis,
   onUpdate,
-}: ContractEditorProps) {
+}) => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("editor");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -194,6 +194,19 @@ export function ContractEditor({
     { id: "redline", label: "Redline View", icon: AlertTriangle },
     { id: "workflow", label: "Workflow", icon: History },
   ];
+
+  const handleDownload = () => {
+    //Implementation for handleDownload
+  };
+
+  const handleRequestReview = () => {
+    //Implementation for handleRequestReview
+  };
+
+  const handleWorkflowAction = (action: string) => {
+    //Implementation for handleWorkflowAction
+  };
+
 
   return (
     <Card className="mt-6">
@@ -486,4 +499,6 @@ export function ContractEditor({
       </Tabs>
     </Card>
   );
-}
+};
+
+export default ContractEditor;
