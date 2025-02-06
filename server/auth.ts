@@ -38,12 +38,14 @@ export function setupAuth(app: Express) {
     store: storage.sessionStore,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      httpOnly: true,
+      secure: app.get("env") === "production",
+      sameSite: "lax"
     },
   };
 
   if (app.get("env") === "production") {
     app.set("trust proxy", 1);
-    sessionSettings.cookie!.secure = true;
   }
 
   app.use(session(sessionSettings));
@@ -54,9 +56,15 @@ export function setupAuth(app: Express) {
     new LocalStrategy(async (username, password, done) => {
       try {
         const user = await storage.getUserByUsername(username);
-        if (!user || !(await comparePasswords(password, user.password))) {
+        if (!user) {
           return done(null, false, { message: "Invalid username or password" });
         }
+
+        const isValidPassword = await comparePasswords(password, user.password);
+        if (!isValidPassword) {
+          return done(null, false, { message: "Invalid username or password" });
+        }
+
         return done(null, user);
       } catch (err) {
         return done(err);
@@ -64,7 +72,10 @@ export function setupAuth(app: Express) {
     }),
   );
 
-  passport.serializeUser((user, done) => done(null, user.id));
+  passport.serializeUser((user, done) => {
+    done(null, user.id);
+  });
+
   passport.deserializeUser(async (id: number, done) => {
     try {
       const user = await storage.getUser(id);
@@ -109,7 +120,10 @@ export function setupAuth(app: Express) {
 
   app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err, user, info) => {
-      if (err) return next(err);
+      if (err) {
+        console.error("Login error:", err);
+        return next(err);
+      }
       if (!user) {
         return res.status(401).json({
           message: info?.message || "Invalid credentials",
@@ -117,7 +131,10 @@ export function setupAuth(app: Express) {
         });
       }
       req.login(user, (err) => {
-        if (err) return next(err);
+        if (err) {
+          console.error("Session error:", err);
+          return next(err);
+        }
         res.status(200).json(user);
       });
     })(req, res, next);
