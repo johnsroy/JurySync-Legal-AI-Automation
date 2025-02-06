@@ -22,13 +22,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertDocumentSchema, type DocumentAnalysis, AgentType } from "@shared/schema";
@@ -41,12 +34,11 @@ import {
   ChevronRight,
   Bot,
 } from "lucide-react";
-import { FilePond, registerPlugin } from "react-filepond";
+import { FilePond } from "react-filepond";
 import "filepond/dist/filepond.min.css";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import type { FilePondFile } from "filepond";
-
-registerPlugin(FilePondPluginFileValidateType);
+import { cn } from "@/lib/utils";
 
 const agentDescriptions = {
   CONTRACT_AUTOMATION: {
@@ -72,16 +64,17 @@ export default function Dashboard() {
   const createDocument = useCreateDocument();
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<FilePondFile[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<AgentType>("CONTRACT_AUTOMATION");
 
   const form = useForm({
     resolver: zodResolver(insertDocumentSchema),
     defaultValues: {
       title: "",
-      agentType: "CONTRACT_AUTOMATION" as AgentType,
+      agentType: selectedAgent,
     },
   });
 
-  async function onSubmit(data: { title: string; agentType: AgentType }) {
+  async function onSubmit(data: { title: string }) {
     try {
       if (!files.length || !files[0].file) {
         form.setError("root", { message: "Please select a file to upload" });
@@ -91,7 +84,7 @@ export default function Dashboard() {
       const formData = new FormData();
       formData.append("file", files[0].file);
       formData.append("title", data.title);
-      formData.append("agentType", data.agentType);
+      formData.append("agentType", selectedAgent);
 
       await createDocument.mutateAsync(formData);
       form.reset();
@@ -101,6 +94,15 @@ export default function Dashboard() {
       console.error('Failed to create document:', error);
     }
   }
+
+  const groupedDocuments = documents?.reduce((acc, doc) => {
+    const agentType = doc.agentType as AgentType;
+    if (!acc[agentType]) {
+      acc[agentType] = [];
+    }
+    acc[agentType].push(doc);
+    return acc;
+  }, {} as Record<AgentType, typeof documents>);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -152,6 +154,31 @@ export default function Dashboard() {
                   Choose an AI agent and upload your document for specialized analysis.
                 </DialogDescription>
               </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  {Object.entries(agentDescriptions).map(([key, value]) => (
+                    <div
+                      key={key}
+                      className={cn(
+                        "relative flex items-center space-x-2 rounded-md border p-4 cursor-pointer hover:border-primary transition-colors",
+                        selectedAgent === key ? "border-primary bg-primary/5" : "border-border"
+                      )}
+                      onClick={() => setSelectedAgent(key as AgentType)}
+                    >
+                      <value.icon className="h-5 w-5" />
+                      <div className="flex-1">
+                        <h4 className="font-medium">{value.title}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {value.description}
+                        </p>
+                      </div>
+                      {selectedAgent === key && (
+                        <div className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <FormField
@@ -167,48 +194,11 @@ export default function Dashboard() {
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="agentType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>AI Agent</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          defaultValue={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select an AI agent" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {Object.entries(agentDescriptions).map(([key, value]) => (
-                              <SelectItem
-                                key={key}
-                                value={key}
-                                className="flex flex-col space-y-1 p-2"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <value.icon className="h-4 w-4" />
-                                  <span className="font-medium">{value.title}</span>
-                                </div>
-                                <span className="text-xs text-gray-500">
-                                  {value.description}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                   <div className="space-y-2">
                     <FormLabel>Document File</FormLabel>
                     <FilePond
-                      files={files}
-                      onupdatefiles={(fileItems: FilePondFile[]) => {
+                      files={files.map(f => f.file)}
+                      onupdatefiles={(fileItems) => {
                         setFiles(fileItems);
                       }}
                       allowMultiple={false}
@@ -239,7 +229,7 @@ export default function Dashboard() {
         </div>
 
         {isLoading ? (
-          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4">
             {[1, 2, 3].map((i) => (
               <Card key={i} className="animate-pulse">
                 <CardHeader className="h-32 bg-gray-100" />
@@ -261,48 +251,70 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-            {documents.map((doc) => {
-              const analysis = doc.analysis as DocumentAnalysis;
-              if (!analysis || !analysis.riskScore) {
-                return null;
-              }
-
-              const agentInfo = agentDescriptions[doc.agentType as AgentType];
-              const AgentIcon = agentInfo?.icon || Bot;
+          <div className="space-y-8">
+            {Object.entries(agentDescriptions).map(([agentType, info]) => {
+              const agentDocs = groupedDocuments?.[agentType as AgentType] || [];
 
               return (
-                <Link key={doc.id} href={`/document/${doc.id}`}>
-                  <Card className="cursor-pointer hover:border-primary transition-colors">
-                    <CardHeader>
-                      <CardTitle className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 truncate">
-                          <AgentIcon className="h-5 w-5 text-gray-500" />
-                          <span className="truncate">{doc.title}</span>
+                <div key={agentType} className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <info.icon className="h-5 w-5 text-gray-500" />
+                    <h3 className="text-lg font-semibold">{info.title}</h3>
+                  </div>
+                  {agentDocs.length === 0 ? (
+                    <Card>
+                      <CardContent className="p-6">
+                        <div className="text-center">
+                          <p className="text-sm text-gray-500">
+                            No documents processed by this agent yet.
+                          </p>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                      </CardTitle>
-                    </CardHeader>
-                    <Separator />
-                    <CardContent className="pt-4">
-                      <p className="text-sm text-gray-600 line-clamp-3">
-                        {doc.content}
-                      </p>
-                      <div className="mt-4 flex items-center text-sm">
-                        <div
-                          className={`w-2 h-2 rounded-full mr-2 ${
-                            analysis.riskScore > 7
-                              ? "bg-red-500"
-                              : analysis.riskScore > 4
-                              ? "bg-yellow-500"
-                              : "bg-green-500"
-                          }`}
-                        />
-                        Risk Score: {analysis.riskScore}/10
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                      {agentDocs.map((doc) => {
+                        const analysis = doc.analysis as DocumentAnalysis;
+                        if (!analysis || !analysis.riskScore) {
+                          return null;
+                        }
+
+                        return (
+                          <Link key={doc.id} href={`/document/${doc.id}`}>
+                            <Card className="cursor-pointer hover:border-primary transition-colors">
+                              <CardHeader>
+                                <CardTitle className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 truncate">
+                                    <span className="truncate">{doc.title}</span>
+                                  </div>
+                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                </CardTitle>
+                              </CardHeader>
+                              <Separator />
+                              <CardContent className="pt-4">
+                                <p className="text-sm text-gray-600 line-clamp-3">
+                                  {doc.content}
+                                </p>
+                                <div className="mt-4 flex items-center text-sm">
+                                  <div
+                                    className={`w-2 h-2 rounded-full mr-2 ${
+                                      analysis.riskScore > 7
+                                        ? "bg-red-500"
+                                        : analysis.riskScore > 4
+                                        ? "bg-yellow-500"
+                                        : "bg-green-500"
+                                    }`}
+                                  />
+                                  Risk Score: {analysis.riskScore}/10
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
