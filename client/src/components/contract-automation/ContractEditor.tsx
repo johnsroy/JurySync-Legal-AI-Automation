@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import {
@@ -37,19 +38,40 @@ export function ContractEditor({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedDraft, setGeneratedDraft] = useState("");
   const [editableDraft, setEditableDraft] = useState("");
+  const [progress, setProgress] = useState(0);
 
   // Dynamic drafting
   const handleGenerateDraft = async () => {
     setIsGenerating(true);
+    setProgress(0);
+
     try {
+      // Start progress animation
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) return prev; // Cap at 90% until complete
+          return prev + 10;
+        });
+      }, 1000);
+
       const response = await apiRequest("POST", `/api/documents/${documentId}/generate-draft`, {
         requirements: content,
       });
       const result = await response.json();
+
+      // Clear interval and complete progress
+      clearInterval(progressInterval);
+      setProgress(100);
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
       setGeneratedDraft(result.content);
       setEditableDraft(result.content);
       setActiveTab("draft");
       onUpdate();
+
       toast({
         title: "Draft Generated",
         description: "New contract draft has been created based on your requirements.",
@@ -62,6 +84,8 @@ export function ContractEditor({
       });
     } finally {
       setIsGenerating(false);
+      // Reset progress after a delay
+      setTimeout(() => setProgress(0), 1000);
     }
   };
 
@@ -201,6 +225,17 @@ export function ContractEditor({
                 )}
               </div>
             </div>
+
+            {/* Progress bar */}
+            {isGenerating && (
+              <div className="w-full space-y-2">
+                <Progress value={progress} className="w-full" />
+                <p className="text-sm text-gray-500 text-center">
+                  Generating contract draft... {progress}%
+                </p>
+              </div>
+            )}
+
             <ScrollArea className="h-[500px] w-full border rounded-md p-4">
               <div className="prose max-w-none">
                 <div className="whitespace-pre-wrap">{content}</div>
@@ -237,7 +272,6 @@ export function ContractEditor({
             />
           </div>
         </TabsContent>
-
         <TabsContent value="redline" className="p-4">
           <div className="space-y-4">
             <div className="flex justify-between items-center">

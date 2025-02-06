@@ -462,91 +462,78 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Break down requirements into smaller chunks to avoid token limits
-      const maxChunkLength = 1000; // Conservative limit for safety
-      const chunks = requirements.match(new RegExp(`.{1,${maxChunkLength}}`, 'g')) || [];
-
-      let fullDraft = '';
-      let currentSection = 1;
-
-      for (const chunk of chunks) {
-        try {
-          const response = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
-            messages: [
-              {
-                role: "system",
-                content: `You are a legal contract drafting assistant. Generate Section ${currentSection} of the contract based on these requirements. Format with clear numbering and maintain professional legal language.${
-                  currentSection > 1 ? ' Ensure consistency with previous sections.' : ''
-                }`
-              },
-              {
-                role: "user",
-                content: chunk
-              }
-            ],
-            temperature: 0.7,
-            max_tokens: 1000
-          });
-
-          const sectionContent = response.choices[0].message.content;
-          if (!sectionContent) {
-            throw new Error("Empty response from OpenAI");
-          }
-
-          fullDraft += (currentSection > 1 ? '\n\n' : '') + sectionContent;
-          currentSection++;
-
-          // Add a small delay between chunks to avoid rate limits
-          if (chunks.length > 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-
-        } catch (error: any) {
-          console.error('OpenAI API error:', error);
-          if (error.code === 'context_length_exceeded') {
-            return res.status(400).json({
-              message: "The requirements are too long. Please break them into smaller sections.",
-              code: "CONTENT_TOO_LONG"
-            });
-          }
-          throw error; // Let the outer catch handle other errors
-        }
-      }
-
-      if (!fullDraft) {
-        return res.status(500).json({
-          message: "Failed to generate contract draft",
-          code: "GENERATION_ERROR"
+      try {
+        // Single API call for faster response
+        const response = await openai.chat.completions.create({
+          model: "gpt-3.5-turbo-16k", // Using larger context model
+          messages: [
+            {
+              role: "system",
+              content: `You are a legal contract drafting assistant. Generate a professional contract based on the requirements. Include:
+1. Clear section numbering
+2. Professional legal language
+3. Standard contract structure
+4. Key clauses and terms
+Format the output as a complete, ready-to-use contract.`
+            },
+            {
+              role: "user",
+              content: requirements
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 4000 // Increased for longer contracts
         });
-      }
 
-      // Update document with new draft
-      const updatedDocument = await storage.createDocument({
-        ...document,
-        content: fullDraft,
-        analysis: {
-          ...document.analysis,
-          contractDetails: {
-            ...document.analysis.contractDetails,
-            versionControl: {
-              version: "1.0",
-              changes: [{
-                timestamp: new Date().toISOString(),
-                user: req.user!.username,
-                description: "Initial draft generated"
-              }],
-              previousVersions: []
+        const draftContent = response.choices[0].message.content;
+        if (!draftContent) {
+          throw new Error("Empty response from OpenAI");
+        }
+
+        // Update document with new draft
+        const updatedDocument = await storage.createDocument({
+          ...document,
+          content: draftContent,
+          analysis: {
+            ...document.analysis,
+            contractDetails: {
+              ...document.analysis.contractDetails,
+              versionControl: {
+                version: "1.0",
+                changes: [{
+                  timestamp: new Date().toISOString(),
+                  user: req.user!.username,
+                  description: "Initial draft generated"
+                }],
+                previousVersions: []
+              }
             }
           }
-        }
-      });
+        });
 
-      res.json(updatedDocument);
-    } catch (error) {
+        res.json({ content: draftContent });
+
+      } catch (error: any) {
+        console.error('OpenAI API error:', error);
+        if (error.response?.status === 429) {
+          return res.status(429).json({
+            message: "Too many requests. Please try again in a moment.",
+            code: "RATE_LIMIT"
+          });
+        }
+        if (error.response?.status === 400) {
+          return res.status(400).json({
+            message: "The requirements are too long. Please break them into smaller sections.",
+            code: "CONTENT_TOO_LONG"
+          });
+        }
+        throw error;
+      }
+
+    } catch (error: any) {
       console.error('Error generating draft:', error);
       res.status(500).json({ 
-        message: "An unexpected error occurred while generating the draft. Please try again.",
+        message: error.message || "An unexpected error occurred while generating the draft. Please try again.",
         code: "UNKNOWN_ERROR"
       });
     }
