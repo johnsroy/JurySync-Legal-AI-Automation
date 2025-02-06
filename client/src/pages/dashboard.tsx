@@ -329,10 +329,9 @@ export default function Dashboard() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/document/${doc.id}`}>
-                                        View Details
-                                      </Link>
+                                    <DropdownMenuItem onClick={() => window.location.href = `/document/${doc.id}`}>
+                                      <FileText className="h-4 w-4 mr-2" />
+                                      View Details
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-red-600"
