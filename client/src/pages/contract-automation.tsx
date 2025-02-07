@@ -101,35 +101,108 @@ function RequirementSuggestions({
   );
 }
 
+function CustomInstructionsSuggestions({
+  templateId,
+  currentRequirements,
+  onSelect
+}: {
+  templateId: string;
+  currentRequirements: any[];
+  onSelect: (suggestion: string) => void;
+}) {
+  const { data: suggestions, isLoading } = useQuery({
+    queryKey: ['customInstructions', templateId, currentRequirements],
+    queryFn: async () => {
+      const response = await fetch(`/api/templates/${templateId}/custom-instruction-suggestions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentRequirements }),
+      });
+      if (!response.ok) throw new Error('Failed to fetch suggestions');
+      return response.json();
+    },
+    enabled: !!templateId && currentRequirements.length > 0
+  });
+
+  if (isLoading) return <div className="text-sm text-gray-500">Loading suggestions...</div>;
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-medium">Suggested Custom Instructions:</h4>
+      <ScrollArea className="h-40">
+        {suggestions?.map((suggestion: any, index: number) => (
+          <div
+            key={index}
+            className="p-3 hover:bg-gray-100 rounded cursor-pointer border-l-4 border-blue-500 mb-2"
+            onClick={() => onSelect(suggestion.suggestion)}
+          >
+            <div className="font-medium text-sm">{suggestion.suggestion}</div>
+            <p className="text-xs text-gray-600 mt-1">{suggestion.explanation}</p>
+            <div className="text-xs text-blue-600 mt-1">
+              Impact: {suggestion.impact}
+            </div>
+          </div>
+        ))}
+      </ScrollArea>
+    </div>
+  );
+}
+
+
 function RequirementField({
   index,
   control,
-  suggestions,
+  templateId,
   onSuggestionSelect
 }: {
   index: number;
   control: any;
-  suggestions: string[];
+  templateId: string;
   onSuggestionSelect: (suggestion: string) => void;
 }) {
+  const [debouncedSearch] = useState(() =>
+    debounce((text: string) => {
+      if (text.length < 2) return;
+      fetch(`/api/templates/${templateId}/autocomplete?text=${encodeURIComponent(text)}`)
+        .then(res => res.json())
+        .then(data => setLocalSuggestions(data.suggestions || []));
+    }, 300)
+  );
+
+  const [localSuggestions, setLocalSuggestions] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
+
   return (
     <FormField
       control={control}
       name={`requirements.${index}.description`}
       render={({ field }) => (
-        <FormItem>
+        <FormItem className="relative">
           <FormLabel>Requirement Description</FormLabel>
           <div className="relative">
             <FormControl>
-              <Textarea {...field} placeholder="Describe your requirement..." />
+              <Textarea
+                {...field}
+                placeholder="Describe your requirement..."
+                className="pr-8"
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setTimeout(() => setIsFocused(false), 200)}
+                onChange={e => {
+                  field.onChange(e);
+                  debouncedSearch(e.target.value);
+                }}
+              />
             </FormControl>
-            {suggestions.length > 0 && (
-              <div className="absolute w-full bg-white border rounded-md shadow-lg mt-1 z-10">
-                {suggestions.map((suggestion, i) => (
+            {isFocused && localSuggestions.length > 0 && (
+              <div className="absolute w-full bg-white border rounded-md shadow-lg mt-1 z-50 max-h-48 overflow-y-auto">
+                {localSuggestions.map((suggestion, i) => (
                   <div
                     key={i}
-                    className="p-2 hover:bg-gray-100 cursor-pointer"
-                    onClick={() => onSuggestionSelect(suggestion)}
+                    className="p-2 hover:bg-gray-100 cursor-pointer border-l-4 border-transparent hover:border-blue-500"
+                    onClick={() => {
+                      onSuggestionSelect(suggestion);
+                      setLocalSuggestions([]);
+                    }}
                   >
                     {suggestion}
                   </div>
@@ -255,6 +328,14 @@ export default function ContractAutomation() {
   const handleAutocompleteSelect = (index: number, suggestion: string) => {
     form.setValue(`requirements.${index}.description`, suggestion);
     setAutocompleteSuggestions([]);
+  };
+
+  const handleCustomInstructionSelect = (suggestion: string) => {
+    const currentInstructions = form.getValues("customInstructions") || "";
+    form.setValue(
+      "customInstructions",
+      currentInstructions ? `${currentInstructions}\n${suggestion}` : suggestion
+    );
   };
 
 
@@ -419,7 +500,7 @@ export default function ContractAutomation() {
                         <RequirementField
                           index={index}
                           control={form.control}
-                          suggestions={autocompleteSuggestions}
+                          templateId={selectedTemplate?.id || ''} // Added templateId prop
                           onSuggestionSelect={(suggestion) => handleAutocompleteSelect(index, suggestion)}
                         />
                         <FormField
@@ -471,10 +552,20 @@ export default function ContractAutomation() {
                       <FormItem>
                         <FormLabel>Custom Instructions (Optional)</FormLabel>
                         <FormControl>
-                          <Textarea
-                            {...field}
-                            placeholder="Add any special instructions or notes..."
-                          />
+                          <div className="space-y-4">
+                            <Textarea
+                              {...field}
+                              placeholder="Add any special instructions or notes..."
+                              className="min-h-[100px]"
+                            />
+                            {selectedTemplate && (
+                              <CustomInstructionsSuggestions
+                                templateId={selectedTemplate.id}
+                                currentRequirements={form.watch("requirements")}
+                                onSelect={handleCustomInstructionSelect}
+                              />
+                            )}
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>

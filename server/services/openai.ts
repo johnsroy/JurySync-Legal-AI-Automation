@@ -21,6 +21,12 @@ export interface AutocompleteResponse {
   context?: string;
 }
 
+export interface CustomInstructionSuggestion {
+  suggestion: string;
+  explanation: string;
+  impact: string;
+}
+
 const commonRequirementsByTemplate: Record<string, string[]> = {
   "employment-standard": [
     "Include detailed job responsibilities and performance metrics",
@@ -28,18 +34,7 @@ const commonRequirementsByTemplate: Record<string, string[]> = {
     "Define work hours and location flexibility",
     "Include intellectual property assignment clause"
   ],
-  "nda-standard": [
-    "Define scope of confidential information",
-    "Specify duration of confidentiality obligations",
-    "Include return or destruction of confidential materials",
-    "Add exceptions for legally required disclosures"
-  ],
-  "service-agreement": [
-    "Define service level agreements (SLAs)",
-    "Include payment terms and late payment penalties",
-    "Specify termination conditions and notice periods",
-    "Detail warranty and liability limitations"
-  ]
+  // Add more common requirements for other templates...
 };
 
 export async function generateContract(
@@ -66,8 +61,9 @@ Instructions:
 3. Maintain professional legal language and formatting
 4. Ensure all critical template variables are properly addressed
 5. Add any necessary clauses based on the requirements
-6. Return only the complete contract text
-7. Do not include any explanations or metadata in your response`;
+6. If custom instructions are provided, adapt the contract accordingly while maintaining legal validity
+7. Return only the complete contract text
+8. Do not include any explanations or metadata in your response`;
 
     const userPrompt = `Base Template:
 ${template.baseContent}
@@ -75,7 +71,7 @@ ${template.baseContent}
 Requirements (in order of importance):
 ${requirements.map(req => `[${req.importance}] ${req.description}`).join('\n')}
 
-${customInstructions ? `\nAdditional Instructions:\n${customInstructions}` : ''}
+${customInstructions ? `\nCustom Instructions:\n${customInstructions}` : ''}
 
 Required Variables:
 ${template.variables.filter(v => v.required).map(v => `- ${v.name}: ${v.description}`).join('\n')}`;
@@ -118,28 +114,31 @@ export async function suggestRequirements(
       throw new Error("Template not found");
     }
 
-    const basePrompt = `Based on the ${template.name} template and ${
-      currentDescription ? `the current requirement: "${currentDescription}",` : ""
-    } suggest 3 relevant additional requirements. For each suggestion, include a description, importance level, and context.
+    const systemMessage = {
+      role: "system",
+      content: "You are a legal requirements expert. Return suggestions as a JSON array with each suggestion containing description, importance, and context fields. Include clear, specific, and actionable requirements."
+    };
 
-Template category: ${template.category}
-Template description: ${template.description}`;
+    const userMessage = {
+      role: "user",
+      content: JSON.stringify({
+        template_name: template.name,
+        template_category: template.category,
+        template_description: template.description,
+        current_requirement: currentDescription,
+        request: "Suggest 3 relevant requirements that would enhance this contract template."
+      })
+    };
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "You are a legal requirements expert. Provide specific, contextual suggestions for contract requirements."
-        },
-        { role: "user", content: basePrompt }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7
+      messages: [systemMessage, userMessage],
+      temperature: 0.7,
+      response_format: { type: "json_object" }
     });
 
-    const suggestions = JSON.parse(response.choices[0]?.message?.content || "{}");
-    return suggestions.suggestions || [];
+    const result = JSON.parse(response.choices[0]?.message?.content || "{}");
+    return result.suggestions || [];
   } catch (error: any) {
     console.error("Requirement Suggestion Error:", error);
     throw new Error("Failed to generate requirement suggestions");
@@ -160,34 +159,26 @@ export async function getAutocomplete(
       throw new Error("Template not found");
     }
 
-    // First, check if we have common requirements that match
-    const commonSuggestions = commonRequirementsByTemplate[templateId]?.filter(req =>
-      req.toLowerCase().includes(partialText.toLowerCase())
-    ) || [];
+    const systemMessage = {
+      role: "system",
+      content: "You are a legal contract expert. Based on the partial text, suggest completions that would make good contract requirements. Return response as JSON with suggestions array and context string."
+    };
 
-    // If we have enough common suggestions, return those
-    if (commonSuggestions.length >= 3) {
-      return {
-        suggestions: commonSuggestions.slice(0, 3),
-        context: "Based on common requirements"
-      };
-    }
+    const userMessage = {
+      role: "user",
+      content: JSON.stringify({
+        template_name: template.name,
+        template_category: template.category,
+        partial_text: partialText,
+        request: "Complete this requirement in a legally precise manner"
+      })
+    };
 
-    // Otherwise, use AI to generate contextual suggestions
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "You are a legal requirements expert. Provide autocomplete suggestions for contract requirements."
-        },
-        {
-          role: "user",
-          content: `Given the partial text "${partialText}" for a ${template.name} (${template.category}), suggest 3 completions that would make good contract requirements.`
-        }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3
+      messages: [systemMessage, userMessage],
+      temperature: 0.3,
+      response_format: { type: "json_object" }
     });
 
     const result = JSON.parse(response.choices[0]?.message?.content || "{}");
@@ -198,6 +189,50 @@ export async function getAutocomplete(
   } catch (error: any) {
     console.error("Autocomplete Error:", error);
     throw new Error("Failed to generate autocomplete suggestions");
+  }
+}
+
+export async function getCustomInstructionSuggestions(
+  templateId: string,
+  currentRequirements: ContractRequirement[]
+): Promise<CustomInstructionSuggestion[]> {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OpenAI API key not configured");
+    }
+
+    const template = getTemplate(templateId);
+    if (!template) {
+      throw new Error("Template not found");
+    }
+
+    const systemMessage = {
+      role: "system",
+      content: "You are a legal contract expert. Suggest custom instructions that would enhance the contract based on the template and current requirements. Return as JSON array with suggestion, explanation, and impact fields."
+    };
+
+    const userMessage = {
+      role: "user",
+      content: JSON.stringify({
+        template_name: template.name,
+        template_category: template.category,
+        current_requirements: currentRequirements,
+        request: "Suggest helpful custom instructions for this contract"
+      })
+    };
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [systemMessage, userMessage],
+      temperature: 0.7,
+      response_format: { type: "json_object" }
+    });
+
+    const result = JSON.parse(response.choices[0]?.message?.content || "{}");
+    return result.suggestions || [];
+  } catch (error: any) {
+    console.error("Custom Instructions Suggestion Error:", error);
+    throw new Error("Failed to generate custom instruction suggestions");
   }
 }
 

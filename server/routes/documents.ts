@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { generateContract, suggestRequirements, getAutocomplete } from "../services/openai";
+import { generateContract, suggestRequirements, getAutocomplete, getCustomInstructionSuggestions } from "../services/openai";
 import { getAllTemplates, getTemplate } from "../services/templateStore";
 import { db } from "../db";
 import { documents } from "@shared/schema";
@@ -310,6 +310,36 @@ router.get("/api/templates/:id/autocomplete", async (req, res) => {
     return res.status(500).json({ 
       error: "Failed to get autocomplete suggestions",
       code: "AUTOCOMPLETE_ERROR",
+      details: error.message 
+    });
+  }
+});
+
+// Add this new endpoint after the existing routes
+router.post("/api/templates/:id/custom-instruction-suggestions", async (req, res) => {
+  try {
+    const templateId = req.params.id;
+    const { currentRequirements } = req.body;
+
+    if (!Array.isArray(currentRequirements)) {
+      return res.status(400).json({
+        error: "Current requirements must be an array",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    console.log(`[Templates] Generating custom instruction suggestions for template: ${templateId}`);
+
+    const suggestions = await getCustomInstructionSuggestions(templateId, currentRequirements);
+
+    console.log(`[Templates] Generated ${suggestions.length} custom instruction suggestions`);
+
+    return res.json(suggestions);
+  } catch (error: any) {
+    console.error("[Templates] Custom instruction suggestion error:", error);
+    return res.status(500).json({ 
+      error: "Failed to generate custom instruction suggestions",
+      code: "SUGGESTION_ERROR",
       details: error.message 
     });
   }

@@ -302,6 +302,129 @@ and
       jurisdiction: "United States",
       lastUpdated: "2025-02-07"
     }
+  },
+  "real-estate-lease": {
+    id: "real-estate-lease",
+    name: "Commercial Real Estate Lease",
+    description: "Comprehensive commercial property lease agreement",
+    category: "REAL_ESTATE",
+    baseContent: `
+COMMERCIAL LEASE AGREEMENT
+
+This Commercial Lease Agreement (the "Lease") is made as of [EFFECTIVE_DATE] by and between:
+
+[LANDLORD_NAME] ("Landlord") and
+[TENANT_NAME] ("Tenant")
+
+1. PREMISES
+   Property Address: [PROPERTY_ADDRESS]
+   Square Footage: [SQUARE_FOOTAGE]
+   Permitted Use: [PERMITTED_USE]
+
+2. LEASE TERM
+   Commencement Date: [START_DATE]
+   Termination Date: [END_DATE]
+
+3. RENT AND EXPENSES
+   Base Rent: [BASE_RENT]
+   Security Deposit: [SECURITY_DEPOSIT]
+   Additional Expenses: [ADDITIONAL_EXPENSES]
+
+4. MAINTENANCE AND REPAIRS
+   [MAINTENANCE_TERMS]
+
+5. IMPROVEMENTS AND ALTERATIONS
+   [IMPROVEMENT_TERMS]
+`,
+    variables: [
+      { name: "LANDLORD_NAME", description: "Legal name of the property owner", required: true },
+      { name: "TENANT_NAME", description: "Legal name of the tenant", required: true },
+      { name: "PROPERTY_ADDRESS", description: "Full address of the leased property", required: true },
+      { name: "BASE_RENT", description: "Monthly base rent amount", required: true }
+    ],
+    metadata: {
+      industry: "Real Estate",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-07"
+    }
+  },
+
+  "partnership-agreement": {
+    id: "partnership-agreement",
+    name: "General Partnership Agreement",
+    description: "Formal partnership agreement for business ventures",
+    category: "PARTNERSHIP",
+    baseContent: `
+PARTNERSHIP AGREEMENT
+
+This Partnership Agreement (the "Agreement") is made on [EFFECTIVE_DATE] by and between:
+[PARTNER_NAMES] (collectively, the "Partners")
+
+1. PARTNERSHIP FORMATION
+   Partnership Name: [PARTNERSHIP_NAME]
+   Principal Place of Business: [BUSINESS_ADDRESS]
+   Purpose: [PARTNERSHIP_PURPOSE]
+
+2. CAPITAL CONTRIBUTIONS
+   Initial Contributions: [CAPITAL_CONTRIBUTIONS]
+   Profit/Loss Sharing: [PROFIT_SHARING]
+
+3. MANAGEMENT
+   Management Structure: [MANAGEMENT_STRUCTURE]
+   Voting Rights: [VOTING_RIGHTS]
+
+4. DISSOLUTION
+   Dissolution Terms: [DISSOLUTION_TERMS]
+`,
+    variables: [
+      { name: "PARTNER_NAMES", description: "Names of all partners", required: true },
+      { name: "PARTNERSHIP_NAME", description: "Legal name of the partnership", required: true },
+      { name: "CAPITAL_CONTRIBUTIONS", description: "Initial capital contributions of each partner", required: true }
+    ],
+    metadata: {
+      industry: "Business",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-07"
+    }
+  },
+
+  "consulting-agreement": {
+    id: "consulting-agreement",
+    name: "Professional Consulting Agreement",
+    description: "Agreement for professional consulting services",
+    category: "CONSULTING",
+    baseContent: `
+CONSULTING SERVICES AGREEMENT
+
+This Consulting Agreement is entered into on [EFFECTIVE_DATE] between:
+[CONSULTANT_NAME] ("Consultant") and
+[CLIENT_NAME] ("Client")
+
+1. SERVICES
+   Scope of Services: [SERVICE_SCOPE]
+   Deliverables: [DELIVERABLES]
+
+2. COMPENSATION
+   Fee Structure: [FEE_STRUCTURE]
+   Payment Schedule: [PAYMENT_SCHEDULE]
+
+3. TERM AND TERMINATION
+   Term: [AGREEMENT_TERM]
+   Termination Conditions: [TERMINATION_CONDITIONS]
+
+4. INTELLECTUAL PROPERTY
+   [IP_TERMS]
+`,
+    variables: [
+      { name: "CONSULTANT_NAME", description: "Name of the consultant or consulting firm", required: true },
+      { name: "CLIENT_NAME", description: "Name of the client", required: true },
+      { name: "SERVICE_SCOPE", description: "Detailed scope of consulting services", required: true }
+    ],
+    metadata: {
+      industry: "Professional Services",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-07"
+    }
   }
 };
 
