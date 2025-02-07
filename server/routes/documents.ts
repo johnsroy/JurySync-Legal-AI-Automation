@@ -30,7 +30,7 @@ router.post("/api/documents/generate", async (req, res) => {
     // Generate draft using OpenAI
     const draft = await generateContractDraft({
       templateType,
-      requirements: JSON.parse(requirements),
+      requirements, // requirements is already JSON, no need to parse
       customInstructions,
       userId: req.user!.id
     });
@@ -70,7 +70,7 @@ router.post("/api/documents/generate", async (req, res) => {
   } catch (error: any) {
     console.error("Generation error:", error);
     res.status(500).json({
-      error: error.message,
+      error: error.message || "Internal server error",
       code: "GENERATION_ERROR"
     });
   }

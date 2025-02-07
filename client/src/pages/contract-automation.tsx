@@ -75,20 +75,19 @@ export default function ContractAutomation() {
     setProgress(10);
 
     try {
-      const formData = new FormData();
-      formData.append('templateType', values.templateType);
-      formData.append('requirements', JSON.stringify(values.requirements));
-      if (values.customInstructions) {
-        formData.append('customInstructions', values.customInstructions);
-      }
-      formData.append('agentType', 'CONTRACT_AUTOMATION');
-
       setProgress(30);
       setProcessingState('analyzing');
 
       const response = await fetch('/api/documents/generate', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          templateType: values.templateType,
+          requirements: values.requirements,
+          customInstructions: values.customInstructions
+        })
       });
 
       if (!response.ok) {
@@ -107,25 +106,22 @@ export default function ContractAutomation() {
         description: "You can now download or sign the document",
       });
 
-      setTimeout(() => {
-        setLocation(`/documents/${document.id}`);
-      }, 1000);
+      // Show actions immediately
+      const documentId = document.id;
 
-      // Added download and sign actions here
-      const actions = (
-        <div className="flex gap-4 mt-4">
-          <Button onClick={() => handleDownloadPDF(document.id)}>
+      return (
+        <div className="mt-4 space-y-4">
+          <Button onClick={() => handleDownloadPDF(documentId)} className="w-full">
             Download PDF
           </Button>
-          <Button onClick={() => handleDownloadDOCX(document.id)}>
+          <Button onClick={() => handleDownloadDOCX(documentId)} className="w-full">
             Download DOCX
           </Button>
-          <Button onClick={() => handleSignDocument(document.id, "Digital Signature")}>
+          <Button onClick={() => handleSignDocument(documentId, "Digital Signature")} className="w-full">
             Sign & Download
           </Button>
         </div>
       );
-
 
     } catch (error: any) {
       console.error('Generation error:', error);
