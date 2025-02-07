@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, FileText, Check } from "lucide-react";
+import { Loader2, FileText, Gavel, Scale, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -148,7 +148,6 @@ function CustomInstructionsSuggestions({
   );
 }
 
-
 function RequirementField({
   index,
   control,
@@ -217,6 +216,28 @@ function RequirementField({
   );
 }
 
+// Add new loading animation component
+function ContractGenerationLoadingIcon() {
+  const [iconIndex, setIconIndex] = useState(0);
+  const icons = [Gavel, Scale, FileText];
+  const Icon = icons[iconIndex];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIconIndex((prev) => (prev + 1) % icons.length);
+    }, 800);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex items-center">
+      <Icon className="h-5 w-5 mr-2 animate-bounce" />
+      <span>Generating Contract...</span>
+    </div>
+  );
+}
+
+
 export default function ContractAutomation() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -230,6 +251,7 @@ export default function ContractAutomation() {
     title: string;
   } | null>(null);
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -315,14 +337,13 @@ export default function ContractAutomation() {
   };
 
   const handleSuggestionSelect = (suggestion: RequirementSuggestion) => {
-    const currentRequirements = form.getValues("requirements");
-    form.setValue("requirements", [
-      ...currentRequirements,
-      {
-        description: suggestion.description,
-        importance: suggestion.importance
-      }
-    ]);
+    const requirements = form.getValues("requirements");
+    // Replace the first requirement with the suggested one
+    requirements[0] = {
+      description: suggestion.description,
+      importance: suggestion.importance
+    };
+    form.setValue("requirements", requirements);
   };
 
   const handleAutocompleteSelect = (index: number, suggestion: string) => {
@@ -338,9 +359,9 @@ export default function ContractAutomation() {
     );
   };
 
-
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
+      setIsGenerating(true);
       setGeneratedContract(null);
 
       const response = await fetch('/api/documents/generate', {
@@ -371,6 +392,8 @@ export default function ContractAutomation() {
         description: error.message || "Failed to generate contract",
         variant: "destructive",
       });
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -500,7 +523,7 @@ export default function ContractAutomation() {
                         <RequirementField
                           index={index}
                           control={form.control}
-                          templateId={selectedTemplate?.id || ''} // Added templateId prop
+                          templateId={selectedTemplate?.id || ''}
                           onSuggestionSelect={(suggestion) => handleAutocompleteSelect(index, suggestion)}
                         />
                         <FormField
@@ -572,9 +595,19 @@ export default function ContractAutomation() {
                     )}
                   />
 
-                  <Button type="submit" className="w-full">
-                    <FileText className="h-4 w-4 mr-2" />
-                    Generate Contract
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? (
+                      <ContractGenerationLoadingIcon />
+                    ) : (
+                      <>
+                        <Gavel className="h-4 w-4 mr-2" />
+                        Generate Contract
+                      </>
+                    )}
                   </Button>
                 </form>
               </Form>
