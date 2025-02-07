@@ -104,12 +104,28 @@ export default function ContractAutomation() {
 
       toast({
         title: "Document Generated Successfully",
-        description: "Redirecting to the document editor...",
+        description: "You can now download or sign the document",
       });
 
       setTimeout(() => {
         setLocation(`/documents/${document.id}`);
       }, 1000);
+
+      // Added download and sign actions here
+      const actions = (
+        <div className="flex gap-4 mt-4">
+          <Button onClick={() => handleDownloadPDF(document.id)}>
+            Download PDF
+          </Button>
+          <Button onClick={() => handleDownloadDOCX(document.id)}>
+            Download DOCX
+          </Button>
+          <Button onClick={() => handleSignDocument(document.id, "Digital Signature")}>
+            Sign & Download
+          </Button>
+        </div>
+      );
+
 
     } catch (error: any) {
       console.error('Generation error:', error);
@@ -199,6 +215,103 @@ export default function ContractAutomation() {
         return "";
     }
   };
+
+  const handleDownloadPDF = async (documentId: number) => {
+    try {
+      const response = await fetch(`/api/documents/${documentId}/export/pdf`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contract-${documentId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+    } catch (error: any) {
+      toast({
+        title: "Download Error",
+        description: error.message || "Failed to download PDF",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownloadDOCX = async (documentId: number) => {
+    try {
+      const response = await fetch(`/api/documents/${documentId}/export/docx`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download DOCX');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contract-${documentId}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+    } catch (error: any) {
+      toast({
+        title: "Download Error",
+        description: error.message || "Failed to download DOCX",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSignDocument = async (documentId: number, signature: string) => {
+    try {
+      const response = await fetch(`/api/documents/${documentId}/sign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ signature }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to sign document');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `signed-contract-${documentId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Document Signed",
+        description: "Document has been signed and downloaded",
+      });
+
+    } catch (error: any) {
+      toast({
+        title: "Signing Error",
+        description: error.message || "Failed to sign document",
+        variant: "destructive",
+      });
+    }
+  };
+
 
   if (!user) {
     return null;

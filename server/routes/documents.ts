@@ -3,14 +3,84 @@ import { generateContractDraft, analyzeContractClauses, compareVersions } from "
 import { db } from "../db";
 import { documents, documentVersions } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { SignPdf } from 'node-signpdf';
+import * as fs from 'fs';
 
 const router = Router();
+
+// Generate contract draft
+router.post("/api/documents/generate", async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const { templateType, requirements, customInstructions } = req.body;
+
+    // Validate request body
+    if (!templateType || !requirements) {
+      return res.status(400).json({
+        error: "Missing required fields",
+        code: "VALIDATION_ERROR"
+      });
+    }
+
+    // Generate draft using OpenAI
+    const draft = await generateContractDraft({
+      templateType,
+      requirements: JSON.parse(requirements),
+      customInstructions,
+      userId: req.user!.id
+    });
+
+    // Create document record
+    const [document] = await db.insert(documents)
+      .values({
+        title: `${templateType} Contract Draft`,
+        content: draft,
+        userId: req.user!.id,
+        agentType: 'CONTRACT_AUTOMATION',
+        analysis: {},
+        processingStatus: "COMPLETED"
+      })
+      .returning();
+
+    // Create initial version
+    await db.insert(documentVersions)
+      .values({
+        documentId: document.id,
+        version: "1.0",
+        content: draft,
+        authorId: req.user!.id,
+        changes: [{
+          description: "Initial contract draft generated",
+          timestamp: new Date().toISOString(),
+          user: req.user!.username
+        }]
+      });
+
+    res.json({
+      id: document.id,
+      content: draft,
+      message: "Contract draft generated successfully"
+    });
+
+  } catch (error: any) {
+    console.error("Generation error:", error);
+    res.status(500).json({
+      error: error.message,
+      code: "GENERATION_ERROR"
+    });
+  }
+});
 
 // Upload and process document
 router.post("/api/documents", async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: "Not authenticated",
         code: "NOT_AUTHENTICATED"
       });
@@ -57,7 +127,7 @@ router.post("/api/documents", async (req, res) => {
 
       // Update document with analysis
       await db.update(documents)
-        .set({ 
+        .set({
           analysis,
           processingStatus: "COMPLETED"
         })
@@ -68,7 +138,7 @@ router.post("/api/documents", async (req, res) => {
       console.error("Analysis error:", error);
       // Update document with error status but still return success
       await db.update(documents)
-        .set({ 
+        .set({
           processingStatus: "ERROR",
           errorMessage: error.message
         })
@@ -79,7 +149,7 @@ router.post("/api/documents", async (req, res) => {
 
   } catch (error: any) {
     console.error("Document upload error:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message,
       code: "INTERNAL_ERROR"
     });
@@ -132,7 +202,7 @@ router.post("/api/documents/:id/generate-draft", async (req, res) => {
 
     // Update document content
     await db.update(documents)
-      .set({ 
+      .set({
         content: draft,
         analysis: {
           ...document.analysis,
@@ -214,6 +284,152 @@ router.post("/api/documents/:id/compare-versions", async (req, res) => {
 
   } catch (error: any) {
     console.error("Version comparison error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// Export document as PDF
+router.get("/api/documents/:id/export/pdf", async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const documentId = parseInt(req.params.id);
+    const [document] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, documentId));
+
+    if (!document || document.userId !== req.user!.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // Create PDF
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    page.drawText(document.content, {
+      x: 50,
+      y: page.getHeight() - 50,
+      size: 12,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    const pdfBytes = await pdfDoc.save();
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=contract-${documentId}.pdf`);
+    res.send(Buffer.from(pdfBytes));
+
+  } catch (error: any) {
+    console.error("PDF export error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Export document as DOCX
+router.get("/api/documents/:id/export/docx", async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const documentId = parseInt(req.params.id);
+    const [document] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, documentId));
+
+    if (!document || document.userId !== req.user!.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // Create Word document
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: document.content,
+                size: 24,
+              }),
+            ],
+          }),
+        ],
+      }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename=contract-${documentId}.docx`);
+    res.send(buffer);
+
+  } catch (error: any) {
+    console.error("DOCX export error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add digital signature to PDF
+router.post("/api/documents/:id/sign", async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const documentId = parseInt(req.params.id);
+    const { signature } = req.body;
+
+    const [document] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, documentId));
+
+    if (!document || document.userId !== req.user!.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // Create PDF with signature
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Add content
+    page.drawText(document.content, {
+      x: 50,
+      y: page.getHeight() - 50,
+      size: 12,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    // Add signature
+    page.drawText(signature, {
+      x: 50,
+      y: 50,
+      size: 12,
+      font,
+      color: rgb(0, 0, 1),
+    });
+
+    // Sign PDF -  This part needs a proper signing implementation.  This is a placeholder.
+    const signPdf = new SignPdf();
+    const signedPdf = await signPdf.sign(await pdfDoc.save());
+
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=signed-contract-${documentId}.pdf`);
+    res.send(Buffer.from(signedPdf));
+
+  } catch (error: any) {
+    console.error("Signing error:", error);
     res.status(500).json({ error: error.message });
   }
 });
