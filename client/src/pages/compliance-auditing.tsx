@@ -57,7 +57,7 @@ export default function ComplianceAuditing() {
     }
   });
 
-  // Modified upload handler with automatic monitoring
+  // Modified upload handler with proper FormData handling
   const onDrop = async (acceptedFiles: File[]) => {
     setIsUploading(true);
     setUploadProgress(0);
@@ -72,16 +72,20 @@ export default function ComplianceAuditing() {
           setUploadProgress((prev) => Math.min(prev + 10, 90));
         }, 500);
 
+        console.log('Uploading file:', file.name);
+
         const response = await fetch('/api/compliance/upload', {
           method: 'POST',
-          body: formData
+          body: formData,
+          // Don't set Content-Type header, let the browser set it with the boundary
         });
 
         clearInterval(interval);
         setUploadProgress(100);
 
         if (!response.ok) {
-          throw new Error('Upload failed');
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Upload failed');
         }
 
         const { documentId } = await response.json();
@@ -100,10 +104,11 @@ export default function ComplianceAuditing() {
           description: "Starting compliance analysis...",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Upload error:', error);
       toast({
         title: "Upload Failed",
-        description: "Could not upload document for analysis.",
+        description: error.message || "Could not upload document for analysis.",
         variant: "destructive"
       });
     } finally {
