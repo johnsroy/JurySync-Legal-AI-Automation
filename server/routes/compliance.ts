@@ -4,6 +4,7 @@ import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import { riskAssessmentService } from "../services/riskAssessment";
+import { monitorDocument } from "../services/complianceMonitor";
 import { eq } from "drizzle-orm";
 
 const router = Router();
@@ -105,6 +106,106 @@ router.post('/upload', async (req, res) => {
     const status = error.status || 500;
     const message = error.message || 'Upload failed';
     return res.status(status).json({ error: message });
+  }
+});
+
+// Start monitoring for documents
+router.post('/monitor', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { documentIds } = req.body;
+    if (!Array.isArray(documentIds) || documentIds.length === 0) {
+      return res.status(400).json({ error: 'No documents specified for monitoring' });
+    }
+
+    // Update documents to monitoring status
+    await db
+      .update(complianceDocuments)
+      .set({
+        status: "MONITORING",
+        nextScanDue: new Date() // Schedule immediate scan
+      })
+      .where(eq(complianceDocuments.userId, userId));
+
+    // Start monitoring process for each document
+    for (const documentId of documentIds) {
+      monitorDocument(documentId).catch(error => {
+        console.error(`Failed to start monitoring for document ${documentId}:`, error);
+      });
+    }
+
+    res.json({ success: true, message: 'Monitoring started' });
+
+  } catch (error: any) {
+    console.error('Monitor start error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Stop monitoring for documents
+router.post('/stop-monitoring', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { documentIds } = req.body;
+    if (!Array.isArray(documentIds) || documentIds.length === 0) {
+      return res.status(400).json({ error: 'No documents specified' });
+    }
+
+    // Update documents to stop monitoring
+    await db
+      .update(complianceDocuments)
+      .set({ status: "PAUSED" })
+      .where(eq(complianceDocuments.userId, userId));
+
+    res.json({ success: true, message: 'Monitoring stopped' });
+
+  } catch (error: any) {
+    console.error('Monitor stop error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get monitoring results
+router.get('/results', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { documentIds } = req.query;
+    let documentsToCheck = [];
+
+    if (documentIds) {
+      documentsToCheck = (documentIds as string).split(',').map(Number);
+    }
+
+    // Get documents and their latest compliance issues
+    const documents = await db
+      .select({
+        id: complianceDocuments.id,
+        title: complianceDocuments.title,
+        status: complianceDocuments.status,
+        riskScore: complianceDocuments.riskScore,
+        lastScanned: complianceDocuments.lastScanned,
+        nextScanDue: complianceDocuments.nextScanDue
+      })
+      .from(complianceDocuments)
+      .where(eq(complianceDocuments.userId, userId));
+
+    res.json(documents);
+
+  } catch (error: any) {
+    console.error('Results fetch error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
