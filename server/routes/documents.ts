@@ -5,6 +5,9 @@ import { db } from "../db";
 import { documents } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
+import { Document, Packer, Paragraph, TextRun } from "docx";
+import PDFDocument from "pdfkit";
+import { eq } from 'drizzle-orm';
 
 const router = Router();
 
@@ -32,7 +35,6 @@ router.get("/api/templates", async (_req, res) => {
       });
     }
 
-    // Log each template being returned
     templates.forEach(template => {
       console.log(`[Templates] Returning template: ${template.id} - ${template.name}`);
     });
@@ -192,6 +194,71 @@ router.post("/api/documents", upload.single('file'), async (req, res) => {
       error: error.message || "Failed to process document",
       details: error.stack
     });
+  }
+});
+
+// Download document as DOCX
+router.get("/api/documents/:id/download/docx", async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const [doc] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, documentId));
+
+    if (!doc) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const docx = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun(doc.content)
+            ],
+          }),
+        ],
+      }],
+    });
+
+    const buffer = await Packer.toBuffer(docx);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename=${doc.title.replace(/\s+/g, '_')}.docx`);
+    res.send(buffer);
+
+  } catch (error) {
+    console.error("Error generating DOCX:", error);
+    res.status(500).json({ error: "Failed to generate DOCX file" });
+  }
+});
+
+// Download document as PDF
+router.get("/api/documents/:id/download/pdf", async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const [doc] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, documentId));
+
+    if (!doc) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const pdfDoc = new PDFDocument();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=${doc.title.replace(/\s+/g, '_')}.pdf`);
+
+    pdfDoc.pipe(res);
+    pdfDoc.fontSize(12).text(doc.content);
+    pdfDoc.end();
+
+  } catch (error) {
+    console.error("Error generating PDF:", error);
+    res.status(500).json({ error: "Failed to generate PDF file" });
   }
 });
 

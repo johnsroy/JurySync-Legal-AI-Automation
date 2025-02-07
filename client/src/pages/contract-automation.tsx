@@ -149,18 +149,40 @@ export default function ContractAutomation() {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async (format: 'pdf' | 'docx') => {
     if (!generatedContract) return;
 
-    const blob = new Blob([generatedContract.content], { type: 'text/plain' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${generatedContract.title}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
+    try {
+      const response = await fetch(`/api/documents/${generatedContract.id}/download/${format}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to download ${format.toUpperCase()} file`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${generatedContract.title}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Success",
+        description: `Contract downloaded as ${format.toUpperCase()}`,
+      });
+    } catch (error) {
+      console.error(`Download error:`, error);
+      toast({
+        title: "Download Error",
+        description: error.message || `Failed to download ${format.toUpperCase()} file`,
+        variant: "destructive",
+      });
+    }
   };
 
   if (!user) {
@@ -205,8 +227,8 @@ export default function ContractAutomation() {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Button 
-                    className="w-full" 
+                  <Button
+                    className="w-full"
                     onClick={() => handleTemplateSelect(template)}
                   >
                     Use This Template
@@ -337,9 +359,14 @@ export default function ContractAutomation() {
                       {generatedContract.content}
                     </pre>
                   </div>
-                  <Button onClick={handleDownload}>
-                    Download Contract
-                  </Button>
+                  <div className="flex gap-4">
+                    <Button onClick={() => handleDownload('pdf')}>
+                      Download as PDF
+                    </Button>
+                    <Button onClick={() => handleDownload('docx')}>
+                      Download as DOCX
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
