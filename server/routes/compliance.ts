@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
-import { complianceDocuments, complianceIssues, complianceFiles } from "@shared/schema";
+import { complianceDocuments, complianceFiles } from "@shared/schema";
 import { analyzeDocument } from "../services/complianceMonitor";
 import { saveUploadedFile } from "../services/fileUploadService";
 import { eq } from "drizzle-orm";
@@ -9,8 +9,9 @@ import { eq } from "drizzle-orm";
 const router = Router();
 
 // Configure multer for memory storage
+const storage = multer.memoryStorage();
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage,
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
@@ -24,7 +25,7 @@ const upload = multer({
       'image/jpeg'
     ];
 
-    console.log('[Compliance] Received file:', file.originalname, 'type:', file.mimetype);
+    console.log('[Compliance] Processing file:', file.originalname, 'type:', file.mimetype);
 
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
@@ -32,43 +33,30 @@ const upload = multer({
       cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types are: PDF, DOC, DOCX, TXT, PNG, and JPEG`));
     }
   }
-}).single('file'); // Move .single() to be part of the middleware
+});
 
 // Upload endpoint with proper error handling
-router.post('/upload', async (req, res) => {
-  console.log('[Compliance] Received upload request');
+router.post('/api/compliance/upload', upload.single('file'), async (req, res) => {
+  console.log('[Compliance] Starting upload process');
 
   try {
     // Get user ID from session
     const userId = (req as any).user?.id;
     if (!userId) {
-      console.log('[Compliance] No user ID found in session');
+      console.log('[Compliance] Authentication failed - no user ID');
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    // Handle file upload with multer
-    await new Promise<void>((resolve, reject) => {
-      upload(req, res, (err) => {
-        if (err) {
-          console.error('[Compliance] Multer error:', err);
-          reject(err);
-        } else {
-          console.log('[Compliance] Multer processed file successfully');
-          resolve();
-        }
-      });
-    });
-
     if (!req.file) {
-      console.log('[Compliance] No file found in request');
+      console.log('[Compliance] No file in request');
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    console.log(`[Compliance] Processing upload: ${req.file.originalname} (${req.file.size} bytes)`);
+    console.log(`[Compliance] Processing file: ${req.file.originalname} (${req.file.size} bytes)`);
 
     // Save file using the upload service
     const fileRecord = await saveUploadedFile(req.file, userId);
-    console.log(`[Compliance] File saved: ${fileRecord.id}`);
+    console.log(`[Compliance] File saved with ID: ${fileRecord.id}`);
 
     // Create compliance document record
     const [document] = await db
@@ -82,7 +70,7 @@ router.post('/upload', async (req, res) => {
       })
       .returning();
 
-    console.log(`[Compliance] Document created: ${document.id}`);
+    console.log(`[Compliance] Document created with ID: ${document.id}`);
 
     // Start analysis in background
     analyzeDocument(document.id.toString())
@@ -108,7 +96,6 @@ router.post('/upload', async (req, res) => {
   } catch (error: any) {
     console.error('[Compliance] Upload failed:', error);
 
-    // Ensure we always return JSON, even for errors
     const status = error.status || 500;
     const message = error.code === 'LIMIT_FILE_SIZE' 
       ? 'File too large. Maximum size is 50MB'

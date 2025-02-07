@@ -63,8 +63,7 @@ export default function ComplianceAuditing() {
     setUploadProgress(0);
 
     try {
-      for (let i = 0; i < acceptedFiles.length; i++) {
-        const file = acceptedFiles[i];
+      for (const file of acceptedFiles) {
         const formData = new FormData();
         formData.append('file', file);
 
@@ -72,7 +71,7 @@ export default function ComplianceAuditing() {
           setUploadProgress((prev) => Math.min(prev + 10, 90));
         }, 500);
 
-        console.log('Preparing to upload file:', file.name, 'type:', file.type);
+        console.log('Uploading file:', file.name, 'type:', file.type);
 
         try {
           const response = await fetch('/api/compliance/upload', {
@@ -83,38 +82,20 @@ export default function ComplianceAuditing() {
           clearInterval(interval);
           setUploadProgress(100);
 
-          console.log('Upload response status:', response.status);
-          console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-
-          let responseData;
-          const contentType = response.headers.get("content-type");
-
-          try {
-            const textResponse = await response.text();
-            console.log('Raw response:', textResponse);
-
-            if (contentType?.includes('application/json')) {
-              responseData = JSON.parse(textResponse);
-            } else {
-              throw new Error(`Server returned unexpected content type: ${contentType}`);
-            }
-          } catch (parseError) {
-            console.error('Failed to parse response:', parseError);
-            throw new Error('Invalid server response');
-          }
-
           if (!response.ok) {
-            throw new Error(responseData.error || 'Upload failed');
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Upload failed');
           }
 
-          console.log('Upload successful:', responseData);
+          const data = await response.json();
+          console.log('Upload successful:', data);
 
           // Refresh the documents list
           await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
 
           // Auto-monitor the first document
           if (uploadedDocuments.length === 0) {
-            startMonitoringMutation.mutate([responseData.documentId]);
+            startMonitoringMutation.mutate([data.documentId]);
           }
 
           toast({
@@ -123,7 +104,7 @@ export default function ComplianceAuditing() {
           });
         } catch (error: any) {
           console.error('Individual file upload error:', error);
-          throw error; // Re-throw to be caught by outer try-catch
+          throw error;
         }
       }
     } catch (error: any) {
