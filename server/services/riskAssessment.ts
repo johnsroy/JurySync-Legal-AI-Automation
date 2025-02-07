@@ -8,19 +8,38 @@ const openai = new OpenAI();
 export class RiskAssessmentService {
   private async analyzeDocument(content: string): Promise<RiskAssessment[]> {
     try {
+      console.log('Starting document analysis...');
+
       const completion = await openai.chat.completions.create({
         messages: [
           {
             role: "system",
-            content: `You are a legal document risk assessment expert. Analyze the following document and identify potential risks, compliance issues, and legal concerns. For each issue:
-            1. Assign a risk score (0-100)
-            2. Determine severity (CRITICAL, HIGH, MEDIUM, LOW, INFO)
-            3. Categorize the risk
-            4. Provide detailed description
-            5. Assess potential impact
-            6. Suggest mitigation strategies
-            7. Include relevant legal references
-            Format as valid JSON array with these fields.`
+            content: `You are a legal document risk assessment expert. Analyze the following document and identify potential risks, compliance issues, and legal concerns. Return a JSON object with a 'risks' array containing assessment objects. Each risk assessment should have:
+            - score (number 0-100)
+            - severity (one of: "CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
+            - category (string)
+            - description (string)
+            - impact (string)
+            - mitigation (string)
+            - references (array of strings)
+            - context (string)
+            - confidence (number 0-100)
+            Example:
+            {
+              "risks": [
+                {
+                  "score": 85,
+                  "severity": "HIGH",
+                  "category": "Data Privacy",
+                  "description": "Insufficient data protection clauses",
+                  "impact": "Potential regulatory non-compliance",
+                  "mitigation": "Add GDPR-compliant data protection clauses",
+                  "references": ["GDPR Article 28", "Data Protection Act 2018"],
+                  "context": "Section 3.2",
+                  "confidence": 90
+                }
+              ]
+            }`
           },
           {
             role: "user",
@@ -32,21 +51,45 @@ export class RiskAssessmentService {
         temperature: 0.2,
       });
 
-      const response = JSON.parse(completion.choices[0].message.content || "{}");
-      return response.risks || [];
+      const responseText = completion.choices[0].message.content;
+      console.log('Received response:', responseText);
+
+      if (!responseText) {
+        throw new Error('Empty response from OpenAI');
+      }
+
+      try {
+        const parsedResponse = JSON.parse(responseText);
+        if (!parsedResponse.risks || !Array.isArray(parsedResponse.risks)) {
+          throw new Error('Invalid response format: missing risks array');
+        }
+        return parsedResponse.risks;
+      } catch (parseError) {
+        console.error('JSON parsing error:', parseError);
+        throw new Error('Failed to parse AI response');
+      }
     } catch (error) {
       console.error("Error analyzing document:", error);
-      throw new Error("Failed to analyze document");
+      throw new Error(`Failed to analyze document: ${error.message}`);
     }
   }
 
   async assessDocument(documentId: number, content: string) {
     try {
       console.log(`Starting risk assessment for document ${documentId}`);
-      
+
+      if (!content || typeof content !== 'string') {
+        throw new Error('Invalid document content');
+      }
+
+      // Clean the content to remove any DOCTYPE or invalid characters
+      const cleanContent = content
+        .replace(/<!DOCTYPE[^>]*>/i, '')
+        .replace(/[\uFFFD\uFFFE\uFFFF]/g, '');
+
       // Analyze document content
-      const risks = await this.analyzeDocument(content);
-      
+      const risks = await this.analyzeDocument(cleanContent);
+
       // Store results
       for (const risk of risks) {
         const [assessment] = await db
