@@ -27,12 +27,12 @@ interface GenerateDraftOptions {
   userId: number;
 }
 
-export async function generateContractDraft({ requirements, baseContent, customInstructions, templateType = "GENERAL", userId }: GenerateDraftOptions): Promise<string> {
+export async function generateContractDraft({ requirements, baseContent, customInstructions, templateType = "GENERAL", userId }: GenerateDraftOptions): Promise<{ content: string, sections: any[] }> {
   try {
     // Check cache first
     const cachedContent = await checkCache(userId, requirements, templateType);
     if (cachedContent) {
-      return cachedContent;
+      return { content: cachedContent, sections: [] };
     }
 
     // Get relevant template
@@ -42,50 +42,44 @@ export async function generateContractDraft({ requirements, baseContent, customI
       .where(eq(contractTemplates.category, templateType))
       .limit(1);
 
-    let prompt = `Generate a professional contract in the following format:
+    const prompt = `Generate a professional contract with the following structure:
+
+1. Title
+2. Parties Involved
+3. Terms and Conditions
+4. Signatures
+
+Requirements:
+${requirements.map(req => `
+- ${req.importance} Priority [${req.type}]:
+  ${req.description}
+  ${req.industry ? `Industry: ${req.industry}` : ''}
+  ${req.jurisdiction ? `Jurisdiction: ${req.jurisdiction}` : ''}
+  ${req.specialClauses ? `Special Clauses: ${req.specialClauses.join(', ')}` : ''}
+`).join('\n')}
+
+${customInstructions ? `Additional Instructions: ${customInstructions}` : ''}
+
+Format the response as a JSON object with this exact structure:
 {
   "contract": {
-    "title": "Contract Title",
+    "title": "string",
+    "content": "string",
     "sections": [
       {
-        "heading": "Section Title",
-        "content": "Section content",
-        "subsections": []
+        "heading": "string",
+        "content": "string"
       }
-    ],
-    "metadata": {
-      "type": "${templateType}",
-      "version": "1.0"
-    }
+    ]
   }
-}
-
-Requirements:`;
-
-    // Add template content if available
-    if (template) {
-      prompt += `\nBase Template Structure: ${JSON.stringify(template.content)}\n`;
-    }
-
-    // Add requirements with structured formatting
-    requirements.forEach(req => {
-      prompt += `\n${req.importance} Priority Requirement [${req.type}]:
-- Description: ${req.description}
-${req.industry ? `- Industry Context: ${req.industry}\n` : ''}
-${req.jurisdiction ? `- Jurisdiction: ${req.jurisdiction}\n` : ''}
-${req.specialClauses ? `- Special Clauses Required:\n${req.specialClauses.map(c => `  * ${c}`).join('\n')}\n` : ''}`;
-    });
-
-    if (customInstructions) {
-      prompt += `\nSpecial Instructions:\n${customInstructions}\n`;
-    }
+}`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: "You are an expert legal contract drafting assistant. Generate the contract in valid JSON format following the specified structure exactly."
+          content: "You are a legal contract drafting expert. Generate contracts in valid JSON format following the specified structure exactly."
         },
         {
           role: "user",
@@ -101,16 +95,27 @@ ${req.specialClauses ? `- Special Clauses Required:\n${req.specialClauses.map(c 
       throw new Error("Empty response from OpenAI");
     }
 
-    // Parse the JSON response to ensure it's valid
-    const contractData = JSON.parse(content);
-    const formattedContent = formatContractContent(contractData.contract);
+    // Validate JSON response
+    let contractData;
+    try {
+      contractData = JSON.parse(content);
+      if (!contractData.contract || !contractData.contract.content || !Array.isArray(contractData.contract.sections)) {
+        throw new Error("Invalid contract format");
+      }
+    } catch (error) {
+      console.error("JSON parsing error:", error);
+      throw new Error("Failed to parse contract response");
+    }
 
     // Save to cache if template exists
     if (template) {
-      await saveToCache(userId, template.id, formattedContent, requirements);
+      await saveToCache(userId, template.id, contractData.contract.content, requirements);
     }
 
-    return formattedContent;
+    return {
+      content: contractData.contract.content,
+      sections: contractData.contract.sections
+    };
 
   } catch (error: any) {
     console.error('OpenAI API Error:', error);

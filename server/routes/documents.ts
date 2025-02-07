@@ -10,7 +10,7 @@ import * as fs from 'fs';
 
 const router = Router();
 
-// Generate contract draft
+// Update the generate endpoint
 router.post("/api/documents/generate", async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
@@ -20,17 +20,17 @@ router.post("/api/documents/generate", async (req, res) => {
     const { templateType, requirements, customInstructions } = req.body;
 
     // Validate request body
-    if (!templateType || !requirements) {
+    if (!templateType || !requirements || !Array.isArray(requirements)) {
       return res.status(400).json({
-        error: "Missing required fields",
+        error: "Missing or invalid required fields",
         code: "VALIDATION_ERROR"
       });
     }
 
     // Generate draft using OpenAI
-    const draft = await generateContractDraft({
+    const { content, sections } = await generateContractDraft({
       templateType,
-      requirements, // requirements is already JSON, no need to parse
+      requirements,
       customInstructions,
       userId: req.user!.id
     });
@@ -39,10 +39,10 @@ router.post("/api/documents/generate", async (req, res) => {
     const [document] = await db.insert(documents)
       .values({
         title: `${templateType} Contract Draft`,
-        content: draft,
+        content: content,
         userId: req.user!.id,
         agentType: 'CONTRACT_AUTOMATION',
-        analysis: {},
+        analysis: { sections },
         processingStatus: "COMPLETED"
       })
       .returning();
@@ -52,7 +52,7 @@ router.post("/api/documents/generate", async (req, res) => {
       .values({
         documentId: document.id,
         version: "1.0",
-        content: draft,
+        content: content,
         authorId: req.user!.id,
         changes: [{
           description: "Initial contract draft generated",
@@ -63,14 +63,15 @@ router.post("/api/documents/generate", async (req, res) => {
 
     res.json({
       id: document.id,
-      content: draft,
+      content: content,
+      sections: sections,
       message: "Contract draft generated successfully"
     });
 
   } catch (error: any) {
     console.error("Generation error:", error);
     res.status(500).json({
-      error: error.message || "Internal server error",
+      error: error.message || "Failed to generate contract",
       code: "GENERATION_ERROR"
     });
   }
