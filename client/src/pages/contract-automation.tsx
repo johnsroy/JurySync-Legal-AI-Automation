@@ -81,7 +81,8 @@ export default function ContractAutomation() {
       const response = await fetch('/api/documents/generate', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify({
           templateType: values.templateType,
@@ -96,32 +97,18 @@ export default function ContractAutomation() {
       }
 
       setProgress(80);
-      const document = await response.json();
+      const data = await response.json();
 
       setProgress(100);
       setProcessingState('complete');
 
       toast({
         title: "Document Generated Successfully",
-        description: "You can now download or sign the document",
+        description: "Redirecting to document viewer...",
       });
 
-      // Show actions immediately
-      const documentId = document.id;
-
-      return (
-        <div className="mt-4 space-y-4">
-          <Button onClick={() => handleDownloadPDF(documentId)} className="w-full">
-            Download PDF
-          </Button>
-          <Button onClick={() => handleDownloadDOCX(documentId)} className="w-full">
-            Download DOCX
-          </Button>
-          <Button onClick={() => handleSignDocument(documentId, "Digital Signature")} className="w-full">
-            Sign & Download
-          </Button>
-        </div>
-      );
+      // Redirect to document view page
+      setLocation(`/documents/${data.id}`);
 
     } catch (error: any) {
       console.error('Generation error:', error);
