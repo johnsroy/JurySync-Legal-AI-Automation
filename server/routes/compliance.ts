@@ -28,18 +28,18 @@ router.post('/api/compliance/upload', (req, res, next) => {
     try {
       if (err) {
         res.setHeader('Content-Type', 'text/plain');
-        return res.status(400).send(err.message);
+        return res.status(400).send(`Error: ${err.message}`);
       }
 
       const userId = (req as any).user?.id;
       if (!userId) {
         res.setHeader('Content-Type', 'text/plain');
-        return res.status(401).send('Not authenticated');
+        return res.status(401).send('Error: Not authenticated');
       }
 
       if (!req.file) {
         res.setHeader('Content-Type', 'text/plain');
-        return res.status(400).send('No file uploaded');
+        return res.status(400).send('Error: No file uploaded');
       }
 
       // Create document record first
@@ -60,23 +60,25 @@ router.post('/api/compliance/upload', (req, res, next) => {
           console.error(`Analysis failed for document ${document.id}:`, error);
         });
 
-      // Send plain text response
+      // Send plain text response in a consistent format
       res.setHeader('Content-Type', 'text/plain');
-      res.send(`Document uploaded successfully. ID: ${document.id}`);
+      res.send(`SUCCESS\nDocument: ${document.id}\nTitle: ${req.file.originalname}\nStatus: PENDING`);
 
     } catch (error: any) {
-      next(error);
+      console.error('Upload error:', error);
+      res.setHeader('Content-Type', 'text/plain');
+      res.status(500).send(`Error: ${error.message}`);
     }
   });
 });
 
-// Get all documents for current user - returns plain text for compatibility
+// Get all documents for current user
 router.get('/api/compliance/documents', async (req, res) => {
   try {
     const userId = (req as any).user?.id;
     if (!userId) {
       res.setHeader('Content-Type', 'text/plain');
-      return res.status(401).send('Not authenticated');
+      return res.status(401).send('Error: Not authenticated');
     }
 
     const documents = await db
@@ -89,17 +91,17 @@ router.get('/api/compliance/documents', async (req, res) => {
       .from(complianceDocuments)
       .where(eq(complianceDocuments.userId, userId));
 
-    // Format as plain text
+    // Format as plain text with consistent format
     const textResponse = documents
-      .map(doc => `ID: ${doc.id}, Title: ${doc.title}, Status: ${doc.status}`)
-      .join('\n');
+      .map(doc => `Document: ${doc.id}\nTitle: ${doc.title}\nStatus: ${doc.status}`)
+      .join('\n---\n');
 
     res.setHeader('Content-Type', 'text/plain');
     res.send(textResponse);
   } catch (error: any) {
     console.error('Documents fetch error:', error);
     res.setHeader('Content-Type', 'text/plain');
-    res.status(500).send('Failed to fetch documents');
+    res.status(500).send(`Error: ${error.message}`);
   }
 });
 

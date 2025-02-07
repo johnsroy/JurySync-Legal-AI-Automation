@@ -45,33 +45,37 @@ export default function ComplianceAuditing() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
 
-  // Fetch uploaded documents
+  // Fetch uploaded documents with new parsing
   const { data: uploadedDocuments = [], isLoading: isLoadingDocuments } = useQuery({
     queryKey: ['uploaded-documents'],
     queryFn: async () => {
       const response = await fetch('/api/compliance/documents');
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText);
+        throw new Error(errorText.startsWith('Error:') ? errorText.slice(6) : errorText);
       }
       const text = await response.text();
 
-      // Parse plain text response into document objects
-      return text.split('\n')
-        .filter(line => line.trim())
-        .map(line => {
-          const [id, title, status] = line.split(',').map(part => part.split(': ')[1].trim());
+      // Parse the new text format
+      return text.split('---')
+        .filter(block => block.trim())
+        .map(block => {
+          const lines = block.trim().split('\n');
+          const documentId = lines.find(l => l.startsWith('Document:'))?.split(': ')[1] || '';
+          const title = lines.find(l => l.startsWith('Title:'))?.split(': ')[1] || '';
+          const status = lines.find(l => l.startsWith('Status:'))?.split(': ')[1] || '';
+
           return {
-            id,
+            id: documentId,
             name: title,
             status,
-            uploadedAt: new Date().toISOString() // Use current time as fallback
+            uploadedAt: new Date().toISOString()
           };
         });
     }
   });
 
-  // Modified upload handler to work with plain text responses
+  // Modified upload handler with new response parsing
   const onDrop = async (acceptedFiles: File[]) => {
     setIsUploading(true);
     setUploadProgress(0);
@@ -96,26 +100,34 @@ export default function ComplianceAuditing() {
 
           if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(errorText || 'Upload failed');
+            throw new Error(errorText.startsWith('Error:') ? errorText.slice(6) : errorText);
           }
 
           const responseText = await response.text();
           console.log('Upload response:', responseText);
 
-          // Extract document ID from response text
-          const documentId = responseText.match(/ID: (\d+)/)?.[1];
+          // Parse the new response format
+          const lines = responseText.split('\n');
+          const status = lines[0];
 
-          if (documentId) {
-            // Refresh the documents list
-            await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
+          if (status !== 'SUCCESS') {
+            throw new Error('Upload failed');
+          }
 
-            toast({
-              title: "Document Uploaded",
-              description: "Starting compliance analysis...",
-            });
-          } else {
+          const documentId = lines.find(l => l.startsWith('Document:'))?.split(': ')[1];
+
+          if (!documentId) {
             throw new Error('Invalid response format');
           }
+
+          // Refresh the documents list
+          await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
+
+          toast({
+            title: "Document Uploaded",
+            description: "Starting compliance analysis...",
+          });
+
         } catch (error: any) {
           console.error('Individual file upload error:', error);
           throw error;
