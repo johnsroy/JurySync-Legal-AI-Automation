@@ -13,6 +13,7 @@ import Dashboard from "@/pages/dashboard";
 import ContractAutomation from "@/pages/contract-automation";
 import ComplianceAuditing from "@/pages/compliance-auditing";
 import LegalResearch from "@/pages/legal-research";
+import ReportsDashboard from "@/pages/reports-dashboard";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
@@ -27,6 +28,7 @@ function Router() {
       <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
       <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
       <ProtectedRoute path="/legal-research" component={LegalResearch} />
+      <ProtectedRoute path="/reports" component={ReportsDashboard} />
       <Route component={NotFound} />
     </Switch>
   );
