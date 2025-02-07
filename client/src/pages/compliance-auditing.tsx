@@ -50,14 +50,28 @@ export default function ComplianceAuditing() {
     queryKey: ['uploaded-documents'],
     queryFn: async () => {
       const response = await fetch('/api/compliance/documents');
-      if (!response.ok) throw new Error('Failed to fetch documents');
-      const data = await response.json();
-      console.log('Fetched documents:', data);
-      return data as UploadedDocument[];
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText);
+      }
+      const text = await response.text();
+
+      // Parse plain text response into document objects
+      return text.split('\n')
+        .filter(line => line.trim())
+        .map(line => {
+          const [id, title, status] = line.split(',').map(part => part.split(': ')[1].trim());
+          return {
+            id,
+            name: title,
+            status,
+            uploadedAt: new Date().toISOString() // Use current time as fallback
+          };
+        });
     }
   });
 
-  // Modified upload handler with proper FormData handling
+  // Modified upload handler to work with plain text responses
   const onDrop = async (acceptedFiles: File[]) => {
     setIsUploading(true);
     setUploadProgress(0);
@@ -71,8 +85,6 @@ export default function ComplianceAuditing() {
           setUploadProgress((prev) => Math.min(prev + 10, 90));
         }, 500);
 
-        console.log('Uploading file:', file.name, 'type:', file.type);
-
         try {
           const response = await fetch('/api/compliance/upload', {
             method: 'POST',
@@ -83,25 +95,27 @@ export default function ComplianceAuditing() {
           setUploadProgress(100);
 
           if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Upload failed');
+            const errorText = await response.text();
+            throw new Error(errorText || 'Upload failed');
           }
 
-          const data = await response.json();
-          console.log('Upload successful:', data);
+          const responseText = await response.text();
+          console.log('Upload response:', responseText);
 
-          // Refresh the documents list
-          await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
+          // Extract document ID from response text
+          const documentId = responseText.match(/ID: (\d+)/)?.[1];
 
-          // Auto-monitor the first document
-          if (uploadedDocuments.length === 0) {
-            startMonitoringMutation.mutate([data.documentId]);
+          if (documentId) {
+            // Refresh the documents list
+            await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
+
+            toast({
+              title: "Document Uploaded",
+              description: "Starting compliance analysis...",
+            });
+          } else {
+            throw new Error('Invalid response format');
           }
-
-          toast({
-            title: "Document Uploaded",
-            description: "Starting compliance analysis...",
-          });
         } catch (error: any) {
           console.error('Individual file upload error:', error);
           throw error;
