@@ -19,17 +19,21 @@ const upload = multer({
 // Get all available templates
 router.get("/api/templates", async (req, res) => {
   try {
-    console.log("Template request received, checking authentication...");
-    console.log("User session:", req.session);
-    console.log("Auth status:", req.isAuthenticated());
+    console.log("Template request received");
 
-    // Temporarily disable authentication for testing
+    // Temporarily disable authentication check for testing
     // if (!req.isAuthenticated()) {
     //   return res.status(401).json({ error: "Not authenticated" });
     // }
 
     const templates = getAllTemplates();
-    console.log("Templates fetched successfully:", templates);
+    console.log("Templates retrieved:", templates.length, "templates found");
+
+    if (!templates || templates.length === 0) {
+      console.log("No templates found in store");
+      return res.status(404).json({ error: "No templates available" });
+    }
+
     return res.json(templates);
   } catch (error: any) {
     console.error("Template fetch error:", error);
