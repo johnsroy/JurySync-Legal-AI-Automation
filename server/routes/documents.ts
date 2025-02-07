@@ -19,13 +19,13 @@ const upload = multer({
 // Get all available templates
 router.get("/api/templates", async (req, res) => {
   try {
+    console.log("Fetching templates...");
     if (!req.isAuthenticated()) {
       return res.status(401).json({ error: "Not authenticated" });
     }
-
     const templates = getAllTemplates();
+    console.log("Templates fetched:", templates);
     return res.json(templates);
-
   } catch (error: any) {
     console.error("Template fetch error:", error);
     return res.status(500).json({ error: "Failed to fetch templates" });
@@ -38,14 +38,11 @@ router.get("/api/templates/:id", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ error: "Not authenticated" });
     }
-
     const template = getTemplate(req.params.id);
     if (!template) {
       return res.status(404).json({ error: "Template not found" });
     }
-
     return res.json(template);
-
   } catch (error: any) {
     console.error("Template fetch error:", error);
     return res.status(500).json({ error: "Failed to fetch template" });
@@ -55,10 +52,6 @@ router.get("/api/templates/:id", async (req, res) => {
 // Generate contract from template
 router.post("/api/documents/generate", async (req, res) => {
   try {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
-
     const { templateId, requirements, customInstructions } = req.body;
 
     if (!templateId || !requirements || !Array.isArray(requirements)) {
@@ -83,7 +76,7 @@ router.post("/api/documents/generate", async (req, res) => {
       .values({
         title,
         content: contractText,
-        userId: req.user!.id,
+        userId: req.user?.id,
         processingStatus: "COMPLETED",
         agentType: "CONTRACT_AUTOMATION"
       })
