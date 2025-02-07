@@ -4,14 +4,11 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Gavel, LogOut, Loader2, GitCompare, FileText, AlertCircle } from "lucide-react";
-import { FilePond, registerPlugin } from "react-filepond";
-import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
+import { FilePond } from "react-filepond";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
 import "filepond/dist/filepond.min.css";
-
-registerPlugin(FilePondPluginFileValidateType);
 
 export default function ContractAutomation() {
   const { user, logoutMutation } = useAuth();
@@ -57,7 +54,7 @@ export default function ContractAutomation() {
 
       toast({
         title: "Document Uploaded",
-        description: "Your document is being processed. You'll be redirected shortly.",
+        description: "Your document is being processed. You'll be redirected to the editor shortly.",
       });
     } catch (error: any) {
       console.error('Upload error:', error);
@@ -68,7 +65,6 @@ export default function ContractAutomation() {
       });
     } finally {
       setIsUploading(false);
-      // Remove the file from FilePond
       file.serverId = 'remove';
     }
   };
@@ -128,9 +124,8 @@ export default function ContractAutomation() {
                     disabled={isUploading}
                     onprocessfile={handleProcessFile}
                     onaddfilestart={() => setIsUploading(true)}
-                    onaddfileerror={(error, file) => {
+                    onaddfileerror={() => {
                       setIsUploading(false);
-                      console.error('File add error:', error);
                       toast({
                         title: "Upload Error",
                         description: "Failed to add file. Please try again.",

@@ -26,29 +26,28 @@ router.post("/api/documents", async (req, res) => {
     }
 
     // Create initial document
-    const [document] = await db
-      .insert(documents)
+    const [document] = await db.insert(documents)
       .values({
-        userId: req.user.id,
         title,
         content: Buffer.from(content, 'base64').toString(),
+        userId: req.user!.id,
         agentType,
+        analysis: {},
         processingStatus: "PENDING"
       })
       .returning();
 
     // Create initial version
-    await db
-      .insert(documentVersions)
+    await db.insert(documentVersions)
       .values({
-        content: Buffer.from(content, 'base64').toString(),
-        version: 1,
-        authorId: req.user.id,
         documentId: document.id,
+        version: "1.0",
+        content: Buffer.from(content, 'base64').toString(),
+        authorId: req.user!.id,
         changes: [{
           description: "Initial document upload",
           timestamp: new Date().toISOString(),
-          user: req.user.username
+          user: req.user!.username
         }]
       });
 
@@ -57,8 +56,7 @@ router.post("/api/documents", async (req, res) => {
       const analysis = await analyzeContractClauses(Buffer.from(content, 'base64').toString());
 
       // Update document with analysis
-      await db
-        .update(documents)
+      await db.update(documents)
         .set({ 
           analysis,
           processingStatus: "COMPLETED"
@@ -66,10 +64,10 @@ router.post("/api/documents", async (req, res) => {
         .where(eq(documents.id, document.id));
 
       res.status(201).json({ ...document, analysis });
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Analysis error:", error);
       // Update document with error status but still return success
-      await db
-        .update(documents)
+      await db.update(documents)
         .set({ 
           processingStatus: "ERROR",
           errorMessage: error.message
@@ -95,56 +93,59 @@ router.post("/api/documents/:id/generate-draft", async (req, res) => {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const { requirements, baseContent, customInstructions } = req.body;
+    const { requirements } = req.body;
     const documentId = parseInt(req.params.id);
 
-    if (!requirements || !Array.isArray(requirements)) {
-      return res.status(400).json({ error: "Invalid requirements" });
-    }
-
-    // Check document exists and user has access
+    // Get existing document
     const [document] = await db
       .select()
       .from(documents)
       .where(eq(documents.id, documentId));
 
-    if (!document || document.userId !== req.user.id) {
-      return res.status(404).json({ error: "Document not found" });
+    if (!document || document.userId !== req.user!.id) {
+      return res.status(403).json({ error: "Access denied" });
     }
 
     // Generate draft using OpenAI
-    const generatedContent = await generateContractDraft({
-      requirements,
-      baseContent,
-      customInstructions
+    const draft = await generateContractDraft({
+      requirements: [{
+        type: "STANDARD",
+        description: requirements,
+        importance: "HIGH"
+      }]
     });
 
-    // Save as new version
-    const [newVersion] = await db
-      .insert(documentVersions)
+    // Create new version
+    const [newVersion] = await db.insert(documentVersions)
       .values({
         documentId,
-        content: generatedContent,
-        version: document.currentVersion + 1,
-        createdBy: req.user.id,
+        version: (parseFloat(document.currentVersion || "1.0") + 0.1).toFixed(1),
+        content: draft,
+        authorId: req.user!.id,
         changes: [{
           description: "Generated new draft from requirements",
           timestamp: new Date().toISOString(),
-          user: req.user.username
+          user: req.user!.username
         }]
       })
       .returning();
 
-    // Update document's current version
-    await db
-      .update(documents)
+    // Update document content
+    await db.update(documents)
       .set({ 
-        currentVersion: document.currentVersion + 1,
-        content: generatedContent
+        content: draft,
+        analysis: {
+          ...document.analysis,
+          lastRequirements: requirements,
+          generatedAt: new Date().toISOString()
+        }
       })
       .where(eq(documents.id, documentId));
 
-    res.json({ content: generatedContent, version: newVersion });
+    res.json({
+      content: draft,
+      version: newVersion
+    });
 
   } catch (error: any) {
     console.error("Draft generation error:", error);
@@ -165,11 +166,17 @@ router.post("/api/documents/:id/analyze", async (req, res) => {
       .from(documents)
       .where(eq(documents.id, documentId));
 
-    if (!document || document.userId !== req.user.id) {
+    if (!document || document.userId !== req.user!.id) {
       return res.status(404).json({ error: "Document not found" });
     }
 
     const analysis = await analyzeContractClauses(document.content);
+
+    // Update document with analysis
+    await db.update(documents)
+      .set({ analysis })
+      .where(eq(documents.id, documentId));
+
     res.json(analysis);
 
   } catch (error: any) {
@@ -194,7 +201,7 @@ router.post("/api/documents/:id/compare-versions", async (req, res) => {
       db.select().from(documentVersions).where(eq(documentVersions.id, newVersionId))
     ]);
 
-    if (!originalVersion || !newVersion) {
+    if (!originalVersion[0] || !newVersion[0]) {
       return res.status(404).json({ error: "One or both versions not found" });
     }
 
