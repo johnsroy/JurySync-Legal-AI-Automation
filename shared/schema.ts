@@ -226,8 +226,8 @@ export const insertDocumentSchema = createInsertSchema(documents)
 
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 
-// Define version control types
-export const DocumentVersion = z.object({
+// Document version control schema
+export const DocumentVersionSchema = z.object({
   version: z.string(),
   content: z.string(),
   timestamp: z.string(),
@@ -242,7 +242,21 @@ export const DocumentVersion = z.object({
   })),
 });
 
-export type DocumentVersion = z.infer<typeof DocumentVersion>;
+export type DocumentVersionType = z.infer<typeof DocumentVersionSchema>;
+
+// Document versions table definition
+export const documentVersions = pgTable("document_versions", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  version: text("version").notNull(),
+  content: text("content").notNull(),
+  changes: jsonb("changes").notNull(),
+  authorId: integer("author_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DocumentVersion = typeof documentVersions.$inferSelect;
+export type InsertDocumentVersion = typeof documentVersions.$inferInsert;
 
 // Define approval status
 export const ApprovalStatus = z.enum([
@@ -357,30 +371,17 @@ export const signatures = pgTable("signatures", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const documentVersions = pgTable("document_versions", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id").notNull(),
-  version: text("version").notNull(),
-  content: text("content").notNull(),
-  changes: jsonb("changes").notNull(),
-  authorId: integer("author_id").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
 
 // Add types for the new tables
 export type Approval = typeof approvals.$inferSelect;
 export type Signature = typeof signatures.$inferSelect;
-export type DocumentVersion = typeof documentVersions.$inferSelect;
 
 // Create insert schemas for the new tables
 export const insertApprovalSchema = createInsertSchema(approvals);
 export const insertSignatureSchema = createInsertSchema(signatures);
-export const insertDocumentVersionSchema = createInsertSchema(documentVersions);
 
 export type InsertApproval = z.infer<typeof insertApprovalSchema>;
 export type InsertSignature = z.infer<typeof insertSignatureSchema>;
-export type InsertDocumentVersion = z.infer<typeof insertDocumentVersionSchema>;
-
 
 // Add new schema for contract templates
 export const contractTemplates = pgTable("contract_templates", {
