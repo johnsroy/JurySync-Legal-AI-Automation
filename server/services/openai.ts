@@ -7,9 +7,6 @@ import { eq, and } from "drizzle-orm";
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Cache duration in hours
-const CACHE_DURATION = 24;
-
 export interface DraftRequirement {
   type: "STANDARD" | "CUSTOM" | "INDUSTRY_SPECIFIC";
   description: string;
@@ -27,23 +24,13 @@ interface GenerateDraftOptions {
   userId: number;
 }
 
-export async function generateContractDraft({ requirements, baseContent, customInstructions, templateType = "GENERAL", userId }: GenerateDraftOptions): Promise<{ content: string; metadata: any }> {
+export async function generateContractDraft(options: GenerateDraftOptions): Promise<string> {
   try {
-    const systemPrompt = `You are a legal contract expert. Generate a contract based on the requirements provided. 
-Return only a JSON object with the following structure:
-{
-  "contract": {
-    "title": string,
-    "content": string (the full contract text),
-    "metadata": {
-      "type": string,
-      "version": string,
-      "sections": array of section names
-    }
-  }
-}`;
+    const { requirements, customInstructions, templateType = "GENERAL" } = options;
 
-    const userPrompt = `Create a ${templateType} contract with these requirements:
+    const systemMessage = "You are a legal contract expert. Generate a professional contract based on the provided requirements. Return only the contract text without any JSON formatting or special characters.";
+
+    const userMessage = `Create a ${templateType} contract with these requirements:
 ${requirements.map(req => 
   `- ${req.importance} Priority [${req.type}]: ${req.description}
    ${req.industry ? `Industry: ${req.industry}` : ''}
@@ -56,39 +43,18 @@ ${customInstructions ? `Additional Instructions: ${customInstructions}` : ''}`;
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
+        { role: "system", content: systemMessage },
+        { role: "user", content: userMessage }
       ],
-      response_format: { type: "json_object" },
       temperature: 0.7,
     });
 
-    const rawContent = response.choices[0].message.content;
-    if (!rawContent) {
+    const content = response.choices[0].message.content;
+    if (!content) {
       throw new Error("Empty response from OpenAI");
     }
 
-    let parsedResponse;
-    try {
-      parsedResponse = JSON.parse(rawContent);
-
-      if (!parsedResponse.contract?.content || typeof parsedResponse.contract.content !== 'string') {
-        throw new Error("Invalid contract format in response");
-      }
-    } catch (error) {
-      console.error("Failed to parse OpenAI response:", error);
-      throw new Error("Failed to generate valid contract format");
-    }
-
-    // Cache the generated content
-    if (userId) {
-      await saveToCache(userId, 0, parsedResponse.contract.content, requirements);
-    }
-
-    return {
-      content: parsedResponse.contract.content,
-      metadata: parsedResponse.contract.metadata || {}
-    };
+    return content;
 
   } catch (error: any) {
     console.error('Contract Generation Error:', error);
@@ -96,7 +62,9 @@ ${customInstructions ? `Additional Instructions: ${customInstructions}` : ''}`;
   }
 }
 
-// Cache functions remain unchanged
+// Cache duration in hours
+const CACHE_DURATION = 24;
+
 async function checkCache(userId: number, requirements: DraftRequirement[], templateType: string) {
   const [cachedResult] = await db
     .select()
@@ -129,28 +97,24 @@ async function saveToCache(userId: number, templateId: number, content: string, 
   });
 }
 
-export async function analyzeContractClauses(content: string): Promise<any> {
+export async function analyzeContractClauses(content: string): Promise<string> {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: `As a legal contract analysis expert, analyze the given contract and provide detailed feedback in JSON format including:
-1. Key clauses and their implications
-2. Risk assessment for each major clause
-3. Comparison against industry standards
-4. Suggested improvements
-5. Compliance requirements
-6. Missing critical elements
-7. Overall risk score`
+          content: `As a legal contract analysis expert, analyze the given contract and provide feedback on:
+1. Key clauses
+2. Risk assessment
+3. Suggested improvements
+4. Missing elements`
         },
         {
           role: "user",
-          content: `Analyze this contract and provide comprehensive feedback:\n\n${content}`
+          content: `Analyze this contract:\n\n${content}`
         }
       ],
-      response_format: { type: "json_object" },
       temperature: 0.3,
     });
 
@@ -159,9 +123,9 @@ export async function analyzeContractClauses(content: string): Promise<any> {
       throw new Error("Empty response from OpenAI");
     }
 
-    return JSON.parse(analysisContent);
+    return analysisContent;
   } catch (error: any) {
-    console.error('OpenAI API Error:', error);
+    console.error('Analysis Error:', error);
     throw new Error(`Failed to analyze contract: ${error.message}`);
   }
 }
