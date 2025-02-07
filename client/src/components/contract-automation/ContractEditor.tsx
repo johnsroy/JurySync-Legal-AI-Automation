@@ -5,6 +5,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import {
@@ -15,12 +17,21 @@ import {
   Download,
   Edit,
   Check,
-  PenTool
+  PenTool,
+  Sparkles,
+  ListChecks
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+
+// Add requirements interface for Dynamic Drafting
+interface DraftRequirement {
+  type: "STANDARD" | "CUSTOM";
+  description: string;
+  importance: "HIGH" | "MEDIUM" | "LOW";
+}
 
 interface ContractEditorProps {
   documentId: string;
@@ -37,7 +48,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState("editor");
+  const [activeTab, setActiveTab] = useState("requirements"); //Start on Requirements tab
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedDraft, setGeneratedDraft] = useState("");
   const [editableDraft, setEditableDraft] = useState("");
@@ -46,6 +57,83 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   const [downloadFormat, setDownloadFormat] = useState<'pdf' | 'docx' | 'txt'>('docx');
   const [selectedApprover, setSelectedApprover] = useState<string>("");
   const [reviewComment, setReviewComment] = useState("");
+  const [requirements, setRequirements] = useState<DraftRequirement[]>([]);
+  const [newRequirement, setNewRequirement] = useState("");
+  const [requirementType, setRequirementType] = useState<"STANDARD" | "CUSTOM">("STANDARD");
+  const [requirementImportance, setRequirementImportance] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
+
+  const standardRequirements = [
+    "Include non-disclosure agreement",
+    "Add force majeure clause",
+    "Include arbitration clause",
+    "Add termination conditions",
+    "Include payment terms",
+  ];
+
+  const handleAddRequirement = () => {
+    if (!newRequirement) return;
+    setRequirements([
+      ...requirements,
+      {
+        type: requirementType,
+        description: newRequirement,
+        importance: requirementImportance,
+      },
+    ]);
+    setNewRequirement("");
+  };
+
+  const handleGenerateDraft = async () => {
+    setIsGenerating(true);
+    setProgress(0);
+
+    try {
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) return prev;
+          return prev + Math.floor(Math.random() * 15) + 5;
+        });
+      }, 800);
+
+      // Enhanced API call with requirements
+      const response = await apiRequest("POST", `/api/documents/${documentId}/generate-draft`, {
+        requirements: requirements,
+        baseContent: content,
+        customInstructions: newRequirement,
+      });
+
+      clearInterval(progressInterval);
+      setProgress(100);
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to generate draft');
+      }
+
+      const result = await response.json();
+      setGeneratedDraft(result.content);
+      setEditableDraft(result.content);
+      setActiveTab("draft");
+      setHasUnsavedChanges(true);
+      onUpdate();
+
+      toast({
+        title: "Draft Generated Successfully",
+        description: "Your contract draft is ready for review.",
+      });
+
+    } catch (error: any) {
+      console.error('Draft generation error:', error);
+      toast({
+        title: "Error Generating Draft",
+        description: error.message || "Failed to generate draft. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+      setTimeout(() => setProgress(0), 1000);
+    }
+  };
 
   // Determine if document is approved
   const workflowState = analysis.contractDetails?.workflowState || {};
@@ -158,58 +246,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     }
   };
 
-  const handleGenerateDraft = async () => {
-    setIsGenerating(true);
-    setProgress(0);
-
-    try {
-      const progressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) return prev;
-          return prev + Math.floor(Math.random() * 15) + 5;
-        });
-      }, 800);
-
-      const response = await apiRequest("POST", `/api/documents/${documentId}/generate-draft`, {
-        requirements: content,
-      });
-
-      clearInterval(progressInterval);
-      setProgress(100);
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to generate draft');
-      }
-
-      const result = await response.json();
-      if (!result.content) {
-        throw new Error('No content received from server');
-      }
-
-      setGeneratedDraft(result.content);
-      setEditableDraft(result.content);
-      setActiveTab("draft");
-      setHasUnsavedChanges(true);
-      onUpdate();
-
-      toast({
-        title: "Draft Generated Successfully",
-        description: "Your contract draft is ready for review.",
-      });
-
-    } catch (error: any) {
-      console.error('Draft generation error:', error);
-      toast({
-        title: "Error Generating Draft",
-        description: error.message || "Failed to generate draft. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGenerating(false);
-      setTimeout(() => setProgress(0), 1000);
-    }
-  };
 
   const handleSaveDraft = async () => {
     try {
@@ -309,8 +345,9 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   };
 
   const tabs = [
-    { id: "editor", label: "Requirements", icon: FileText },
-    ...(generatedDraft ? [{ id: "draft", label: "Generated Draft", icon: Edit }] : []),
+    { id: "requirements", label: "Requirements", icon: ListChecks },
+    { id: "editor", label: "Document", icon: FileText },
+    ...(generatedDraft ? [{ id: "draft", label: "Generated Draft", icon: Sparkles }] : []),
     { id: "redline", label: "Version History", icon: History },
     { id: "approvals", label: "Approval Pending", icon: UserCheck },
     { id: "workflow", label: "Workflow", icon: History },
@@ -329,6 +366,128 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
             ))}
           </TabsList>
         </div>
+
+        {/* Requirements Tab Content */}
+        <TabsContent value="requirements" className="p-6">
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Contract Requirements</h3>
+              <Button
+                onClick={handleGenerateDraft}
+                disabled={isGenerating || requirements.length === 0}
+              >
+                {isGenerating ? (
+                  <>Generating...</>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Generate Draft
+                  </>
+                )}
+              </Button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <Label>Requirement Type</Label>
+                  <Select
+                    value={requirementType}
+                    onValueChange={(value: "STANDARD" | "CUSTOM") => setRequirementType(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="STANDARD">Standard Clause</SelectItem>
+                      <SelectItem value="CUSTOM">Custom Requirement</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1">
+                  <Label>Importance</Label>
+                  <Select
+                    value={requirementImportance}
+                    onValueChange={(value: "HIGH" | "MEDIUM" | "LOW") => setRequirementImportance(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select importance" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="HIGH">High Priority</SelectItem>
+                      <SelectItem value="MEDIUM">Medium Priority</SelectItem>
+                      <SelectItem value="LOW">Low Priority</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  value={newRequirement}
+                  onChange={(e) => setNewRequirement(e.target.value)}
+                  placeholder="Enter requirement or select from standard clauses"
+                  className="flex-1"
+                />
+                <Button onClick={handleAddRequirement}>Add</Button>
+              </div>
+
+              {requirementType === "STANDARD" && (
+                <div className="grid grid-cols-2 gap-2 mt-4">
+                  {standardRequirements.map((req) => (
+                    <Button
+                      key={req}
+                      variant="outline"
+                      className="justify-start"
+                      onClick={() => setNewRequirement(req)}
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      {req}
+                    </Button>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {requirements.map((req, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-3 rounded-lg border"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className={`px-2 py-1 rounded text-xs ${
+                        req.importance === "HIGH"
+                          ? "bg-red-100 text-red-800"
+                          : req.importance === "MEDIUM"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-green-100 text-green-800"
+                      }`}>
+                        {req.importance}
+                      </div>
+                      <span>{req.description}</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setRequirements(requirements.filter((_, i) => i !== index))}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {isGenerating && (
+              <div className="w-full space-y-2">
+                <Progress value={progress} className="w-full" />
+                <p className="text-sm text-gray-500 text-center">
+                  Generating contract draft... {progress}%
+                </p>
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
         {/* Requirements Tab Content */}
         <TabsContent value="editor" className="p-6">
