@@ -3,7 +3,101 @@ import { getTemplate, type Template } from "./templateStore";
 import { z } from "zod";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI();
+
+const DocumentAnalysisSchema = z.object({
+  summary: z.string(),
+  keyPoints: z.array(z.string()),
+  suggestions: z.array(z.string()),
+  riskScore: z.number().min(0).max(10),
+  contractDetails: z.object({
+    parties: z.array(z.string()).optional(),
+    effectiveDate: z.string().optional(),
+    termLength: z.string().optional(),
+    paymentTerms: z.string().optional(),
+    governingLaw: z.string().optional(),
+    keyObligations: z.array(z.string()).optional(),
+    terminationClauses: z.array(z.string()).optional(),
+    missingClauses: z.array(z.string()).optional(),
+    suggestedClauses: z.array(z.string()).optional(),
+    riskFactors: z.array(z.string()).optional(),
+  }).optional(),
+});
+
+export async function analyzeDocument(content: string) {
+  try {
+    console.log('Starting document analysis...');
+
+    // Clean content
+    const cleanContent = content
+      .replace(/<!DOCTYPE[^>]*>/gi, '')
+      .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+      .trim();
+
+    if (!cleanContent) {
+      throw new Error('Empty or invalid document content after cleaning');
+    }
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: `Analyze this legal document and provide a comprehensive analysis in the following JSON format:
+{
+  "summary": "Brief overview of the document",
+  "keyPoints": ["Array of key points"],
+  "suggestions": ["Array of suggestions for improvement"],
+  "riskScore": <number between 0 and 10>,
+  "contractDetails": {
+    "parties": ["Array of involved parties"],
+    "effectiveDate": "Document effective date",
+    "termLength": "Contract duration",
+    "paymentTerms": "Payment terms summary",
+    "governingLaw": "Applicable law",
+    "keyObligations": ["Array of key obligations"],
+    "terminationClauses": ["Array of termination conditions"],
+    "missingClauses": ["Array of recommended missing clauses"],
+    "suggestedClauses": ["Array of suggested improvements"],
+    "riskFactors": ["Array of identified risk factors"]
+  }
+}
+
+Document to analyze:
+${cleanContent.substring(0, 8000)}`
+        }
+      ],
+      temperature: 0.3,
+      response_format: { type: "json_object" }
+    });
+
+    const responseText = response.choices[0].message.content;
+    if (!responseText) {
+      throw new Error('Empty response from OpenAI');
+    }
+
+    console.log('Received analysis response, parsing...');
+
+    let parsedResponse;
+    try {
+      parsedResponse = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('JSON parsing error:', parseError);
+      console.error('Raw response:', responseText);
+      throw new Error('Failed to parse OpenAI response');
+    }
+
+    // Validate the response against our schema
+    const validatedResponse = DocumentAnalysisSchema.parse(parsedResponse);
+    console.log('Analysis validation successful');
+
+    return validatedResponse;
+  } catch (error: any) {
+    console.error("Document analysis error:", error);
+    throw new Error(`Failed to analyze document: ${error.message}`);
+  }
+}
 
 export interface ContractRequirement {
   description: string;
@@ -233,43 +327,5 @@ export async function getCustomInstructionSuggestions(
   } catch (error: any) {
     console.error("Custom Instructions Suggestion Error:", error);
     throw new Error("Failed to generate custom instruction suggestions");
-  }
-}
-
-export async function analyzeDocument(content: string): Promise<{
-  summary: string;
-  key_points: string[];
-  suggestions: string[];
-}> {
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OpenAI API key not configured");
-    }
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "You are a legal document analyzer. Analyze the provided document and return a JSON object with a summary, key points, and suggestions for improvement."
-        },
-        {
-          role: "user",
-          content: `Analyze this document:\n\n${content}`
-        }
-      ],
-      temperature: 0.3,
-      response_format: { type: "json_object" }
-    });
-
-    const analysis = JSON.parse(response.choices[0]?.message?.content || "{}");
-    return {
-      summary: analysis.summary || "No summary available",
-      key_points: analysis.key_points || [],
-      suggestions: analysis.suggestions || []
-    };
-  } catch (error: any) {
-    console.error("Document Analysis Error:", error);
-    throw new Error(error.message || "Failed to analyze document");
   }
 }

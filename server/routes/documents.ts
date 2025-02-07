@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { generateContract, suggestRequirements, getAutocomplete, getCustomInstructionSuggestions } from "../services/openai";
+import { generateContract, suggestRequirements, getAutocomplete, getCustomInstructionSuggestions, analyzeDocument } from "../services/openai";
 import { getAllTemplates, getTemplate } from "../services/templateStore";
 import { db } from "../db";
 import { documents } from "@shared/schema";
@@ -8,14 +8,145 @@ import multer from "multer";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import PDFDocument from "pdfkit";
 import { eq } from 'drizzle-orm';
+import { analyzePDFContent } from "../services/fileAnalyzer";
+import mammoth from 'mammoth';
 
 const router = Router();
 
-// Configure multer for file uploads
+// Configure multer for file uploads with improved validation
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword'
+    ];
+
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF and Word documents are supported.'));
+    }
+  }
+});
+
+// Upload and analyze document
+router.post("/api/documents", upload.single('file'), async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    console.log("Processing uploaded file:", {
+      filename: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    });
+
+    let content = '';
+
+    // Extract content based on file type
+    try {
+      if (req.file.mimetype === 'application/pdf') {
+        content = await analyzePDFContent(req.file.buffer, -1);
+      } else if (req.file.mimetype.includes('wordprocessingml.document') || req.file.mimetype === 'application/msword') {
+        // Convert DOCX to text using mammoth
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        content = result.value;
+      } else {
+        throw new Error('Unsupported file type');
+      }
+
+      if (!content || !content.trim()) {
+        throw new Error('Failed to extract content from document');
+      }
+
+      // Clean and sanitize the content
+      content = content
+        .replace(/\u0000/g, '') // Remove null bytes
+        .replace(/^\s*<!DOCTYPE[^>]*>/i, '') // Remove DOCTYPE
+        .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // Remove control characters
+        .trim();
+
+    } catch (extractError) {
+      console.error("Content extraction error:", extractError);
+      throw new Error(`Failed to extract content: ${extractError.message}`);
+    }
+
+    console.log("Content extracted successfully, length:", content.length);
+
+    // Create document record
+    try {
+      const [document] = await db
+        .insert(documents)
+        .values({
+          title: req.file.originalname,
+          content: content,
+          userId: req.user!.id,
+          processingStatus: "PROCESSING",
+          agentType: "DOCUMENT_UPLOAD"
+        })
+        .returning();
+
+      console.log("Document record created with ID:", document.id);
+
+      // Start analysis in background
+      analyzeDocument(content)
+        .then(async (analysis) => {
+          console.log("Analysis completed for document:", document.id);
+          await db
+            .update(documents)
+            .set({
+              processingStatus: "COMPLETED",
+              analysis: JSON.stringify(analysis)
+            })
+            .where(eq(documents.id, document.id));
+        })
+        .catch(async (error) => {
+          console.error("Analysis failed for document:", document.id, error);
+          await db
+            .update(documents)
+            .set({
+              processingStatus: "ERROR",
+              analysis: JSON.stringify({ error: error.message })
+            })
+            .where(eq(documents.id, document.id));
+        });
+
+      return res.json({
+        id: document.id,
+        title: document.title,
+        status: "PROCESSING"
+      });
+
+    } catch (dbError) {
+      console.error("Database error:", dbError);
+      throw new Error('Failed to save document to database');
+    }
+
+  } catch (error: any) {
+    console.error("Document upload/analysis error:", error);
+
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({ 
+        error: "File upload error",
+        details: error.message 
+      });
+    }
+
+    return res.status(500).json({ 
+      error: "Failed to process document",
+      details: error.message
+    });
   }
 });
 
@@ -136,66 +267,6 @@ router.post("/api/documents/generate", async (req, res) => {
   }
 });
 
-// Upload and analyze document
-router.post("/api/documents", upload.single('file'), async (req, res) => {
-  try {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    console.log("Processing uploaded file:", req.file.originalname);
-
-    // Convert file buffer to text
-    const content = req.file.buffer.toString('utf-8');
-    const title = req.file.originalname;
-
-    // Analyze the document
-    console.log("Starting document analysis...");
-    const analysis = await analyzeDocument(content);
-
-    console.log("Document analysis completed, saving to database...");
-
-    // Save document with analysis
-    const [document] = await db
-      .insert(documents)
-      .values({
-        title,
-        content,
-        userId: req.user!.id,
-        processingStatus: "COMPLETED",
-        agentType: "DOCUMENT_UPLOAD",
-        analysis: JSON.stringify(analysis)
-      })
-      .returning();
-
-    console.log("Document saved to database with ID:", document.id);
-
-    return res.json({
-      id: document.id,
-      title,
-      analysis
-    });
-
-  } catch (error: any) {
-    console.error("Document upload/analysis error:", error);
-
-    if (error instanceof multer.MulterError) {
-      return res.status(400).json({ 
-        error: "File upload error",
-        details: error.message 
-      });
-    }
-
-    return res.status(500).json({ 
-      error: error.message || "Failed to process document",
-      details: error.stack
-    });
-  }
-});
 
 // Download document as DOCX
 router.get("/api/documents/:id/download/docx", async (req, res) => {
