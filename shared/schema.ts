@@ -103,6 +103,57 @@ export const TemplateCategory = z.enum([
 export type TemplateCategory = z.infer<typeof TemplateCategory>;
 
 
+// Define compliance document status
+export const ComplianceStatus = z.enum([
+  "PENDING",
+  "MONITORING",
+  "ERROR",
+  "FLAGGED"
+]);
+
+export type ComplianceStatus = z.infer<typeof ComplianceStatus>;
+
+// Define risk severity levels
+export const RiskSeverity = z.enum([
+  "CRITICAL",
+  "HIGH",
+  "MEDIUM",
+  "LOW",
+  "INFO"
+]);
+
+export type RiskSeverity = z.infer<typeof RiskSeverity>;
+
+// Schema for compliance monitoring results
+export const ComplianceIssue = z.object({
+  id: z.string(),
+  documentId: z.string(),
+  clause: z.string(),
+  description: z.string(),
+  severity: RiskSeverity,
+  recommendation: z.string(),
+  reference: z.string().optional(),
+  detectedAt: z.string(),
+  status: z.enum(["OPEN", "IN_REVIEW", "RESOLVED"]),
+  assignedTo: z.string().optional(),
+  dueDate: z.string().optional()
+});
+
+export type ComplianceIssue = z.infer<typeof ComplianceIssue>;
+
+// Schema for monitoring configuration
+export const MonitoringConfig = z.object({
+  documentId: z.string(),
+  frequency: z.enum(["REALTIME", "HOURLY", "DAILY", "WEEKLY"]),
+  alertThreshold: RiskSeverity,
+  notifyUsers: z.array(z.string()),
+  enabledChecks: z.array(z.string()),
+  lastChecked: z.string().optional(),
+  nextCheck: z.string().optional()
+});
+
+export type MonitoringConfig = z.infer<typeof MonitoringConfig>;
+
 // Extended contract details schema
 export const contractDetailsSchema = z.object({
   parties: z.array(z.string()).optional(),
@@ -210,6 +261,47 @@ export const SignatureStatus = z.enum([
 ]);
 
 export type SignatureStatus = z.infer<typeof SignatureStatus>;
+
+
+// Schema for compliance documents
+export const complianceDocuments = pgTable("compliance_documents", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  documentType: text("document_type").notNull(),
+  status: text("status").notNull().default("PENDING"),
+  riskScore: integer("risk_score"),
+  lastScanned: timestamp("last_scanned"),
+  nextScanDue: timestamp("next_scan_due"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// Schema for compliance issues
+export const complianceIssues = pgTable("compliance_issues", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  clause: text("clause").notNull(),
+  description: text("description").notNull(),
+  severity: text("severity").notNull(),
+  recommendation: text("recommendation").notNull(),
+  reference: text("reference"),
+  status: text("status").notNull().default("OPEN"),
+  assignedTo: text("assigned_to"),
+  dueDate: timestamp("due_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// Create insert schemas
+export const insertComplianceDocumentSchema = createInsertSchema(complianceDocuments);
+export const insertComplianceIssueSchema = createInsertSchema(complianceIssues);
+
+export type ComplianceDocument = typeof complianceDocuments.$inferSelect;
+export type InsertComplianceDocument = z.infer<typeof insertComplianceDocumentSchema>;
+export type ComplianceIssueRecord = typeof complianceIssues.$inferSelect;
+export type InsertComplianceIssue = z.infer<typeof insertComplianceIssueSchema>;
 
 
 // Additional tables after the existing ones...

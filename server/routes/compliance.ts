@@ -1,7 +1,10 @@
 import { Router } from "express";
 import multer from "multer";
 import path from "path";
-import { scanDocument, startMonitoring, getMonitoringResults } from "../services/complianceMonitor";
+import { db } from "../db";
+import { complianceDocuments, complianceIssues } from "@shared/schema";
+import { analyzeDocument } from "../services/complianceMonitor";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
@@ -30,21 +33,16 @@ const upload = multer({
   }
 });
 
-// Store uploaded documents in memory (replace with database in production)
-const uploadedDocuments = new Map<string, {
-  id: string;
-  name: string;
-  content: string;
-  type: string;
-  uploadedAt: string;
-  status: "PENDING" | "MONITORING" | "ERROR";
-}>();
-
+// Upload and analyze document
 router.post('/api/compliance/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
-      console.error('[Compliance] No file uploaded');
-      return res.status(400).json({ error: 'No file uploaded' });
+      throw new Error('No file uploaded');
+    }
+
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      throw new Error('User not authenticated');
     }
 
     console.log(`[Compliance] Processing file: ${req.file.originalname}`);
@@ -59,137 +57,118 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
       throw new Error('Empty file content after conversion');
     }
 
-    const fileType = path.extname(req.file.originalname).substring(1);
-    const documentId = Date.now().toString();
+    // Store document in database
+    const [document] = await db
+      .insert(complianceDocuments)
+      .values({
+        userId,
+        title: req.file.originalname,
+        content: fileContent,
+        documentType: path.extname(req.file.originalname).substring(1),
+        status: "PENDING"
+      })
+      .returning();
 
-    // Store document info
-    const documentInfo = {
-      id: documentId,
-      name: req.file.originalname,
-      content: fileContent,
-      type: fileType,
-      uploadedAt: new Date().toISOString(),
-      status: "PENDING" as const
-    };
+    console.log(`[Compliance] Document stored with ID: ${document.id}`);
 
-    uploadedDocuments.set(documentId, documentInfo);
-    console.log(`[Compliance] Document stored successfully with ID: ${documentId}`);
+    // Start analysis in background
+    analyzeDocument(document.id.toString())
+      .catch(error => console.error(`[Compliance] Analysis failed for document ${document.id}:`, error));
 
-    // If this is the first document, start monitoring immediately
-    if (uploadedDocuments.size === 1) {
-      console.log(`[Compliance] First document uploaded, starting immediate monitoring`);
-      try {
-        const result = await scanDocument(fileContent, fileType);
-        documentInfo.status = "MONITORING";
-        console.log(`[Compliance] Initial monitoring completed for document ${documentId}`);
-        return res.json({ 
-          documentId,
-          status: documentInfo.status,
-          result 
-        });
-      } catch (error: any) {
-        console.error(`[Compliance] Initial monitoring failed:`, error);
-        documentInfo.status = "ERROR";
-        throw error; // Propagate error for consistent error handling
-      }
-    }
-
-    res.json({ 
-      documentId,
-      status: documentInfo.status
+    res.json({
+      documentId: document.id,
+      status: "PENDING",
+      message: "Document uploaded successfully and queued for analysis"
     });
   } catch (error: any) {
     console.error('[Compliance] Upload error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to process document',
-      details: error.message 
+      details: error.message
     });
   }
 });
 
-router.get('/api/compliance/documents', (req, res) => {
+// Get all documents for current user
+router.get('/api/compliance/documents', async (req, res) => {
   try {
-    console.log('[Compliance] Fetching all documents');
-    const documents = Array.from(uploadedDocuments.values()).map(({ id, name, uploadedAt, status }) => ({
-      id,
-      name,
-      uploadedAt,
-      status
-    }));
-    console.log(`[Compliance] Found ${documents.length} documents:`, documents);
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+
+    const documents = await db
+      .select({
+        id: complianceDocuments.id,
+        title: complianceDocuments.title,
+        status: complianceDocuments.status,
+        riskScore: complianceDocuments.riskScore,
+        lastScanned: complianceDocuments.lastScanned,
+        createdAt: complianceDocuments.createdAt
+      })
+      .from(complianceDocuments)
+      .where(eq(complianceDocuments.userId, userId));
+
+    console.log(`[Compliance] Found ${documents.length} documents for user ${userId}`);
     res.json(documents);
   } catch (error: any) {
     console.error('[Compliance] Documents fetch error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch documents',
-      details: error.message 
+      details: error.message
     });
   }
 });
 
-router.get('/api/compliance/results', (req, res) => {
+// Get compliance issues for a document
+router.get('/api/compliance/issues/:documentId', async (req, res) => {
   try {
-    const documentIds = req.query.documents?.toString().split(',');
-    console.log(`[Compliance] Fetching results for documents: ${documentIds?.join(', ')}`);
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
 
-    const results = getMonitoringResults(documentIds);
-    console.log(`[Compliance] Returning results:`, results);
+    const documentId = parseInt(req.params.documentId);
+    const issues = await db
+      .select()
+      .from(complianceIssues)
+      .where(eq(complianceIssues.documentId, documentId));
 
-    res.json(results);
+    res.json(issues);
   } catch (error: any) {
-    console.error('[Compliance] Results fetch error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch compliance results',
-      details: error.message 
+    console.error('[Compliance] Issues fetch error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch compliance issues',
+      details: error.message
     });
   }
 });
 
-router.post('/api/compliance/monitor', async (req, res) => {
+// Update issue status
+router.patch('/api/compliance/issues/:issueId', async (req, res) => {
   try {
-    const { documentIds } = req.body;
-    if (!Array.isArray(documentIds)) {
-      return res.status(400).json({ error: 'Document IDs must be an array' });
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      throw new Error('User not authenticated');
     }
 
-    console.log(`[Compliance] Starting monitoring for documents: ${documentIds.join(', ')}`);
-
-    const documents = documentIds
-      .map(id => {
-        const doc = uploadedDocuments.get(id);
-        if (!doc) {
-          console.log(`[Compliance] Document not found: ${id}`);
-          return null;
-        }
-        return {
-          id: doc.id,
-          content: doc.content,
-          type: doc.type
-        };
-      })
-      .filter((doc): doc is { id: string; content: string; type: string } => doc !== null);
-
-    if (documents.length === 0) {
-      return res.status(404).json({ error: 'No valid documents found' });
+    const { status } = req.body;
+    if (!status || !['OPEN', 'IN_REVIEW', 'RESOLVED'].includes(status)) {
+      throw new Error('Invalid status');
     }
 
-    // Update status for selected documents
-    documentIds.forEach(id => {
-      const doc = uploadedDocuments.get(id);
-      if (doc) {
-        doc.status = "MONITORING";
-        console.log(`[Compliance] Updated status to MONITORING for document: ${id}`);
-      }
-    });
+    const issueId = parseInt(req.params.issueId);
+    await db
+      .update(complianceIssues)
+      .set({ status })
+      .where(eq(complianceIssues.id, issueId));
 
-    const results = await startMonitoring(documents);
-    console.log(`[Compliance] Monitoring results:`, results);
-    res.json(results);
+    res.json({ message: 'Issue status updated successfully' });
   } catch (error: any) {
-    console.error('[Compliance] Monitoring error:', error);
-    res.status(500).json({ 
-      error: 'Failed to start monitoring',
-      details: error.message 
+    console.error('[Compliance] Issue update error:', error);
+    res.status(500).json({
+      error: 'Failed to update issue',
+      details: error.message
     });
   }
 });
