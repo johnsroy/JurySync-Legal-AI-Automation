@@ -34,6 +34,12 @@ app.use(session({
   },
 }));
 
+// Add a middleware to ensure JSON responses for API routes
+app.use('/api', (req, res, next) => {
+  res.setHeader('Content-Type', 'application/json');
+  next();
+});
+
 // Logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
@@ -71,24 +77,31 @@ setupAuth(app);
 (async () => {
   const server = registerRoutes(app);
 
-  // Error handling middleware
+  // Error handling middleware - ensure JSON responses
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error('Error:', err);
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
 
-    // Handle multer errors specifically
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ message: 'File too large' });
-    }
-    if (err.code === 'LIMIT_FILE_COUNT') {
-      return res.status(413).json({ message: 'Too many files' });
-    }
-    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-      return res.status(400).json({ message: 'Invalid file type' });
-    }
+    // Ensure we haven't sent headers yet
+    if (!res.headersSent) {
+      // Force content type to be JSON
+      res.setHeader('Content-Type', 'application/json');
 
-    res.status(status).json({ message });
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+
+      // Handle multer errors specifically
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large' });
+      }
+      if (err.code === 'LIMIT_FILE_COUNT') {
+        return res.status(413).json({ error: 'Too many files' });
+      }
+      if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+        return res.status(400).json({ error: 'Invalid file type' });
+      }
+
+      res.status(status).json({ error: message });
+    }
   });
 
   // importantly only setup vite in development and after
