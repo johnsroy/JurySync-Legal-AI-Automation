@@ -113,16 +113,92 @@ export const ComplianceStatus = z.enum([
 
 export type ComplianceStatus = z.infer<typeof ComplianceStatus>;
 
-// Define risk severity levels
+// Update RiskSeverity enum to include more specific categories
 export const RiskSeverity = z.enum([
-  "CRITICAL",
-  "HIGH",
-  "MEDIUM",
-  "LOW",
-  "INFO"
+  "CRITICAL",    // Immediate attention required
+  "HIGH",        // Significant risk
+  "MEDIUM",      // Moderate risk
+  "LOW",         // Minor risk
+  "INFO"         // Informational finding
 ]);
 
 export type RiskSeverity = z.infer<typeof RiskSeverity>;
+
+// Define risk assessment schema
+export const RiskAssessmentSchema = z.object({
+  score: z.number().min(0).max(100),
+  severity: RiskSeverity,
+  category: z.string(),
+  description: z.string(),
+  impact: z.string(),
+  mitigation: z.string(),
+  references: z.array(z.string()).optional(),
+  context: z.string().optional(),
+  confidence: z.number().min(0).max(100),
+  detectedAt: z.string(),
+});
+
+export type RiskAssessment = z.infer<typeof RiskAssessmentSchema>;
+
+// Risk Assessment Results table
+export const riskAssessments = pgTable("risk_assessments", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  score: integer("score").notNull(),
+  severity: text("severity").notNull(),
+  category: text("category").notNull(),
+  description: text("description").notNull(),
+  impact: text("impact").notNull(),
+  mitigation: text("mitigation").notNull(),
+  references: jsonb("references").default([]),
+  context: text("context"),
+  confidence: integer("confidence").notNull(),
+  detectedAt: timestamp("detected_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Schema for compliance documents
+export const complianceDocuments = pgTable("compliance_documents", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  documentType: text("document_type").notNull(),
+  status: text("status").notNull().default("PENDING"),
+  riskScore: integer("risk_score"),
+  lastScanned: timestamp("last_scanned"),
+  nextScanDue: timestamp("next_scan_due"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// Compliance Issues table (updated)
+export const complianceIssues = pgTable("compliance_issues", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  riskAssessmentId: integer("risk_assessment_id").notNull(),
+  clause: text("clause").notNull(),
+  description: text("description").notNull(),
+  severity: text("severity").notNull(),
+  recommendation: text("recommendation").notNull(),
+  reference: text("reference"),
+  status: text("status").notNull().default("OPEN"),
+  assignedTo: text("assigned_to"),
+  dueDate: timestamp("due_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Create insert schemas for the new tables
+export const insertRiskAssessmentSchema = createInsertSchema(riskAssessments);
+export const insertComplianceIssueSchema = createInsertSchema(complianceIssues);
+
+// Export types
+export type RiskAssessmentRecord = typeof riskAssessments.$inferSelect;
+export type InsertRiskAssessment = z.infer<typeof insertRiskAssessmentSchema>;
+export type ComplianceIssueRecord = typeof complianceIssues.$inferSelect;
+export type InsertComplianceIssue = z.infer<typeof insertComplianceIssueSchema>;
 
 // Schema for compliance monitoring results
 export const ComplianceIssue = z.object({
@@ -305,46 +381,6 @@ export const complianceFiles = pgTable("compliance_files", {
 export type ComplianceFile = typeof complianceFiles.$inferSelect;
 export const insertComplianceFileSchema = createInsertSchema(complianceFiles);
 export type InsertComplianceFile = z.infer<typeof insertComplianceFileSchema>;
-
-// Schema for compliance documents
-export const complianceDocuments = pgTable("compliance_documents", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  documentType: text("document_type").notNull(),
-  status: text("status").notNull().default("PENDING"),
-  riskScore: integer("risk_score"),
-  lastScanned: timestamp("last_scanned"),
-  nextScanDue: timestamp("next_scan_due"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-
-// Schema for compliance issues
-export const complianceIssues = pgTable("compliance_issues", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id").notNull(),
-  clause: text("clause").notNull(),
-  description: text("description").notNull(),
-  severity: text("severity").notNull(),
-  recommendation: text("recommendation").notNull(),
-  reference: text("reference"),
-  status: text("status").notNull().default("OPEN"),
-  assignedTo: text("assigned_to"),
-  dueDate: timestamp("due_date"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-
-// Create insert schemas
-export const insertComplianceDocumentSchema = createInsertSchema(complianceDocuments);
-export const insertComplianceIssueSchema = createInsertSchema(complianceIssues);
-
-export type ComplianceDocument = typeof complianceDocuments.$inferSelect;
-export type InsertComplianceDocument = z.infer<typeof insertComplianceDocumentSchema>;
-export type ComplianceIssueRecord = typeof complianceIssues.$inferSelect;
-export type InsertComplianceIssue = z.infer<typeof insertComplianceIssueSchema>;
 
 
 // Additional tables after the existing ones...

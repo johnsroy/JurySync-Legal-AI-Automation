@@ -1,8 +1,10 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
-import { complianceDocuments } from "@shared/schema";
+import { complianceDocuments, complianceIssues } from "@shared/schema";
 import { analyzePDFContent } from "../services/fileAnalyzer";
+import { riskAssessmentService } from "../services/riskAssessment";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
@@ -26,18 +28,15 @@ router.post('/api/compliance/upload', (req, res) => {
   upload.single('file')(req, res, async (err) => {
     try {
       if (err) {
-        res.setHeader('Content-Type', 'application/json');
         return res.status(400).json({ error: err.message });
       }
 
       const userId = (req as any).user?.id;
       if (!userId) {
-        res.setHeader('Content-Type', 'application/json');
         return res.status(401).json({ error: 'Not authenticated' });
       }
 
       if (!req.file) {
-        res.setHeader('Content-Type', 'application/json');
         return res.status(400).json({ error: 'No file uploaded' });
       }
 
@@ -53,14 +52,22 @@ router.post('/api/compliance/upload', (req, res) => {
         })
         .returning();
 
-      // Start PDF analysis in background
+      // Start PDF analysis and risk assessment in background
       analyzePDFContent(req.file.buffer, document.id)
+        .then(async (content) => {
+          // Update document with extracted content
+          await db
+            .update(complianceDocuments)
+            .set({ content })
+            .where(eq(complianceDocuments.id, document.id));
+
+          // Perform risk assessment
+          await riskAssessmentService.assessDocument(document.id, content);
+        })
         .catch(error => {
           console.error(`Analysis failed for document ${document.id}:`, error);
         });
 
-      // Send JSON response
-      res.setHeader('Content-Type', 'application/json');
       res.json({
         success: true,
         documentId: document.id,
@@ -70,7 +77,6 @@ router.post('/api/compliance/upload', (req, res) => {
 
     } catch (error: any) {
       console.error('Upload error:', error);
-      res.setHeader('Content-Type', 'application/json');
       res.status(500).json({ 
         error: error.message || 'Upload failed'
       });
@@ -83,7 +89,6 @@ router.get('/api/compliance/documents', async (req, res) => {
   try {
     const userId = (req as any).user?.id;
     if (!userId) {
-      res.setHeader('Content-Type', 'application/json');
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
@@ -93,15 +98,32 @@ router.get('/api/compliance/documents', async (req, res) => {
         title: complianceDocuments.title,
         status: complianceDocuments.status,
         lastScanned: complianceDocuments.lastScanned,
+        riskScore: complianceDocuments.riskScore // Added riskScore
       })
       .from(complianceDocuments)
       .where(eq(complianceDocuments.userId, userId));
 
-    res.setHeader('Content-Type', 'application/json');
     res.json(documents);
   } catch (error: any) {
     console.error('Documents fetch error:', error);
-    res.setHeader('Content-Type', 'application/json');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get risk assessment results for a document
+router.get('/api/compliance/documents/:id/risks', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const documentId = parseInt(req.params.id);
+    const risks = await riskAssessmentService.getDocumentRisks(documentId);
+
+    res.json(risks);
+  } catch (error: any) {
+    console.error('Risk assessment fetch error:', error);
     res.status(500).json({ error: error.message });
   }
 });
