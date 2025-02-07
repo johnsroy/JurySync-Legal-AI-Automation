@@ -7,6 +7,7 @@ import connectPg from "connect-pg-simple";
 import { db } from "./db";
 
 const app = express();
+// Increased limit for file uploads
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -33,6 +34,7 @@ app.use(session({
   },
 }));
 
+// Logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -69,10 +71,22 @@ setupAuth(app);
 (async () => {
   const server = registerRoutes(app);
 
+  // Error handling middleware
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error('Error:', err);
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
+
+    // Handle multer errors specifically
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ message: 'File too large' });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(413).json({ message: 'Too many files' });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ message: 'Invalid file type' });
+    }
 
     res.status(status).json({ message });
   });

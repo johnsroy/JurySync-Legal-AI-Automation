@@ -1,14 +1,111 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, Shield, Upload, FileText } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Gavel, LogOut, Loader2, Shield, Upload, FileText, AlertTriangle, CheckCircle } from "lucide-react";
+import { useDropzone } from "react-dropzone";
+import { useState } from "react";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+
+interface ComplianceIssue {
+  clause: string;
+  description: string;
+  severity: "CRITICAL" | "WARNING" | "INFO";
+  recommendation: string;
+  reference?: string;
+}
+
+interface ComplianceResult {
+  riskLevel: "HIGH" | "MEDIUM" | "LOW";
+  score: number;
+  issues: ComplianceIssue[];
+  summary: string;
+  lastChecked: string;
+}
 
 export default function ComplianceAuditing() {
   const { user, logoutMutation } = useAuth();
+  const { toast } = useToast();
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: async (acceptedFiles) => {
+      setIsUploading(true);
+      setUploadProgress(0);
+
+      try {
+        for (let i = 0; i < acceptedFiles.length; i++) {
+          const file = acceptedFiles[i];
+          const formData = new FormData();
+          formData.append('file', file);
+
+          // Simulate upload progress
+          const interval = setInterval(() => {
+            setUploadProgress((prev) => Math.min(prev + 10, 90));
+          }, 500);
+
+          const response = await fetch('/api/compliance/upload', {
+            method: 'POST',
+            body: formData
+          });
+
+          clearInterval(interval);
+          setUploadProgress(100);
+
+          if (!response.ok) {
+            throw new Error('Upload failed');
+          }
+
+          toast({
+            title: "Document Uploaded",
+            description: "Starting compliance analysis...",
+          });
+        }
+      } catch (error) {
+        toast({
+          title: "Upload Failed",
+          description: "Could not upload document for analysis.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsUploading(false);
+        setUploadProgress(0);
+      }
+    },
+    accept: {
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'text/plain': ['.txt']
+    }
+  });
+
+  // Fetch compliance results
+  const { data: complianceResults, isLoading } = useQuery({
+    queryKey: ['compliance-results'],
+    queryFn: async () => {
+      const response = await fetch('/api/compliance/results');
+      if (!response.ok) throw new Error('Failed to fetch compliance results');
+      return response.json();
+    }
+  });
+
+  function getSeverityColor(severity: string) {
+    switch (severity) {
+      case 'CRITICAL': return 'bg-red-500';
+      case 'WARNING': return 'bg-yellow-500';
+      case 'INFO': return 'bg-blue-500';
+      default: return 'bg-gray-500';
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50 animate-gradient-x">
+    <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
       <header className="bg-white/80 backdrop-blur-lg border-b border-green-100">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -38,35 +135,105 @@ export default function ComplianceAuditing() {
       </header>
 
       <main className="container mx-auto px-4 py-16">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <div className="flex items-center gap-4 mb-8">
             <Shield className="h-8 w-8 text-green-600" />
             <h2 className="text-3xl font-bold">Compliance Auditing</h2>
           </div>
 
-          <div className="grid gap-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Upload Section */}
             <Card className="bg-white/80 backdrop-blur-lg">
-              <CardContent className="p-8">
-                <div className="flex flex-col items-center justify-center py-12">
-                  <Upload className="h-16 w-16 text-gray-400 mb-4" />
-                  <h3 className="text-xl font-semibold mb-2">Upload Documents for Compliance Review</h3>
-                  <p className="text-gray-600 text-center mb-6">
-                    Upload regulatory documents, contracts, or policies for automated compliance analysis
+              <CardHeader>
+                <CardTitle>Document Upload</CardTitle>
+                <CardDescription>
+                  Upload documents for continuous compliance monitoring
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  {...getRootProps()}
+                  className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                    isDragActive ? 'border-green-500 bg-green-50' : 'border-gray-300'
+                  }`}
+                >
+                  <input {...getInputProps()} />
+                  <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  {isDragActive ? (
+                    <p className="text-green-600">Drop the files here...</p>
+                  ) : (
+                    <p className="text-gray-600">
+                      Drag & drop files here, or click to select
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-500 mt-2">
+                    Supports PDF, DOC, DOCX, and TXT files
                   </p>
-                  <Button className="bg-green-600 hover:bg-green-700">
-                    <FileText className="h-4 w-4 mr-2" />
-                    Select Documents
-                  </Button>
                 </div>
+                {isUploading && (
+                  <div className="mt-4">
+                    <Progress value={uploadProgress} className="h-2" />
+                    <p className="text-sm text-center mt-2 text-gray-600">
+                      Uploading... {uploadProgress}%
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
+            {/* Monitoring Dashboard */}
             <Card className="bg-white/80 backdrop-blur-lg">
               <CardHeader>
-                <CardTitle>Recent Compliance Audits</CardTitle>
+                <CardTitle>Monitoring Dashboard</CardTitle>
+                <CardDescription>
+                  Real-time compliance monitoring status
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-600">No compliance audits performed yet.</p>
+                {isLoading ? (
+                  <div className="flex items-center justify-center p-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+                  </div>
+                ) : complianceResults?.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No documents monitored yet
+                  </div>
+                ) : (
+                  <ScrollArea className="h-[400px] pr-4">
+                    {complianceResults?.map((result: ComplianceResult) => (
+                      <div key={result.lastChecked} className="mb-6 p-4 border rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <Badge
+                            variant={result.riskLevel === "HIGH" ? "destructive" : 
+                                   result.riskLevel === "MEDIUM" ? "warning" : "success"}
+                          >
+                            {result.riskLevel} RISK
+                          </Badge>
+                          <span className="text-sm text-gray-500">
+                            Score: {result.score}/100
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700 mb-4">{result.summary}</p>
+                        {result.issues.map((issue, index) => (
+                          <div key={index} className="mb-2 text-sm">
+                            <div className="flex items-start gap-2">
+                              <Badge className={getSeverityColor(issue.severity)}>
+                                {issue.severity}
+                              </Badge>
+                              <div>
+                                <p className="font-medium">{issue.clause}</p>
+                                <p className="text-gray-600">{issue.description}</p>
+                                <p className="text-green-600 mt-1">
+                                  Recommendation: {issue.recommendation}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </ScrollArea>
+                )}
               </CardContent>
             </Card>
           </div>
