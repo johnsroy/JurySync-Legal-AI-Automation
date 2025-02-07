@@ -39,7 +39,7 @@ import type { Report } from "@shared/schema/reports";
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
-export default function ReportsDashboard() {
+function ReportsDashboard() {
   const { user } = useAuth();
   const [timeRange, setTimeRange] = useState("7d");
   const [reportType, setReportType] = useState("all");
@@ -230,3 +230,5 @@ export default function ReportsDashboard() {
     </div>
   );
 }
+
+export default ReportsDashboard;
