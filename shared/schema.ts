@@ -462,3 +462,68 @@ export const templateCache = pgTable("template_cache", {
 
 export type TemplateCache = typeof templateCache.$inferSelect;
 export type InsertTemplateCache = typeof templateCache.$inferInsert;
+
+// Legal document types
+export const legalDocuments = pgTable("legal_documents", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  documentType: text("document_type").notNull(),
+  jurisdiction: text("jurisdiction").notNull(),
+  date: timestamp("date").notNull(),
+  citations: jsonb("citations").$type<string[]>(),
+  vectorId: text("vector_id"), // Reference to ChromaDB embedding
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  status: text("status").default("ACTIVE"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// Citations and relationships
+export const legalCitations = pgTable("legal_citations", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  citedCase: text("cited_case").notNull(),
+  context: text("context"),
+  relevance: text("relevance"),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// Research queries and results
+export const researchQueries = pgTable("research_queries", {
+  id: serial("id").primaryKey(),
+  query: text("query").notNull(),
+  results: jsonb("results").$type<{
+    summary: string;
+    relevantCases: Array<{
+      id: number;
+      title: string;
+      similarity: number;
+    }>;
+    timeline?: Array<{
+      date: string;
+      event: string;
+      significance: string;
+    }>;
+    citationMap?: Array<{
+      id: string;
+      title: string;
+      citations: string[];
+    }>;
+  }>(),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// Export types
+export type LegalDocument = typeof legalDocuments.$inferSelect;
+export type Citation = typeof legalCitations.$inferSelect;
+export type ResearchQuery = typeof researchQueries.$inferSelect;
+
+// Create insert schemas
+export const insertLegalDocumentSchema = createInsertSchema(legalDocuments);
+export const insertCitationSchema = createInsertSchema(legalCitations);
+export const insertResearchQuerySchema = createInsertSchema(researchQueries);
+
+export type InsertLegalDocument = typeof legalDocuments.$inferInsert;
+export type InsertCitation = typeof legalCitations.$inferInsert;
+export type InsertResearchQuery = typeof researchQueries.$inferInsert;
