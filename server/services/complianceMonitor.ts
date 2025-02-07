@@ -20,7 +20,7 @@ export type ComplianceResult = z.infer<typeof complianceResultSchema>;
 export async function scanDocument(content: string, documentType: string): Promise<ComplianceResult> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4o", 
       messages: [
         {
           role: "system",
@@ -33,7 +33,7 @@ export async function scanDocument(content: string, documentType: string): Promi
 Return a JSON response with:
 - riskLevel: Overall risk assessment ("HIGH", "MEDIUM", "LOW")
 - score: Compliance score (0-100)
-- issues: Array of identified issues
+- issues: Array of identified issues with severity levels
 - summary: Brief analysis summary
 - lastChecked: Current timestamp`
         },
@@ -48,7 +48,7 @@ Return a JSON response with:
 
     const result = JSON.parse(response.choices[0].message.content || "{}");
     result.lastChecked = new Date().toISOString();
-    
+
     return complianceResultSchema.parse(result);
   } catch (error: any) {
     console.error("Compliance scanning error:", error);
@@ -56,16 +56,54 @@ Return a JSON response with:
   }
 }
 
-export async function monitorDocuments(documents: Array<{ id: string; content: string; type: string }>) {
-  const results: Record<string, ComplianceResult> = {};
-  
+// Store monitoring results in memory (replace with database in production)
+const monitoringResults = new Map<string, ComplianceResult>();
+
+export async function startMonitoring(documents: Array<{ id: string; content: string; type: string }>) {
+  console.log(`Starting compliance monitoring for ${documents.length} documents`);
+
   for (const doc of documents) {
     try {
-      results[doc.id] = await scanDocument(doc.content, doc.type);
+      const result = await scanDocument(doc.content, doc.type);
+      monitoringResults.set(doc.id, result);
+      console.log(`Successfully monitored document ${doc.id}`);
     } catch (error) {
-      console.error(`Failed to scan document ${doc.id}:`, error);
+      console.error(`Failed to monitor document ${doc.id}:`, error);
     }
   }
-  
-  return results;
+
+  return Array.from(monitoringResults.entries()).map(([id, result]) => ({
+    documentId: id,
+    ...result
+  }));
 }
+
+export function getMonitoringResults(documentIds?: string[]) {
+  if (!documentIds) {
+    return Array.from(monitoringResults.entries()).map(([id, result]) => ({
+      documentId: id,
+      ...result
+    }));
+  }
+
+  return documentIds
+    .map(id => {
+      const result = monitoringResults.get(id);
+      return result ? { documentId: id, ...result } : null;
+    })
+    .filter(Boolean);
+}
+
+// Simulated continuous monitoring (in production, this would be a scheduled job)
+setInterval(async () => {
+  const documents = Array.from(monitoringResults.keys()).map(id => ({
+    id,
+    content: "Simulated content for continuous monitoring",
+    type: "contract"
+  }));
+
+  if (documents.length > 0) {
+    console.log("Running scheduled compliance check...");
+    await startMonitoring(documents);
+  }
+}, 5 * 60 * 1000); // Check every 5 minutes
