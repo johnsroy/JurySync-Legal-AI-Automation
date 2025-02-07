@@ -108,6 +108,50 @@ and
       jurisdiction: "United States",
       lastUpdated: "2025-02-07"
     }
+  },
+
+  "service-agreement": {
+    id: "service-agreement",
+    name: "Professional Service Agreement",
+    description: "Standard service agreement for professional services",
+    category: "SERVICE_AGREEMENT",
+    baseContent: `
+SERVICE AGREEMENT
+
+This Service Agreement (the "Agreement") is entered into as of [EFFECTIVE_DATE] between:
+
+[SERVICE_PROVIDER] ("Provider")
+and
+[CLIENT_NAME] ("Client")
+
+1. SERVICES
+   The Provider agrees to provide the following services: [SERVICES_DESCRIPTION]
+
+2. COMPENSATION
+   2.1 Service Fees: [SERVICE_FEES]
+   2.2 Payment Terms: [PAYMENT_TERMS]
+
+3. TERM AND TERMINATION
+   3.1 Term: [CONTRACT_TERM]
+   3.2 Termination: [TERMINATION_TERMS]
+
+4. DELIVERABLES
+   The Provider shall deliver: [DELIVERABLES]
+
+5. WARRANTIES
+   The Provider warrants that: [WARRANTY_TERMS]`,
+    variables: [
+      { name: "EFFECTIVE_DATE", description: "Contract start date", required: true },
+      { name: "SERVICE_PROVIDER", description: "Name of the service provider", required: true },
+      { name: "CLIENT_NAME", description: "Name of the client", required: true },
+      { name: "SERVICES_DESCRIPTION", description: "Detailed description of services", required: true },
+      { name: "SERVICE_FEES", description: "Fee structure for services", required: true }
+    ],
+    metadata: {
+      industry: "Professional Services",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-07"
+    }
   }
 };
 
