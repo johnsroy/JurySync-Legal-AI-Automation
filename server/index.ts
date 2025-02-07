@@ -1,10 +1,37 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { setupAuth } from "./auth";
+import session from "express-session";
+import connectPg from "connect-pg-simple";
+import { db } from "./db";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
+
+// Initialize session store
+const PostgresStore = connectPg(session);
+const sessionStore = new PostgresStore({
+  conObject: {
+    connectionString: process.env.DATABASE_URL,
+  },
+  createTableIfMissing: true,
+});
+
+// Use REPL_OWNER or REPL_ID as fallback for session secret
+const sessionSecret = process.env.SESSION_SECRET || process.env.REPL_ID || 'your-session-secret';
+
+app.use(session({
+  store: sessionStore,
+  secret: sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  },
+}));
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -36,15 +63,18 @@ app.use((req, res, next) => {
   next();
 });
 
+// Setup auth before routes
+setupAuth(app);
+
 (async () => {
   const server = registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('Error:', err);
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
     res.status(status).json({ message });
-    throw err;
   });
 
   // importantly only setup vite in development and after
