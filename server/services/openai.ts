@@ -27,121 +27,76 @@ interface GenerateDraftOptions {
   userId: number;
 }
 
-export async function generateContractDraft({ requirements, baseContent, customInstructions, templateType = "GENERAL", userId }: GenerateDraftOptions): Promise<{ content: string, sections: any[] }> {
+export async function generateContractDraft({ requirements, baseContent, customInstructions, templateType = "GENERAL", userId }: GenerateDraftOptions): Promise<{ content: string; metadata: any }> {
   try {
-    // Check cache first
-    const cachedContent = await checkCache(userId, requirements, templateType);
-    if (cachedContent) {
-      return { content: cachedContent, sections: [] };
-    }
-
-    // Get relevant template
-    const [template] = await db
-      .select()
-      .from(contractTemplates)
-      .where(eq(contractTemplates.category, templateType))
-      .limit(1);
-
-    const prompt = `Generate a professional contract with the following structure:
-
-1. Title
-2. Parties Involved
-3. Terms and Conditions
-4. Signatures
-
-Requirements:
-${requirements.map(req => `
-- ${req.importance} Priority [${req.type}]:
-  ${req.description}
-  ${req.industry ? `Industry: ${req.industry}` : ''}
-  ${req.jurisdiction ? `Jurisdiction: ${req.jurisdiction}` : ''}
-  ${req.specialClauses ? `Special Clauses: ${req.specialClauses.join(', ')}` : ''}
-`).join('\n')}
-
-${customInstructions ? `Additional Instructions: ${customInstructions}` : ''}
-
-Format the response as a JSON object with this exact structure:
+    const systemPrompt = `You are a legal contract expert. Generate a contract based on the requirements provided. 
+Return only a JSON object with the following structure:
 {
   "contract": {
-    "title": "string",
-    "content": "string",
-    "sections": [
-      {
-        "heading": "string",
-        "content": "string"
-      }
-    ]
+    "title": string,
+    "content": string (the full contract text),
+    "metadata": {
+      "type": string,
+      "version": string,
+      "sections": array of section names
+    }
   }
 }`;
+
+    const userPrompt = `Create a ${templateType} contract with these requirements:
+${requirements.map(req => 
+  `- ${req.importance} Priority [${req.type}]: ${req.description}
+   ${req.industry ? `Industry: ${req.industry}` : ''}
+   ${req.jurisdiction ? `Jurisdiction: ${req.jurisdiction}` : ''}
+   ${req.specialClauses ? `Special Clauses: ${req.specialClauses.join(', ')}` : ''}`
+).join('\n')}
+
+${customInstructions ? `Additional Instructions: ${customInstructions}` : ''}`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
-        {
-          role: "system",
-          content: "You are a legal contract drafting expert. Generate contracts in valid JSON format following the specified structure exactly."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
       ],
       response_format: { type: "json_object" },
       temperature: 0.7,
     });
 
-    const content = response.choices[0].message.content;
-    if (!content) {
+    const rawContent = response.choices[0].message.content;
+    if (!rawContent) {
       throw new Error("Empty response from OpenAI");
     }
 
-    // Validate JSON response
-    let contractData;
+    let parsedResponse;
     try {
-      contractData = JSON.parse(content);
-      if (!contractData.contract || !contractData.contract.content || !Array.isArray(contractData.contract.sections)) {
-        throw new Error("Invalid contract format");
+      parsedResponse = JSON.parse(rawContent);
+
+      if (!parsedResponse.contract?.content || typeof parsedResponse.contract.content !== 'string') {
+        throw new Error("Invalid contract format in response");
       }
     } catch (error) {
-      console.error("JSON parsing error:", error);
-      throw new Error("Failed to parse contract response");
+      console.error("Failed to parse OpenAI response:", error);
+      throw new Error("Failed to generate valid contract format");
     }
 
-    // Save to cache if template exists
-    if (template) {
-      await saveToCache(userId, template.id, contractData.contract.content, requirements);
+    // Cache the generated content
+    if (userId) {
+      await saveToCache(userId, 0, parsedResponse.contract.content, requirements);
     }
 
     return {
-      content: contractData.contract.content,
-      sections: contractData.contract.sections
+      content: parsedResponse.contract.content,
+      metadata: parsedResponse.contract.metadata || {}
     };
 
   } catch (error: any) {
-    console.error('OpenAI API Error:', error);
-    throw new Error(`Failed to generate contract draft: ${error.message}`);
+    console.error('Contract Generation Error:', error);
+    throw new Error(`Failed to generate contract: ${error.message}`);
   }
 }
 
-function formatContractContent(contract: any): string {
-  let content = `${contract.title}\n\n`;
-
-  contract.sections.forEach((section: any) => {
-    content += `${section.heading}\n`;
-    content += `${section.content}\n\n`;
-
-    if (section.subsections) {
-      section.subsections.forEach((subsection: any) => {
-        content += `  ${subsection.heading}\n`;
-        content += `  ${subsection.content}\n\n`;
-      });
-    }
-  });
-
-  return content;
-}
-
-// Function to check cache
+// Cache functions remain unchanged
 async function checkCache(userId: number, requirements: DraftRequirement[], templateType: string) {
   const [cachedResult] = await db
     .select()
@@ -161,7 +116,6 @@ async function checkCache(userId: number, requirements: DraftRequirement[], temp
   return null;
 }
 
-// Function to save to cache
 async function saveToCache(userId: number, templateId: number, content: string, requirements: DraftRequirement[]) {
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + CACHE_DURATION);

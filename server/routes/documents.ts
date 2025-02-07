@@ -19,7 +19,6 @@ router.post("/api/documents/generate", async (req, res) => {
 
     const { templateType, requirements, customInstructions } = req.body;
 
-    // Validate request body
     if (!templateType || !requirements || !Array.isArray(requirements)) {
       return res.status(400).json({
         error: "Missing or invalid required fields",
@@ -28,7 +27,7 @@ router.post("/api/documents/generate", async (req, res) => {
     }
 
     // Generate draft using OpenAI
-    const { content, sections } = await generateContractDraft({
+    const { content, metadata } = await generateContractDraft({
       templateType,
       requirements,
       customInstructions,
@@ -42,7 +41,7 @@ router.post("/api/documents/generate", async (req, res) => {
         content: content,
         userId: req.user!.id,
         agentType: 'CONTRACT_AUTOMATION',
-        analysis: { sections },
+        analysis: metadata,
         processingStatus: "COMPLETED"
       })
       .returning();
@@ -64,7 +63,7 @@ router.post("/api/documents/generate", async (req, res) => {
     res.json({
       id: document.id,
       content: content,
-      sections: sections,
+      metadata: metadata,
       message: "Contract draft generated successfully"
     });
 
