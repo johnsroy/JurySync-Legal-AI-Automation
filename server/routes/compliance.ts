@@ -17,6 +17,8 @@ const upload = multer({
       'text/plain'
     ];
 
+    console.log(`[Compliance] Received file: ${file.originalname}, type: ${file.mimetype}`);
+
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -24,32 +26,45 @@ const upload = multer({
     }
   },
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 10 * 1024 * 1024 // 10MB limit
   }
 });
 
 // Store uploaded documents in memory (replace with database in production)
-const uploadedDocuments = new Map();
+const uploadedDocuments = new Map<string, {
+  id: string;
+  name: string;
+  content: string;
+  type: string;
+  uploadedAt: string;
+  status: "PENDING" | "MONITORING" | "ERROR";
+}>();
 
 router.post('/api/compliance/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
+      console.error('[Compliance] No file uploaded');
       return res.status(400).json({ error: 'No file uploaded' });
     }
+
+    console.log(`[Compliance] Processing file: ${req.file.originalname}`);
 
     const fileContent = req.file.buffer.toString();
     const fileType = path.extname(req.file.originalname).substring(1);
     const documentId = Date.now().toString();
 
-    // Store document info
-    uploadedDocuments.set(documentId, {
+    // Store document info with proper typing
+    const documentInfo = {
       id: documentId,
       name: req.file.originalname,
       content: fileContent,
       type: fileType,
       uploadedAt: new Date().toISOString(),
-      status: "PENDING"
-    });
+      status: "PENDING" as const
+    };
+
+    uploadedDocuments.set(documentId, documentInfo);
+    console.log(`[Compliance] Stored document with ID: ${documentId}`);
 
     console.log(`[Compliance] Scanning document of type: ${fileType}`);
     const result = await scanDocument(fileContent, fileType);
@@ -58,6 +73,7 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
     const doc = uploadedDocuments.get(documentId);
     if (doc) {
       doc.status = "MONITORING";
+      console.log(`[Compliance] Updated document status to MONITORING`);
     }
 
     console.log(`[Compliance] Scan completed with risk level: ${result.riskLevel}`);
@@ -73,12 +89,14 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
 
 router.get('/api/compliance/documents', (req, res) => {
   try {
+    console.log('[Compliance] Fetching all documents');
     const documents = Array.from(uploadedDocuments.values()).map(({ id, name, uploadedAt, status }) => ({
       id,
       name,
       uploadedAt,
       status
     }));
+    console.log(`[Compliance] Found ${documents.length} documents`);
     res.json(documents);
   } catch (error: any) {
     console.error('[Compliance] Documents fetch error:', error);
@@ -92,6 +110,7 @@ router.get('/api/compliance/documents', (req, res) => {
 router.get('/api/compliance/results', (req, res) => {
   try {
     const documentIds = req.query.documents?.toString().split(',');
+    console.log(`[Compliance] Fetching results for documents: ${documentIds?.join(', ')}`);
     const results = getMonitoringResults(documentIds);
     res.json(results);
   } catch (error: any) {
@@ -110,16 +129,22 @@ router.post('/api/compliance/monitor', async (req, res) => {
       return res.status(400).json({ error: 'Document IDs must be an array' });
     }
 
+    console.log(`[Compliance] Starting monitoring for documents: ${documentIds.join(', ')}`);
+
     const documents = documentIds
       .map(id => {
         const doc = uploadedDocuments.get(id);
-        return doc ? {
+        if (!doc) {
+          console.log(`[Compliance] Document not found: ${id}`);
+          return null;
+        }
+        return {
           id: doc.id,
           content: doc.content,
           type: doc.type
-        } : null;
+        };
       })
-      .filter(Boolean);
+      .filter((doc): doc is { id: string; content: string; type: string } => doc !== null);
 
     if (documents.length === 0) {
       return res.status(404).json({ error: 'No valid documents found' });
@@ -130,6 +155,7 @@ router.post('/api/compliance/monitor', async (req, res) => {
       const doc = uploadedDocuments.get(id);
       if (doc) {
         doc.status = "MONITORING";
+        console.log(`[Compliance] Updated status to MONITORING for document: ${id}`);
       }
     });
 

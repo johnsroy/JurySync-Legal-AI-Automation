@@ -1,5 +1,10 @@
-import { openai } from "../openai";
+import Anthropic from '@anthropic-ai/sdk';
 import { z } from "zod";
+
+// the newest Anthropic model is "claude-3-5-sonnet-20241022" which was released October 22, 2024
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 export const complianceResultSchema = z.object({
   riskLevel: z.enum(["HIGH", "MEDIUM", "LOW"]),
@@ -19,39 +24,47 @@ export type ComplianceResult = z.infer<typeof complianceResultSchema>;
 
 export async function scanDocument(content: string, documentType: string): Promise<ComplianceResult> {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o", 
-      messages: [
-        {
-          role: "system",
-          content: `You are a legal compliance expert. Analyze the document for compliance issues, risks, and regulatory concerns. Focus on:
+    console.log(`[ComplianceMonitor] Scanning document of type: ${documentType}`);
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1500,
+      system: `You are a legal compliance expert. Analyze the given document for compliance issues, risks, and regulatory concerns. Focus on:
 1. Non-compliant clauses
 2. Missing required sections
 3. Regulatory violations
 4. Best practice deviations
 
-Return a JSON response with:
-- riskLevel: Overall risk assessment ("HIGH", "MEDIUM", "LOW")
-- score: Compliance score (0-100)
-- issues: Array of identified issues with severity levels
-- summary: Brief analysis summary
-- lastChecked: Current timestamp`
-        },
+Output in JSON format with:
+{
+  "riskLevel": "HIGH" | "MEDIUM" | "LOW",
+  "score": number between 0-100,
+  "issues": array of {
+    "clause": string identifying the problematic section,
+    "description": detailed issue description,
+    "severity": "CRITICAL" | "WARNING" | "INFO",
+    "recommendation": clear action item to resolve the issue,
+    "reference": optional regulatory or legal reference
+  },
+  "summary": concise analysis summary,
+  "lastChecked": current timestamp
+}`,
+      messages: [
         {
           role: "user",
           content: `Document Type: ${documentType}\n\nContent:\n${content}`
         }
       ],
-      temperature: 0.2,
-      response_format: { type: "json_object" }
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const analysisText = response.content[0].text;
+    const result = JSON.parse(analysisText);
     result.lastChecked = new Date().toISOString();
 
+    console.log(`[ComplianceMonitor] Analysis complete with risk level: ${result.riskLevel}`);
     return complianceResultSchema.parse(result);
   } catch (error: any) {
-    console.error("Compliance scanning error:", error);
+    console.error("[ComplianceMonitor] Scanning error:", error);
     throw new Error(`Failed to scan document: ${error.message}`);
   }
 }
@@ -60,15 +73,15 @@ Return a JSON response with:
 const monitoringResults = new Map<string, ComplianceResult>();
 
 export async function startMonitoring(documents: Array<{ id: string; content: string; type: string }>) {
-  console.log(`Starting compliance monitoring for ${documents.length} documents`);
+  console.log(`[ComplianceMonitor] Starting compliance monitoring for ${documents.length} documents`);
 
   for (const doc of documents) {
     try {
       const result = await scanDocument(doc.content, doc.type);
       monitoringResults.set(doc.id, result);
-      console.log(`Successfully monitored document ${doc.id}`);
+      console.log(`[ComplianceMonitor] Successfully monitored document ${doc.id}`);
     } catch (error) {
-      console.error(`Failed to monitor document ${doc.id}:`, error);
+      console.error(`[ComplianceMonitor] Failed to monitor document ${doc.id}:`, error);
     }
   }
 
@@ -91,10 +104,10 @@ export function getMonitoringResults(documentIds?: string[]) {
       const result = monitoringResults.get(id);
       return result ? { documentId: id, ...result } : null;
     })
-    .filter(Boolean);
+    .filter((result): result is (ComplianceResult & { documentId: string }) => result !== null);
 }
 
-// Simulated continuous monitoring (in production, this would be a scheduled job)
+// Periodic monitoring (in production, this would be a scheduled job)
 setInterval(async () => {
   const documents = Array.from(monitoringResults.keys()).map(id => ({
     id,
@@ -103,7 +116,7 @@ setInterval(async () => {
   }));
 
   if (documents.length > 0) {
-    console.log("Running scheduled compliance check...");
+    console.log("[ComplianceMonitor] Running scheduled compliance check...");
     await startMonitoring(documents);
   }
 }, 5 * 60 * 1000); // Check every 5 minutes
