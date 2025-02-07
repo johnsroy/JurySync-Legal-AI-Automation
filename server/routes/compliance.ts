@@ -40,10 +40,6 @@ const uploadedDocuments = new Map<string, {
   status: "PENDING" | "MONITORING" | "ERROR";
 }>();
 
-//Store monitoring results
-const monitoringResults = new Map<string, { riskLevel: number; }>();
-
-
 router.post('/api/compliance/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -75,16 +71,23 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
       console.log(`[Compliance] First document uploaded, starting immediate monitoring`);
       try {
         const result = await scanDocument(fileContent, fileType);
-        monitoringResults.set(documentId, result);
         documentInfo.status = "MONITORING";
         console.log(`[Compliance] Initial monitoring completed for document ${documentId}`);
+        return res.json({ 
+          documentId,
+          status: documentInfo.status,
+          result 
+        });
       } catch (error) {
         console.error(`[Compliance] Initial monitoring failed:`, error);
         documentInfo.status = "ERROR";
       }
     }
 
-    res.json({ documentId, status: documentInfo.status });
+    res.json({ 
+      documentId,
+      status: documentInfo.status
+    });
   } catch (error: any) {
     console.error('[Compliance] Upload error:', error);
     res.status(500).json({ 
@@ -103,7 +106,7 @@ router.get('/api/compliance/documents', (req, res) => {
       uploadedAt,
       status
     }));
-    console.log(`[Compliance] Found ${documents.length} documents`);
+    console.log(`[Compliance] Found ${documents.length} documents:`, documents);
     res.json(documents);
   } catch (error: any) {
     console.error('[Compliance] Documents fetch error:', error);
@@ -118,7 +121,11 @@ router.get('/api/compliance/results', (req, res) => {
   try {
     const documentIds = req.query.documents?.toString().split(',');
     console.log(`[Compliance] Fetching results for documents: ${documentIds?.join(', ')}`);
-    const results = getMonitoringResults(documentIds);
+
+    // If no specific documents requested, get results for all documents
+    const results = documentIds ? getMonitoringResults(documentIds) : getMonitoringResults();
+    console.log(`[Compliance] Returning results:`, results);
+
     res.json(results);
   } catch (error: any) {
     console.error('[Compliance] Results fetch error:', error);
@@ -167,6 +174,7 @@ router.post('/api/compliance/monitor', async (req, res) => {
     });
 
     const results = await startMonitoring(documents);
+    console.log(`[Compliance] Monitoring results:`, results);
     res.json(results);
   } catch (error: any) {
     console.error('[Compliance] Monitoring error:', error);

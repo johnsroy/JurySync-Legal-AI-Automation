@@ -2,13 +2,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, Shield, Upload, FileText, AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { Gavel, LogOut, Loader2, Shield, Upload, AlertTriangle, CheckCircle, Info } from "lucide-react";
 import { useDropzone } from "react-dropzone";
 import { useState } from "react";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -40,11 +40,13 @@ interface ComplianceResult {
 export default function ComplianceAuditing() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
 
-  const { data: uploadedDocuments = [], isLoading: isLoadingDocuments, refetch: refetchDocuments } = useQuery({
+  // Fetch uploaded documents
+  const { data: uploadedDocuments = [], isLoading: isLoadingDocuments } = useQuery({
     queryKey: ['uploaded-documents'],
     queryFn: async () => {
       const response = await fetch('/api/compliance/documents');
@@ -83,19 +85,20 @@ export default function ComplianceAuditing() {
         }
 
         const { documentId } = await response.json();
+        console.log('Document uploaded:', documentId);
+
+        // Refresh the documents list
+        await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
 
         // Auto-monitor the first document
         if (uploadedDocuments.length === 0) {
-          await startMonitoringMutation.mutateAsync([documentId]);
+          startMonitoringMutation.mutate([documentId]);
         }
 
         toast({
           title: "Document Uploaded",
           description: "Starting compliance analysis...",
         });
-
-        // Refresh the documents list
-        await refetchDocuments();
       }
     } catch (error) {
       toast({
@@ -120,7 +123,7 @@ export default function ComplianceAuditing() {
   });
 
   // Fetch compliance results for selected documents
-  const { data: complianceResults = [], isLoading } = useQuery({
+  const { data: complianceResults = [], isLoading: isLoadingResults } = useQuery({
     queryKey: ['compliance-results', selectedDocuments],
     queryFn: async () => {
       // If no documents are selected but we have uploaded documents,
@@ -137,7 +140,8 @@ export default function ComplianceAuditing() {
       console.log('Fetched compliance results:', data);
       return data as ComplianceResult[];
     },
-    enabled: uploadedDocuments.length > 0
+    enabled: uploadedDocuments.length > 0,
+    refetchInterval: 30000 // Refresh every 30 seconds
   });
 
   // Start monitoring mutation
@@ -152,6 +156,7 @@ export default function ComplianceAuditing() {
       return response.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['compliance-results'] });
       toast({
         title: "Monitoring Started",
         description: "Selected documents are now being monitored for compliance.",
@@ -170,6 +175,7 @@ export default function ComplianceAuditing() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
+      {/* Header */}
       <header className="bg-white/80 backdrop-blur-lg border-b border-green-100">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -297,10 +303,7 @@ export default function ComplianceAuditing() {
                             </p>
                           </div>
                           <Badge
-                            variant={
-                              doc.status === "MONITORING" ? "success" :
-                                doc.status === "ERROR" ? "destructive" : "outline"
-                            }
+                            variant={doc.status === "ERROR" ? "destructive" : "default"}
                           >
                             {doc.status}
                           </Badge>
@@ -349,13 +352,13 @@ export default function ComplianceAuditing() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoading ? (
+                {isLoadingResults ? (
                   <div className="flex items-center justify-center p-8">
                     <Loader2 className="h-8 w-8 animate-spin text-green-600" />
                   </div>
-                ) : selectedDocuments.length === 0 ? (
+                ) : uploadedDocuments.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    Select documents to view monitoring results
+                    Upload a document to begin monitoring
                   </div>
                 ) : complianceResults.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
@@ -367,10 +370,7 @@ export default function ComplianceAuditing() {
                       <div key={result.documentId} className="mb-6 p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <Badge
-                            variant={
-                              result.riskLevel === "HIGH" ? "destructive" :
-                                result.riskLevel === "MEDIUM" ? "warning" : "success"
-                            }
+                            variant={result.riskLevel === "HIGH" ? "destructive" : "default"}
                           >
                             {result.riskLevel} RISK
                           </Badge>

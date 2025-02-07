@@ -26,10 +26,11 @@ export async function scanDocument(content: string, documentType: string): Promi
   try {
     console.log(`[ComplianceMonitor] Scanning document of type: ${documentType}`);
 
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1500,
-      system: `You are a legal compliance expert. Analyze the given document for compliance issues, risks, and regulatory concerns. Focus on:
+    const prompt = `You are a legal compliance expert. Analyze the following ${documentType} document for compliance issues, risks, and regulatory concerns:
+
+${content}
+
+Focus on:
 1. Non-compliant clauses
 2. Missing required sections
 3. Regulatory violations
@@ -48,16 +49,19 @@ Output in JSON format with:
   },
   "summary": concise analysis summary,
   "lastChecked": current timestamp
-}`,
-      messages: [
-        {
-          role: "user",
-          content: `Document Type: ${documentType}\n\nContent:\n${content}`
-        }
-      ],
+}`;
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1500,
+      messages: [{ role: "user", content: prompt }]
     });
 
     const analysisText = response.content[0].text;
+    if (!analysisText) {
+      throw new Error("Empty response from Anthropic API");
+    }
+
     const result = JSON.parse(analysisText);
     result.lastChecked = new Date().toISOString();
 
