@@ -19,13 +19,15 @@ const upload = multer({
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain'
+      'text/plain',
+      'image/png', // Adding support for PNG for testing
+      'image/jpeg' // Adding support for JPEG for testing
     ];
 
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types are: PDF, DOC, DOCX, and TXT`));
+      cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types are: PDF, DOC, DOCX, TXT, PNG, and JPEG`));
     }
   }
 });
@@ -97,6 +99,7 @@ router.post('/api/compliance/upload', async (req, res) => {
   } catch (error: any) {
     console.error('[Compliance] Upload failed:', error);
 
+    // Ensure we always return JSON, even for errors
     const status = error.status || 500;
     const message = error.code === 'LIMIT_FILE_SIZE' 
       ? 'File too large. Maximum size is 50MB'

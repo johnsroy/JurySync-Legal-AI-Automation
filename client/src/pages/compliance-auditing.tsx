@@ -74,38 +74,47 @@ export default function ComplianceAuditing() {
 
         console.log('Uploading file:', file.name);
 
-        const response = await fetch('/api/compliance/upload', {
-          method: 'POST',
-          body: formData,
-          // Don't set Content-Type header, let the browser set it with the boundary
-        });
+        try {
+          const response = await fetch('/api/compliance/upload', {
+            method: 'POST',
+            body: formData,
+          });
 
-        clearInterval(interval);
-        setUploadProgress(100);
+          clearInterval(interval);
+          setUploadProgress(100);
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Upload failed');
+          const contentType = response.headers.get("content-type");
+          if (!contentType || !contentType.includes("application/json")) {
+            throw new Error(`Server returned unexpected content type: ${contentType}`);
+          }
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error || 'Upload failed');
+          }
+
+          console.log('Upload response:', data);
+
+          // Refresh the documents list
+          await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
+
+          // Auto-monitor the first document
+          if (uploadedDocuments.length === 0) {
+            startMonitoringMutation.mutate([data.documentId]);
+          }
+
+          toast({
+            title: "Document Uploaded",
+            description: "Starting compliance analysis...",
+          });
+        } catch (error: any) {
+          console.error('Upload error:', error);
+          throw error; // Re-throw to be caught by outer try-catch
         }
-
-        const { documentId } = await response.json();
-        console.log('Document uploaded:', documentId);
-
-        // Refresh the documents list
-        await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
-
-        // Auto-monitor the first document
-        if (uploadedDocuments.length === 0) {
-          startMonitoringMutation.mutate([documentId]);
-        }
-
-        toast({
-          title: "Document Uploaded",
-          description: "Starting compliance analysis...",
-        });
       }
     } catch (error: any) {
-      console.error('Upload error:', error);
+      console.error('Upload process error:', error);
       toast({
         title: "Upload Failed",
         description: error.message || "Could not upload document for analysis.",
