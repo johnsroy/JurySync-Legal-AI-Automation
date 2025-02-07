@@ -1,14 +1,28 @@
 import { Router } from "express";
 import multer from "multer";
-import { generateContractDraft } from "../services/openai";
+import { generateContract } from "../services/openai";
 import { db } from "../db";
 import { documents } from "@shared/schema";
-import { eq } from "drizzle-orm";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
 
-// Generate contract draft
+// Configure multer for file uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = ['text/plain', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed.'));
+    }
+  }
+});
+
+// Generate contract
 router.post("/api/documents/generate", async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
@@ -19,41 +33,40 @@ router.post("/api/documents/generate", async (req, res) => {
 
     if (!templateType || !requirements || !Array.isArray(requirements)) {
       return res.status(400).json({
-        error: "Missing or invalid required fields",
-        code: "VALIDATION_ERROR"
+        error: "Missing required fields",
+        details: "Template type and requirements array are required"
       });
     }
 
-    // Generate draft using OpenAI
-    const content = await generateContractDraft({
-      templateType,
-      requirements,
-      customInstructions,
-      userId: req.user!.id
-    });
+    // Generate contract
+    const content = await generateContract(templateType, requirements, customInstructions);
 
-    // Create document record
+    // Save to database
     const [document] = await db
       .insert(documents)
       .values({
-        userId: req.user!.id,
+        title: `${templateType} Contract`,
         content,
+        userId: req.user!.id,
         processingStatus: "COMPLETED",
         agentType: "CONTRACT_AUTOMATION"
       })
       .returning();
 
     res.json({
-      id: document.id,
-      content,
-      message: "Contract draft generated successfully"
+      success: true,
+      document: {
+        id: document.id,
+        title: document.title,
+        content
+      }
     });
 
   } catch (error: any) {
     console.error("Generation error:", error);
     res.status(500).json({
-      error: error.message || "Failed to generate contract",
-      code: "GENERATION_ERROR"
+      success: false,
+      error: error.message || "Failed to generate contract"
     });
   }
 });
@@ -67,36 +80,49 @@ router.post("/api/documents", upload.single('file'), async (req, res) => {
 
     if (!req.file) {
       return res.status(400).json({
-        error: "No file uploaded",
-        code: "VALIDATION_ERROR"
+        success: false,
+        error: "No file uploaded"
       });
     }
 
     const content = req.file.buffer.toString('utf-8');
     const title = req.file.originalname;
 
-    // Create document record
+    // Save to database
     const [document] = await db
       .insert(documents)
       .values({
-        userId: req.user!.id,
-        content,
         title,
+        content,
+        userId: req.user!.id,
         processingStatus: "COMPLETED",
-        agentType: "CONTRACT_AUTOMATION"
+        agentType: "DOCUMENT_UPLOAD"
       })
       .returning();
 
-    res.status(201).json({
-      id: document.id,
-      message: "Document uploaded successfully"
+    res.json({
+      success: true,
+      document: {
+        id: document.id,
+        title: document.title
+      }
     });
 
   } catch (error: any) {
     console.error("Upload error:", error);
+
+    // Handle multer errors specifically
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({
+        success: false,
+        error: "File upload error",
+        details: error.message
+      });
+    }
+
     res.status(500).json({
-      error: error.message || "Failed to upload document",
-      code: "UPLOAD_ERROR"
+      success: false,
+      error: error.message || "Failed to upload document"
     });
   }
 });
