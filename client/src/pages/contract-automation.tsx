@@ -3,46 +3,43 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Gavel, LogOut, Loader2, GitCompare, FileText, AlertCircle, Plus, Trash } from "lucide-react";
-import { FilePond } from "react-filepond";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Loader2, FileText, Plus, Trash } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import "filepond/dist/filepond.min.css";
 
 const requirementSchema = z.object({
   type: z.enum(["STANDARD", "CUSTOM", "INDUSTRY_SPECIFIC"]),
   description: z.string().min(1, "Description is required"),
-  importance: z.enum(["HIGH", "MEDIUM", "LOW"]),
-  industry: z.string().optional(),
-  jurisdiction: z.string().optional(),
-  specialClauses: z.array(z.string()).optional(),
+  importance: z.enum(["HIGH", "MEDIUM", "LOW"])
 });
 
 const formSchema = z.object({
-  templateType: z.enum(["EMPLOYMENT", "NDA", "SERVICE_AGREEMENT", "LEASE", "GENERAL"]),
+  templateType: z.enum(["EMPLOYMENT", "NDA", "SERVICE_AGREEMENT"]),
   requirements: z.array(requirementSchema).min(1, "At least one requirement is needed"),
-  customInstructions: z.string().optional(),
+  customInstructions: z.string().optional()
 });
 
 export default function ContractAutomation() {
-  const { user, logoutMutation } = useAuth();
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [isUploading, setIsUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [processingState, setProcessingState] = useState<'idle' | 'uploading' | 'analyzing' | 'complete'>('idle');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedContract, setGeneratedContract] = useState<{
+    id: number;
+    content: string;
+    title: string;
+  } | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      templateType: "GENERAL",
+      templateType: "NDA",
       requirements: [{
         type: "STANDARD",
         description: "",
@@ -70,13 +67,9 @@ export default function ContractAutomation() {
   };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    setIsUploading(true);
-    setProcessingState('uploading');
-    setProgress(10);
-
     try {
-      setProgress(30);
-      setProcessingState('analyzing');
+      setIsGenerating(true);
+      setGeneratedContract(null);
 
       console.log("Submitting contract generation request:", values);
 
@@ -85,482 +78,223 @@ export default function ContractAutomation() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          templateType: values.templateType,
-          requirements: values.requirements,
-          customInstructions: values.customInstructions
-        })
+        body: JSON.stringify(values)
       });
-
-      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to generate document");
+        const error = await response.json();
+        throw new Error(error.error || "Failed to generate contract");
       }
 
-      setProgress(100);
-      setProcessingState('complete');
+      const data = await response.json();
+      console.log("Generated contract:", data);
+
+      setGeneratedContract(data);
 
       toast({
-        title: "Document Generated Successfully",
-        description: "Redirecting to document viewer...",
+        title: "Contract Generated Successfully",
+        description: "You can now edit or download the contract",
       });
-
-      setTimeout(() => {
-        setLocation(`/documents/${data.id}`);
-      }, 1000);
 
     } catch (error: any) {
       console.error('Generation error:', error);
       toast({
         title: "Generation Error",
-        description: error.message || "Failed to generate document. Please try again.",
+        description: error.message || "Failed to generate contract",
         variant: "destructive",
       });
-      setProcessingState('idle');
-      setProgress(0);
     } finally {
-      setIsUploading(false);
+      setIsGenerating(false);
     }
   };
 
-  const handleProcessFile = async (error: any, file: any) => {
-    if (error) {
-      toast({
-        title: "Upload Error",
-        description: "Failed to upload document. Please try again.",
-        variant: "destructive",
-      });
-      return;
-    }
+  const handleDownload = () => {
+    if (!generatedContract) return;
 
-    setIsUploading(true);
-    setProcessingState('uploading');
-    setProgress(10);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file.file);
-
-      console.log("Uploading file:", file.filename);
-
-      setProgress(30);
-      setProcessingState('analyzing');
-
-      const response = await fetch('/api/documents', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to process document");
-      }
-
-      setProgress(100);
-      setProcessingState('complete');
-
-      toast({
-        title: "Document Processed Successfully",
-        description: "Redirecting to document viewer...",
-      });
-
-      setTimeout(() => {
-        setLocation(`/documents/${data.id}`);
-      }, 1000);
-
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      toast({
-        title: "Processing Error",
-        description: error.message || "Failed to process document. Please try again.",
-        variant: "destructive",
-      });
-      setProcessingState('idle');
-      setProgress(0);
-    } finally {
-      setIsUploading(false);
-    }
+    const blob = new Blob([generatedContract.content], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${generatedContract.title}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   };
 
-  const getProcessingMessage = () => {
-    switch (processingState) {
-      case 'uploading':
-        return "Uploading your document...";
-      case 'analyzing':
-        return "Analyzing document with AI...";
-      case 'complete':
-        return "Processing complete!";
-      default:
-        return "";
-    }
+  const handleEdit = () => {
+    if (!generatedContract) return;
+    setLocation(`/documents/${generatedContract.id}`);
   };
-
-  const handleDownloadPDF = async (documentId: number) => {
-    try {
-      const response = await fetch(`/api/documents/${documentId}/export/pdf`, {
-        method: 'GET',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to download PDF');
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `contract-${documentId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-    } catch (error: any) {
-      toast({
-        title: "Download Error",
-        description: error.message || "Failed to download PDF",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleDownloadDOCX = async (documentId: number) => {
-    try {
-      const response = await fetch(`/api/documents/${documentId}/export/docx`, {
-        method: 'GET',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to download DOCX');
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `contract-${documentId}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-    } catch (error: any) {
-      toast({
-        title: "Download Error",
-        description: error.message || "Failed to download DOCX",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleSignDocument = async (documentId: number, signature: string) => {
-    try {
-      const response = await fetch(`/api/documents/${documentId}/sign`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ signature }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to sign document');
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `signed-contract-${documentId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      toast({
-        title: "Document Signed",
-        description: "Document has been signed and downloaded",
-      });
-
-    } catch (error: any) {
-      toast({
-        title: "Signing Error",
-        description: error.message || "Failed to sign document",
-        variant: "destructive",
-      });
-    }
-  };
-
 
   if (!user) {
     return null;
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50 animate-gradient-x">
-      <header className="bg-white/80 backdrop-blur-lg border-b border-green-100">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Link href="/dashboard" className="flex items-center space-x-4 hover:text-green-600">
-              <Gavel className="h-6 w-6 text-green-600" />
-              <h1 className="text-xl font-semibold">JurySync.io</h1>
-            </Link>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">
-              Welcome, {user?.firstName} {user?.lastName}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => logoutMutation.mutate()}
-              disabled={logoutMutation.isPending}
-            >
-              {logoutMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <LogOut className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-        </div>
-      </header>
+    <div className="container mx-auto px-4 py-8">
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Generate New Contract</CardTitle>
+          <CardDescription>
+            Create a new contract by specifying requirements
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="templateType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Contract Type</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select contract type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="EMPLOYMENT">Employment Contract</SelectItem>
+                        <SelectItem value="NDA">Non-Disclosure Agreement</SelectItem>
+                        <SelectItem value="SERVICE_AGREEMENT">Service Agreement</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-      <main className="container mx-auto px-4 py-16">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-4 mb-8">
-            <GitCompare className="h-8 w-8 text-green-600" />
-            <h2 className="text-3xl font-bold">Contract Automation</h2>
-          </div>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <FormLabel>Requirements</FormLabel>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRequirementAdd}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Requirement
+                  </Button>
+                </div>
 
-          <div className="grid gap-6">
-            <Card className="bg-white/80 backdrop-blur-lg">
-              <CardHeader>
-                <CardTitle>Generate New Contract</CardTitle>
-                <CardDescription>
-                  Create a new contract by specifying requirements and template type
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                {form.watch("requirements").map((_, index) => (
+                  <div key={index} className="space-y-4 p-4 border rounded">
                     <FormField
                       control={form.control}
-                      name="templateType"
+                      name={`requirements.${index}.description`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Contract Template</FormLabel>
+                          <FormLabel>Requirement Description</FormLabel>
+                          <FormControl>
+                            <Textarea {...field} placeholder="Describe the requirement..." />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name={`requirements.${index}.importance`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Importance</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="Select a template type" />
+                                <SelectValue placeholder="Select importance" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="EMPLOYMENT">Employment Contract</SelectItem>
-                              <SelectItem value="NDA">Non-Disclosure Agreement</SelectItem>
-                              <SelectItem value="SERVICE_AGREEMENT">Service Agreement</SelectItem>
-                              <SelectItem value="LEASE">Lease Agreement</SelectItem>
-                              <SelectItem value="GENERAL">General Contract</SelectItem>
+                              <SelectItem value="HIGH">High</SelectItem>
+                              <SelectItem value="MEDIUM">Medium</SelectItem>
+                              <SelectItem value="LOW">Low</SelectItem>
                             </SelectContent>
                           </Select>
-                          <FormDescription>
-                            Choose a template that best matches your needs
-                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
 
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <FormLabel>Requirements</FormLabel>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRequirementAdd}
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Requirement
-                        </Button>
-                      </div>
-
-                      {form.watch("requirements").map((req, index) => (
-                        <div key={index} className="grid gap-4 p-4 border rounded-lg">
-                          <FormField
-                            control={form.control}
-                            name={`requirements.${index}.type`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Type</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select requirement type" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="STANDARD">Standard</SelectItem>
-                                    <SelectItem value="CUSTOM">Custom</SelectItem>
-                                    <SelectItem value="INDUSTRY_SPECIFIC">Industry Specific</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={form.control}
-                            name={`requirements.${index}.description`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Description</FormLabel>
-                                <FormControl>
-                                  <Textarea
-                                    {...field}
-                                    placeholder="Describe your requirement..."
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={form.control}
-                            name={`requirements.${index}.importance`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Importance</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select importance level" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="HIGH">High</SelectItem>
-                                    <SelectItem value="MEDIUM">Medium</SelectItem>
-                                    <SelectItem value="LOW">Low</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleRequirementRemove(index)}
-                            className="w-full"
-                          >
-                            <Trash className="h-4 w-4 mr-2" />
-                            Remove Requirement
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name="customInstructions"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Custom Instructions (Optional)</FormLabel>
-                          <FormControl>
-                            <Textarea
-                              {...field}
-                              placeholder="Add any special instructions or notes..."
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Include any additional requirements or specific instructions
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <Button type="submit" className="w-full" disabled={isUploading}>
-                      {isUploading ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <FileText className="h-4 w-4 mr-2" />
-                      )}
-                      Generate Contract
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleRequirementRemove(index)}
+                      className="w-full"
+                    >
+                      <Trash className="h-4 w-4 mr-2" />
+                      Remove Requirement
                     </Button>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
+                  </div>
+                ))}
+              </div>
 
-            <Card className="bg-white/80 backdrop-blur-lg">
-              <CardContent className="p-8">
-                <div className="text-center mb-8">
-                  <h3 className="text-xl font-semibold mb-2">Or Upload Existing Contract</h3>
-                  <p className="text-gray-600">
-                    Upload your contract for AI-powered analysis and automation
-                  </p>
-                </div>
+              <FormField
+                control={form.control}
+                name="customInstructions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Custom Instructions (Optional)</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        placeholder="Add any special instructions..."
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-                <div className="max-w-xl mx-auto">
-                  <FilePond
-                    allowMultiple={false}
-                    acceptedFileTypes={[
-                      'application/pdf',
-                      'application/msword',
-                      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                      'text/plain'
-                    ]}
-                    labelIdle='Drag & Drop your contract or <span class="filepond--label-action">Browse</span>'
-                    disabled={isUploading}
-                    onprocessfile={handleProcessFile}
-                    onaddfilestart={() => {
-                      setIsUploading(true);
-                      setProcessingState('uploading');
-                      setProgress(0);
-                    }}
-                    onremovefile={() => {
-                      setIsUploading(false);
-                      setProcessingState('idle');
-                      setProgress(0);
-                    }}
-                  />
+              <Button type="submit" className="w-full" disabled={isGenerating}>
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Generate Contract
+                  </>
+                )}
+              </Button>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
 
-                  {processingState !== 'idle' && (
-                    <div className="mt-6 space-y-4">
-                      <Progress value={progress} className="w-full h-2" />
-                      <div className="flex items-center justify-center gap-2 text-blue-600">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>{getProcessingMessage()}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-yellow-50 border-yellow-100">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <AlertCircle className="h-5 w-5 text-yellow-600" />
-                  Supported File Types
-                </CardTitle>
-                <CardDescription>
-                  We currently support PDF, Word documents (.doc, .docx), and plain text files.
-                  For best results, ensure your document is clearly formatted.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
-        </div>
-      </main>
+      {generatedContract && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Generated Contract</CardTitle>
+            <CardDescription>
+              Review your generated contract below
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="p-4 border rounded bg-gray-50">
+                <pre className="whitespace-pre-wrap font-mono text-sm">
+                  {generatedContract.content}
+                </pre>
+              </div>
+              <div className="flex gap-4">
+                <Button onClick={handleEdit}>
+                  Edit Contract
+                </Button>
+                <Button variant="outline" onClick={handleDownload}>
+                  Download Contract
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

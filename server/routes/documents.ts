@@ -12,15 +12,6 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    // Accept only specific file types
-    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed.'));
-    }
   }
 });
 
@@ -62,7 +53,7 @@ router.post("/api/documents/generate", async (req, res) => {
       customInstructions
     );
 
-    console.log("Contract generated successfully, saving to database...");
+    console.log("Contract generated successfully");
 
     // Save to database
     const [document] = await db
@@ -76,18 +67,18 @@ router.post("/api/documents/generate", async (req, res) => {
       })
       .returning();
 
-    console.log("Contract saved to database with ID:", document.id);
+    console.log("Contract saved with ID:", document.id);
 
-    return res.json({
+    return res.status(200).json({
       id: document.id,
-      content: contractText
+      content: contractText,
+      title: `${templateType} Contract` // Added title to response for clarity
     });
 
   } catch (error: any) {
     console.error("Contract generation error:", error);
     return res.status(500).json({ 
-      error: error.message || "Failed to generate contract",
-      details: error.stack
+      error: error.message || "Failed to generate contract"
     });
   }
 });
