@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { Gavel, LogOut, Loader2, GitCompare, FileText, AlertCircle } from "lucide-react";
 import { FilePond } from "react-filepond";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +16,8 @@ export default function ContractAutomation() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [processingState, setProcessingState] = useState<'idle' | 'uploading' | 'analyzing' | 'complete'>('idle');
 
   const handleProcessFile = async (error: any, file: any) => {
     if (error) {
@@ -27,6 +30,9 @@ export default function ContractAutomation() {
     }
 
     setIsUploading(true);
+    setProcessingState('uploading');
+    setProgress(10);
+
     try {
       // Get base64 string from file
       const base64String = await new Promise<string>((resolve) => {
@@ -38,24 +44,40 @@ export default function ContractAutomation() {
         reader.readAsDataURL(file.file);
       });
 
+      setProgress(30);
+      setProcessingState('analyzing');
+
       const response = await apiRequest("POST", "/api/documents", {
         title: file.filename,
         content: base64String,
         agentType: "CONTRACT_AUTOMATION",
       });
 
+      setProgress(60);
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || "Failed to process document");
       }
 
-      const document = await response.json();
-      setLocation(`/documents/${document.id}`);
+      setProgress(80);
 
+      const document = await response.json();
+
+      setProgress(100);
+      setProcessingState('complete');
+
+      // Show success message before redirecting
       toast({
-        title: "Document Uploaded",
-        description: "Your document is being processed. You'll be redirected to the editor shortly.",
+        title: "Document Processed Successfully",
+        description: "Redirecting to the document editor...",
       });
+
+      // Short delay before redirect to show completion
+      setTimeout(() => {
+        setLocation(`/documents/${document.id}`);
+      }, 1000);
+
     } catch (error: any) {
       console.error('Upload error:', error);
       toast({
@@ -63,9 +85,24 @@ export default function ContractAutomation() {
         description: error.message || "Failed to process document. Please try again.",
         variant: "destructive",
       });
+      setProcessingState('idle');
+      setProgress(0);
     } finally {
       setIsUploading(false);
       file.serverId = 'remove';
+    }
+  };
+
+  const getProcessingMessage = () => {
+    switch (processingState) {
+      case 'uploading':
+        return "Uploading your document...";
+      case 'analyzing':
+        return "Analyzing document content with AI...";
+      case 'complete':
+        return "Processing complete!";
+      default:
+        return "";
     }
   };
 
@@ -123,9 +160,15 @@ export default function ContractAutomation() {
                     labelIdle='Drag & Drop your contract or <span class="filepond--label-action">Browse</span>'
                     disabled={isUploading}
                     onprocessfile={handleProcessFile}
-                    onaddfilestart={() => setIsUploading(true)}
+                    onaddfilestart={() => {
+                      setIsUploading(true);
+                      setProcessingState('uploading');
+                      setProgress(0);
+                    }}
                     onaddfileerror={() => {
                       setIsUploading(false);
+                      setProcessingState('idle');
+                      setProgress(0);
                       toast({
                         title: "Upload Error",
                         description: "Failed to add file. Please try again.",
@@ -134,10 +177,13 @@ export default function ContractAutomation() {
                     }}
                   />
 
-                  {isUploading && (
-                    <div className="mt-4 p-4 bg-blue-50 text-blue-700 rounded-lg flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Processing your document...</span>
+                  {processingState !== 'idle' && (
+                    <div className="mt-6 space-y-4">
+                      <Progress value={progress} className="w-full h-2" />
+                      <div className="flex items-center justify-center gap-2 text-blue-600">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>{getProcessingMessage()}</span>
+                      </div>
                     </div>
                   )}
                 </div>
