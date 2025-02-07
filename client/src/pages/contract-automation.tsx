@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
@@ -9,6 +9,11 @@ import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
+import { useQuery } from "@tanstack/react-query";
+import { debounce } from "lodash";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Define the template interface
 interface Template {
@@ -24,6 +29,17 @@ interface Template {
   }>;
 }
 
+interface RequirementSuggestion {
+  description: string;
+  importance: "HIGH" | "MEDIUM" | "LOW";
+  context: string;
+}
+
+interface AutocompleteResponse {
+  suggestions: string[];
+  context?: string;
+}
+
 const requirementSchema = z.object({
   description: z.string().min(1, "Description is required"),
   importance: z.enum(["HIGH", "MEDIUM", "LOW"])
@@ -34,6 +50,99 @@ const formSchema = z.object({
   requirements: z.array(requirementSchema).min(1, "At least one requirement is needed"),
   customInstructions: z.string().optional()
 });
+
+function RequirementSuggestions({
+  templateId,
+  currentDescription,
+  onSelect
+}: {
+  templateId: string;
+  currentDescription?: string;
+  onSelect: (suggestion: RequirementSuggestion) => void;
+}) {
+  const { data: suggestions, isLoading, error } = useQuery({
+    queryKey: ['suggestions', templateId, currentDescription],
+    queryFn: async () => {
+      const response = await fetch(`/api/templates/${templateId}/suggest-requirements`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ currentDescription }),
+      });
+      if (!response.ok) throw new Error('Failed to fetch suggestions');
+      return response.json();
+    },
+    enabled: !!templateId
+  });
+
+  if (isLoading) return <div className="text-sm text-gray-500">Loading suggestions...</div>;
+  if (error) return null;
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-medium">Suggested Requirements:</h4>
+      <ScrollArea className="h-40">
+        {suggestions?.map((suggestion: RequirementSuggestion, index: number) => (
+          <div
+            key={index}
+            className="p-2 hover:bg-gray-100 rounded cursor-pointer"
+            onClick={() => onSelect(suggestion)}
+          >
+            <div className="flex justify-between items-center">
+              <span className="text-sm">{suggestion.description}</span>
+              <span className="text-xs px-2 py-1 rounded bg-blue-100">{suggestion.importance}</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">{suggestion.context}</p>
+          </div>
+        ))}
+      </ScrollArea>
+    </div>
+  );
+}
+
+function RequirementField({
+  index,
+  control,
+  suggestions,
+  onSuggestionSelect
+}: {
+  index: number;
+  control: any;
+  suggestions: string[];
+  onSuggestionSelect: (suggestion: string) => void;
+}) {
+  return (
+    <FormField
+      control={control}
+      name={`requirements.${index}.description`}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Requirement Description</FormLabel>
+          <div className="relative">
+            <FormControl>
+              <Textarea {...field} placeholder="Describe your requirement..." />
+            </FormControl>
+            {suggestions.length > 0 && (
+              <div className="absolute w-full bg-white border rounded-md shadow-lg mt-1 z-10">
+                {suggestions.map((suggestion, i) => (
+                  <div
+                    key={i}
+                    className="p-2 hover:bg-gray-100 cursor-pointer"
+                    onClick={() => onSuggestionSelect(suggestion)}
+                  >
+                    {suggestion}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
 
 export default function ContractAutomation() {
   const { user } = useAuth();
@@ -47,6 +156,7 @@ export default function ContractAutomation() {
     content: string;
     title: string;
   } | null>(null);
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -60,7 +170,24 @@ export default function ContractAutomation() {
     },
   });
 
-  // Fetch templates on component mount
+  const debouncedAutocomplete = useCallback(
+    debounce(async (templateId: string, text: string) => {
+      if (text.length < 3) return;
+      try {
+        const response = await fetch(
+          `/api/templates/${templateId}/autocomplete?text=${encodeURIComponent(text)}`
+        );
+        if (response.ok) {
+          const data: AutocompleteResponse = await response.json();
+          setAutocompleteSuggestions(data.suggestions);
+        }
+      } catch (error) {
+        console.error('Autocomplete error:', error);
+      }
+    }, 300),
+    []
+  );
+
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
@@ -113,6 +240,23 @@ export default function ContractAutomation() {
       );
     }
   };
+
+  const handleSuggestionSelect = (suggestion: RequirementSuggestion) => {
+    const currentRequirements = form.getValues("requirements");
+    form.setValue("requirements", [
+      ...currentRequirements,
+      {
+        description: suggestion.description,
+        importance: suggestion.importance
+      }
+    ]);
+  };
+
+  const handleAutocompleteSelect = (index: number, suggestion: string) => {
+    form.setValue(`requirements.${index}.description`, suggestion);
+    setAutocompleteSuggestions([]);
+  };
+
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
@@ -272,20 +416,12 @@ export default function ContractAutomation() {
 
                     {form.watch("requirements").map((_, index) => (
                       <div key={index} className="space-y-4 p-4 border rounded">
-                        <FormField
+                        <RequirementField
+                          index={index}
                           control={form.control}
-                          name={`requirements.${index}.description`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Requirement Description</FormLabel>
-                              <FormControl>
-                                <Textarea {...field} placeholder="Describe your requirement..." />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
+                          suggestions={autocompleteSuggestions}
+                          onSuggestionSelect={(suggestion) => handleAutocompleteSelect(index, suggestion)}
                         />
-
                         <FormField
                           control={form.control}
                           name={`requirements.${index}.importance`}
@@ -317,6 +453,16 @@ export default function ContractAutomation() {
                       </div>
                     ))}
                   </div>
+
+                  {selectedTemplate && (
+                    <div className="mt-4">
+                      <RequirementSuggestions
+                        templateId={selectedTemplate.id}
+                        currentDescription={form.watch("requirements")[form.watch("requirements").length - 1]?.description}
+                        onSelect={handleSuggestionSelect}
+                      />
+                    </div>
+                  )}
 
                   <FormField
                     control={form.control}

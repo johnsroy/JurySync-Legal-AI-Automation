@@ -21,7 +21,7 @@ export const templateSchema = z.object({
 
 export type Template = z.infer<typeof templateSchema>;
 
-// Template store with pre-defined templates
+// Expanded template store with more diverse templates
 const templates: Record<string, Template> = {
   "employment-standard": {
     id: "employment-standard",
@@ -66,6 +66,46 @@ and
       lastUpdated: "2025-02-07"
     }
   },
+  "employment-executive": {
+    id: "employment-executive",
+    name: "Executive Employment Agreement",
+    description: "Specialized employment agreement for C-level and executive positions",
+    category: "EMPLOYMENT",
+    baseContent: `EXECUTIVE EMPLOYMENT AGREEMENT
+
+This Executive Employment Agreement (the "Agreement") is made and entered into as of [START_DATE], by and between:
+
+[COMPANY_NAME] ("Company"), and
+[EXECUTIVE_NAME] ("Executive")
+
+1. POSITION AND DUTIES
+   The Executive shall serve as [POSITION_TITLE] and shall have the duties and responsibilities commensurate with such position.
+
+2. COMPENSATION AND BENEFITS
+   2.1 Base Salary: [BASE_SALARY]
+   2.2 Performance Bonus: [BONUS_STRUCTURE]
+   2.3 Equity Compensation: [EQUITY_TERMS]
+   2.4 Executive Benefits Package: [BENEFITS_PACKAGE]
+
+3. TERM AND TERMINATION
+   3.1 Term: [TERM_LENGTH]
+   3.2 Severance: [SEVERANCE_TERMS]
+
+4. NON-COMPETE AND CONFIDENTIALITY
+   [NON_COMPETE_TERMS]`,
+    variables: [
+      { name: "EXECUTIVE_NAME", description: "Full name of the executive", required: true },
+      { name: "POSITION_TITLE", description: "Executive position title", required: true },
+      { name: "BASE_SALARY", description: "Annual base salary", required: true },
+      { name: "BONUS_STRUCTURE", description: "Performance bonus terms", required: true },
+      { name: "EQUITY_TERMS", description: "Stock options or equity compensation details", required: true }
+    ],
+    metadata: {
+      industry: "All",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-07"
+    }
+  },
   "nda-standard": {
     id: "nda-standard",
     name: "Standard Non-Disclosure Agreement",
@@ -102,6 +142,120 @@ and
     ],
     metadata: {
       industry: "All",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-07"
+    }
+  },
+  "nda-mutual": {
+    id: "nda-mutual",
+    name: "Mutual Non-Disclosure Agreement",
+    description: "Bilateral NDA for mutual information exchange",
+    category: "NDA",
+    baseContent: `MUTUAL NON-DISCLOSURE AGREEMENT
+
+This Mutual Non-Disclosure Agreement (the "Agreement") is entered into as of [EFFECTIVE_DATE] between:
+
+[PARTY_ONE_NAME] ("Party One") and
+[PARTY_TWO_NAME] ("Party Two")
+
+1. MUTUAL EXCHANGE
+   Both parties agree to exchange confidential information for: [PURPOSE]
+
+2. CONFIDENTIAL INFORMATION
+   [CONFIDENTIAL_INFO_DEFINITION]
+
+3. MUTUAL OBLIGATIONS
+   Each party agrees to:
+   a) Maintain strict confidentiality
+   b) Use information only for [PERMITTED_USE]
+   c) Implement security measures
+
+4. TERM AND TERMINATION
+   [DURATION] from the Effective Date`,
+    variables: [
+      { name: "PARTY_ONE_NAME", description: "Name of first party", required: true },
+      { name: "PARTY_TWO_NAME", description: "Name of second party", required: true },
+      { name: "PURPOSE", description: "Purpose of information exchange", required: true },
+      { name: "PERMITTED_USE", description: "Allowed uses of confidential information", required: true }
+    ],
+    metadata: {
+      industry: "All",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-07"
+    }
+  },
+  "ip-license": {
+    id: "ip-license",
+    name: "Intellectual Property License Agreement",
+    description: "License agreement for intellectual property rights",
+    category: "IP_LICENSE",
+    baseContent: `INTELLECTUAL PROPERTY LICENSE AGREEMENT
+
+This License Agreement (the "Agreement") is made effective as of [EFFECTIVE_DATE] by and between:
+
+[LICENSOR_NAME] ("Licensor") and
+[LICENSEE_NAME] ("Licensee")
+
+1. LICENSED IP
+   [IP_DESCRIPTION]
+
+2. GRANT OF RIGHTS
+   2.1 Scope: [LICENSE_SCOPE]
+   2.2 Territory: [TERRITORY]
+   2.3 Term: [LICENSE_TERM]
+
+3. ROYALTIES AND PAYMENTS
+   [PAYMENT_TERMS]
+
+4. OWNERSHIP AND IMPROVEMENTS
+   [IP_OWNERSHIP_TERMS]`,
+    variables: [
+      { name: "LICENSOR_NAME", description: "Name of the IP owner", required: true },
+      { name: "LICENSEE_NAME", description: "Name of the party receiving the license", required: true },
+      { name: "IP_DESCRIPTION", description: "Description of the intellectual property", required: true },
+      { name: "LICENSE_SCOPE", description: "Scope of the license grant", required: true },
+      { name: "PAYMENT_TERMS", description: "Royalty and payment structure", required: true }
+    ],
+    metadata: {
+      industry: "Technology",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-07"
+    }
+  },
+  "saas-agreement": {
+    id: "saas-agreement",
+    name: "SaaS Subscription Agreement",
+    description: "Software as a Service subscription agreement",
+    category: "SERVICE_AGREEMENT",
+    baseContent: `SOFTWARE AS A SERVICE AGREEMENT
+
+This SaaS Agreement (the "Agreement") is entered into as of [EFFECTIVE_DATE] between:
+
+[PROVIDER_NAME] ("Provider") and
+[CUSTOMER_NAME] ("Customer")
+
+1. SERVICES
+   1.1 Description: [SERVICE_DESCRIPTION]
+   1.2 Service Levels: [SLA_TERMS]
+
+2. SUBSCRIPTION
+   2.1 Term: [SUBSCRIPTION_TERM]
+   2.2 Fees: [SUBSCRIPTION_FEES]
+
+3. DATA PROTECTION
+   [DATA_PROTECTION_TERMS]
+
+4. SUPPORT AND MAINTENANCE
+   [SUPPORT_TERMS]`,
+    variables: [
+      { name: "PROVIDER_NAME", description: "Name of the SaaS provider", required: true },
+      { name: "CUSTOMER_NAME", description: "Name of the customer", required: true },
+      { name: "SERVICE_DESCRIPTION", description: "Description of SaaS services", required: true },
+      { name: "SUBSCRIPTION_FEES", description: "Pricing and payment terms", required: true },
+      { name: "SLA_TERMS", description: "Service level agreement terms", required: true }
+    ],
+    metadata: {
+      industry: "Technology",
       jurisdiction: "United States",
       lastUpdated: "2025-02-07"
     }

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { generateContract } from "../services/openai";
+import { generateContract, suggestRequirements, getAutocomplete } from "../services/openai";
 import { getAllTemplates, getTemplate } from "../services/templateStore";
 import { db } from "../db";
 import { documents } from "@shared/schema";
@@ -259,6 +259,59 @@ router.get("/api/documents/:id/download/pdf", async (req, res) => {
   } catch (error) {
     console.error("Error generating PDF:", error);
     res.status(500).json({ error: "Failed to generate PDF file" });
+  }
+});
+
+// Get requirement suggestions
+router.post("/api/templates/:id/suggest-requirements", async (req, res) => {
+  try {
+    const templateId = req.params.id;
+    const { currentDescription } = req.body;
+
+    console.log(`[Templates] Generating suggestions for template: ${templateId}`);
+
+    const suggestions = await suggestRequirements(templateId, currentDescription);
+
+    console.log(`[Templates] Generated ${suggestions.length} suggestions`);
+
+    return res.json(suggestions);
+  } catch (error: any) {
+    console.error("[Templates] Suggestion error:", error);
+    return res.status(500).json({ 
+      error: "Failed to generate suggestions",
+      code: "SUGGESTION_ERROR",
+      details: error.message 
+    });
+  }
+});
+
+// Get autocomplete suggestions
+router.get("/api/templates/:id/autocomplete", async (req, res) => {
+  try {
+    const templateId = req.params.id;
+    const partialText = req.query.text as string;
+
+    if (!partialText) {
+      return res.status(400).json({
+        error: "Missing partial text",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    console.log(`[Templates] Getting autocomplete for: ${partialText}`);
+
+    const suggestions = await getAutocomplete(templateId, partialText);
+
+    console.log(`[Templates] Generated ${suggestions.suggestions.length} autocomplete suggestions`);
+
+    return res.json(suggestions);
+  } catch (error: any) {
+    console.error("[Templates] Autocomplete error:", error);
+    return res.status(500).json({ 
+      error: "Failed to get autocomplete suggestions",
+      code: "AUTOCOMPLETE_ERROR",
+      details: error.message 
+    });
   }
 });
 
