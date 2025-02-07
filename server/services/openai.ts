@@ -1,16 +1,17 @@
 import OpenAI from "openai";
-import { getTemplate } from "./templateStore";
+import { getTemplate, type Template } from "./templateStore";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+export interface ContractRequirement {
+  description: string;
+  importance: "HIGH" | "MEDIUM" | "LOW";
+}
+
 export async function generateContract(
-  templateType: string,
-  requirements: Array<{
-    type: string;
-    description: string;
-    importance: string;
-  }>,
+  templateId: string,
+  requirements: ContractRequirement[],
   customInstructions?: string
 ): Promise<string> {
   try {
@@ -18,25 +19,33 @@ export async function generateContract(
       throw new Error("OpenAI API key not configured");
     }
 
-    const template = getTemplate(templateType);
+    const template = getTemplate(templateId);
     if (!template) {
-      throw new Error(`Template type ${templateType} not found`);
+      throw new Error(`Template ${templateId} not found`);
     }
 
-    const systemPrompt = `You are an expert legal contract generator. Your task is to enhance the provided contract template based on specific requirements.
-Key instructions:
-- Use the base template as a foundation
-- Incorporate all requirements based on their priority
-- Maintain professional legal language
-- Return only the complete contract text
-- Do not include any explanations or metadata`;
+    const systemPrompt = `You are an expert legal contract generator.
+Task: Enhance the provided contract template based on specific requirements while maintaining legal validity and clarity.
+
+Instructions:
+1. Use the base template as your foundation
+2. Incorporate all requirements based on their priority level
+3. Maintain professional legal language and formatting
+4. Ensure all critical template variables are properly addressed
+5. Add any necessary clauses based on the requirements
+6. Return only the complete contract text
+7. Do not include any explanations or metadata in your response`;
 
     const userPrompt = `Base Template:
 ${template.baseContent}
 
-Requirements to incorporate (in order of importance):
-${requirements.map(req => `- ${req.importance} Priority: ${req.description}`).join('\n')}
-${customInstructions ? `\nAdditional Instructions:\n${customInstructions}` : ''}`;
+Requirements (in order of importance):
+${requirements.map(req => `[${req.importance}] ${req.description}`).join('\n')}
+
+${customInstructions ? `\nAdditional Instructions:\n${customInstructions}` : ''}
+
+Required Variables:
+${template.variables.filter(v => v.required).map(v => `- ${v.name}: ${v.description}`).join('\n')}`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
