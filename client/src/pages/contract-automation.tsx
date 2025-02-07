@@ -78,11 +78,12 @@ export default function ContractAutomation() {
       setProgress(30);
       setProcessingState('analyzing');
 
+      console.log("Submitting contract generation request:", values);
+
       const response = await fetch('/api/documents/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
         },
         body: JSON.stringify({
           templateType: values.templateType,
@@ -91,13 +92,11 @@ export default function ContractAutomation() {
         })
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to generate document");
-      }
-
-      setProgress(80);
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate document");
+      }
 
       setProgress(100);
       setProcessingState('complete');
@@ -107,8 +106,9 @@ export default function ContractAutomation() {
         description: "Redirecting to document viewer...",
       });
 
-      // Redirect to document view page
-      setLocation(`/documents/${data.id}`);
+      setTimeout(() => {
+        setLocation(`/documents/${data.id}`);
+      }, 1000);
 
     } catch (error: any) {
       console.error('Generation error:', error);
@@ -141,8 +141,8 @@ export default function ContractAutomation() {
     try {
       const formData = new FormData();
       formData.append('file', file.file);
-      formData.append('title', file.filename);
-      formData.append('agentType', 'CONTRACT_AUTOMATION');
+
+      console.log("Uploading file:", file.filename);
 
       setProgress(30);
       setProcessingState('analyzing');
@@ -152,24 +152,22 @@ export default function ContractAutomation() {
         body: formData,
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to process document");
-      }
+      const data = await response.json();
 
-      setProgress(80);
-      const document = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to process document");
+      }
 
       setProgress(100);
       setProcessingState('complete');
 
       toast({
         title: "Document Processed Successfully",
-        description: "Redirecting to the document editor...",
+        description: "Redirecting to document viewer...",
       });
 
       setTimeout(() => {
-        setLocation(`/documents/${document.id}`);
+        setLocation(`/documents/${data.id}`);
       }, 1000);
 
     } catch (error: any) {

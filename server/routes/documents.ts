@@ -7,10 +7,20 @@ import { documents } from "@shared/schema";
 
 const router = Router();
 
+// Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept only specific file types
+    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed.'));
+    }
   }
 });
 
@@ -18,24 +28,15 @@ const upload = multer({
 router.get("/api/templates", async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({
-        success: false,
-        error: "Not authenticated"
-      });
+      return res.status(401).json({ error: "Not authenticated" });
     }
 
     const templates = getAllTemplates();
-    return res.json({
-      success: true,
-      data: templates
-    });
+    return res.json(templates);
 
   } catch (error: any) {
     console.error("Template fetch error:", error);
-    return res.status(500).json({
-      success: false,
-      error: "Failed to fetch templates"
-    });
+    return res.status(500).json({ error: "Failed to fetch templates" });
   }
 });
 
@@ -43,20 +44,16 @@ router.get("/api/templates", async (req, res) => {
 router.post("/api/documents/generate", async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({
-        success: false,
-        error: "Not authenticated"
-      });
+      return res.status(401).json({ error: "Not authenticated" });
     }
 
     const { templateType, requirements, customInstructions } = req.body;
 
     if (!templateType || !requirements || !Array.isArray(requirements)) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing template type or requirements"
-      });
+      return res.status(400).json({ error: "Missing template type or requirements" });
     }
+
+    console.log("Starting contract generation with:", { templateType, requirements });
 
     // Generate contract text using template
     const contractText = await generateContract(
@@ -64,6 +61,8 @@ router.post("/api/documents/generate", async (req, res) => {
       requirements,
       customInstructions
     );
+
+    console.log("Contract generated successfully, saving to database...");
 
     // Save to database
     const [document] = await db
@@ -77,19 +76,18 @@ router.post("/api/documents/generate", async (req, res) => {
       })
       .returning();
 
+    console.log("Contract saved to database with ID:", document.id);
+
     return res.json({
-      success: true,
-      data: {
-        id: document.id,
-        content: contractText
-      }
+      id: document.id,
+      content: contractText
     });
 
   } catch (error: any) {
-    console.error("Generation error:", error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || "Failed to generate contract"
+    console.error("Contract generation error:", error);
+    return res.status(500).json({ 
+      error: error.message || "Failed to generate contract",
+      details: error.stack
     });
   }
 });
@@ -98,24 +96,24 @@ router.post("/api/documents/generate", async (req, res) => {
 router.post("/api/documents", upload.single('file'), async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({
-        success: false,
-        error: "Not authenticated"
-      });
+      return res.status(401).json({ error: "Not authenticated" });
     }
 
     if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: "No file uploaded"
-      });
+      return res.status(400).json({ error: "No file uploaded" });
     }
 
+    console.log("Processing uploaded file:", req.file.originalname);
+
+    // Convert file buffer to text
     const content = req.file.buffer.toString('utf-8');
     const title = req.file.originalname;
 
     // Analyze the document
+    console.log("Starting document analysis...");
     const analysis = await analyzeDocument(content);
+
+    console.log("Document analysis completed, saving to database...");
 
     // Save document with analysis
     const [document] = await db
@@ -130,29 +128,27 @@ router.post("/api/documents", upload.single('file'), async (req, res) => {
       })
       .returning();
 
+    console.log("Document saved to database with ID:", document.id);
+
     return res.json({
-      success: true,
-      data: {
-        id: document.id,
-        title,
-        analysis
-      }
+      id: document.id,
+      title,
+      analysis
     });
 
   } catch (error: any) {
-    console.error("Upload error:", error);
+    console.error("Document upload/analysis error:", error);
 
     if (error instanceof multer.MulterError) {
-      return res.status(400).json({
-        success: false,
+      return res.status(400).json({ 
         error: "File upload error",
-        details: error.message
+        details: error.message 
       });
     }
 
-    return res.status(500).json({
-      success: false,
-      error: error.message || "Failed to upload and analyze document"
+    return res.status(500).json({ 
+      error: error.message || "Failed to process document",
+      details: error.stack
     });
   }
 });
