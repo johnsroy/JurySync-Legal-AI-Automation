@@ -15,8 +15,7 @@ export default function LandingPage() {
           <div className="flex items-center space-x-8">
             <Link href="/products" className="text-gray-700 hover:text-green-600">Products</Link>
             <Link href="/customers" className="text-gray-700 hover:text-green-600">Customers</Link>
-            <Link href="/security" className="text-gray-700 hover:text-green-600">Security</Link>
-            <Link href="/news" className="text-gray-700 hover:text-green-600">News</Link>
+            <Link href="/pricing" className="text-gray-700 hover:text-green-600">Pricing</Link>
             <Link href="/company" className="text-gray-700 hover:text-green-600">Company</Link>
             <Link href="/login">
               <Button variant="ghost" className="text-gray-700 hover:text-green-600">Login</Button>
@@ -34,11 +33,12 @@ export default function LandingPage() {
           </h1>
           <p className="text-xl text-center text-gray-600 mb-8 max-w-2xl mx-auto">
             Transform your legal practice with AI-powered document analysis, contract management, and legal research.
+            Start with a 1-day free trial.
           </p>
           <div className="flex justify-center">
             <Link href="/register">
               <Button className="bg-green-600 hover:bg-green-700 text-lg py-6 px-8 rounded-lg shadow-lg">
-                Start Free Trial
+                Start 1-Day Free Trial
               </Button>
             </Link>
           </div>
