@@ -3,7 +3,6 @@ import multer from "multer";
 import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
 import { analyzePDFContent } from "../services/fileAnalyzer";
-import path from "path";
 
 const router = Router();
 
@@ -23,26 +22,26 @@ const upload = multer({
   }
 });
 
-router.post('/api/compliance/upload', (req, res, next) => {
+router.post('/api/compliance/upload', (req, res) => {
   upload.single('file')(req, res, async (err) => {
     try {
       if (err) {
-        res.setHeader('Content-Type', 'text/plain');
-        return res.status(400).send(`Error: ${err.message}`);
+        res.setHeader('Content-Type', 'application/json');
+        return res.status(400).json({ error: err.message });
       }
 
       const userId = (req as any).user?.id;
       if (!userId) {
-        res.setHeader('Content-Type', 'text/plain');
-        return res.status(401).send('Error: Not authenticated');
+        res.setHeader('Content-Type', 'application/json');
+        return res.status(401).json({ error: 'Not authenticated' });
       }
 
       if (!req.file) {
-        res.setHeader('Content-Type', 'text/plain');
-        return res.status(400).send('Error: No file uploaded');
+        res.setHeader('Content-Type', 'application/json');
+        return res.status(400).json({ error: 'No file uploaded' });
       }
 
-      // Create document record first
+      // Create document record
       const [document] = await db
         .insert(complianceDocuments)
         .values({
@@ -60,14 +59,21 @@ router.post('/api/compliance/upload', (req, res, next) => {
           console.error(`Analysis failed for document ${document.id}:`, error);
         });
 
-      // Send plain text response in a consistent format
-      res.setHeader('Content-Type', 'text/plain');
-      res.send(`SUCCESS\nDocument: ${document.id}\nTitle: ${req.file.originalname}\nStatus: PENDING`);
+      // Send JSON response
+      res.setHeader('Content-Type', 'application/json');
+      res.json({
+        success: true,
+        documentId: document.id,
+        title: req.file.originalname,
+        status: 'PENDING'
+      });
 
     } catch (error: any) {
       console.error('Upload error:', error);
-      res.setHeader('Content-Type', 'text/plain');
-      res.status(500).send(`Error: ${error.message}`);
+      res.setHeader('Content-Type', 'application/json');
+      res.status(500).json({ 
+        error: error.message || 'Upload failed'
+      });
     }
   });
 });
@@ -77,8 +83,8 @@ router.get('/api/compliance/documents', async (req, res) => {
   try {
     const userId = (req as any).user?.id;
     if (!userId) {
-      res.setHeader('Content-Type', 'text/plain');
-      return res.status(401).send('Error: Not authenticated');
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(401).json({ error: 'Not authenticated' });
     }
 
     const documents = await db
@@ -91,17 +97,12 @@ router.get('/api/compliance/documents', async (req, res) => {
       .from(complianceDocuments)
       .where(eq(complianceDocuments.userId, userId));
 
-    // Format as plain text with consistent format
-    const textResponse = documents
-      .map(doc => `Document: ${doc.id}\nTitle: ${doc.title}\nStatus: ${doc.status}`)
-      .join('\n---\n');
-
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(textResponse);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(documents);
   } catch (error: any) {
     console.error('Documents fetch error:', error);
-    res.setHeader('Content-Type', 'text/plain');
-    res.status(500).send(`Error: ${error.message}`);
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500).json({ error: error.message });
   }
 });
 

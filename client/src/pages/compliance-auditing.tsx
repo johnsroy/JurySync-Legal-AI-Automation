@@ -98,26 +98,10 @@ export default function ComplianceAuditing() {
           clearInterval(interval);
           setUploadProgress(100);
 
+          const data = await response.json();
+
           if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText.startsWith('Error:') ? errorText.slice(6) : errorText);
-          }
-
-          const responseText = await response.text();
-          console.log('Upload response:', responseText);
-
-          // Parse the new response format
-          const lines = responseText.split('\n');
-          const status = lines[0];
-
-          if (status !== 'SUCCESS') {
-            throw new Error('Upload failed');
-          }
-
-          const documentId = lines.find(l => l.startsWith('Document:'))?.split(': ')[1];
-
-          if (!documentId) {
-            throw new Error('Invalid response format');
+            throw new Error(data.error || 'Upload failed');
           }
 
           // Refresh the documents list
