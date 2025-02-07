@@ -5,93 +5,11 @@ export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
-const MAX_CHUNK_LENGTH = 1500;
-const MAX_CONCURRENT_REQUESTS = 2;
 
 interface DocumentSection {
   title: string;
   content: string;
   level: number;
-}
-
-// Helper functions
-async function wait(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function getSystemPromptForAgent(agentType: AgentType) {
-  const basePrompt = `You are a legal AI assistant. Analyze the provided text section and return a JSON object. Keep all responses concise and focused on key points. Ensure all arrays have at least one item.`;
-
-  switch (agentType) {
-    case "CONTRACT_AUTOMATION":
-      return `${basePrompt} The text is structured in sections with titles. Pay special attention to section headers and their hierarchy. Return ONLY a JSON object with this structure:
-{
-  "summary": "2-3 sentence summary focusing on key sections",
-  "keyPoints": ["point 1", "point 2"],
-  "suggestions": ["suggestion 1", "suggestion 2"],
-  "riskScore": number between 1-10,
-  "contractDetails": {
-    "parties": ["party 1"],
-    "effectiveDate": "date",
-    "termLength": "duration",
-    "keyObligations": ["obligation with section reference"],
-    "terminationClauses": ["clause with section reference"],
-    "governingLaw": "jurisdiction",
-    "paymentTerms": "terms",
-    "disputeResolution": "method",
-    "missingClauses": ["clause"],
-    "suggestedClauses": ["clause"],
-    "riskFactors": ["risk"]
-  }
-}`;
-
-    case "COMPLIANCE_AUDITING":
-      return `${basePrompt} Focus on regulatory compliance and audit requirements. Return ONLY a JSON object with this structure:
-{
-  "summary": "2-3 sentence summary focusing on compliance status",
-  "keyPoints": ["point 1", "point 2"],
-  "suggestions": ["suggestion 1", "suggestion 2"],
-  "riskScore": number between 1-10,
-  "complianceDetails": {
-    "regulatoryFrameworks": ["framework 1"],
-    "complianceStatus": "status summary",
-    "violations": ["violation 1"],
-    "requiredActions": ["action 1"],
-    "deadlines": ["deadline 1"],
-    "auditTrail": ["audit point 1"],
-    "riskAreas": ["risk area 1"],
-    "recommendedControls": ["control 1"]
-  }
-}`;
-
-    case "LEGAL_RESEARCH":
-      return `${basePrompt} Focus on legal research, precedents, and case law analysis. Return ONLY a JSON object with this structure:
-{
-  "summary": "2-3 sentence summary focusing on legal principles",
-  "keyPoints": ["point 1", "point 2"],
-  "suggestions": ["suggestion 1", "suggestion 2"],
-  "riskScore": number between 1-10,
-  "researchDetails": {
-    "relevantCases": ["case 1"],
-    "precedents": ["precedent 1"],
-    "statutes": ["statute 1"],
-    "legalPrinciples": ["principle 1"],
-    "jurisdictions": ["jurisdiction 1"],
-    "timelineSummary": "chronological summary",
-    "argumentAnalysis": ["argument 1"],
-    "citationNetwork": ["citation 1"]
-  }
-}`;
-
-    default:
-      return `${basePrompt} Return ONLY a JSON object with this structure:
-{
-  "summary": "2-3 sentence summary focusing on key sections",
-  "keyPoints": ["point 1", "point 2"],
-  "suggestions": ["suggestion 1", "suggestion 2"],
-  "riskScore": number between 1-10
-}`;
-  }
 }
 
 async function analyzeSection(section: DocumentSection, agentType: AgentType): Promise<DocumentAnalysis> {
@@ -101,16 +19,21 @@ async function analyzeSection(section: DocumentSection, agentType: AgentType): P
       messages: [
         {
           role: "system",
-          content: getSystemPromptForAgent(agentType)
+          content: `You are a legal contract analysis expert. Analyze the given section and return a detailed JSON analysis focusing on contract elements, risks, and recommendations. Include:
+            1. Key clauses and their implications
+            2. Potential risks and gaps
+            3. Standard compliance considerations
+            4. Suggested improvements
+            5. Overall risk assessment`
         },
         {
           role: "user",
-          content: `Analyze this section titled "${section.title}":\n\n${section.content}`
+          content: `Analyze this contract section titled "${section.title}":\n\n${section.content}`
         }
       ],
       response_format: { type: "json_object" },
       temperature: 0.2,
-      max_tokens: 800
+      max_tokens: 1000
     });
 
     const content = response.choices[0].message.content;
@@ -118,32 +41,16 @@ async function analyzeSection(section: DocumentSection, agentType: AgentType): P
       throw new Error("Empty response from OpenAI");
     }
 
-    let analysis: DocumentAnalysis;
     try {
-      analysis = JSON.parse(content);
+      return JSON.parse(content);
     } catch (error) {
       console.error("Failed to parse OpenAI response:", content);
       throw new Error("Invalid JSON response from OpenAI");
     }
-
-    return analysis;
   } catch (error) {
     console.error("OpenAI API error:", error);
     throw error;
   }
-}
-
-async function processWithRetry(section: DocumentSection, agentType: AgentType): Promise<DocumentAnalysis> {
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      return await analyzeSection(section, agentType);
-    } catch (error) {
-      console.error(`Attempt ${attempt + 1} failed:`, error);
-      if (attempt === MAX_RETRIES - 1) throw error;
-      await wait(INITIAL_RETRY_DELAY * Math.pow(2, attempt));
-    }
-  }
-  throw new Error("Failed after maximum retries");
 }
 
 export async function analyzeDocument(text: string, agentType: AgentType, sections: DocumentSection[] = []): Promise<DocumentAnalysis> {
@@ -154,96 +61,95 @@ export async function analyzeDocument(text: string, agentType: AgentType, sectio
   // If no sections provided, create one from the full text
   if (sections.length === 0) {
     sections = [{
-      title: "Main Content",
+      title: "Document Content",
       content: text,
       level: 1
     }];
   }
 
-  console.log(`Analyzing ${sections.length} sections with ${agentType} agent`);
+  console.log(`Starting contract analysis with ${sections.length} sections`);
 
   const results: DocumentAnalysis[] = [];
-  for (let i = 0; i < sections.length; i += MAX_CONCURRENT_REQUESTS) {
-    const batch = sections.slice(i, i + MAX_CONCURRENT_REQUESTS);
-    try {
-      const batchResults = await Promise.all(
-        batch.map(async (section) => {
-          console.log(`Processing section: ${section.title}`);
-          return processWithRetry(section, agentType);
-        })
-      );
-      results.push(...batchResults);
-    } catch (error) {
-      console.error("Failed to process section:", error);
-      throw new Error("Failed to analyze document completely");
+  for (const section of sections) {
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        console.log(`Processing section: ${section.title} (Attempt ${attempt + 1})`);
+        const analysis = await analyzeSection(section, agentType);
+        results.push(analysis);
+        break;
+      } catch (error) {
+        if (attempt === MAX_RETRIES - 1) throw error;
+        await new Promise(resolve => setTimeout(resolve, INITIAL_RETRY_DELAY * Math.pow(2, attempt)));
+      }
     }
   }
 
-  return combineResults(results, agentType);
+  return combineAnalysisResults(results);
 }
 
-function combineResults(results: DocumentAnalysis[], agentType: AgentType): DocumentAnalysis {
-  const combinedAnalysis: DocumentAnalysis = {
+function combineAnalysisResults(results: DocumentAnalysis[]): DocumentAnalysis {
+  const combined: DocumentAnalysis = {
     summary: results.map(r => r.summary).join(" "),
     keyPoints: Array.from(new Set(results.flatMap(r => r.keyPoints))),
     suggestions: Array.from(new Set(results.flatMap(r => r.suggestions))),
-    riskScore: Math.round(results.reduce((acc, r) => acc + r.riskScore, 0) / results.length)
+    riskScore: Math.round(results.reduce((acc, r) => acc + r.riskScore, 0) / results.length),
+    contractDetails: {
+      parties: [],
+      effectiveDate: "",
+      termLength: "",
+      keyObligations: [],
+      terminationClauses: [],
+      governingLaw: "",
+      paymentTerms: "",
+      disputeResolution: "",
+      missingClauses: [],
+      suggestedClauses: [],
+      riskFactors: [],
+      workflowState: {
+        status: "DRAFT",
+        updatedAt: new Date().toISOString()
+      }
+    }
   };
 
-  switch (agentType) {
-    case "CONTRACT_AUTOMATION":
-      combinedAnalysis.contractDetails = results.reduce((acc, r) => {
-        if (!r.contractDetails) return acc;
-        return {
-          parties: [...new Set([...(acc?.parties || []), ...(r.contractDetails.parties || [])])],
-          effectiveDate: r.contractDetails.effectiveDate || acc?.effectiveDate,
-          termLength: r.contractDetails.termLength || acc?.termLength,
-          keyObligations: [...new Set([...(acc?.keyObligations || []), ...(r.contractDetails.keyObligations || [])])],
-          terminationClauses: [...new Set([...(acc?.terminationClauses || []), ...(r.contractDetails.terminationClauses || [])])],
-          governingLaw: r.contractDetails.governingLaw || acc?.governingLaw,
-          paymentTerms: r.contractDetails.paymentTerms || acc?.paymentTerms,
-          disputeResolution: r.contractDetails.disputeResolution || acc?.disputeResolution,
-          missingClauses: [...new Set([...(acc?.missingClauses || []), ...(r.contractDetails.missingClauses || [])])],
-          suggestedClauses: [...new Set([...(acc?.suggestedClauses || []), ...(r.contractDetails.suggestedClauses || [])])],
-          riskFactors: [...new Set([...(acc?.riskFactors || []), ...(r.contractDetails.riskFactors || [])])]
-        };
-      }, {} as NonNullable<DocumentAnalysis['contractDetails']>);
-      break;
+  // Merge contract details from all sections
+  results.forEach(result => {
+    if (result.contractDetails) {
+      combined.contractDetails.parties.push(...(result.contractDetails.parties || []));
+      combined.contractDetails.keyObligations.push(...(result.contractDetails.keyObligations || []));
+      combined.contractDetails.terminationClauses.push(...(result.contractDetails.terminationClauses || []));
+      combined.contractDetails.missingClauses.push(...(result.contractDetails.missingClauses || []));
+      combined.contractDetails.suggestedClauses.push(...(result.contractDetails.suggestedClauses || []));
+      combined.contractDetails.riskFactors.push(...(result.contractDetails.riskFactors || []));
 
-    case "COMPLIANCE_AUDITING":
-      combinedAnalysis.complianceDetails = results.reduce((acc, r) => {
-        if (!r.complianceDetails) return acc;
-        return {
-          regulatoryFrameworks: [...new Set([...(acc?.regulatoryFrameworks || []), ...(r.complianceDetails.regulatoryFrameworks || [])])],
-          complianceStatus: r.complianceDetails.complianceStatus || acc?.complianceStatus,
-          violations: [...new Set([...(acc?.violations || []), ...(r.complianceDetails.violations || [])])],
-          requiredActions: [...new Set([...(acc?.requiredActions || []), ...(r.complianceDetails.requiredActions || [])])],
-          deadlines: [...new Set([...(acc?.deadlines || []), ...(r.complianceDetails.deadlines || [])])],
-          auditTrail: [...new Set([...(acc?.auditTrail || []), ...(r.complianceDetails.auditTrail || [])])],
-          riskAreas: [...new Set([...(acc?.riskAreas || []), ...(r.complianceDetails.riskAreas || [])])],
-          recommendedControls: [...new Set([...(acc?.recommendedControls || []), ...(r.complianceDetails.recommendedControls || [])])]
-        };
-      }, {} as NonNullable<DocumentAnalysis['complianceDetails']>);
-      break;
+      // Take the most recent non-empty values
+      if (result.contractDetails.effectiveDate) {
+        combined.contractDetails.effectiveDate = result.contractDetails.effectiveDate;
+      }
+      if (result.contractDetails.termLength) {
+        combined.contractDetails.termLength = result.contractDetails.termLength;
+      }
+      if (result.contractDetails.governingLaw) {
+        combined.contractDetails.governingLaw = result.contractDetails.governingLaw;
+      }
+      if (result.contractDetails.paymentTerms) {
+        combined.contractDetails.paymentTerms = result.contractDetails.paymentTerms;
+      }
+      if (result.contractDetails.disputeResolution) {
+        combined.contractDetails.disputeResolution = result.contractDetails.disputeResolution;
+      }
+    }
+  });
 
-    case "LEGAL_RESEARCH":
-      combinedAnalysis.researchDetails = results.reduce((acc, r) => {
-        if (!r.researchDetails) return acc;
-        return {
-          relevantCases: [...new Set([...(acc?.relevantCases || []), ...(r.researchDetails.relevantCases || [])])],
-          precedents: [...new Set([...(acc?.precedents || []), ...(r.researchDetails.precedents || [])])],
-          statutes: [...new Set([...(acc?.statutes || []), ...(r.researchDetails.statutes || [])])],
-          legalPrinciples: [...new Set([...(acc?.legalPrinciples || []), ...(r.researchDetails.legalPrinciples || [])])],
-          jurisdictions: [...new Set([...(acc?.jurisdictions || []), ...(r.researchDetails.jurisdictions || [])])],
-          timelineSummary: r.researchDetails.timelineSummary || acc?.timelineSummary,
-          argumentAnalysis: [...new Set([...(acc?.argumentAnalysis || []), ...(r.researchDetails.argumentAnalysis || [])])],
-          citationNetwork: [...new Set([...(acc?.citationNetwork || []), ...(r.researchDetails.citationNetwork || [])])]
-        };
-      }, {} as NonNullable<DocumentAnalysis['researchDetails']>);
-      break;
-  }
+  // Remove duplicates from arrays
+  combined.contractDetails.parties = Array.from(new Set(combined.contractDetails.parties));
+  combined.contractDetails.keyObligations = Array.from(new Set(combined.contractDetails.keyObligations));
+  combined.contractDetails.terminationClauses = Array.from(new Set(combined.contractDetails.terminationClauses));
+  combined.contractDetails.missingClauses = Array.from(new Set(combined.contractDetails.missingClauses));
+  combined.contractDetails.suggestedClauses = Array.from(new Set(combined.contractDetails.suggestedClauses));
+  combined.contractDetails.riskFactors = Array.from(new Set(combined.contractDetails.riskFactors));
 
-  return combinedAnalysis;
+  return combined;
 }
 
 export async function chatWithDocument(
@@ -262,14 +168,12 @@ export async function chatWithDocument(
         {
           role: "system",
           content: `You are a legal document assistant. Use the provided analysis to answer questions accurately and concisely.
-
 Document Summary: ${analysis.summary}
 Risk Score: ${analysis.riskScore}/10`
         },
         {
           role: "user",
-          content: `Context: ${context.substring(0, MAX_CHUNK_LENGTH)}...
-
+          content: `Context: ${context.substring(0, 1500)}...
 Question: ${message}`
         }
       ],

@@ -274,28 +274,15 @@ export function registerRoutes(app: Express): Server {
         title: req.body.title || extractedContent.metadata.title || req.file.originalname,
         content: extractedContent.text,
         agentType: req.body.agentType || "CONTRACT_AUTOMATION",
+        userId: req.user!.id
       };
-
-      let parsed;
-      try {
-        parsed = insertDocumentSchema.parse(document);
-      } catch (error) {
-        if (error instanceof ZodError) {
-          return res.status(400).json({
-            message: fromZodError(error).message,
-            code: "VALIDATION_ERROR"
-          });
-        }
-        throw error;
-      }
 
       let analysis;
       try {
-        console.log("Processing document with agent:", parsed.agentType);
-        // Pass the structured content to the analysis
+        console.log("Processing document with agent:", document.agentType);
         analysis = await analyzeDocument(
           extractedContent.text,
-          parsed.agentType,
+          document.agentType,
           extractedContent.sections
         );
       } catch (error) {
@@ -308,11 +295,8 @@ export function registerRoutes(app: Express): Server {
 
       try {
         const createdDocument = await storage.createDocument({
-          ...parsed,
-          content: extractedContent.text,
-          userId: req.user!.id,
+          ...document,
           analysis,
-          metadata: extractedContent.metadata
         });
 
         res.status(201).json(createdDocument);
@@ -323,17 +307,8 @@ export function registerRoutes(app: Express): Server {
           code: "STORAGE_ERROR"
         });
       }
-
     } catch (error) {
       console.error('Document creation error:', error);
-
-      if (error instanceof Error && error.message === 'Invalid file type') {
-        return res.status(400).json({
-          message: "Invalid file type. Please upload PDF, DOCX, DOC, or XLSX files only.",
-          code: "FILE_TYPE_ERROR"
-        });
-      }
-
       res.status(500).json({
         message: "An unexpected error occurred while processing your document",
         code: "UNKNOWN_ERROR"
