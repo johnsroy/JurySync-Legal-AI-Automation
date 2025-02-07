@@ -44,59 +44,73 @@ export default function ComplianceAuditing() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
 
-  // Fetch uploaded documents
-  const { data: uploadedDocuments = [], isLoading: isLoadingDocuments } = useQuery({
+  const { data: uploadedDocuments = [], isLoading: isLoadingDocuments, refetch: refetchDocuments } = useQuery({
     queryKey: ['uploaded-documents'],
     queryFn: async () => {
       const response = await fetch('/api/compliance/documents');
       if (!response.ok) throw new Error('Failed to fetch documents');
-      return response.json() as Promise<UploadedDocument[]>;
+      const data = await response.json();
+      console.log('Fetched documents:', data);
+      return data as UploadedDocument[];
     }
   });
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: async (acceptedFiles) => {
-      setIsUploading(true);
-      setUploadProgress(0);
+  // Modified upload handler with automatic monitoring
+  const onDrop = async (acceptedFiles: File[]) => {
+    setIsUploading(true);
+    setUploadProgress(0);
 
-      try {
-        for (let i = 0; i < acceptedFiles.length; i++) {
-          const file = acceptedFiles[i];
-          const formData = new FormData();
-          formData.append('file', file);
+    try {
+      for (let i = 0; i < acceptedFiles.length; i++) {
+        const file = acceptedFiles[i];
+        const formData = new FormData();
+        formData.append('file', file);
 
-          const interval = setInterval(() => {
-            setUploadProgress((prev) => Math.min(prev + 10, 90));
-          }, 500);
+        const interval = setInterval(() => {
+          setUploadProgress((prev) => Math.min(prev + 10, 90));
+        }, 500);
 
-          const response = await fetch('/api/compliance/upload', {
-            method: 'POST',
-            body: formData
-          });
-
-          clearInterval(interval);
-          setUploadProgress(100);
-
-          if (!response.ok) {
-            throw new Error('Upload failed');
-          }
-
-          toast({
-            title: "Document Uploaded",
-            description: "Starting compliance analysis...",
-          });
-        }
-      } catch (error) {
-        toast({
-          title: "Upload Failed",
-          description: "Could not upload document for analysis.",
-          variant: "destructive"
+        const response = await fetch('/api/compliance/upload', {
+          method: 'POST',
+          body: formData
         });
-      } finally {
-        setIsUploading(false);
-        setUploadProgress(0);
+
+        clearInterval(interval);
+        setUploadProgress(100);
+
+        if (!response.ok) {
+          throw new Error('Upload failed');
+        }
+
+        const { documentId } = await response.json();
+
+        // Auto-monitor the first document
+        if (uploadedDocuments.length === 0) {
+          await startMonitoringMutation.mutateAsync([documentId]);
+        }
+
+        toast({
+          title: "Document Uploaded",
+          description: "Starting compliance analysis...",
+        });
+
+        // Refresh the documents list
+        await refetchDocuments();
       }
-    },
+    } catch (error) {
+      toast({
+        title: "Upload Failed",
+        description: "Could not upload document for analysis.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
     accept: {
       'application/pdf': ['.pdf'],
       'application/msword': ['.doc'],
@@ -109,12 +123,21 @@ export default function ComplianceAuditing() {
   const { data: complianceResults = [], isLoading } = useQuery({
     queryKey: ['compliance-results', selectedDocuments],
     queryFn: async () => {
-      if (selectedDocuments.length === 0) return [];
-      const response = await fetch(`/api/compliance/results?documents=${selectedDocuments.join(',')}`);
+      // If no documents are selected but we have uploaded documents,
+      // use the first document by default
+      const documentsToMonitor = selectedDocuments.length === 0 && uploadedDocuments.length > 0
+        ? [uploadedDocuments[0].id]
+        : selectedDocuments;
+
+      if (documentsToMonitor.length === 0) return [];
+
+      const response = await fetch(`/api/compliance/results?documents=${documentsToMonitor.join(',')}`);
       if (!response.ok) throw new Error('Failed to fetch compliance results');
-      return response.json() as Promise<ComplianceResult[]>;
+      const data = await response.json();
+      console.log('Fetched compliance results:', data);
+      return data as ComplianceResult[];
     },
-    enabled: selectedDocuments.length > 0
+    enabled: uploadedDocuments.length > 0
   });
 
   // Start monitoring mutation
@@ -235,8 +258,8 @@ export default function ComplianceAuditing() {
                         </TooltipTrigger>
                         <TooltipContent>
                           <p className="max-w-xs">
-                            Select documents to monitor for compliance. 
-                            The system will continuously scan these documents 
+                            Select documents to monitor for compliance.
+                            The system will continuously scan these documents
                             for regulatory updates and compliance issues.
                           </p>
                         </TooltipContent>
@@ -276,7 +299,7 @@ export default function ComplianceAuditing() {
                           <Badge
                             variant={
                               doc.status === "MONITORING" ? "success" :
-                              doc.status === "ERROR" ? "destructive" : "outline"
+                                doc.status === "ERROR" ? "destructive" : "outline"
                             }
                           >
                             {doc.status}
@@ -313,8 +336,8 @@ export default function ComplianceAuditing() {
                       </TooltipTrigger>
                       <TooltipContent>
                         <p className="max-w-xs">
-                          Real-time compliance monitoring results. 
-                          View risk levels, compliance scores, and detailed 
+                          Real-time compliance monitoring results.
+                          View risk levels, compliance scores, and detailed
                           analysis of potential issues in your documents.
                         </p>
                       </TooltipContent>
@@ -346,7 +369,7 @@ export default function ComplianceAuditing() {
                           <Badge
                             variant={
                               result.riskLevel === "HIGH" ? "destructive" :
-                              result.riskLevel === "MEDIUM" ? "warning" : "success"
+                                result.riskLevel === "MEDIUM" ? "warning" : "success"
                             }
                           >
                             {result.riskLevel} RISK

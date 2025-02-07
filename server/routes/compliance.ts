@@ -40,6 +40,10 @@ const uploadedDocuments = new Map<string, {
   status: "PENDING" | "MONITORING" | "ERROR";
 }>();
 
+//Store monitoring results
+const monitoringResults = new Map<string, { riskLevel: number; }>();
+
+
 router.post('/api/compliance/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -66,18 +70,21 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
     uploadedDocuments.set(documentId, documentInfo);
     console.log(`[Compliance] Stored document with ID: ${documentId}`);
 
-    console.log(`[Compliance] Scanning document of type: ${fileType}`);
-    const result = await scanDocument(fileContent, fileType);
-
-    // Update document status
-    const doc = uploadedDocuments.get(documentId);
-    if (doc) {
-      doc.status = "MONITORING";
-      console.log(`[Compliance] Updated document status to MONITORING`);
+    // If this is the first document, start monitoring immediately
+    if (uploadedDocuments.size === 1) {
+      console.log(`[Compliance] First document uploaded, starting immediate monitoring`);
+      try {
+        const result = await scanDocument(fileContent, fileType);
+        monitoringResults.set(documentId, result);
+        documentInfo.status = "MONITORING";
+        console.log(`[Compliance] Initial monitoring completed for document ${documentId}`);
+      } catch (error) {
+        console.error(`[Compliance] Initial monitoring failed:`, error);
+        documentInfo.status = "ERROR";
+      }
     }
 
-    console.log(`[Compliance] Scan completed with risk level: ${result.riskLevel}`);
-    res.json({ documentId, result });
+    res.json({ documentId, status: documentInfo.status });
   } catch (error: any) {
     console.error('[Compliance] Upload error:', error);
     res.status(500).json({ 
