@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Gavel, Check } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
@@ -113,10 +115,18 @@ const plans = {
 export default function PricingPage() {
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
   const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const { user } = useAuth();
 
   const handleSubscribe = async (plan: any) => {
     if (plan.price === "Custom") {
       window.location.href = plan.href;
+      return;
+    }
+
+    if (!user) {
+      // If user is not logged in, redirect to register with plan info
+      navigate(`/register?plan=${plan.planType}`);
       return;
     }
 
@@ -129,7 +139,10 @@ export default function PricingPage() {
         body: JSON.stringify({ planType: plan.planType }),
       });
 
-      if (!response.ok) throw new Error("Payment initialization failed");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Payment initialization failed");
+      }
 
       const { sessionId } = await response.json();
       const stripe = await stripePromise;
@@ -140,7 +153,11 @@ export default function PricingPage() {
       if (error) throw error;
     } catch (error) {
       console.error("Payment error:", error);
-      // Here you might want to show an error message to the user
+      toast({
+        title: "Payment Error",
+        description: error instanceof Error ? error.message : "Failed to process payment. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -157,9 +174,15 @@ export default function PricingPage() {
             <Link href="/customers" className="text-gray-700 hover:text-green-600">Customers</Link>
             <Link href="/pricing" className="text-gray-700 hover:text-green-600">Pricing</Link>
             <Link href="/company" className="text-gray-700 hover:text-green-600">Company</Link>
-            <Link href="/login">
-              <Button variant="ghost" className="text-gray-700 hover:text-green-600">Login</Button>
-            </Link>
+            {user ? (
+              <Link href="/dashboard">
+                <Button variant="ghost" className="text-gray-700 hover:text-green-600">Dashboard</Button>
+              </Link>
+            ) : (
+              <Link href="/login">
+                <Button variant="ghost" className="text-gray-700 hover:text-green-600">Login</Button>
+              </Link>
+            )}
           </div>
         </div>
       </nav>
