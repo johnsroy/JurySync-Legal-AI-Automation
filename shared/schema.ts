@@ -262,6 +262,35 @@ export const SignatureStatus = z.enum([
 
 export type SignatureStatus = z.infer<typeof SignatureStatus>;
 
+// Add these types after the existing imports
+export const ComplianceFileStatus = z.enum([
+  "UPLOADING",
+  "UPLOADED",
+  "PROCESSING",
+  "PROCESSED",
+  "ERROR"
+]);
+
+export type ComplianceFileStatus = z.infer<typeof ComplianceFileStatus>;
+
+// Add this table definition before the complianceDocuments table
+export const complianceFiles = pgTable("compliance_files", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  filename: text("filename").notNull(),
+  filePath: text("file_path").notNull(),
+  fileType: text("file_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  status: text("status").notNull().default("UPLOADING"),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+  processingStartedAt: timestamp("processing_started_at"),
+  processingCompletedAt: timestamp("processing_completed_at"),
+  errorMessage: text("error_message"),
+});
+
+export type ComplianceFile = typeof complianceFiles.$inferSelect;
+export const insertComplianceFileSchema = createInsertSchema(complianceFiles);
+export type InsertComplianceFile = z.infer<typeof insertComplianceFileSchema>;
 
 // Schema for compliance documents
 export const complianceDocuments = pgTable("compliance_documents", {

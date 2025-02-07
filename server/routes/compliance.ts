@@ -1,17 +1,19 @@
 import { Router } from "express";
 import multer from "multer";
-import path from "path";
 import { db } from "../db";
-import { complianceDocuments, complianceIssues } from "@shared/schema";
+import { complianceDocuments, complianceIssues, complianceFiles } from "@shared/schema";
 import { analyzeDocument } from "../services/complianceMonitor";
+import { saveUploadedFile } from "../services/fileUploadService";
 import { eq } from "drizzle-orm";
 
 const router = Router();
 
-// Configure multer for file uploads
-const storage = multer.memoryStorage();
+// Configure multer for memory storage
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+  },
   fileFilter: (_, file, cb) => {
     const allowedTypes = [
       'application/pdf',
@@ -20,92 +22,91 @@ const upload = multer({
       'text/plain'
     ];
 
-    console.log(`[Compliance] Received file: ${file.originalname}, type: ${file.mimetype}`);
-
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types are: PDF, DOC, DOCX, and TXT`));
     }
-  },
-  limits: {
-    fileSize: 50 * 1024 * 1024 // 50MB limit
   }
 });
 
-// Upload and analyze document
+// Upload endpoint with proper error handling
 router.post('/api/compliance/upload', async (req, res) => {
-  let uploadedFile: Express.Multer.File | undefined;
-
   try {
-    // Wrap multer in a promise to handle errors properly
+    // Get user ID from session
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    // Handle file upload with multer
     await new Promise<void>((resolve, reject) => {
       upload.single('file')(req, res, (err) => {
         if (err) {
-          console.error('[Compliance] Upload middleware error:', err);
+          console.error('[Compliance] Upload error:', err);
           reject(err);
         } else {
-          uploadedFile = req.file;
           resolve();
         }
       });
     });
 
-    if (!uploadedFile) {
-      throw new Error('No file uploaded');
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const userId = (req as any).user?.id;
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+    console.log(`[Compliance] Processing upload: ${req.file.originalname} (${req.file.size} bytes)`);
 
-    console.log(`[Compliance] Processing file: ${uploadedFile.originalname} for user ${userId}`);
+    // Save file using the upload service
+    const fileRecord = await saveUploadedFile(req.file, userId);
+    console.log(`[Compliance] File saved: ${fileRecord.id}`);
 
-    // Verify file content
-    if (!uploadedFile.buffer || uploadedFile.buffer.length === 0) {
-      throw new Error('Empty file content');
-    }
-
-    const fileContent = uploadedFile.buffer.toString();
-    if (!fileContent || fileContent.trim().length === 0) {
-      throw new Error('Empty file content after conversion');
-    }
-
-    console.log(`[Compliance] File content validated, size: ${fileContent.length} bytes`);
-
-    // Store document in database
+    // Create compliance document record
     const [document] = await db
       .insert(complianceDocuments)
       .values({
         userId,
-        title: uploadedFile.originalname,
-        content: fileContent,
-        documentType: path.extname(uploadedFile.originalname).substring(1),
+        title: req.file.originalname,
+        content: req.file.buffer.toString(),
+        documentType: req.file.mimetype,
         status: "PENDING"
       })
       .returning();
 
-    console.log(`[Compliance] Document stored with ID: ${document.id}`);
-
     // Start analysis in background
     analyzeDocument(document.id.toString())
-      .catch(error => console.error(`[Compliance] Analysis failed for document ${document.id}:`, error));
+      .catch(error => {
+        console.error(`[Compliance] Analysis failed for document ${document.id}:`, error);
+        db.update(complianceDocuments)
+          .set({ status: "ERROR" })
+          .where(eq(complianceDocuments.id, document.id))
+          .execute()
+          .catch(updateError => {
+            console.error(`Failed to update document status:`, updateError);
+          });
+      });
 
     res.json({
+      success: true,
+      fileId: fileRecord.id,
       documentId: document.id,
       status: "PENDING",
-      message: "Document uploaded successfully and queued for analysis"
+      message: "Document uploaded and queued for analysis"
     });
-  } catch (error: any) {
-    console.error('[Compliance] Upload error:', error);
-    const errorMessage = error.code === 'LIMIT_FILE_SIZE' 
-      ? 'File size too large. Maximum size is 50MB'
-      : error.message || 'Failed to process document';
 
-    res.status(error.status || 500).json({
-      error: 'Upload failed',
-      details: errorMessage
+  } catch (error: any) {
+    console.error('[Compliance] Upload failed:', error);
+
+    const status = error.status || 500;
+    const message = error.code === 'LIMIT_FILE_SIZE' 
+      ? 'File too large. Maximum size is 50MB'
+      : error.code === 'LIMIT_UNEXPECTED_FILE'
+      ? 'Invalid file type'
+      : error.message || 'Upload failed';
+
+    res.status(status).json({ 
+      success: false,
+      error: message
     });
   }
 });
