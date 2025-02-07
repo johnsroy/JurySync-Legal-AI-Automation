@@ -1,13 +1,12 @@
 import { Router } from "express";
 import multer from "multer";
-import { generateContract } from "../services/openai";
+import { generateContract, analyzeDocument } from "../services/openai";
 import { getAllTemplates } from "../services/templateStore";
 import { db } from "../db";
 import { documents } from "@shared/schema";
 
 const router = Router();
 
-// Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
@@ -19,15 +18,24 @@ const upload = multer({
 router.get("/api/templates", async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
+      return res.status(401).json({
+        success: false,
+        error: "Not authenticated"
+      });
     }
 
     const templates = getAllTemplates();
-    res.send(templates);
+    return res.json({
+      success: true,
+      data: templates
+    });
 
   } catch (error: any) {
     console.error("Template fetch error:", error);
-    res.status(500).send("Failed to fetch templates");
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch templates"
+    });
   }
 });
 
@@ -35,13 +43,19 @@ router.get("/api/templates", async (req, res) => {
 router.post("/api/documents/generate", async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
+      return res.status(401).json({
+        success: false,
+        error: "Not authenticated"
+      });
     }
 
     const { templateType, requirements, customInstructions } = req.body;
 
     if (!templateType || !requirements || !Array.isArray(requirements)) {
-      return res.status(400).send("Missing template type or requirements");
+      return res.status(400).json({
+        success: false,
+        error: "Missing template type or requirements"
+      });
     }
 
     // Generate contract text using template
@@ -55,56 +69,91 @@ router.post("/api/documents/generate", async (req, res) => {
     const [document] = await db
       .insert(documents)
       .values({
-        userId: req.user!.id,
+        title: `${templateType} Contract`,
         content: contractText,
+        userId: req.user!.id,
         processingStatus: "COMPLETED",
         agentType: "CONTRACT_AUTOMATION"
       })
       .returning();
 
-    res.send({
-      id: document.id,
-      content: contractText
+    return res.json({
+      success: true,
+      data: {
+        id: document.id,
+        content: contractText
+      }
     });
 
   } catch (error: any) {
     console.error("Generation error:", error);
-    res.status(500).send(error.message || "Failed to generate contract");
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to generate contract"
+    });
   }
 });
 
-// Upload document
+// Upload and analyze document
 router.post("/api/documents", upload.single('file'), async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
+      return res.status(401).json({
+        success: false,
+        error: "Not authenticated"
+      });
     }
 
     if (!req.file) {
-      return res.status(400).send("No file uploaded");
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded"
+      });
     }
 
     const content = req.file.buffer.toString('utf-8');
+    const title = req.file.originalname;
 
-    // Save to database
+    // Analyze the document
+    const analysis = await analyzeDocument(content);
+
+    // Save document with analysis
     const [document] = await db
       .insert(documents)
       .values({
+        title,
+        content,
         userId: req.user!.id,
-        content: content,
         processingStatus: "COMPLETED",
-        agentType: "DOCUMENT_UPLOAD"
+        agentType: "DOCUMENT_UPLOAD",
+        analysis: JSON.stringify(analysis)
       })
       .returning();
 
-    res.send({
-      id: document.id,
-      content: content
+    return res.json({
+      success: true,
+      data: {
+        id: document.id,
+        title,
+        analysis
+      }
     });
 
   } catch (error: any) {
     console.error("Upload error:", error);
-    res.status(500).send(error.message || "Failed to upload document");
+
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({
+        success: false,
+        error: "File upload error",
+        details: error.message
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to upload and analyze document"
+    });
   }
 });
 
