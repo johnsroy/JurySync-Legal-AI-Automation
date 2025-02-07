@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { TemplateCategory } from "@shared/schema";
 
 export const templateSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  category: z.enum(["EMPLOYMENT", "NDA", "SERVICE_AGREEMENT"]),
+  category: TemplateCategory,
   baseContent: z.string(),
   variables: z.array(z.object({
     name: z.string(),
@@ -65,7 +66,6 @@ and
       lastUpdated: "2025-02-07"
     }
   },
-
   "nda-standard": {
     id: "nda-standard",
     name: "Standard Non-Disclosure Agreement",
@@ -93,10 +93,7 @@ and
    The Receiving Party agrees to:
    a) Maintain the confidentiality of the Disclosing Party's Confidential Information
    b) Use reasonable care to prevent disclosure
-   c) Notify the Disclosing Party of any unauthorized disclosure
-
-5. RETURN OF MATERIALS
-   Upon request, the Receiving Party shall: [RETURN_REQUIREMENTS]`,
+   c) Notify the Disclosing Party of any unauthorized disclosure`,
     variables: [
       { name: "EFFECTIVE_DATE", description: "Agreement start date", required: true },
       { name: "DISCLOSING_PARTY", description: "Party sharing confidential information", required: true },
@@ -109,7 +106,6 @@ and
       lastUpdated: "2025-02-07"
     }
   },
-
   "service-agreement": {
     id: "service-agreement",
     name: "Professional Service Agreement",
@@ -156,13 +152,26 @@ and
 };
 
 export function getTemplate(id: string): Template | undefined {
-  return templates[id];
+  console.log(`[TemplateStore] Retrieving template: ${id}`);
+  const template = templates[id];
+  if (!template) {
+    console.log(`[TemplateStore] Template ${id} not found`);
+    return undefined;
+  }
+  console.log(`[TemplateStore] Retrieved template: ${template.name}`);
+  return template;
 }
 
 export function getAllTemplates(): Template[] {
-  return Object.values(templates);
+  console.log('[TemplateStore] Getting all templates');
+  const allTemplates = Object.values(templates);
+  console.log(`[TemplateStore] Returning ${allTemplates.length} templates`);
+  return allTemplates;
 }
 
 export function getTemplatesByCategory(category: Template["category"]): Template[] {
-  return Object.values(templates).filter(template => template.category === category);
+  console.log(`[TemplateStore] Getting templates for category: ${category}`);
+  const filtered = Object.values(templates).filter(template => template.category === category);
+  console.log(`[TemplateStore] Found ${filtered.length} templates for category ${category}`);
+  return filtered;
 }
