@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
-import { complianceDocuments, complianceIssues } from "@shared/schema";
+import { complianceDocuments } from "@shared/schema";
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import { riskAssessmentService } from "../services/riskAssessment";
 import { eq } from "drizzle-orm";
@@ -13,22 +13,25 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
-  },
-});
+  }
+}).single('file');
 
-router.post('/api/compliance/upload', async (req, res) => {
-  // Set JSON content type header first
-  res.setHeader('Content-Type', 'application/json');
+router.post('/upload', async (req, res) => {
+  // Ensure JSON responses
+  res.type('application/json');
 
   try {
-    // Use multer upload with error handling
-    await new Promise((resolve, reject) => {
-      upload.single('file')(req, res, (err) => {
+    // Handle file upload
+    const uploadResult = await new Promise((resolve, reject) => {
+      upload(req, res, (err) => {
         if (err) {
-          reject(err);
-        } else {
-          resolve(undefined);
+          if (err instanceof multer.MulterError) {
+            reject({ status: 400, message: `Upload error: ${err.message}` });
+          } else {
+            reject({ status: 500, message: `Unknown upload error: ${err.message}` });
+          }
         }
+        resolve(req.file);
       });
     });
 
@@ -61,16 +64,15 @@ router.post('/api/compliance/upload', async (req, res) => {
       .values({
         userId,
         title: req.file.originalname,
-        content: '', // Will be populated after analysis
+        content: '',
         documentType: req.file.mimetype,
         status: "PENDING"
       })
       .returning();
 
-    // Start PDF analysis and risk assessment in background
+    // Process document in background
     analyzePDFContent(req.file.buffer, document.id)
       .then(async (content) => {
-        // Update document with extracted content
         await db
           .update(complianceDocuments)
           .set({ 
@@ -80,7 +82,6 @@ router.post('/api/compliance/upload', async (req, res) => {
           })
           .where(eq(complianceDocuments.id, document.id));
 
-        // Perform risk assessment
         await riskAssessmentService.assessDocument(document.id, content);
       })
       .catch(error => {
@@ -89,9 +90,7 @@ router.post('/api/compliance/upload', async (req, res) => {
           .set({ status: "ERROR" })
           .where(eq(complianceDocuments.id, document.id))
           .execute()
-          .catch(updateError => {
-            console.error('Failed to update document status:', updateError);
-          });
+          .catch(err => console.error('Failed to update document status:', err));
       });
 
     return res.json({
@@ -103,9 +102,9 @@ router.post('/api/compliance/upload', async (req, res) => {
 
   } catch (error: any) {
     console.error('Upload error:', error);
-    return res.status(500).json({ 
-      error: error.message || 'Upload failed'
-    });
+    const status = error.status || 500;
+    const message = error.message || 'Upload failed';
+    return res.status(status).json({ error: message });
   }
 });
 
