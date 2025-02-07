@@ -8,42 +8,44 @@ const openai = new OpenAI();
 export class RiskAssessmentService {
   private async analyzeDocument(content: string): Promise<RiskAssessment[]> {
     try {
-      console.log('Starting document analysis...');
+      console.log('Starting document risk analysis...');
+
+      // Sanitize input content
+      const sanitizedContent = content
+        .replace(/<!DOCTYPE[^>]*>/gi, '')
+        .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+        .trim();
+
+      if (!sanitizedContent) {
+        throw new Error('Empty or invalid document content after sanitization');
+      }
+
+      console.log('Content sanitized, sending to OpenAI...');
 
       const completion = await openai.chat.completions.create({
         messages: [
           {
-            role: "system",
-            content: `You are a legal document risk assessment expert. Analyze the following document and identify potential risks, compliance issues, and legal concerns. Return a JSON object with a 'risks' array containing assessment objects. Each risk assessment should have:
-            - score (number 0-100)
-            - severity (one of: "CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
-            - category (string)
-            - description (string)
-            - impact (string)
-            - mitigation (string)
-            - references (array of strings)
-            - context (string)
-            - confidence (number 0-100)
-            Example:
-            {
-              "risks": [
-                {
-                  "score": 85,
-                  "severity": "HIGH",
-                  "category": "Data Privacy",
-                  "description": "Insufficient data protection clauses",
-                  "impact": "Potential regulatory non-compliance",
-                  "mitigation": "Add GDPR-compliant data protection clauses",
-                  "references": ["GDPR Article 28", "Data Protection Act 2018"],
-                  "context": "Section 3.2",
-                  "confidence": 90
-                }
-              ]
-            }`
-          },
-          {
             role: "user",
-            content: content
+            content: `You are a legal document risk assessment expert. Analyze this document and provide a risk assessment in the following JSON format:
+{
+  "risks": [
+    {
+      "score": <number between 0-100>,
+      "severity": <"CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO">,
+      "category": <string describing risk category>,
+      "description": <string describing the risk>,
+      "impact": <string describing potential impact>,
+      "mitigation": <string describing mitigation steps>,
+      "references": <array of relevant legal references>,
+      "context": <string indicating where in document>,
+      "confidence": <number between 0-100>
+    }
+  ]
+}
+
+Document to analyze:
+${sanitizedContent}`
           }
         ],
         model: "gpt-4",
@@ -52,24 +54,46 @@ export class RiskAssessmentService {
       });
 
       const responseText = completion.choices[0].message.content;
-      console.log('Received response:', responseText);
+      console.log('Received OpenAI response:', responseText);
 
       if (!responseText) {
         throw new Error('Empty response from OpenAI');
       }
 
+      let parsedResponse;
       try {
-        const parsedResponse = JSON.parse(responseText);
-        if (!parsedResponse.risks || !Array.isArray(parsedResponse.risks)) {
-          throw new Error('Invalid response format: missing risks array');
-        }
-        return parsedResponse.risks;
+        parsedResponse = JSON.parse(responseText);
       } catch (parseError) {
         console.error('JSON parsing error:', parseError);
-        throw new Error('Failed to parse AI response');
+        console.error('Raw response:', responseText);
+        throw new Error('Failed to parse OpenAI response as JSON');
       }
-    } catch (error) {
-      console.error("Error analyzing document:", error);
+
+      if (!parsedResponse.risks || !Array.isArray(parsedResponse.risks)) {
+        console.error('Invalid response structure:', parsedResponse);
+        throw new Error('Invalid response format: missing risks array');
+      }
+
+      // Validate each risk object
+      const validatedRisks = parsedResponse.risks.map(risk => {
+        if (
+          typeof risk.score !== 'number' ||
+          !['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'].includes(risk.severity) ||
+          typeof risk.description !== 'string' ||
+          typeof risk.impact !== 'string' ||
+          typeof risk.mitigation !== 'string'
+        ) {
+          console.error('Invalid risk object:', risk);
+          throw new Error('Invalid risk object structure');
+        }
+        return risk;
+      });
+
+      console.log(`Successfully analyzed ${validatedRisks.length} risks`);
+      return validatedRisks;
+
+    } catch (error: any) {
+      console.error("Risk analysis error:", error);
       throw new Error(`Failed to analyze document: ${error.message}`);
     }
   }
@@ -82,16 +106,14 @@ export class RiskAssessmentService {
         throw new Error('Invalid document content');
       }
 
-      // Clean the content to remove any DOCTYPE or invalid characters
-      const cleanContent = content
-        .replace(/<!DOCTYPE[^>]*>/i, '')
-        .replace(/[\uFFFD\uFFFE\uFFFF]/g, '');
-
       // Analyze document content
-      const risks = await this.analyzeDocument(cleanContent);
+      const risks = await this.analyzeDocument(content);
+      console.log(`Retrieved ${risks.length} risks for document ${documentId}`);
 
       // Store results
       for (const risk of risks) {
+        console.log(`Processing risk: ${risk.category} - ${risk.severity}`);
+
         const [assessment] = await db
           .insert(riskAssessments)
           .values({
@@ -103,11 +125,13 @@ export class RiskAssessmentService {
             impact: risk.impact,
             mitigation: risk.mitigation,
             references: risk.references || [],
-            context: risk.context,
-            confidence: risk.confidence,
-            detectedAt: new Date(),
+            context: risk.context || "Document-wide",
+            confidence: risk.confidence || 80,
+            detectedAt: new Date().toISOString(),
           })
           .returning();
+
+        console.log(`Stored risk assessment with ID: ${assessment.id}`);
 
         // Create corresponding compliance issue
         await db.insert(complianceIssues).values({
@@ -117,13 +141,15 @@ export class RiskAssessmentService {
           description: risk.description,
           severity: risk.severity,
           recommendation: risk.mitigation,
-          reference: risk.references?.[0],
+          reference: risk.references?.[0] || null,
           status: "OPEN",
         });
+
+        console.log(`Created compliance issue for risk assessment ${assessment.id}`);
       }
 
       return await this.getDocumentRisks(documentId);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error in risk assessment:", error);
       throw error;
     }

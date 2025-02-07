@@ -11,14 +11,9 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Enable debug logging for database operations
-const pool = new Pool({ 
-  connectionString: process.env.DATABASE_URL,
-  connectionTimeoutMillis: 5000, // 5 second timeout
-  max: 20 // maximum number of clients in the pool
-});
+export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle({ client: pool, schema });
 
-// Log database connection status
 pool.on('connect', () => {
   console.log('Connected to database');
 });
@@ -26,6 +21,3 @@ pool.on('connect', () => {
 pool.on('error', (err) => {
   console.error('Unexpected database error:', err);
 });
-
-export { pool };
-export const db = drizzle(pool, { schema });
