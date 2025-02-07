@@ -1,10 +1,12 @@
 import { Router } from "express";
-import { generateContractDraft, analyzeContractClauses } from "../services/openai";
+import multer from "multer";
+import { generateContractDraft } from "../services/openai";
 import { db } from "../db";
 import { documents } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Generate contract draft
 router.post("/api/documents/generate", async (req, res) => {
@@ -31,19 +33,19 @@ router.post("/api/documents/generate", async (req, res) => {
     });
 
     // Create document record
-    const [document] = await db.insert(documents)
+    const [document] = await db
+      .insert(documents)
       .values({
-        title: `${templateType} Contract Draft`,
-        content: content,
         userId: req.user!.id,
-        agentType: 'CONTRACT_AUTOMATION',
-        processingStatus: "COMPLETED"
+        content,
+        processingStatus: "COMPLETED",
+        agentType: "CONTRACT_AUTOMATION"
       })
       .returning();
 
     res.json({
       id: document.id,
-      content: content,
+      content,
       message: "Contract draft generated successfully"
     });
 
@@ -57,36 +59,41 @@ router.post("/api/documents/generate", async (req, res) => {
 });
 
 // Upload document
-router.post("/api/documents", async (req, res) => {
+router.post("/api/documents", upload.single('file'), async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const { title, content } = req.body;
-
-    if (!title || !content) {
+    if (!req.file) {
       return res.status(400).json({
-        error: "Missing required fields",
+        error: "No file uploaded",
         code: "VALIDATION_ERROR"
       });
     }
 
+    const content = req.file.buffer.toString('utf-8');
+    const title = req.file.originalname;
+
     // Create document record
-    const [document] = await db.insert(documents)
+    const [document] = await db
+      .insert(documents)
       .values({
-        title,
-        content: Buffer.from(content).toString(),
         userId: req.user!.id,
-        agentType: 'CONTRACT_AUTOMATION',
-        processingStatus: "COMPLETED"
+        content,
+        title,
+        processingStatus: "COMPLETED",
+        agentType: "CONTRACT_AUTOMATION"
       })
       .returning();
 
-    res.status(201).json(document);
+    res.status(201).json({
+      id: document.id,
+      message: "Document uploaded successfully"
+    });
 
   } catch (error: any) {
-    console.error("Document upload error:", error);
+    console.error("Upload error:", error);
     res.status(500).json({
       error: error.message || "Failed to upload document",
       code: "UPLOAD_ERROR"

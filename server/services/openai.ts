@@ -28,9 +28,10 @@ export async function generateContractDraft(options: GenerateDraftOptions): Prom
   try {
     const { requirements, customInstructions, templateType = "GENERAL" } = options;
 
-    const systemMessage = "You are a legal contract expert. Generate a professional contract based on the provided requirements. Return only the contract text without any JSON formatting or special characters.";
+    const systemMessage = `You are a legal contract expert. Generate a professional ${templateType} contract based on the provided requirements. 
+Return ONLY the contract text without any formatting, metadata, or special characters.`;
 
-    const userMessage = `Create a ${templateType} contract with these requirements:
+    const userMessage = `Create a contract with these requirements:
 ${requirements.map(req => 
   `- ${req.importance} Priority [${req.type}]: ${req.description}
    ${req.industry ? `Industry: ${req.industry}` : ''}
@@ -104,11 +105,7 @@ export async function analyzeContractClauses(content: string): Promise<string> {
       messages: [
         {
           role: "system",
-          content: `As a legal contract analysis expert, analyze the given contract and provide feedback on:
-1. Key clauses
-2. Risk assessment
-3. Suggested improvements
-4. Missing elements`
+          content: "You are a legal contract analysis expert. Analyze the given contract and provide feedback."
         },
         {
           role: "user",
