@@ -1,6 +1,5 @@
 import OpenAI from "openai";
 
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export interface ContractRequirement {
@@ -13,23 +12,25 @@ export async function generateContract(
   templateType: string,
   requirements: ContractRequirement[],
   customInstructions?: string
-): Promise<string> {
+): Promise<{ content: string }> {
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OpenAI API key is not configured");
+    }
+
     const prompt = `Create a ${templateType} contract with these requirements:
 ${requirements.map(req => 
   `- ${req.importance} Priority [${req.type}]: ${req.description}`
 ).join('\n')}
 
-${customInstructions ? `Additional Instructions: ${customInstructions}` : ''}
-
-Provide only the contract text, no formatting or metadata.`;
+${customInstructions ? `Additional Instructions: ${customInstructions}` : ''}`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         { 
           role: "system", 
-          content: "You are a legal contract expert. Generate professional contracts based on requirements. Return only the plain contract text." 
+          content: "You are a legal contract expert. Generate professional contracts based on requirements." 
         },
         { 
           role: "user", 
@@ -44,7 +45,7 @@ Provide only the contract text, no formatting or metadata.`;
       throw new Error("No content generated");
     }
 
-    return content;
+    return { content };
 
   } catch (error: any) {
     console.error("Contract Generation Error:", error);

@@ -11,14 +11,6 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-  fileFilter: (_req, file, cb) => {
-    const allowedTypes = ['text/plain', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed.'));
-    }
   }
 });
 
@@ -26,45 +18,47 @@ const upload = multer({
 router.post("/api/documents/generate", async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Not authenticated" });
+      return res.status(401).json({ 
+        success: false, 
+        error: "Not authenticated" 
+      });
     }
 
     const { templateType, requirements, customInstructions } = req.body;
 
     if (!templateType || !requirements || !Array.isArray(requirements)) {
       return res.status(400).json({
+        success: false,
         error: "Missing required fields",
         details: "Template type and requirements array are required"
       });
     }
 
     // Generate contract
-    const content = await generateContract(templateType, requirements, customInstructions);
+    const { content } = await generateContract(templateType, requirements, customInstructions);
 
     // Save to database
     const [document] = await db
       .insert(documents)
       .values({
-        title: `${templateType} Contract`,
-        content,
         userId: req.user!.id,
+        content,
         processingStatus: "COMPLETED",
         agentType: "CONTRACT_AUTOMATION"
       })
       .returning();
 
-    res.json({
+    return res.json({
       success: true,
-      document: {
+      data: {
         id: document.id,
-        title: document.title,
         content
       }
     });
 
   } catch (error: any) {
     console.error("Generation error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error.message || "Failed to generate contract"
     });
@@ -75,7 +69,10 @@ router.post("/api/documents/generate", async (req, res) => {
 router.post("/api/documents", upload.single('file'), async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Not authenticated" });
+      return res.status(401).json({ 
+        success: false, 
+        error: "Not authenticated" 
+      });
     }
 
     if (!req.file) {
@@ -86,32 +83,29 @@ router.post("/api/documents", upload.single('file'), async (req, res) => {
     }
 
     const content = req.file.buffer.toString('utf-8');
-    const title = req.file.originalname;
 
     // Save to database
     const [document] = await db
       .insert(documents)
       .values({
-        title,
-        content,
         userId: req.user!.id,
+        content,
         processingStatus: "COMPLETED",
         agentType: "DOCUMENT_UPLOAD"
       })
       .returning();
 
-    res.json({
+    return res.json({
       success: true,
-      document: {
+      data: {
         id: document.id,
-        title: document.title
+        content
       }
     });
 
   } catch (error: any) {
     console.error("Upload error:", error);
 
-    // Handle multer errors specifically
     if (error instanceof multer.MulterError) {
       return res.status(400).json({
         success: false,
@@ -120,7 +114,7 @@ router.post("/api/documents", upload.single('file'), async (req, res) => {
       });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error.message || "Failed to upload document"
     });
