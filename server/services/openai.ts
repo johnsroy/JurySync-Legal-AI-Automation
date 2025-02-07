@@ -1,8 +1,14 @@
 import OpenAI from "openai";
-import type { DraftRequirement } from "@shared/schema";
+import type { AgentType } from "@shared/schema";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+export interface DraftRequirement {
+  type: "STANDARD" | "CUSTOM";
+  description: string;
+  importance: "HIGH" | "MEDIUM" | "LOW";
+}
 
 interface GenerateDraftOptions {
   requirements: DraftRequirement[];
@@ -13,7 +19,7 @@ interface GenerateDraftOptions {
 export async function generateContractDraft({ requirements, baseContent, customInstructions }: GenerateDraftOptions): Promise<string> {
   try {
     let prompt = `As a legal expert, generate a professional contract draft that incorporates the following requirements:\n\n`;
-    
+
     // Add requirements to prompt
     requirements.forEach(req => {
       prompt += `- [${req.importance}] ${req.type === 'STANDARD' ? '[Standard Clause]' : '[Custom]'} ${req.description}\n`;
@@ -32,7 +38,7 @@ export async function generateContractDraft({ requirements, baseContent, customI
     2. Uses clear, legally precise language
     3. Follows standard contract structure
     4. Includes all necessary legal protections
-    
+
     Format the output as a properly structured legal document.`;
 
     const response = await openai.chat.completions.create({
@@ -48,10 +54,16 @@ export async function generateContractDraft({ requirements, baseContent, customI
         }
       ],
       temperature: 0.7,
-      max_tokens: 4000
+      max_tokens: 4000,
+      response_format: { type: "text" }
     });
 
-    return response.choices[0].message.content || "";
+    const content = response.choices[0].message.content;
+    if (!content) {
+      throw new Error("Empty response from OpenAI");
+    }
+
+    return content;
   } catch (error: any) {
     console.error('OpenAI API Error:', error);
     throw new Error(`Failed to generate contract draft: ${error.message}`);
@@ -65,7 +77,11 @@ export async function analyzeContractClauses(content: string): Promise<any> {
       messages: [
         {
           role: "system",
-          content: "You are a legal contract analysis expert. Analyze the given contract and provide structured feedback."
+          content: `You are a legal contract analysis expert. Analyze the given contract and provide structured feedback in JSON format. Include:
+          1. Key clauses and their implications
+          2. Potential risks and missing elements
+          3. Compliance considerations
+          4. Suggested improvements`
         },
         {
           role: "user",
@@ -76,7 +92,12 @@ export async function analyzeContractClauses(content: string): Promise<any> {
       temperature: 0.3,
     });
 
-    return JSON.parse(response.choices[0].message.content);
+    const content = response.choices[0].message.content;
+    if (!content) {
+      throw new Error("Empty response from OpenAI");
+    }
+
+    return JSON.parse(content);
   } catch (error: any) {
     console.error('OpenAI API Error:', error);
     throw new Error(`Failed to analyze contract: ${error.message}`);
@@ -95,10 +116,10 @@ export async function compareVersions(originalContent: string, newContent: strin
         {
           role: "user",
           content: `Compare these two contract versions and identify meaningful changes:
-          
+
           Original Version:
           ${originalContent}
-          
+
           New Version:
           ${newContent}`
         }
@@ -107,7 +128,12 @@ export async function compareVersions(originalContent: string, newContent: strin
       temperature: 0.3,
     });
 
-    return JSON.parse(response.choices[0].message.content);
+    const content = response.choices[0].message.content;
+    if (!content) {
+      throw new Error("Empty response from OpenAI");
+    }
+
+    return JSON.parse(content);
   } catch (error: any) {
     console.error('OpenAI API Error:', error);
     throw new Error(`Failed to compare versions: ${error.message}`);

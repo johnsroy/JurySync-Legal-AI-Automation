@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { LegalLoadingAnimation } from "@/components/ui/loading-animation";
 import {
   FileText,
   History,
@@ -26,7 +27,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 
-// Add requirements interface for Dynamic Drafting
 interface DraftRequirement {
   type: "STANDARD" | "CUSTOM";
   description: string;
@@ -48,7 +48,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState("requirements"); //Start on Requirements tab
+  const [activeTab, setActiveTab] = useState("requirements");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedDraft, setGeneratedDraft] = useState("");
   const [editableDraft, setEditableDraft] = useState("");
@@ -84,10 +84,20 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   };
 
   const handleGenerateDraft = async () => {
+    if (requirements.length === 0) {
+      toast({
+        title: "No Requirements",
+        description: "Please add at least one requirement before generating a draft.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsGenerating(true);
     setProgress(0);
 
     try {
+      // Start progress animation
       const progressInterval = setInterval(() => {
         setProgress(prev => {
           if (prev >= 90) return prev;
@@ -97,7 +107,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
 
       // Enhanced API call with requirements
       const response = await apiRequest("POST", `/api/documents/${documentId}/generate-draft`, {
-        requirements: requirements,
+        requirements,
         baseContent: content,
         customInstructions: newRequirement,
       });
@@ -136,8 +146,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   };
 
   // Determine if document is approved
-  const workflowState = analysis.contractDetails?.workflowState || {};
-  const isApproved = workflowState.status === "APPROVED";
+  const isApproved = analysis.contractDetails?.workflowState?.status === "APPROVED";
 
   // Fetch all users for approval requests
   const { data: users } = useQuery({
@@ -168,6 +177,38 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
       setHasUnsavedChanges(true);
     }
   }, [editableDraft]);
+
+  const handleSaveDraft = async () => {
+    try {
+      const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
+        action: "review",
+        content: editableDraft,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to save draft');
+      }
+
+      setHasUnsavedChanges(false);
+      onUpdate();
+
+      toast({
+        title: "Draft Saved",
+        description: "Changes have been saved successfully.",
+      });
+
+      // Refresh queries to get updated versions
+      queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
+      setActiveTab("redline");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save draft. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Handle review request
   const handleRequestReview = async () => {
@@ -213,7 +254,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     }
   };
 
-  // Handle workflow actions (approve, sign)
   const handleWorkflowAction = async (action: "approve" | "sign") => {
     try {
       const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
@@ -246,40 +286,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     }
   };
 
-
-  const handleSaveDraft = async () => {
-    try {
-      const response = await apiRequest("POST", `/api/documents/${documentId}/workflow`, {
-        action: "review",
-        content: editableDraft,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to save draft');
-      }
-
-      const result = await response.json();
-      setHasUnsavedChanges(false);
-      onUpdate();
-
-      toast({
-        title: "Draft Saved",
-        description: "Changes have been saved successfully.",
-      });
-
-      // Refresh queries to get updated versions
-      queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
-      setActiveTab("redline");
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to save draft. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleDownload = async () => {
     try {
       window.location.href = `/api/documents/${documentId}/download?format=${downloadFormat}`;
@@ -290,58 +296,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         variant: "destructive",
       });
     }
-  };
-
-  const renderVersions = () => {
-    const versions = workflowState.versions || [];
-
-    if (versions.length === 0) {
-      return (
-        <div className="text-center py-8 text-gray-500">
-          No versions available yet. Save changes to create a new version.
-        </div>
-      );
-    }
-
-    return versions.map((version: any, index: number) => (
-      <div key={index} className="p-4 mb-4 rounded-lg border border-gray-200">
-        <div className="flex justify-between items-start mb-2">
-          <div>
-            <h4 className="font-medium">Version {version.version}</h4>
-            <p className="text-sm text-gray-500">
-              {version.changes?.[0]?.timestamp ?
-                format(new Date(version.changes[0].timestamp), "PPpp") :
-                "No timestamp available"}
-            </p>
-          </div>
-          <div className="flex space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setEditableDraft(version.content);
-                setActiveTab("draft");
-                setHasUnsavedChanges(false);
-              }}
-            >
-              <Edit className="w-4 h-4 mr-2" />
-              Edit
-            </Button>
-          </div>
-        </div>
-        <div className="mt-2 text-sm">
-          {version.changes?.map((change: any, changeIndex: number) => (
-            <div key={changeIndex} className="mb-1 text-gray-600">
-              • {change.description} by {change.user}
-            </div>
-          )) || (
-            <div className="mb-1 text-gray-600">
-              No change history available
-            </div>
-          )}
-        </div>
-      </div>
-    ));
   };
 
   const tabs = [
@@ -377,7 +331,10 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                 disabled={isGenerating || requirements.length === 0}
               >
                 {isGenerating ? (
-                  <>Generating...</>
+                  <>
+                    <LegalLoadingAnimation />
+                    Generating...
+                  </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 mr-2" />
@@ -489,43 +446,13 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </div>
         </TabsContent>
 
-        {/* Requirements Tab Content */}
+        {/* Document Tab Content */}
         <TabsContent value="editor" className="p-6">
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Contract Requirements</h3>
-              <div className="flex items-center space-x-4">
-                <Button
-                  onClick={handleGenerateDraft}
-                  disabled={isGenerating}
-                >
-                  {isGenerating ? (
-                    <>Generating...</>
-                  ) : (
-                    <>
-                      <FileText className="w-4 h-4 mr-2" />
-                      Generate Draft
-                    </>
-                  )}
-                </Button>
-              </div>
+          <ScrollArea className="h-[500px] w-full border rounded-md p-4">
+            <div className="prose max-w-none">
+              <div className="whitespace-pre-wrap">{content}</div>
             </div>
-
-            {isGenerating && (
-              <div className="w-full space-y-2">
-                <Progress value={progress} className="w-full" />
-                <p className="text-sm text-gray-500 text-center">
-                  Generating contract draft... {progress}%
-                </p>
-              </div>
-            )}
-
-            <ScrollArea className="h-[500px] w-full border rounded-md p-4">
-              <div className="prose max-w-none">
-                <div className="whitespace-pre-wrap">{content}</div>
-              </div>
-            </ScrollArea>
-          </div>
+          </ScrollArea>
         </TabsContent>
 
         {/* Generated Draft Tab Content */}
@@ -541,10 +468,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                       Save Changes
                     </Button>
                   )}
-                  <Button
-                    onClick={handleDownload}
-                    variant="outline"
-                  >
+                  <Button onClick={handleDownload} variant="outline">
                     <Download className="w-4 h-4 mr-2" />
                     Download
                   </Button>
@@ -563,26 +487,52 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </TabsContent>
         )}
 
-        {/* Version History Tab Content */}
+        {/* Version History Tab */}
         <TabsContent value="redline" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Version History</h3>
-              <Button
-                onClick={handleDownload}
-                variant="outline"
-              >
+              <Button onClick={handleDownload} variant="outline">
                 <Download className="w-4 h-4 mr-2" />
                 Download
               </Button>
             </div>
-            <div className="space-y-2">
-              {renderVersions()}
+            <div className="space-y-4">
+              {analysis.contractDetails?.versions?.map((version: any, index: number) => (
+                <div key={index} className="p-4 rounded-lg border">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h4 className="font-medium">Version {version.version}</h4>
+                      <p className="text-sm text-gray-500">
+                        {version.timestamp && format(new Date(version.timestamp), "PPpp")}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEditableDraft(version.content);
+                        setActiveTab("draft");
+                      }}
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                  </div>
+                  <div className="mt-2 text-sm">
+                    {version.changes?.map((change: any, changeIndex: number) => (
+                      <div key={changeIndex} className="mb-1 text-gray-600">
+                        • {change.description}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </TabsContent>
 
-        {/* Approval Pending Tab Content */}
+        {/* Approval Tab */}
         <TabsContent value="approvals" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -636,7 +586,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </div>
         </TabsContent>
 
-        {/* Workflow Tab Content */}
+        {/* Workflow Tab */}
         <TabsContent value="workflow" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -677,20 +627,20 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                 <span className={`px-2 py-1 rounded-full text-sm ${
                   isApproved
                     ? "bg-green-100 text-green-800"
-                    : workflowState.status === "REVIEW"
+                    : analysis.contractDetails?.workflowState?.status === "REVIEW"
                       ? "bg-yellow-100 text-yellow-800"
                       : "bg-blue-100 text-blue-800"
                 }`}>
                   {isApproved
                     ? "Approved"
-                    : workflowState.status === "REVIEW"
+                    : analysis.contractDetails?.workflowState?.status === "REVIEW"
                       ? "Waiting on Review"
                       : "Draft"}
                 </span>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Select Approver</label>
+                <Label>Select Approver</Label>
                 <Select
                   value={selectedApprover}
                   onValueChange={setSelectedApprover}
@@ -708,7 +658,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Review Comments</label>
+                <Label>Review Comments</Label>
                 <Textarea
                   value={reviewComment}
                   onChange={(e) => setReviewComment(e.target.value)}
