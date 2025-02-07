@@ -1,8 +1,13 @@
 import OpenAI from "openai";
 import type { AgentType } from "@shared/schema";
+import { db } from "../db";
+import { contractTemplates, templateCache } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 
-// Initialize OpenAI with the latest model
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Cache duration in hours
+const CACHE_DURATION = 24;
 
 export interface DraftRequirement {
   type: "STANDARD" | "CUSTOM" | "INDUSTRY_SPECIFIC";
@@ -18,22 +23,64 @@ interface GenerateDraftOptions {
   baseContent?: string;
   customInstructions?: string;
   templateType?: "EMPLOYMENT" | "NDA" | "SERVICE_AGREEMENT" | "LEASE" | "GENERAL";
+  userId: number;
 }
 
-const TEMPLATE_PROMPTS = {
-  EMPLOYMENT: "Create an employment contract with standard protections for both employer and employee",
-  NDA: "Generate a comprehensive non-disclosure agreement with strong confidentiality provisions",
-  SERVICE_AGREEMENT: "Draft a service agreement with clear deliverables and payment terms",
-  LEASE: "Create a lease agreement with standard property rental terms",
-  GENERAL: "Generate a general contract with standard legal protections"
-};
+// Function to check cache
+async function checkCache(userId: number, requirements: DraftRequirement[], templateType: string) {
+  const [cachedResult] = await db
+    .select()
+    .from(templateCache)
+    .where(
+      and(
+        eq(templateCache.userId, userId),
+        eq(templateCache.requirements, JSON.stringify(requirements))
+      )
+    )
+    .limit(1);
 
-export async function generateContractDraft({ requirements, baseContent, customInstructions, templateType = "GENERAL" }: GenerateDraftOptions): Promise<string> {
+  if (cachedResult && new Date(cachedResult.expiresAt) > new Date()) {
+    return cachedResult.generatedContent;
+  }
+
+  return null;
+}
+
+// Function to save to cache
+async function saveToCache(userId: number, templateId: number, content: string, requirements: DraftRequirement[]) {
+  const expiresAt = new Date();
+  expiresAt.setHours(expiresAt.getHours() + CACHE_DURATION);
+
+  await db.insert(templateCache).values({
+    userId,
+    templateId,
+    generatedContent: content,
+    requirements: requirements,
+    expiresAt,
+  });
+}
+
+export async function generateContractDraft({ requirements, baseContent, customInstructions, templateType = "GENERAL", userId }: GenerateDraftOptions): Promise<string> {
   try {
+    // Check cache first
+    const cachedContent = await checkCache(userId, requirements, templateType);
+    if (cachedContent) {
+      return cachedContent;
+    }
+
+    // Get relevant template
+    const [template] = await db
+      .select()
+      .from(contractTemplates)
+      .where(eq(contractTemplates.category, templateType))
+      .limit(1);
+
     let prompt = `As an expert legal contract drafter, generate a professional contract that incorporates these specific requirements:\n\n`;
 
-    // Add template-specific guidance
-    prompt += `${TEMPLATE_PROMPTS[templateType]}\n\n`;
+    // Add template content if available
+    if (template) {
+      prompt += `Base Template: ${template.content}\n\n`;
+    }
 
     // Add requirements with structured formatting
     requirements.forEach(req => {
@@ -49,16 +96,6 @@ ${req.specialClauses ? `- Special Clauses Required:\n${req.specialClauses.map(c 
       prompt += `\nSpecial Instructions:\n${customInstructions}\n`;
     }
 
-    prompt += `\nPlease ensure the contract:
-1. Uses precise legal language while maintaining clarity
-2. Includes all standard protections and representations
-3. Incorporates jurisdiction-specific requirements if specified
-4. Follows best practices for the given contract type
-5. Includes proper definitions and interpretation clauses
-6. Maintains internal consistency throughout
-
-Format the output as a properly structured legal document with clear section headings.`;
-
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
@@ -73,7 +110,6 @@ Format the output as a properly structured legal document with clear section hea
       ],
       temperature: 0.7,
       max_tokens: 4000,
-      response_format: { type: "text" }
     });
 
     const content = response.choices[0].message.content;
@@ -81,7 +117,13 @@ Format the output as a properly structured legal document with clear section hea
       throw new Error("Empty response from OpenAI");
     }
 
+    // Save to cache if template exists
+    if (template) {
+      await saveToCache(userId, template.id, content, requirements);
+    }
+
     return content;
+
   } catch (error: any) {
     console.error('OpenAI API Error:', error);
     throw new Error(`Failed to generate contract draft: ${error.message}`);
@@ -142,10 +184,8 @@ export async function compareVersions(originalContent: string, newContent: strin
         {
           role: "user",
           content: `Compare these contract versions and provide comprehensive analysis:
-
 Original Version:
 ${originalContent}
-
 New Version:
 ${newContent}`
         }

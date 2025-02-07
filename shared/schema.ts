@@ -86,6 +86,23 @@ export const ContractStatus = z.enum([
 
 export type ContractStatus = z.infer<typeof ContractStatus>;
 
+// Add an enum for template categories
+export const TemplateCategory = z.enum([
+  "EMPLOYMENT",
+  "NDA",
+  "SERVICE_AGREEMENT",
+  "LEASE",
+  "GENERAL",
+  "SALES",
+  "PARTNERSHIP",
+  "CONSULTING",
+  "IP_LICENSE",
+  "REAL_ESTATE"
+]);
+
+export type TemplateCategory = z.infer<typeof TemplateCategory>;
+
+
 // Extended contract details schema
 export const contractDetailsSchema = z.object({
   parties: z.array(z.string()).optional(),
@@ -242,3 +259,48 @@ export const insertDocumentVersionSchema = createInsertSchema(documentVersions);
 export type InsertApproval = z.infer<typeof insertApprovalSchema>;
 export type InsertSignature = z.infer<typeof insertSignatureSchema>;
 export type InsertDocumentVersion = z.infer<typeof insertDocumentVersionSchema>;
+
+
+// Add new schema for contract templates
+export const contractTemplates = pgTable("contract_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  category: text("category").notNull(),
+  content: text("content").notNull(),
+  metadata: jsonb("metadata").notNull(),
+  industry: text("industry"),
+  jurisdiction: text("jurisdiction"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const templateMetadataSchema = z.object({
+  description: z.string(),
+  tags: z.array(z.string()),
+  useCase: z.string(),
+  complexity: z.enum(["LOW", "MEDIUM", "HIGH"]),
+  recommendedClauses: z.array(z.string()),
+  variables: z.array(z.object({
+    name: z.string(),
+    type: z.enum(["TEXT", "DATE", "NUMBER", "BOOLEAN"]),
+    description: z.string(),
+    required: z.boolean(),
+  })),
+});
+
+export type ContractTemplate = typeof contractTemplates.$inferSelect;
+export type InsertContractTemplate = typeof contractTemplates.$inferInsert;
+
+// Add schema for template cache
+export const templateCache = pgTable("template_cache", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  templateId: integer("template_id").notNull(),
+  generatedContent: text("generated_content").notNull(),
+  requirements: jsonb("requirements").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+
+export type TemplateCache = typeof templateCache.$inferSelect;
+export type InsertTemplateCache = typeof templateCache.$inferInsert;
