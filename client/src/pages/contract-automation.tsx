@@ -76,7 +76,6 @@ export default function ContractAutomation() {
       setProgress(0);
     } finally {
       setIsUploading(false);
-      file.serverId = 'remove';
     }
   };
 
@@ -92,6 +91,10 @@ export default function ContractAutomation() {
         return "";
     }
   };
+
+  if (!user) {
+    return null; // Protected route will handle redirect
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50 animate-gradient-x">
@@ -143,7 +146,12 @@ export default function ContractAutomation() {
                 <div className="max-w-xl mx-auto">
                   <FilePond
                     allowMultiple={false}
-                    acceptedFileTypes={['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']}
+                    acceptedFileTypes={[
+                      'application/pdf',
+                      'application/msword',
+                      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                      'text/plain'
+                    ]}
                     labelIdle='Drag & Drop your contract or <span class="filepond--label-action">Browse</span>'
                     disabled={isUploading}
                     onprocessfile={handleProcessFile}
