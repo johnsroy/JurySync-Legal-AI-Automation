@@ -72,7 +72,7 @@ export default function ComplianceAuditing() {
           setUploadProgress((prev) => Math.min(prev + 10, 90));
         }, 500);
 
-        console.log('Uploading file:', file.name);
+        console.log('Preparing to upload file:', file.name, 'type:', file.type);
 
         try {
           const response = await fetch('/api/compliance/upload', {
@@ -83,25 +83,38 @@ export default function ComplianceAuditing() {
           clearInterval(interval);
           setUploadProgress(100);
 
-          const contentType = response.headers.get("content-type");
-          if (!contentType || !contentType.includes("application/json")) {
-            throw new Error(`Server returned unexpected content type: ${contentType}`);
-          }
+          console.log('Upload response status:', response.status);
+          console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
-          const data = await response.json();
+          let responseData;
+          const contentType = response.headers.get("content-type");
+
+          try {
+            const textResponse = await response.text();
+            console.log('Raw response:', textResponse);
+
+            if (contentType?.includes('application/json')) {
+              responseData = JSON.parse(textResponse);
+            } else {
+              throw new Error(`Server returned unexpected content type: ${contentType}`);
+            }
+          } catch (parseError) {
+            console.error('Failed to parse response:', parseError);
+            throw new Error('Invalid server response');
+          }
 
           if (!response.ok) {
-            throw new Error(data.error || 'Upload failed');
+            throw new Error(responseData.error || 'Upload failed');
           }
 
-          console.log('Upload response:', data);
+          console.log('Upload successful:', responseData);
 
           // Refresh the documents list
           await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
 
           // Auto-monitor the first document
           if (uploadedDocuments.length === 0) {
-            startMonitoringMutation.mutate([data.documentId]);
+            startMonitoringMutation.mutate([responseData.documentId]);
           }
 
           toast({
@@ -109,7 +122,7 @@ export default function ComplianceAuditing() {
             description: "Starting compliance analysis...",
           });
         } catch (error: any) {
-          console.error('Upload error:', error);
+          console.error('Individual file upload error:', error);
           throw error; // Re-throw to be caught by outer try-catch
         }
       }

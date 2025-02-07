@@ -20,9 +20,11 @@ const upload = multer({
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/plain',
-      'image/png', // Adding support for PNG for testing
-      'image/jpeg' // Adding support for JPEG for testing
+      'image/png',
+      'image/jpeg'
     ];
+
+    console.log('[Compliance] Received file:', file.originalname, 'type:', file.mimetype);
 
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
@@ -30,30 +32,35 @@ const upload = multer({
       cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types are: PDF, DOC, DOCX, TXT, PNG, and JPEG`));
     }
   }
-});
+}).single('file'); // Move .single() to be part of the middleware
 
 // Upload endpoint with proper error handling
-router.post('/api/compliance/upload', async (req, res) => {
+router.post('/upload', async (req, res) => {
+  console.log('[Compliance] Received upload request');
+
   try {
     // Get user ID from session
     const userId = (req as any).user?.id;
     if (!userId) {
+      console.log('[Compliance] No user ID found in session');
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
     // Handle file upload with multer
     await new Promise<void>((resolve, reject) => {
-      upload.single('file')(req, res, (err) => {
+      upload(req, res, (err) => {
         if (err) {
-          console.error('[Compliance] Upload error:', err);
+          console.error('[Compliance] Multer error:', err);
           reject(err);
         } else {
+          console.log('[Compliance] Multer processed file successfully');
           resolve();
         }
       });
     });
 
     if (!req.file) {
+      console.log('[Compliance] No file found in request');
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -74,6 +81,8 @@ router.post('/api/compliance/upload', async (req, res) => {
         status: "PENDING"
       })
       .returning();
+
+    console.log(`[Compliance] Document created: ${document.id}`);
 
     // Start analysis in background
     analyzeDocument(document.id.toString())
