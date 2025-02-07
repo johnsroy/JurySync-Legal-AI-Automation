@@ -1,52 +1,70 @@
 import OpenAI from "openai";
 import type { AgentType } from "@shared/schema";
 
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+// Initialize OpenAI with the latest model
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export interface DraftRequirement {
-  type: "STANDARD" | "CUSTOM";
+  type: "STANDARD" | "CUSTOM" | "INDUSTRY_SPECIFIC";
   description: string;
   importance: "HIGH" | "MEDIUM" | "LOW";
+  industry?: string;
+  jurisdiction?: string;
+  specialClauses?: string[];
 }
 
 interface GenerateDraftOptions {
   requirements: DraftRequirement[];
   baseContent?: string;
   customInstructions?: string;
+  templateType?: "EMPLOYMENT" | "NDA" | "SERVICE_AGREEMENT" | "LEASE" | "GENERAL";
 }
 
-export async function generateContractDraft({ requirements, baseContent, customInstructions }: GenerateDraftOptions): Promise<string> {
-  try {
-    let prompt = `As a legal expert, generate a professional contract draft that incorporates the following requirements:\n\n`;
+const TEMPLATE_PROMPTS = {
+  EMPLOYMENT: "Create an employment contract with standard protections for both employer and employee",
+  NDA: "Generate a comprehensive non-disclosure agreement with strong confidentiality provisions",
+  SERVICE_AGREEMENT: "Draft a service agreement with clear deliverables and payment terms",
+  LEASE: "Create a lease agreement with standard property rental terms",
+  GENERAL: "Generate a general contract with standard legal protections"
+};
 
-    // Add requirements to prompt
+export async function generateContractDraft({ requirements, baseContent, customInstructions, templateType = "GENERAL" }: GenerateDraftOptions): Promise<string> {
+  try {
+    let prompt = `As an expert legal contract drafter, generate a professional contract that incorporates these specific requirements:\n\n`;
+
+    // Add template-specific guidance
+    prompt += `${TEMPLATE_PROMPTS[templateType]}\n\n`;
+
+    // Add requirements with structured formatting
     requirements.forEach(req => {
-      prompt += `- [${req.importance}] ${req.type === 'STANDARD' ? '[Standard Clause]' : '[Custom]'} ${req.description}\n`;
+      prompt += `${req.importance} Priority Requirement [${req.type}]:
+- Description: ${req.description}
+${req.industry ? `- Industry Context: ${req.industry}\n` : ''}
+${req.jurisdiction ? `- Jurisdiction: ${req.jurisdiction}\n` : ''}
+${req.specialClauses ? `- Special Clauses Required:\n${req.specialClauses.map(c => `  * ${c}`).join('\n')}\n` : ''}
+`;
     });
 
     if (customInstructions) {
-      prompt += `\nAdditional Instructions:\n${customInstructions}\n`;
+      prompt += `\nSpecial Instructions:\n${customInstructions}\n`;
     }
 
-    if (baseContent) {
-      prompt += `\nBase content to work from:\n${baseContent}\n`;
-    }
+    prompt += `\nPlease ensure the contract:
+1. Uses precise legal language while maintaining clarity
+2. Includes all standard protections and representations
+3. Incorporates jurisdiction-specific requirements if specified
+4. Follows best practices for the given contract type
+5. Includes proper definitions and interpretation clauses
+6. Maintains internal consistency throughout
 
-    prompt += `\nPlease generate a comprehensive contract that:
-    1. Incorporates all specified requirements
-    2. Uses clear, legally precise language
-    3. Follows standard contract structure
-    4. Includes all necessary legal protections
-
-    Format the output as a properly structured legal document.`;
+Format the output as a properly structured legal document with clear section headings.`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: "You are an expert legal contract drafting assistant with extensive knowledge of contract law and document automation."
+          content: "You are an expert legal contract drafting assistant with extensive knowledge of contract law, industry standards, and document automation. Your output should be precise, comprehensive, and follow legal best practices."
         },
         {
           role: "user",
@@ -77,27 +95,30 @@ export async function analyzeContractClauses(content: string): Promise<any> {
       messages: [
         {
           role: "system",
-          content: `You are a legal contract analysis expert. Analyze the given contract and provide structured feedback in JSON format. Include:
-          1. Key clauses and their implications
-          2. Potential risks and missing elements
-          3. Compliance considerations
-          4. Suggested improvements`
+          content: `As a legal contract analysis expert, analyze the given contract and provide detailed feedback in JSON format including:
+1. Key clauses and their implications
+2. Risk assessment for each major clause
+3. Comparison against industry standards
+4. Suggested improvements
+5. Compliance requirements
+6. Missing critical elements
+7. Overall risk score`
         },
         {
           role: "user",
-          content: `Analyze this contract and provide feedback on its clauses:\n\n${content}`
+          content: `Analyze this contract and provide comprehensive feedback:\n\n${content}`
         }
       ],
       response_format: { type: "json_object" },
       temperature: 0.3,
     });
 
-    const content = response.choices[0].message.content;
-    if (!content) {
+    const analysisContent = response.choices[0].message.content;
+    if (!analysisContent) {
       throw new Error("Empty response from OpenAI");
     }
 
-    return JSON.parse(content);
+    return JSON.parse(analysisContent);
   } catch (error: any) {
     console.error('OpenAI API Error:', error);
     throw new Error(`Failed to analyze contract: ${error.message}`);
@@ -111,29 +132,34 @@ export async function compareVersions(originalContent: string, newContent: strin
       messages: [
         {
           role: "system",
-          content: "You are a legal document comparison expert. Compare the two versions of the contract and identify meaningful changes."
+          content: `As a legal document comparison expert, analyze the differences between contract versions and provide detailed feedback in JSON format including:
+1. Substantive changes to terms and conditions
+2. Risk impact of changes
+3. Recommendations for each change
+4. Overall assessment
+5. Version compatibility analysis`
         },
         {
           role: "user",
-          content: `Compare these two contract versions and identify meaningful changes:
+          content: `Compare these contract versions and provide comprehensive analysis:
 
-          Original Version:
-          ${originalContent}
+Original Version:
+${originalContent}
 
-          New Version:
-          ${newContent}`
+New Version:
+${newContent}`
         }
       ],
       response_format: { type: "json_object" },
       temperature: 0.3,
     });
 
-    const content = response.choices[0].message.content;
-    if (!content) {
+    const comparisonContent = response.choices[0].message.content;
+    if (!comparisonContent) {
       throw new Error("Empty response from OpenAI");
     }
 
-    return JSON.parse(content);
+    return JSON.parse(comparisonContent);
   } catch (error: any) {
     console.error('OpenAI API Error:', error);
     throw new Error(`Failed to compare versions: ${error.message}`);
