@@ -10,7 +10,7 @@ const router = Router();
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 5 * 1024 * 1024 // 5MB limit
   }
 });
 
@@ -18,50 +18,42 @@ const upload = multer({
 router.post("/api/documents/generate", async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({ 
-        success: false, 
-        error: "Not authenticated" 
-      });
+      return res.status(401).send("Not authenticated");
     }
 
     const { templateType, requirements, customInstructions } = req.body;
 
     if (!templateType || !requirements || !Array.isArray(requirements)) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing required fields",
-        details: "Template type and requirements array are required"
-      });
+      return res.status(400).send("Missing template type or requirements");
     }
 
-    // Generate contract
-    const { content } = await generateContract(templateType, requirements, customInstructions);
+    // Generate contract text
+    const contractText = await generateContract(
+      templateType,
+      requirements,
+      customInstructions
+    );
 
     // Save to database
     const [document] = await db
       .insert(documents)
       .values({
         userId: req.user!.id,
-        content,
+        content: contractText,
         processingStatus: "COMPLETED",
         agentType: "CONTRACT_AUTOMATION"
       })
       .returning();
 
-    return res.json({
-      success: true,
-      data: {
-        id: document.id,
-        content
-      }
+    // Send simple response
+    res.send({
+      id: document.id,
+      content: contractText
     });
 
   } catch (error: any) {
     console.error("Generation error:", error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || "Failed to generate contract"
-    });
+    res.status(500).send(error.message || "Failed to generate contract");
   }
 });
 
@@ -69,17 +61,11 @@ router.post("/api/documents/generate", async (req, res) => {
 router.post("/api/documents", upload.single('file'), async (req, res) => {
   try {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({ 
-        success: false, 
-        error: "Not authenticated" 
-      });
+      return res.status(401).send("Not authenticated");
     }
 
     if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: "No file uploaded"
-      });
+      return res.status(400).send("No file uploaded");
     }
 
     const content = req.file.buffer.toString('utf-8');
@@ -89,35 +75,20 @@ router.post("/api/documents", upload.single('file'), async (req, res) => {
       .insert(documents)
       .values({
         userId: req.user!.id,
-        content,
+        content: content,
         processingStatus: "COMPLETED",
         agentType: "DOCUMENT_UPLOAD"
       })
       .returning();
 
-    return res.json({
-      success: true,
-      data: {
-        id: document.id,
-        content
-      }
+    res.send({
+      id: document.id,
+      content: content
     });
 
   } catch (error: any) {
     console.error("Upload error:", error);
-
-    if (error instanceof multer.MulterError) {
-      return res.status(400).json({
-        success: false,
-        error: "File upload error",
-        details: error.message
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      error: error.message || "Failed to upload document"
-    });
+    res.status(500).send(error.message || "Failed to upload document");
   }
 });
 
