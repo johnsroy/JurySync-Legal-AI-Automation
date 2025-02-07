@@ -18,6 +18,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { createCheckoutSession, createPortalSession } from './stripe';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -205,6 +206,27 @@ function requireRole(role: UserRole) {
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
+
+  // Add Stripe payment endpoints
+  app.post("/api/checkout", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({
+        message: "You must be logged in to create a subscription",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+    await createCheckoutSession(req, res);
+  });
+
+  app.post("/api/create-portal-session", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({
+        message: "You must be logged in to access billing portal",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+    await createPortalSession(req, res);
+  });
 
   // Add new middleware for role-based access control
   const db = { select: () => ({ from: () => ({ where: () => ({}), get: () => ({}) }) }) }; // Placeholder
@@ -727,7 +749,7 @@ Ensure the output is properly formatted and ready for immediate use.`
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
       if (!document) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           message: "Document not found",
           code: "NOT_FOUND"
         });
@@ -746,7 +768,7 @@ Ensure the output is properly formatted and ready for immediate use.`
           newStatus = "SIGNATURE_PENDING";
           break;
         default:
-          return res.status(400).json({ 
+          return res.status(400).json({
             message: "Invalid action",
             code: "INVALID_ACTION"
           });

@@ -1,8 +1,11 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Gavel, Check } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 const plans = {
   monthly: [
@@ -17,6 +20,7 @@ const plans = {
       ],
       note: "(Sign up with a .edu email for the Student Rate)",
       cta: "Connect",
+      planType: "student-monthly",
       href: "/register?plan=student"
     },
     {
@@ -33,6 +37,7 @@ const plans = {
         "Intuitive Boolean search composer"
       ],
       highlighted: true,
+      planType: "professional-monthly",
       cta: "Start Your Free Trial",
       href: "/register?plan=professional"
     },
@@ -64,6 +69,7 @@ const plans = {
         "Free 1 Day Trial",
       ],
       note: "(Sign up with a .edu email for the Student Rate)",
+      planType: "student-yearly",
       cta: "Connect",
       href: "/register?plan=student-yearly"
     },
@@ -83,6 +89,7 @@ const plans = {
         "Search laws, case laws and regulations"
       ],
       highlighted: true,
+      planType: "professional-yearly",
       cta: "Start Your Free Trial",
       href: "/register?plan=professional-yearly"
     },
@@ -105,6 +112,37 @@ const plans = {
 
 export default function PricingPage() {
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
+  const [, navigate] = useLocation();
+
+  const handleSubscribe = async (plan: any) => {
+    if (plan.price === "Custom") {
+      window.location.href = plan.href;
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ planType: plan.planType }),
+      });
+
+      if (!response.ok) throw new Error("Payment initialization failed");
+
+      const { sessionId } = await response.json();
+      const stripe = await stripePromise;
+
+      if (!stripe) throw new Error("Stripe failed to load");
+
+      const { error } = await stripe.redirectToCheckout({ sessionId });
+      if (error) throw error;
+    } catch (error) {
+      console.error("Payment error:", error);
+      // Here you might want to show an error message to the user
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50 animate-gradient-x">
@@ -130,7 +168,7 @@ export default function PricingPage() {
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-4">Simple, Transparent Pricing</h1>
           <p className="text-lg text-gray-600">Get started with JurySync.io today</p>
-          
+
           <div className="flex justify-center mt-8 space-x-2 bg-white/50 backdrop-blur-sm p-1 rounded-lg inline-flex">
             <Button
               variant={billingPeriod === "monthly" ? "default" : "ghost"}
@@ -194,11 +232,12 @@ export default function PricingPage() {
                     </li>
                   ))}
                 </ul>
-                <Link href={plan.href}>
-                  <Button className="w-full bg-green-600 hover:bg-green-700">
-                    {plan.cta}
-                  </Button>
-                </Link>
+                <Button 
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  onClick={() => handleSubscribe(plan)}
+                >
+                  {plan.cta}
+                </Button>
               </CardContent>
             </Card>
           ))}
