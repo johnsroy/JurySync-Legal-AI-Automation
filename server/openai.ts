@@ -97,7 +97,7 @@ function getSystemPromptForAgent(agentType: AgentType) {
 async function analyzeSection(section: DocumentSection, agentType: AgentType): Promise<DocumentAnalysis> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-4-1106-preview",
       messages: [
         {
           role: "system",
@@ -124,11 +124,6 @@ async function analyzeSection(section: DocumentSection, agentType: AgentType): P
     } catch (error) {
       console.error("Failed to parse OpenAI response:", content);
       throw new Error("Invalid JSON response from OpenAI");
-    }
-
-    if (!analysis.summary || !analysis.keyPoints?.length || !analysis.suggestions?.length ||
-        typeof analysis.riskScore !== 'number' || analysis.riskScore < 1 || analysis.riskScore > 10) {
-      throw new Error("Invalid analysis structure from OpenAI");
     }
 
     return analysis;
@@ -184,7 +179,10 @@ export async function analyzeDocument(text: string, agentType: AgentType, sectio
     }
   }
 
-  // Combine results based on agent type
+  return combineResults(results, agentType);
+}
+
+function combineResults(results: DocumentAnalysis[], agentType: AgentType): DocumentAnalysis {
   const combinedAnalysis: DocumentAnalysis = {
     summary: results.map(r => r.summary).join(" "),
     keyPoints: Array.from(new Set(results.flatMap(r => r.keyPoints))),
@@ -192,23 +190,22 @@ export async function analyzeDocument(text: string, agentType: AgentType, sectio
     riskScore: Math.round(results.reduce((acc, r) => acc + r.riskScore, 0) / results.length)
   };
 
-  // Add specific details based on agent type
   switch (agentType) {
     case "CONTRACT_AUTOMATION":
       combinedAnalysis.contractDetails = results.reduce((acc, r) => {
         if (!r.contractDetails) return acc;
         return {
-          parties: Array.from(new Set([...(acc?.parties || []), ...(r.contractDetails.parties || [])])),
+          parties: [...new Set([...(acc?.parties || []), ...(r.contractDetails.parties || [])])],
           effectiveDate: r.contractDetails.effectiveDate || acc?.effectiveDate,
           termLength: r.contractDetails.termLength || acc?.termLength,
-          keyObligations: Array.from(new Set([...(acc?.keyObligations || []), ...(r.contractDetails.keyObligations || [])])),
-          terminationClauses: Array.from(new Set([...(acc?.terminationClauses || []), ...(r.contractDetails.terminationClauses || [])])),
+          keyObligations: [...new Set([...(acc?.keyObligations || []), ...(r.contractDetails.keyObligations || [])])],
+          terminationClauses: [...new Set([...(acc?.terminationClauses || []), ...(r.contractDetails.terminationClauses || [])])],
           governingLaw: r.contractDetails.governingLaw || acc?.governingLaw,
           paymentTerms: r.contractDetails.paymentTerms || acc?.paymentTerms,
           disputeResolution: r.contractDetails.disputeResolution || acc?.disputeResolution,
-          missingClauses: Array.from(new Set([...(acc?.missingClauses || []), ...(r.contractDetails.missingClauses || [])])),
-          suggestedClauses: Array.from(new Set([...(acc?.suggestedClauses || []), ...(r.contractDetails.suggestedClauses || [])])),
-          riskFactors: Array.from(new Set([...(acc?.riskFactors || []), ...(r.contractDetails.riskFactors || [])]))
+          missingClauses: [...new Set([...(acc?.missingClauses || []), ...(r.contractDetails.missingClauses || [])])],
+          suggestedClauses: [...new Set([...(acc?.suggestedClauses || []), ...(r.contractDetails.suggestedClauses || [])])],
+          riskFactors: [...new Set([...(acc?.riskFactors || []), ...(r.contractDetails.riskFactors || [])])]
         };
       }, {} as NonNullable<DocumentAnalysis['contractDetails']>);
       break;
@@ -217,14 +214,14 @@ export async function analyzeDocument(text: string, agentType: AgentType, sectio
       combinedAnalysis.complianceDetails = results.reduce((acc, r) => {
         if (!r.complianceDetails) return acc;
         return {
-          regulatoryFrameworks: Array.from(new Set([...(acc?.regulatoryFrameworks || []), ...(r.complianceDetails.regulatoryFrameworks || [])])),
+          regulatoryFrameworks: [...new Set([...(acc?.regulatoryFrameworks || []), ...(r.complianceDetails.regulatoryFrameworks || [])])],
           complianceStatus: r.complianceDetails.complianceStatus || acc?.complianceStatus,
-          violations: Array.from(new Set([...(acc?.violations || []), ...(r.complianceDetails.violations || [])])),
-          requiredActions: Array.from(new Set([...(acc?.requiredActions || []), ...(r.complianceDetails.requiredActions || [])])),
-          deadlines: Array.from(new Set([...(acc?.deadlines || []), ...(r.complianceDetails.deadlines || [])])),
-          auditTrail: Array.from(new Set([...(acc?.auditTrail || []), ...(r.complianceDetails.auditTrail || [])])),
-          riskAreas: Array.from(new Set([...(acc?.riskAreas || []), ...(r.complianceDetails.riskAreas || [])])),
-          recommendedControls: Array.from(new Set([...(acc?.recommendedControls || []), ...(r.complianceDetails.recommendedControls || [])]))
+          violations: [...new Set([...(acc?.violations || []), ...(r.complianceDetails.violations || [])])],
+          requiredActions: [...new Set([...(acc?.requiredActions || []), ...(r.complianceDetails.requiredActions || [])])],
+          deadlines: [...new Set([...(acc?.deadlines || []), ...(r.complianceDetails.deadlines || [])])],
+          auditTrail: [...new Set([...(acc?.auditTrail || []), ...(r.complianceDetails.auditTrail || [])])],
+          riskAreas: [...new Set([...(acc?.riskAreas || []), ...(r.complianceDetails.riskAreas || [])])],
+          recommendedControls: [...new Set([...(acc?.recommendedControls || []), ...(r.complianceDetails.recommendedControls || [])])]
         };
       }, {} as NonNullable<DocumentAnalysis['complianceDetails']>);
       break;
@@ -233,14 +230,14 @@ export async function analyzeDocument(text: string, agentType: AgentType, sectio
       combinedAnalysis.researchDetails = results.reduce((acc, r) => {
         if (!r.researchDetails) return acc;
         return {
-          relevantCases: Array.from(new Set([...(acc?.relevantCases || []), ...(r.researchDetails.relevantCases || [])])),
-          precedents: Array.from(new Set([...(acc?.precedents || []), ...(r.researchDetails.precedents || [])])),
-          statutes: Array.from(new Set([...(acc?.statutes || []), ...(r.researchDetails.statutes || [])])),
-          legalPrinciples: Array.from(new Set([...(acc?.legalPrinciples || []), ...(r.researchDetails.legalPrinciples || [])])),
-          jurisdictions: Array.from(new Set([...(acc?.jurisdictions || []), ...(r.researchDetails.jurisdictions || [])])),
+          relevantCases: [...new Set([...(acc?.relevantCases || []), ...(r.researchDetails.relevantCases || [])])],
+          precedents: [...new Set([...(acc?.precedents || []), ...(r.researchDetails.precedents || [])])],
+          statutes: [...new Set([...(acc?.statutes || []), ...(r.researchDetails.statutes || [])])],
+          legalPrinciples: [...new Set([...(acc?.legalPrinciples || []), ...(r.researchDetails.legalPrinciples || [])])],
+          jurisdictions: [...new Set([...(acc?.jurisdictions || []), ...(r.researchDetails.jurisdictions || [])])],
           timelineSummary: r.researchDetails.timelineSummary || acc?.timelineSummary,
-          argumentAnalysis: Array.from(new Set([...(acc?.argumentAnalysis || []), ...(r.researchDetails.argumentAnalysis || [])])),
-          citationNetwork: Array.from(new Set([...(acc?.citationNetwork || []), ...(r.researchDetails.citationNetwork || [])]))
+          argumentAnalysis: [...new Set([...(acc?.argumentAnalysis || []), ...(r.researchDetails.argumentAnalysis || [])])],
+          citationNetwork: [...new Set([...(acc?.citationNetwork || []), ...(r.researchDetails.citationNetwork || [])])]
         };
       }, {} as NonNullable<DocumentAnalysis['researchDetails']>);
       break;
@@ -260,20 +257,20 @@ export async function chatWithDocument(
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-4-1106-preview",
       messages: [
         {
           role: "system",
           content: `You are a legal document assistant. Use the provided analysis to answer questions accurately and concisely.
 
-          Document Summary: ${analysis.summary}
-          Risk Score: ${analysis.riskScore}/10`
+Document Summary: ${analysis.summary}
+Risk Score: ${analysis.riskScore}/10`
         },
         {
           role: "user",
-          content: `Context: ${context.substring(0, 1500)}...
+          content: `Context: ${context.substring(0, MAX_CHUNK_LENGTH)}...
 
-          Question: ${message}`
+Question: ${message}`
         }
       ],
       temperature: 0.3,

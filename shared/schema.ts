@@ -2,7 +2,7 @@ import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizz
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Define user roles for JurySync
+// Define user roles for LegalAI
 export const UserRole = z.enum([
   "ADMIN",
   "LAWYER",
@@ -12,7 +12,7 @@ export const UserRole = z.enum([
 
 export type UserRole = z.infer<typeof UserRole>;
 
-// Users table with essential fields
+// Users table with essential fields and subscription tracking
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -24,6 +24,14 @@ export const users = pgTable("users", {
   profileImage: text("profile_image"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Subscription and trial tracking
+  subscriptionStatus: text("subscription_status").default("TRIAL"),
+  subscriptionEndsAt: timestamp("subscription_ends_at"),
+  trialUsed: boolean("trial_used").default(false),
+  lastUploadDate: timestamp("last_upload_date"),
+  uploadCount: integer("upload_count").default(0),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripePriceId: text("stripe_price_id"),
 });
 
 // Validation schema for user registration
@@ -56,6 +64,99 @@ export const insertUserSchema = createInsertSchema(users)
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
+
+// Define agent types for LegalAI
+export const AgentType = z.enum([
+  "CONTRACT_AUTOMATION",
+  "COMPLIANCE_AUDITING",
+  "LEGAL_RESEARCH"
+]);
+
+export type AgentType = z.infer<typeof AgentType>;
+
+// Define contract workflow states
+export const ContractStatus = z.enum([
+  "DRAFT",
+  "REVIEW",
+  "REDLINE",
+  "APPROVAL",
+  "SIGNATURE",
+  "COMPLETED"
+]);
+
+export type ContractStatus = z.infer<typeof ContractStatus>;
+
+// Extended contract details schema
+export const contractDetailsSchema = z.object({
+  parties: z.array(z.string()).optional(),
+  effectiveDate: z.string().optional(),
+  termLength: z.string().optional(),
+  keyObligations: z.array(z.string()).optional(),
+  terminationClauses: z.array(z.string()).optional(),
+  governingLaw: z.string().optional(),
+  paymentTerms: z.string().optional(),
+  disputeResolution: z.string().optional(),
+  missingClauses: z.array(z.string()).optional(),
+  suggestedClauses: z.array(z.string()).optional(),
+  riskFactors: z.array(z.string()).optional()
+});
+
+// Document analysis schema with agent-specific fields
+export const documentAnalysisSchema = z.object({
+  summary: z.string().min(1, "Summary is required"),
+  keyPoints: z.array(z.string()).min(1, "At least one key point is required"),
+  suggestions: z.array(z.string()).min(1, "At least one suggestion is required"),
+  riskScore: z.number().min(1).max(10),
+  contractDetails: contractDetailsSchema.optional(),
+  complianceDetails: z.object({
+    regulatoryFrameworks: z.array(z.string()),
+    complianceStatus: z.string(),
+    violations: z.array(z.string()),
+    requiredActions: z.array(z.string()),
+    deadlines: z.array(z.string()),
+    auditTrail: z.array(z.string()),
+    riskAreas: z.array(z.string()),
+    recommendedControls: z.array(z.string())
+  }).optional(),
+  researchDetails: z.object({
+    relevantCases: z.array(z.string()),
+    precedents: z.array(z.string()),
+    statutes: z.array(z.string()),
+    legalPrinciples: z.array(z.string()),
+    jurisdictions: z.array(z.string()),
+    timelineSummary: z.string(),
+    argumentAnalysis: z.array(z.string()),
+    citationNetwork: z.array(z.string())
+  }).optional()
+});
+
+export const documents = pgTable("documents", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  analysis: jsonb("analysis").notNull(),
+  agentType: text("agent_type").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  processingStatus: text("processing_status").default("PENDING"),
+  errorMessage: text("error_message"),
+});
+
+// Export types
+export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
+export type Document = typeof documents.$inferSelect;
+
+export const insertDocumentSchema = createInsertSchema(documents)
+  .pick({
+    title: true,
+    agentType: true,
+  })
+  .extend({
+    title: z.string().min(1, "Title is required"),
+    agentType: AgentType,
+  });
+
+export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 
 // Define version control types
 export const DocumentVersion = z.object({
@@ -92,119 +193,6 @@ export const SignatureStatus = z.enum([
 ]);
 
 export type SignatureStatus = z.infer<typeof SignatureStatus>;
-
-// Define agent types
-export const AgentType = z.enum([
-  "CONTRACT_AUTOMATION",
-  "COMPLIANCE_AUDITING",
-  "LEGAL_RESEARCH",
-  "NEW_AGENT_TYPE_1",
-  "NEW_AGENT_TYPE_2"
-]);
-
-export type AgentType = z.infer<typeof AgentType>;
-
-// Define contract workflow states
-export const ContractStatus = z.enum([
-  "DRAFT",
-  "REVIEW",
-  "REDLINE",
-  "APPROVAL",
-  "SIGNATURE",
-  "COMPLETED"
-]);
-
-export type ContractStatus = z.infer<typeof ContractStatus>;
-
-// Extended contract details schema
-export const contractDetailsSchema = z.object({
-  parties: z.array(z.string()).optional(),
-  effectiveDate: z.string().optional(),
-  termLength: z.string().optional(),
-  keyObligations: z.array(z.string()).optional(),
-  terminationClauses: z.array(z.string()).optional(),
-  governingLaw: z.string().optional(),
-  paymentTerms: z.string().optional(),
-  disputeResolution: z.string().optional(),
-  missingClauses: z.array(z.string()).optional(),
-  suggestedClauses: z.array(z.string()).optional(),
-  riskFactors: z.array(z.string()).optional(),
-  redlineHistory: z.array(z.object({
-    timestamp: z.string(),
-    clause: z.string(),
-    suggestion: z.string(),
-    riskLevel: z.number(),
-    accepted: z.boolean().optional()
-  })).optional(),
-  workflowState: z.object({
-    status: ContractStatus,
-    currentReviewer: z.string().optional(),
-    comments: z.array(z.object({
-      user: z.string(),
-      text: z.string(),
-      timestamp: z.string()
-    })).optional(),
-    signatureStatus: SignatureStatus,
-    approvalStatus: ApprovalStatus,
-    version: z.string()
-  }).optional(),
-  versionControl: DocumentVersion.optional()
-});
-
-// Update document analysis schema
-export const documentAnalysisSchema = z.object({
-  summary: z.string().min(1, "Summary is required"),
-  keyPoints: z.array(z.string()).min(1, "At least one key point is required"),
-  suggestions: z.array(z.string()).min(1, "At least one suggestion is required"),
-  riskScore: z.number().min(1).max(10),
-  contractDetails: contractDetailsSchema.optional(),
-  complianceDetails: z.object({
-    regulatoryFrameworks: z.array(z.string()).optional(),
-    complianceStatus: z.string().optional(),
-    violations: z.array(z.string()).optional(),
-    requiredActions: z.array(z.string()).optional(),
-    deadlines: z.array(z.string()).optional(),
-    auditTrail: z.array(z.string()).optional(),
-    riskAreas: z.array(z.string()).optional(),
-    recommendedControls: z.array(z.string()).optional(),
-  }).optional(),
-  researchDetails: z.object({
-    relevantCases: z.array(z.string()).optional(),
-    precedents: z.array(z.string()).optional(),
-    statutes: z.array(z.string()).optional(),
-    legalPrinciples: z.array(z.string()).optional(),
-    jurisdictions: z.array(z.string()).optional(),
-    timelineSummary: z.string().optional(),
-    argumentAnalysis: z.array(z.string()).optional(),
-    citationNetwork: z.array(z.string()).optional(),
-  }).optional(),
-});
-
-export const documents = pgTable("documents", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  analysis: jsonb("analysis").notNull(),
-  agentType: text("agent_type").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-// Export types
-export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
-export type Document = typeof documents.$inferSelect;
-
-export const insertDocumentSchema = createInsertSchema(documents)
-  .pick({
-    title: true,
-    agentType: true,
-  })
-  .extend({
-    title: z.string().min(1, "Title is required"),
-    agentType: AgentType,
-  });
-
-export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 
 
 // Additional tables after the existing ones...
