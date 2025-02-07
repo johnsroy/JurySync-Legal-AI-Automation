@@ -34,9 +34,24 @@ const upload = multer({
 });
 
 // Upload and analyze document
-router.post('/api/compliance/upload', upload.single('file'), async (req, res) => {
+router.post('/api/compliance/upload', async (req, res) => {
+  let uploadedFile: Express.Multer.File | undefined;
+
   try {
-    if (!req.file) {
+    // Wrap multer in a promise to handle errors properly
+    await new Promise<void>((resolve, reject) => {
+      upload.single('file')(req, res, (err) => {
+        if (err) {
+          console.error('[Compliance] Upload middleware error:', err);
+          reject(err);
+        } else {
+          uploadedFile = req.file;
+          resolve();
+        }
+      });
+    });
+
+    if (!uploadedFile) {
       throw new Error('No file uploaded');
     }
 
@@ -45,26 +60,28 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
       throw new Error('User not authenticated');
     }
 
-    console.log(`[Compliance] Processing file: ${req.file.originalname}`);
+    console.log(`[Compliance] Processing file: ${uploadedFile.originalname} for user ${userId}`);
 
     // Verify file content
-    if (!req.file.buffer || req.file.buffer.length === 0) {
+    if (!uploadedFile.buffer || uploadedFile.buffer.length === 0) {
       throw new Error('Empty file content');
     }
 
-    const fileContent = req.file.buffer.toString();
+    const fileContent = uploadedFile.buffer.toString();
     if (!fileContent || fileContent.trim().length === 0) {
       throw new Error('Empty file content after conversion');
     }
+
+    console.log(`[Compliance] File content validated, size: ${fileContent.length} bytes`);
 
     // Store document in database
     const [document] = await db
       .insert(complianceDocuments)
       .values({
         userId,
-        title: req.file.originalname,
+        title: uploadedFile.originalname,
         content: fileContent,
-        documentType: path.extname(req.file.originalname).substring(1),
+        documentType: path.extname(uploadedFile.originalname).substring(1),
         status: "PENDING"
       })
       .returning();
@@ -82,9 +99,13 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
     });
   } catch (error: any) {
     console.error('[Compliance] Upload error:', error);
-    res.status(500).json({
-      error: 'Failed to process document',
-      details: error.message
+    const errorMessage = error.code === 'LIMIT_FILE_SIZE' 
+      ? 'File size too large. Maximum size is 50MB'
+      : error.message || 'Failed to process document';
+
+    res.status(error.status || 500).json({
+      error: 'Upload failed',
+      details: errorMessage
     });
   }
 });
