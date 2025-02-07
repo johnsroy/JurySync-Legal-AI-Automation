@@ -7,8 +7,6 @@ import { Progress } from "@/components/ui/progress";
 import { Gavel, LogOut, Loader2, GitCompare, FileText, AlertCircle } from "lucide-react";
 import { FilePond } from "react-filepond";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-
 import "filepond/dist/filepond.min.css";
 
 export default function ContractAutomation() {
@@ -34,26 +32,18 @@ export default function ContractAutomation() {
     setProgress(10);
 
     try {
-      // Get base64 string from file
-      const base64String = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64 = reader.result as string;
-          resolve(base64.split(',')[1]);
-        };
-        reader.readAsDataURL(file.file);
-      });
+      const formData = new FormData();
+      formData.append('file', file.file);
+      formData.append('title', file.filename);
+      formData.append('agentType', 'CONTRACT_AUTOMATION');
 
       setProgress(30);
       setProcessingState('analyzing');
 
-      const response = await apiRequest("POST", "/api/documents", {
-        title: file.filename,
-        content: base64String,
-        agentType: "CONTRACT_AUTOMATION",
+      const response = await fetch('/api/documents', {
+        method: 'POST',
+        body: formData,
       });
-
-      setProgress(60);
 
       if (!response.ok) {
         const error = await response.json();
@@ -61,19 +51,16 @@ export default function ContractAutomation() {
       }
 
       setProgress(80);
-
       const document = await response.json();
 
       setProgress(100);
       setProcessingState('complete');
 
-      // Show success message before redirecting
       toast({
         title: "Document Processed Successfully",
         description: "Redirecting to the document editor...",
       });
 
-      // Short delay before redirect to show completion
       setTimeout(() => {
         setLocation(`/documents/${document.id}`);
       }, 1000);
@@ -98,7 +85,7 @@ export default function ContractAutomation() {
       case 'uploading':
         return "Uploading your document...";
       case 'analyzing':
-        return "Analyzing document content with AI...";
+        return "Analyzing document with AI...";
       case 'complete':
         return "Processing complete!";
       default:
@@ -165,15 +152,10 @@ export default function ContractAutomation() {
                       setProcessingState('uploading');
                       setProgress(0);
                     }}
-                    onaddfileerror={() => {
+                    onremovefile={() => {
                       setIsUploading(false);
                       setProcessingState('idle');
                       setProgress(0);
-                      toast({
-                        title: "Upload Error",
-                        description: "Failed to add file. Please try again.",
-                        variant: "destructive",
-                      });
                     }}
                   />
 
