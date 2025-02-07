@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { legalResearchService } from '../services/legalResearchService';
-import type { LegalDocument } from '@shared/schema';
+import type { InsertLegalDocument } from '@shared/schema';
 import multer from 'multer';
+import { z } from 'zod';
 
 const router = Router();
 
@@ -12,6 +13,14 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB limit
   }
 }).single('file');
+
+// Validation schema for document upload
+const documentUploadSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  documentType: z.string().min(1, "Document type is required"),
+  jurisdiction: z.string().min(1, "Jurisdiction is required"),
+  date: z.string().transform(str => new Date(str))
+});
 
 // Upload and process legal document
 router.post('/documents', async (req, res) => {
@@ -27,13 +36,17 @@ router.post('/documents', async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const document: LegalDocument = {
-      title: req.body.title,
+    const validatedData = documentUploadSchema.parse(req.body);
+
+    const document: InsertLegalDocument = {
+      title: validatedData.title,
       content: req.file.buffer.toString('utf-8'),
-      documentType: req.body.documentType,
-      jurisdiction: req.body.jurisdiction,
-      date: new Date(req.body.date),
-      status: 'ACTIVE'
+      documentType: validatedData.documentType,
+      jurisdiction: validatedData.jurisdiction,
+      date: validatedData.date,
+      status: 'ACTIVE',
+      metadata: {},
+      citations: []
     };
 
     await legalResearchService.addDocument(document);
@@ -41,24 +54,30 @@ router.post('/documents', async (req, res) => {
 
   } catch (error: any) {
     console.error('Document upload error:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
     res.status(500).json({ error: error.message });
   }
+});
+
+// Query validation schema
+const querySchema = z.object({
+  query: z.string().min(1, "Query is required")
 });
 
 // Perform legal research query
 router.post('/query', async (req, res) => {
   try {
-    const { query } = req.body;
-    
-    if (!query) {
-      return res.status(400).json({ error: 'Query is required' });
-    }
-
+    const { query } = querySchema.parse(req.body);
     const results = await legalResearchService.analyzeQuery(query);
     res.json(results);
 
   } catch (error: any) {
     console.error('Query analysis error:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -67,7 +86,7 @@ router.post('/query', async (req, res) => {
 router.get('/similar', async (req, res) => {
   try {
     const { query } = req.query;
-    
+
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'Query parameter is required' });
     }

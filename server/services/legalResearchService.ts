@@ -1,9 +1,9 @@
 import { Anthropic } from '@anthropic-ai/sdk';
-import { ChromaClient, Collection } from 'chromadb';
+import { ChromaClient, Collection, CreateCollectionParams } from 'chromadb';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
-import { legalDocuments, legalCitations } from '@shared/schema';
-import type { LegalDocument, Citation } from '@shared/schema';
+import { legalDocuments, legalCitations, researchQueries } from '@shared/schema';
+import type { LegalDocument, Citation, ResearchQuery } from '@shared/schema';
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -56,8 +56,15 @@ export class LegalResearchService {
 
   private async initializeVectorStore() {
     try {
-      // Create or get the collection for legal documents
-      vectorStore = await chroma.getOrCreateCollection('legal_documents');
+      // Create or get the collection for legal documents with proper params
+      const params: CreateCollectionParams = {
+        name: 'legal_documents',
+        metadata: { 
+          description: "Vector embeddings for legal documents",
+          dataType: "legal_text"
+        }
+      };
+      vectorStore = await chroma.getOrCreateCollection(params);
       console.log('Vector store initialized successfully');
     } catch (error) {
       console.error('Failed to initialize vector store:', error);
@@ -67,13 +74,18 @@ export class LegalResearchService {
 
   async addDocument(document: LegalDocument): Promise<void> {
     try {
-      // Generate embedding for the document
+      // Generate embedding for the document using Claude
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 1000,
         messages: [{
           role: "user",
-          content: `Extract the key legal principles and arguments from this document:\n\n${document.content}`
+          content: [
+            {
+              type: "text",
+              text: `Extract the key legal principles and arguments from this document for embedding:\n\n${document.content}`
+            }
+          ]
         }]
       });
 
@@ -86,13 +98,16 @@ export class LegalResearchService {
         metadatas: [{
           title: document.title,
           type: document.documentType,
-          date: document.date,
+          date: document.date.toISOString(),
           jurisdiction: document.jurisdiction
         }]
       });
 
       // Store in relational database
-      await db.insert(legalDocuments).values(document);
+      await db.insert(legalDocuments).values({
+        ...document,
+        vectorId: document.id.toString()
+      });
 
     } catch (error) {
       console.error('Failed to add document:', error);
@@ -111,6 +126,10 @@ export class LegalResearchService {
         nResults: 5
       });
 
+      if (!results.ids?.length || !results.distances?.length) {
+        return [];
+      }
+
       // Fetch full documents and citations
       const searchResults: SearchResult[] = await Promise.all(
         results.ids[0].map(async (id, index) => {
@@ -126,7 +145,7 @@ export class LegalResearchService {
 
           return {
             document,
-            similarity: results.distances[0][index],
+            similarity: results.distances![0][index],
             citations
           };
         })
@@ -152,7 +171,10 @@ export class LegalResearchService {
         temperature: 0.2,
         messages: [{
           role: "user",
-          content: `Analyze this legal query and similar cases to provide a comprehensive response. Include a summary, timeline of key events, and citation relationships.
+          content: [
+            {
+              type: "text",
+              text: `Analyze this legal query and similar cases to provide a comprehensive response. Include a summary, timeline of key events, and citation relationships.
 
 Query: ${query}
 
@@ -163,17 +185,38 @@ Content: ${result.document.content}
 Citations: ${result.citations.map(c => c.citedCase).join(', ')}
 `).join('\n')}
 
-Provide the analysis in JSON format with the following structure:
+Structure your response as a JSON object with these fields:
 {
-  "summary": "Concise analysis of the query and relevant cases",
-  "timeline": [{"date": "YYYY-MM-DD", "event": "Description", "significance": "Legal importance"}],
-  "citationMap": [{"id": "case_id", "title": "Case name", "year": year, "citations": ["cited_case_ids"]}]
+  "summary": string,
+  "timeline": [{ "date": "YYYY-MM-DD", "event": string, "significance": string }],
+  "citationMap": [{ "id": string, "title": string, "year": number, "citations": string[] }]
 }`
-        }],
-        response_format: { type: "json_object" }
+            }
+          ]
+        }]
       });
 
-      const analysis = JSON.parse(response.content[0].text);
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response format from Anthropic API');
+      }
+
+      const analysis = JSON.parse(content.text);
+
+      // Store research query and results
+      await db.insert(researchQueries).values({
+        query,
+        results: {
+          summary: analysis.summary,
+          relevantCases: similarCases.map(c => ({
+            id: c.document.id,
+            title: c.document.title,
+            similarity: c.similarity
+          })),
+          timeline: analysis.timeline,
+          citationMap: analysis.citationMap
+        }
+      });
 
       return {
         summary: analysis.summary,
@@ -195,12 +238,22 @@ Provide the analysis in JSON format with the following structure:
         max_tokens: 1000,
         messages: [{
           role: "user",
-          content: `Generate a dense vector embedding for this legal text that captures its key legal concepts, principles, and arguments. Return only the numerical vector values as a JSON array:\n\n${text}`
-        }],
-        response_format: { type: "json_object" }
+          content: [
+            {
+              type: "text",
+              text: `Generate a dense vector embedding for this legal text that captures its key legal concepts, principles, and arguments. Return only the numerical vector values as a JSON array:\n\n${text}`
+            }
+          ]
+        }]
       });
 
-      return JSON.parse(response.content[0].text).embedding;
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response format from Anthropic API');
+      }
+
+      const result = JSON.parse(content.text);
+      return result.embedding;
     } catch (error) {
       console.error('Failed to generate embedding:', error);
       throw error;
