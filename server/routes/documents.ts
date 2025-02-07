@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { generateContract } from "../services/openai";
+import { getAllTemplates } from "../services/templateStore";
 import { db } from "../db";
 import { documents } from "@shared/schema";
 
@@ -11,6 +12,22 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
+// Get available templates
+router.get("/api/templates", async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const templates = getAllTemplates();
+    res.send(templates);
+
+  } catch (error: any) {
+    console.error("Template fetch error:", error);
+    res.status(500).send("Failed to fetch templates");
   }
 });
 
@@ -27,7 +44,7 @@ router.post("/api/documents/generate", async (req, res) => {
       return res.status(400).send("Missing template type or requirements");
     }
 
-    // Generate contract text
+    // Generate contract text using template
     const contractText = await generateContract(
       templateType,
       requirements,
@@ -45,7 +62,6 @@ router.post("/api/documents/generate", async (req, res) => {
       })
       .returning();
 
-    // Send simple response
     res.send({
       id: document.id,
       content: contractText
