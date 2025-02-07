@@ -98,15 +98,17 @@ export default function ComplianceAuditing() {
           clearInterval(interval);
           setUploadProgress(100);
 
-          // Check if response is JSON
+          // Handle non-JSON responses
           const contentType = response.headers.get("content-type");
-          if (!contentType || !contentType.includes("application/json")) {
-            // If not JSON, get the text and throw error with details
-            const text = await response.text();
-            throw new Error(`Server returned invalid format: ${text.substring(0, 100)}...`);
-          }
+          const responseText = await response.text();
 
-          const data = await response.json();
+          let data;
+          try {
+            data = JSON.parse(responseText);
+          } catch (parseError) {
+            console.error('Response parsing error:', parseError);
+            throw new Error(`Invalid server response format: ${responseText.substring(0, 100)}...`);
+          }
 
           if (!response.ok) {
             throw new Error(data.error || 'Upload failed');
