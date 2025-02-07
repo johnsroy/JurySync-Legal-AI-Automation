@@ -1,12 +1,10 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, FileText } from "lucide-react";
+import { Loader2, FileText, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -18,6 +16,7 @@ interface Template {
   name: string;
   description: string;
   category: "EMPLOYMENT" | "NDA" | "SERVICE_AGREEMENT";
+  baseContent: string;
   variables: Array<{
     name: string;
     description: string;
@@ -39,9 +38,10 @@ const formSchema = z.object({
 export default function ContractAutomation() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [isCustomizing, setIsCustomizing] = useState(false);
   const [generatedContract, setGeneratedContract] = useState<{
     id: number;
     content: string;
@@ -64,11 +64,13 @@ export default function ContractAutomation() {
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
+        setIsLoading(true);
         const response = await fetch('/api/templates');
         if (!response.ok) {
           throw new Error('Failed to fetch templates');
         }
         const data = await response.json();
+        console.log("Fetched templates:", data);
         setTemplates(data);
       } catch (error) {
         console.error('Failed to fetch templates:', error);
@@ -77,20 +79,21 @@ export default function ContractAutomation() {
           description: "Failed to load contract templates",
           variant: "destructive",
         });
+      } finally {
+        setIsLoading(false);
       }
     };
 
     fetchTemplates();
   }, [toast]);
 
-  // Handle template selection
-  const handleTemplateSelect = (templateId: string) => {
-    const template = templates.find(t => t.id === templateId);
-    setSelectedTemplate(template || null);
-    form.setValue('templateId', templateId);
+  const handleTemplateSelect = (template: Template) => {
+    setSelectedTemplate(template);
+    form.setValue('templateId', template.id);
+    setIsCustomizing(true);
   };
 
-  const handleRequirementAdd = () => {
+  const handleAddRequirement = () => {
     const currentRequirements = form.getValues("requirements");
     form.setValue("requirements", [
       ...currentRequirements,
@@ -101,7 +104,7 @@ export default function ContractAutomation() {
     ]);
   };
 
-  const handleRequirementRemove = (index: number) => {
+  const handleRemoveRequirement = (index: number) => {
     const currentRequirements = form.getValues("requirements");
     if (currentRequirements.length > 1) {
       form.setValue(
@@ -113,10 +116,7 @@ export default function ContractAutomation() {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      setIsGenerating(true);
       setGeneratedContract(null);
-
-      console.log("Submitting contract generation request:", values);
 
       const response = await fetch('/api/documents/generate', {
         method: 'POST',
@@ -132,8 +132,6 @@ export default function ContractAutomation() {
       }
 
       const data = await response.json();
-      console.log("Generated contract:", data);
-
       setGeneratedContract(data);
 
       toast({
@@ -148,8 +146,6 @@ export default function ContractAutomation() {
         description: error.message || "Failed to generate contract",
         variant: "destructive",
       });
-    } finally {
-      setIsGenerating(false);
     }
   };
 
@@ -171,50 +167,74 @@ export default function ContractAutomation() {
     return null;
   }
 
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Generate New Contract</CardTitle>
-          <CardDescription>
-            Select a template and specify your requirements
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="templateId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Contract Template</FormLabel>
-                    <Select onValueChange={handleTemplateSelect} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a template" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {templates.map((template) => (
-                          <SelectItem key={template.id} value={template.id}>
-                            {template.name}
-                          </SelectItem>
+      {!isCustomizing ? (
+        <>
+          <h2 className="text-2xl font-bold mb-6">Select a Contract Template</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {templates.map((template) => (
+              <Card key={template.id} className="flex flex-col">
+                <CardHeader>
+                  <CardTitle>{template.name}</CardTitle>
+                  <CardDescription>{template.description}</CardDescription>
+                </CardHeader>
+                <CardContent className="flex-grow">
+                  <div className="bg-gray-50 p-4 rounded-md">
+                    <pre className="whitespace-pre-wrap text-sm max-h-48 overflow-y-auto">
+                      {template.baseContent.slice(0, 200)}...
+                    </pre>
+                  </div>
+                  <div className="mt-4">
+                    <h4 className="font-semibold mb-2">Required Fields:</h4>
+                    <ul className="list-disc list-inside text-sm text-gray-600">
+                      {template.variables
+                        .filter(v => v.required)
+                        .map(v => (
+                          <li key={v.name}>{v.description}</li>
                         ))}
-                      </SelectContent>
-                    </Select>
-                    {selectedTemplate && (
-                      <p className="text-sm text-gray-500 mt-2">
-                        {selectedTemplate.description}
-                      </p>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                    </ul>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button 
+                    className="w-full" 
+                    onClick={() => handleTemplateSelect(template)}
+                  >
+                    Use This Template
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold">Customize Your Contract</h2>
+            <Button variant="outline" onClick={() => setIsCustomizing(false)}>
+              Change Template
+            </Button>
+          </div>
 
-              {selectedTemplate && (
-                <>
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>{selectedTemplate?.name}</CardTitle>
+              <CardDescription>
+                Add your requirements to customize this template
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
                       <FormLabel>Requirements</FormLabel>
@@ -222,7 +242,7 @@ export default function ContractAutomation() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={handleRequirementAdd}
+                        onClick={handleAddRequirement}
                       >
                         Add Requirement
                       </Button>
@@ -250,18 +270,14 @@ export default function ContractAutomation() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Importance</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select importance" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="HIGH">High</SelectItem>
-                                  <SelectItem value="MEDIUM">Medium</SelectItem>
-                                  <SelectItem value="LOW">Low</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              <select
+                                {...field}
+                                className="w-full p-2 border rounded"
+                              >
+                                <option value="HIGH">High Priority</option>
+                                <option value="MEDIUM">Medium Priority</option>
+                                <option value="LOW">Low Priority</option>
+                              </select>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -271,7 +287,7 @@ export default function ContractAutomation() {
                           type="button"
                           variant="destructive"
                           size="sm"
-                          onClick={() => handleRequirementRemove(index)}
+                          onClick={() => handleRemoveRequirement(index)}
                           disabled={form.watch("requirements").length <= 1}
                         >
                           Remove Requirement
@@ -296,52 +312,39 @@ export default function ContractAutomation() {
                       </FormItem>
                     )}
                   />
-                </>
-              )}
 
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={isGenerating || !selectedTemplate}
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
+                  <Button type="submit" className="w-full">
                     <FileText className="h-4 w-4 mr-2" />
                     Generate Contract
-                  </>
-                )}
-              </Button>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+                  </Button>
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
 
-      {generatedContract && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{generatedContract.title}</CardTitle>
-            <CardDescription>
-              Review your generated contract below
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="p-4 border rounded bg-gray-50">
-                <pre className="whitespace-pre-wrap font-mono text-sm">
-                  {generatedContract.content}
-                </pre>
-              </div>
-              <Button onClick={handleDownload}>
-                Download Contract
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          {generatedContract && (
+            <Card>
+              <CardHeader>
+                <CardTitle>{generatedContract.title}</CardTitle>
+                <CardDescription>
+                  Review your generated contract below
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="p-4 border rounded bg-gray-50">
+                    <pre className="whitespace-pre-wrap font-mono text-sm">
+                      {generatedContract.content}
+                    </pre>
+                  </div>
+                  <Button onClick={handleDownload}>
+                    Download Contract
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );
