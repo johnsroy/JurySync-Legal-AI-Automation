@@ -20,9 +20,7 @@ const upload = multer({
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain',
-      'image/png',
-      'image/jpeg'
+      'text/plain'
     ];
 
     console.log('[Compliance] Processing file:', file.originalname, 'type:', file.mimetype);
@@ -30,84 +28,82 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types are: PDF, DOC, DOCX, TXT, PNG, and JPEG`));
+      cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types are: PDF, DOC, DOCX, and TXT`));
     }
   }
 });
 
 // Upload endpoint with proper error handling
-router.post('/api/compliance/upload', upload.single('file'), async (req, res) => {
+router.post('/api/compliance/upload', (req, res, next) => {
   console.log('[Compliance] Starting upload process');
 
-  try {
-    // Get user ID from session
-    const userId = (req as any).user?.id;
-    if (!userId) {
-      console.log('[Compliance] Authentication failed - no user ID');
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
+  upload.single('file')(req, res, async (err) => {
+    try {
+      if (err) {
+        console.error('[Compliance] Multer error:', err);
+        return res.status(400).json({ 
+          error: err.message || 'File upload failed'
+        });
+      }
 
-    if (!req.file) {
-      console.log('[Compliance] No file in request');
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+      // Check authentication
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        console.log('[Compliance] Authentication failed - no user ID');
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
 
-    console.log(`[Compliance] Processing file: ${req.file.originalname} (${req.file.size} bytes)`);
+      if (!req.file) {
+        console.log('[Compliance] No file in request');
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
 
-    // Save file using the upload service
-    const fileRecord = await saveUploadedFile(req.file, userId);
-    console.log(`[Compliance] File saved with ID: ${fileRecord.id}`);
+      console.log(`[Compliance] Processing file: ${req.file.originalname} (${req.file.size} bytes)`);
 
-    // Create compliance document record
-    const [document] = await db
-      .insert(complianceDocuments)
-      .values({
-        userId,
-        title: req.file.originalname,
-        content: req.file.buffer.toString(),
-        documentType: req.file.mimetype,
-        status: "PENDING"
-      })
-      .returning();
+      // Save file using the upload service
+      const fileRecord = await saveUploadedFile(req.file, userId);
+      console.log(`[Compliance] File saved with ID: ${fileRecord.id}`);
 
-    console.log(`[Compliance] Document created with ID: ${document.id}`);
+      // Create compliance document record
+      const [document] = await db
+        .insert(complianceDocuments)
+        .values({
+          userId,
+          title: req.file.originalname,
+          content: req.file.buffer.toString(),
+          documentType: req.file.mimetype,
+          status: "PENDING"
+        })
+        .returning();
 
-    // Start analysis in background
-    analyzeDocument(document.id.toString())
-      .catch(error => {
-        console.error(`[Compliance] Analysis failed for document ${document.id}:`, error);
-        db.update(complianceDocuments)
-          .set({ status: "ERROR" })
-          .where(eq(complianceDocuments.id, document.id))
-          .execute()
-          .catch(updateError => {
-            console.error(`Failed to update document status:`, updateError);
-          });
+      console.log(`[Compliance] Document created with ID: ${document.id}`);
+
+      // Start analysis in background
+      analyzeDocument(document.id.toString())
+        .catch(error => {
+          console.error(`[Compliance] Analysis failed for document ${document.id}:`, error);
+          db.update(complianceDocuments)
+            .set({ status: "ERROR" })
+            .where(eq(complianceDocuments.id, document.id))
+            .execute()
+            .catch(updateError => {
+              console.error(`Failed to update document status:`, updateError);
+            });
+        });
+
+      res.json({
+        success: true,
+        fileId: fileRecord.id,
+        documentId: document.id,
+        status: "PENDING",
+        message: "Document uploaded and queued for analysis"
       });
 
-    res.json({
-      success: true,
-      fileId: fileRecord.id,
-      documentId: document.id,
-      status: "PENDING",
-      message: "Document uploaded and queued for analysis"
-    });
-
-  } catch (error: any) {
-    console.error('[Compliance] Upload failed:', error);
-
-    const status = error.status || 500;
-    const message = error.code === 'LIMIT_FILE_SIZE' 
-      ? 'File too large. Maximum size is 50MB'
-      : error.code === 'LIMIT_UNEXPECTED_FILE'
-      ? 'Invalid file type'
-      : error.message || 'Upload failed';
-
-    res.status(status).json({ 
-      success: false,
-      error: message
-    });
-  }
+    } catch (error: any) {
+      console.error('[Compliance] Upload failed:', error);
+      next(error);
+    }
+  });
 });
 
 // Get all documents for current user
@@ -136,59 +132,6 @@ router.get('/api/compliance/documents', async (req, res) => {
     console.error('[Compliance] Documents fetch error:', error);
     res.status(500).json({
       error: 'Failed to fetch documents',
-      details: error.message
-    });
-  }
-});
-
-// Get compliance issues for a document
-router.get('/api/compliance/issues/:documentId', async (req, res) => {
-  try {
-    const userId = (req as any).user?.id;
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
-
-    const documentId = parseInt(req.params.documentId);
-    const issues = await db
-      .select()
-      .from(complianceIssues)
-      .where(eq(complianceIssues.documentId, documentId));
-
-    res.json(issues);
-  } catch (error: any) {
-    console.error('[Compliance] Issues fetch error:', error);
-    res.status(500).json({
-      error: 'Failed to fetch compliance issues',
-      details: error.message
-    });
-  }
-});
-
-// Update issue status
-router.patch('/api/compliance/issues/:issueId', async (req, res) => {
-  try {
-    const userId = (req as any).user?.id;
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
-
-    const { status } = req.body;
-    if (!status || !['OPEN', 'IN_REVIEW', 'RESOLVED'].includes(status)) {
-      throw new Error('Invalid status');
-    }
-
-    const issueId = parseInt(req.params.issueId);
-    await db
-      .update(complianceIssues)
-      .set({ status })
-      .where(eq(complianceIssues.id, issueId));
-
-    res.json({ message: 'Issue status updated successfully' });
-  } catch (error: any) {
-    console.error('[Compliance] Issue update error:', error);
-    res.status(500).json({
-      error: 'Failed to update issue',
       details: error.message
     });
   }
