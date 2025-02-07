@@ -75,7 +75,7 @@ export default function ComplianceAuditing() {
     }
   });
 
-  // Modified upload handler with new response parsing
+  // Modified upload handler with better error handling
   const onDrop = async (acceptedFiles: File[]) => {
     setIsUploading(true);
     setUploadProgress(0);
@@ -97,6 +97,14 @@ export default function ComplianceAuditing() {
 
           clearInterval(interval);
           setUploadProgress(100);
+
+          // Check if response is JSON
+          const contentType = response.headers.get("content-type");
+          if (!contentType || !contentType.includes("application/json")) {
+            // If not JSON, get the text and throw error with details
+            const text = await response.text();
+            throw new Error(`Server returned invalid format: ${text.substring(0, 100)}...`);
+          }
 
           const data = await response.json();
 

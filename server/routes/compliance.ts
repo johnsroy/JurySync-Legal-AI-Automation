@@ -15,11 +15,12 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
   fileFilter: (_, file, cb) => {
-    // Only accept PDFs for direct analysis
-    if (file.mimetype === 'application/pdf') {
+    // Accept both PDF and DOCX
+    if (file.mimetype === 'application/pdf' || 
+        file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF files are supported'));
+      cb(new Error('Only PDF and DOCX files are supported'));
     }
   }
 });
@@ -27,6 +28,9 @@ const upload = multer({
 router.post('/api/compliance/upload', (req, res) => {
   upload.single('file')(req, res, async (err) => {
     try {
+      // Set JSON content type header
+      res.setHeader('Content-Type', 'application/json');
+
       if (err) {
         return res.status(400).json({ error: err.message });
       }
@@ -66,6 +70,13 @@ router.post('/api/compliance/upload', (req, res) => {
         })
         .catch(error => {
           console.error(`Analysis failed for document ${document.id}:`, error);
+          db.update(complianceDocuments)
+            .set({ status: "ERROR" })
+            .where(eq(complianceDocuments.id, document.id))
+            .execute()
+            .catch(updateError => {
+              console.error('Failed to update document status:', updateError);
+            });
         });
 
       res.json({
@@ -98,7 +109,7 @@ router.get('/api/compliance/documents', async (req, res) => {
         title: complianceDocuments.title,
         status: complianceDocuments.status,
         lastScanned: complianceDocuments.lastScanned,
-        riskScore: complianceDocuments.riskScore // Added riskScore
+        riskScore: complianceDocuments.riskScore 
       })
       .from(complianceDocuments)
       .where(eq(complianceDocuments.userId, userId));

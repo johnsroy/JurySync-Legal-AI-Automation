@@ -1,5 +1,5 @@
 import { type Buffer } from "buffer";
-import pdf from "pdf-parse/lib/pdf-parse.js"; // Updated import to avoid test file loading
+import pdf from "pdf-parse/lib/pdf-parse.js";
 import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -19,12 +19,15 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
 
     console.log(`Raw content extracted, length: ${textContent.length}`);
 
-    // Basic content cleaning
+    // Enhanced content cleaning
     textContent = textContent
       .replace(/\u0000/g, '') // Remove null bytes
       .replace(/^\s*<!DOCTYPE[^>]*>/i, '') // Remove DOCTYPE at start
       .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // Remove control characters
+      .replace(/<[^>]*>/g, '') // Remove any HTML-like tags
+      .replace(/&[a-z]+;/gi, ' ') // Replace HTML entities with space
+      .replace(/\s+/g, ' ') // Normalize whitespace
       .trim();
 
     if (!textContent) {
