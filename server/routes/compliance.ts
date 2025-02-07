@@ -22,7 +22,7 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type'));
+      cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types are: PDF, DOC, DOCX, and TXT`));
     }
   },
   limits: {
@@ -49,11 +49,20 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
 
     console.log(`[Compliance] Processing file: ${req.file.originalname}`);
 
+    // Verify file content
+    if (!req.file.buffer || req.file.buffer.length === 0) {
+      throw new Error('Empty file content');
+    }
+
     const fileContent = req.file.buffer.toString();
+    if (!fileContent || fileContent.trim().length === 0) {
+      throw new Error('Empty file content after conversion');
+    }
+
     const fileType = path.extname(req.file.originalname).substring(1);
     const documentId = Date.now().toString();
 
-    // Store document info with proper typing
+    // Store document info
     const documentInfo = {
       id: documentId,
       name: req.file.originalname,
@@ -64,7 +73,7 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
     };
 
     uploadedDocuments.set(documentId, documentInfo);
-    console.log(`[Compliance] Stored document with ID: ${documentId}`);
+    console.log(`[Compliance] Document stored successfully with ID: ${documentId}`);
 
     // If this is the first document, start monitoring immediately
     if (uploadedDocuments.size === 1) {
@@ -78,9 +87,10 @@ router.post('/api/compliance/upload', upload.single('file'), async (req, res) =>
           status: documentInfo.status,
           result 
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error(`[Compliance] Initial monitoring failed:`, error);
         documentInfo.status = "ERROR";
+        throw error; // Propagate error for consistent error handling
       }
     }
 
@@ -122,8 +132,7 @@ router.get('/api/compliance/results', (req, res) => {
     const documentIds = req.query.documents?.toString().split(',');
     console.log(`[Compliance] Fetching results for documents: ${documentIds?.join(', ')}`);
 
-    // If no specific documents requested, get results for all documents
-    const results = documentIds ? getMonitoringResults(documentIds) : getMonitoringResults();
+    const results = getMonitoringResults(documentIds);
     console.log(`[Compliance] Returning results:`, results);
 
     res.json(results);

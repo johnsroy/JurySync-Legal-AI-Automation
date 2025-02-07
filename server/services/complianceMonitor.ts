@@ -24,6 +24,10 @@ export type ComplianceResult = z.infer<typeof complianceResultSchema>;
 
 export async function scanDocument(content: string, documentType: string): Promise<ComplianceResult> {
   try {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("Anthropic API key not configured");
+    }
+
     console.log(`[ComplianceMonitor] Scanning document of type: ${documentType}`);
 
     const prompt = `You are a legal compliance expert. Analyze the following ${documentType} document for compliance issues, risks, and regulatory concerns:
@@ -62,11 +66,16 @@ Output in JSON format with:
       throw new Error("Empty response from Anthropic API");
     }
 
-    const result = JSON.parse(analysisText);
-    result.lastChecked = new Date().toISOString();
+    try {
+      const result = JSON.parse(analysisText);
+      result.lastChecked = new Date().toISOString();
 
-    console.log(`[ComplianceMonitor] Analysis complete with risk level: ${result.riskLevel}`);
-    return complianceResultSchema.parse(result);
+      console.log(`[ComplianceMonitor] Analysis complete with risk level: ${result.riskLevel}`);
+      return complianceResultSchema.parse(result);
+    } catch (error: any) {
+      console.error("Failed to parse Anthropic response:", analysisText);
+      throw new Error(`Invalid response format: ${error.message}`);
+    }
   } catch (error: any) {
     console.error("[ComplianceMonitor] Scanning error:", error);
     throw new Error(`Failed to scan document: ${error.message}`);
