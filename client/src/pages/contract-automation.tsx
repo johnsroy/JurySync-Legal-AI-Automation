@@ -1,11 +1,62 @@
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, GitCompare, Upload, FileText } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Gavel, LogOut, Loader2, GitCompare, Upload, FileText, AlertCircle } from "lucide-react";
+import { FilePond, registerPlugin } from "react-filepond";
+import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+
+import "filepond/dist/filepond.min.css";
+
+registerPlugin(FilePondPluginFileValidateType);
 
 export default function ContractAutomation() {
   const { user, logoutMutation } = useAuth();
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleProcessFile = async (error: any, file: any) => {
+    if (error) {
+      toast({
+        title: "Upload Error",
+        description: "Failed to upload document. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const response = await apiRequest("POST", "/api/documents", {
+        title: file.filename,
+        content: await file.getFileEncodeBase64String(),
+        agentType: "CONTRACT_AUTOMATION",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to process document");
+      }
+
+      const document = await response.json();
+      setLocation(`/documents/${document.id}`);
+      toast({
+        title: "Document Uploaded",
+        description: "Your document is being processed. You'll be redirected shortly.",
+      });
+    } catch (error) {
+      toast({
+        title: "Processing Error",
+        description: "Failed to process document. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50 animate-gradient-x">
@@ -47,27 +98,45 @@ export default function ContractAutomation() {
           <div className="grid gap-6">
             <Card className="bg-white/80 backdrop-blur-lg">
               <CardContent className="p-8">
-                <div className="flex flex-col items-center justify-center py-12">
-                  <Upload className="h-16 w-16 text-gray-400 mb-4" />
-                  <h3 className="text-xl font-semibold mb-2">Upload a Contract</h3>
-                  <p className="text-gray-600 text-center mb-6">
-                    Drag and drop your contract document or click to browse
+                <div className="text-center mb-8">
+                  <h3 className="text-xl font-semibold mb-2">Upload Contract Document</h3>
+                  <p className="text-gray-600">
+                    Upload your contract for AI-powered analysis and automation
                   </p>
-                  <Button className="bg-green-600 hover:bg-green-700">
-                    <FileText className="h-4 w-4 mr-2" />
-                    Select Document
-                  </Button>
+                </div>
+
+                <div className="max-w-xl mx-auto">
+                  <FilePond
+                    allowMultiple={false}
+                    acceptedFileTypes={['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']}
+                    labelIdle='Drag & Drop your contract or <span class="filepond--label-action">Browse</span>'
+                    disabled={isUploading}
+                    onprocessfile={handleProcessFile}
+                    onaddfilestart={() => setIsUploading(true)}
+                    onaddfileprogress={() => setIsUploading(false)}
+                  />
+
+                  {isUploading && (
+                    <div className="mt-4 p-4 bg-blue-50 text-blue-700 rounded-lg flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Processing your document...</span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="bg-white/80 backdrop-blur-lg">
+            <Card className="bg-yellow-50 border-yellow-100">
               <CardHeader>
-                <CardTitle>Recent Contracts</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-yellow-600" />
+                  Supported File Types
+                </CardTitle>
+                <CardDescription>
+                  We currently support PDF, Word documents (.doc, .docx), and plain text files.
+                  For best results, ensure your document is clearly formatted.
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <p className="text-gray-600">No contracts analyzed yet.</p>
-              </CardContent>
             </Card>
           </div>
         </div>
