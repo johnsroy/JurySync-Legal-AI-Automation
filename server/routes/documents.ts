@@ -6,6 +6,88 @@ import { eq } from "drizzle-orm";
 
 const router = Router();
 
+// Upload and process document
+router.post("/api/documents", async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ 
+        error: "Not authenticated",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    const { title, content, agentType } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({
+        error: "Missing required fields",
+        code: "VALIDATION_ERROR"
+      });
+    }
+
+    // Create initial document
+    const [document] = await db
+      .insert(documents)
+      .values({
+        userId: req.user.id,
+        title,
+        content: Buffer.from(content, 'base64').toString(),
+        agentType,
+        processingStatus: "PENDING"
+      })
+      .returning();
+
+    // Create initial version
+    await db
+      .insert(documentVersions)
+      .values({
+        content: Buffer.from(content, 'base64').toString(),
+        version: 1,
+        authorId: req.user.id,
+        documentId: document.id,
+        changes: [{
+          description: "Initial document upload",
+          timestamp: new Date().toISOString(),
+          user: req.user.username
+        }]
+      });
+
+    // Analyze document content
+    try {
+      const analysis = await analyzeContractClauses(Buffer.from(content, 'base64').toString());
+
+      // Update document with analysis
+      await db
+        .update(documents)
+        .set({ 
+          analysis,
+          processingStatus: "COMPLETED"
+        })
+        .where(eq(documents.id, document.id));
+
+      res.status(201).json({ ...document, analysis });
+    } catch (error) {
+      // Update document with error status but still return success
+      await db
+        .update(documents)
+        .set({ 
+          processingStatus: "ERROR",
+          errorMessage: error.message
+        })
+        .where(eq(documents.id, document.id));
+
+      res.status(201).json(document);
+    }
+
+  } catch (error: any) {
+    console.error("Document upload error:", error);
+    res.status(500).json({ 
+      error: error.message,
+      code: "INTERNAL_ERROR"
+    });
+  }
+});
+
 // Generate draft based on requirements
 router.post("/api/documents/:id/generate-draft", async (req, res) => {
   try {

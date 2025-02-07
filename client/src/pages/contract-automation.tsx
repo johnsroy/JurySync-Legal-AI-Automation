@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, GitCompare, Upload, FileText, AlertCircle } from "lucide-react";
+import { Gavel, LogOut, Loader2, GitCompare, FileText, AlertCircle } from "lucide-react";
 import { FilePond, registerPlugin } from "react-filepond";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import { useToast } from "@/hooks/use-toast";
@@ -31,30 +31,45 @@ export default function ContractAutomation() {
 
     setIsUploading(true);
     try {
+      // Get base64 string from file
+      const base64String = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          resolve(base64.split(',')[1]);
+        };
+        reader.readAsDataURL(file.file);
+      });
+
       const response = await apiRequest("POST", "/api/documents", {
         title: file.filename,
-        content: await file.getFileEncodeBase64String(),
+        content: base64String,
         agentType: "CONTRACT_AUTOMATION",
       });
 
       if (!response.ok) {
-        throw new Error("Failed to process document");
+        const error = await response.json();
+        throw new Error(error.message || "Failed to process document");
       }
 
       const document = await response.json();
       setLocation(`/documents/${document.id}`);
+
       toast({
         title: "Document Uploaded",
         description: "Your document is being processed. You'll be redirected shortly.",
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Upload error:', error);
       toast({
         title: "Processing Error",
-        description: "Failed to process document. Please try again.",
+        description: error.message || "Failed to process document. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsUploading(false);
+      // Remove the file from FilePond
+      file.serverId = 'remove';
     }
   };
 
@@ -113,7 +128,15 @@ export default function ContractAutomation() {
                     disabled={isUploading}
                     onprocessfile={handleProcessFile}
                     onaddfilestart={() => setIsUploading(true)}
-                    onaddfileprogress={() => setIsUploading(false)}
+                    onaddfileerror={(error, file) => {
+                      setIsUploading(false);
+                      console.error('File add error:', error);
+                      toast({
+                        title: "Upload Error",
+                        description: "Failed to add file. Please try again.",
+                        variant: "destructive",
+                      });
+                    }}
                   />
 
                   {isUploading && (
