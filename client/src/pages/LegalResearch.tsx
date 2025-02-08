@@ -12,6 +12,7 @@ import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import "filepond/dist/filepond.min.css";
 import { queryClient } from "@/lib/queryClient";
 import { Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 registerPlugin(FilePondPluginFileValidateType);
 
@@ -24,6 +25,7 @@ type SearchForm = z.infer<typeof searchSchema>;
 export default function LegalResearch() {
   const [searchResults, setSearchResults] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
+  const { toast } = useToast();
 
   const { register, handleSubmit, formState: { errors } } = useForm<SearchForm>({
     resolver: zodResolver(searchSchema),
@@ -93,6 +95,15 @@ export default function LegalResearch() {
     );
   };
 
+  const handleFilePondError = (error: any) => {
+    console.error('FilePond error:', error);
+    toast({
+      title: "Upload Error",
+      description: error.message || "Failed to upload document",
+      variant: "destructive",
+    });
+  };
+
   return (
     <div className="container mx-auto py-8">
       <h1 className="text-3xl font-bold mb-8">Legal Research Assistant</h1>
@@ -135,9 +146,26 @@ export default function LegalResearch() {
             onupdatefiles={setFiles}
             allowMultiple={true}
             maxFiles={5}
-            server="/api/legal/documents"
-            acceptedFileTypes={['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']}
+            server={{
+              url: "/api/legal/documents",
+              process: {
+                ondata: (formData) => {
+                  // Add additional metadata
+                  formData.append('title', 'Uploaded Document');
+                  formData.append('documentType', 'CASE_LAW');
+                  formData.append('jurisdiction', 'United States');
+                  formData.append('date', new Date().toISOString());
+                  return formData;
+                },
+              },
+            }}
+            acceptedFileTypes={[
+              'application/pdf',
+              'application/msword',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            ]}
             labelIdle='Drag & Drop your legal documents or <span class="filepond--label-action">Browse</span>'
+            onerror={handleFilePondError}
           />
         </Card>
 

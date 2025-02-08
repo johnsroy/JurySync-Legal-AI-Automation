@@ -17,7 +17,7 @@ const upload = multer({
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
   }
-}).single('file');
+}).single('filepond'); // Changed from 'file' to 'filepond'
 
 // Validation schema for document upload
 const documentUploadSchema = z.object({
@@ -30,34 +30,66 @@ const documentUploadSchema = z.object({
 // Helper function to extract text from various document types
 async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
   const fileType = file.mimetype;
+  let extractedText = '';
 
-  if (fileType === 'application/pdf') {
-    const pdfDoc = await PDFDocument.load(file.buffer);
-    return pdfDoc.getPages().map(page => page.getText()).join('\n');
-  } 
+  try {
+    if (fileType === 'application/pdf') {
+      const pdfBytes = file.buffer;
+      const pdfDoc = await PDFDocument.load(pdfBytes);
+      extractedText = pdfDoc.getPages().map(page => {
+        try {
+          return page.getText() || '';
+        } catch (e) {
+          console.error('Error extracting text from PDF page:', e);
+          return '';
+        }
+      }).join('\n');
+    } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+        fileType === 'application/msword') {
+      const result = await mammoth.extractRawText({ buffer: file.buffer });
+      extractedText = result.value;
+    } else {
+      // Fallback to treating as plain text
+      extractedText = file.buffer.toString('utf-8');
+    }
 
-  if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
-      fileType === 'application/msword') {
-    const result = await mammoth.extractRawText({ buffer: file.buffer });
-    return result.value;
+    return extractedText || 'No text could be extracted from the document';
+  } catch (error) {
+    console.error('Error extracting text from file:', error);
+    throw new Error(`Failed to extract text from ${file.originalname}: ${error.message}`);
   }
-
-  // Fallback to treating as plain text
-  return file.buffer.toString('utf-8');
 }
 
 // Upload and process legal document
 router.post('/documents', async (req, res) => {
   try {
+    console.log('Received document upload request');
+
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
-        if (err) reject(err);
-        else resolve(undefined);
+        if (err) {
+          console.error('Multer upload error:', err);
+          reject(err);
+        } else {
+          resolve(undefined);
+        }
       });
     });
 
     if (!req.file) {
+      console.error('No file uploaded');
       return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('File received:', {
+      filename: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    });
+
+    // For FilePond, we need to send a simple response for the initial upload
+    if (!req.body.title) {
+      return res.sendStatus(200);
     }
 
     const validatedData = documentUploadSchema.parse(req.body);
@@ -88,11 +120,7 @@ router.post('/documents', async (req, res) => {
     res.json({ 
       success: true, 
       message: 'Document added successfully',
-      document: {
-        id: result.id,
-        title: result.title,
-        documentType: result.documentType
-      }
+      document: result
     });
 
   } catch (error: any) {
