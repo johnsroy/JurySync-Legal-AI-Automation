@@ -21,10 +21,10 @@ const chroma = new ChromaClient();
 class InMemoryVectorStore {
   private documents: Map<string, { embedding: number[], metadata: any }> = new Map();
 
-  async add({ ids, embeddings, metadatas }: { 
-    ids: string[], 
-    embeddings: number[][], 
-    metadatas: any[] 
+  async add({ ids, embeddings, metadatas }: {
+    ids: string[],
+    embeddings: number[][],
+    metadatas: any[]
   }) {
     ids.forEach((id, index) => {
       this.documents.set(id, {
@@ -34,9 +34,9 @@ class InMemoryVectorStore {
     });
   }
 
-  async query({ queryEmbeddings, nResults }: { 
-    queryEmbeddings: number[][], 
-    nResults: number 
+  async query({ queryEmbeddings, nResults }: {
+    queryEmbeddings: number[][],
+    nResults: number
   }) {
     const queryEmbedding = queryEmbeddings[0];
     const results = Array.from(this.documents.entries())
@@ -113,7 +113,7 @@ export class LegalResearchService {
 
       const params: CreateCollectionParams = {
         name: 'legal_documents',
-        metadata: { 
+        metadata: {
           description: "Vector embeddings for legal documents",
           dataType: "legal_text"
         }
@@ -285,6 +285,7 @@ Structure your response as a JSON object with these fields:
 
   private async generateEmbedding(text: string): Promise<number[]> {
     try {
+      // First try using Anthropic API
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 1000,
@@ -304,13 +305,38 @@ Structure your response as a JSON object with these fields:
         throw new Error('Unexpected response format from Anthropic API');
       }
 
-      const result = JSON.parse(content.text);
-      return result.embedding || new Array(1024).fill(0).map(() => Math.random() - 0.5); // Fallback to random embedding
+      return JSON.parse(content.text).embedding;
     } catch (error) {
-      console.error('Failed to generate embedding:', error);
-      throw error;
+      console.error('Failed to generate embedding using Anthropic API, using fallback method:', error);
+
+      // Fallback: Generate a simple tf-idf like representation
+      const words = text.toLowerCase().split(/\W+/);
+      const uniqueWords = Array.from(new Set(words));
+      const vector = new Array(1024).fill(0);
+
+      uniqueWords.forEach((word, index) => {
+        const hashCode = this.simpleHash(word);
+        const vectorIndex = hashCode % 1024;
+        const frequency = words.filter(w => w === word).length;
+        vector[vectorIndex] += frequency;
+      });
+
+      // Normalize the vector
+      const magnitude = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
+      return vector.map(val => val / (magnitude || 1));
     }
   }
+
+  private simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash);
+  }
+
 }
 
 export const legalResearchService = LegalResearchService.getInstance();

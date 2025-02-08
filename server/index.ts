@@ -5,6 +5,7 @@ import { setupAuth } from "./auth";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { db } from "./db";
+import { seedLegalDatabase } from './services/seedData';
 
 const app = express();
 // Increased limit for file uploads
@@ -75,6 +76,14 @@ app.use((req, res, next) => {
 setupAuth(app);
 
 (async () => {
+  try {
+    // Seed the legal database with sample data
+    await seedLegalDatabase();
+    console.log('Legal database seeded successfully');
+  } catch (error) {
+    console.error('Failed to seed legal database:', error);
+  }
+
   const server = registerRoutes(app);
 
   // Error handling middleware - ensure JSON responses
