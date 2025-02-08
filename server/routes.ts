@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import documentsRouter from "./routes/documents"; // Import the documents router
 import { UserRole } from "@shared/schema";
 import { createCheckoutSession, createPortalSession } from './stripe';
+import legalResearchRouter from "./routes/legalResearch";
 
 function requireRole(role: UserRole) {
   return (req: any, res: any, next: any) => {
@@ -28,6 +29,9 @@ function requireRole(role: UserRole) {
 
 export function registerRoutes(app: Express): Server {
   const server = createServer(app);
+
+  // Add the legal research router
+  app.use("/api/legal", legalResearchRouter);  // Mount under /api/legal prefix
 
   // Register the documents router
   app.use(documentsRouter);  // Mount the documents router

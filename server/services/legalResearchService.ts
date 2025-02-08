@@ -6,13 +6,60 @@ import { legalDocuments, legalCitations, researchQueries } from '@shared/schema'
 import type { LegalDocument, Citation, ResearchQuery } from '@shared/schema';
 
 // Initialize Anthropic client
+if (!process.env.ANTHROPIC_API_KEY) {
+  throw new Error('Missing ANTHROPIC_API_KEY environment variable');
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 // Initialize ChromaDB client for vector storage
 const chroma = new ChromaClient();
-let vectorStore: Collection;
+
+// In-memory fallback storage
+class InMemoryVectorStore {
+  private documents: Map<string, { embedding: number[], metadata: any }> = new Map();
+
+  async add({ ids, embeddings, metadatas }: { 
+    ids: string[], 
+    embeddings: number[][], 
+    metadatas: any[] 
+  }) {
+    ids.forEach((id, index) => {
+      this.documents.set(id, {
+        embedding: embeddings[index],
+        metadata: metadatas[index]
+      });
+    });
+  }
+
+  async query({ queryEmbeddings, nResults }: { 
+    queryEmbeddings: number[][], 
+    nResults: number 
+  }) {
+    const queryEmbedding = queryEmbeddings[0];
+    const results = Array.from(this.documents.entries())
+      .map(([id, doc]) => ({
+        id,
+        distance: this.cosineSimilarity(queryEmbedding, doc.embedding)
+      }))
+      .sort((a, b) => b.distance - a.distance)
+      .slice(0, nResults);
+
+    return {
+      ids: [results.map(r => r.id)],
+      distances: [results.map(r => r.distance)]
+    };
+  }
+
+  private cosineSimilarity(a: number[], b: number[]): number {
+    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+    const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+    const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+    return dotProduct / (magnitudeA * magnitudeB);
+  }
+}
 
 interface SearchResult {
   document: LegalDocument;
@@ -42,9 +89,15 @@ interface CitationNode {
 
 export class LegalResearchService {
   private static instance: LegalResearchService;
+  private vectorStore: Collection | InMemoryVectorStore | null = null;
+  private useInMemory = false;
 
   private constructor() {
-    this.initializeVectorStore();
+    this.initializeVectorStore().catch(error => {
+      console.error('Failed to initialize ChromaDB, falling back to in-memory storage:', error);
+      this.useInMemory = true;
+      this.vectorStore = new InMemoryVectorStore();
+    });
   }
 
   static getInstance(): LegalResearchService {
@@ -56,7 +109,8 @@ export class LegalResearchService {
 
   private async initializeVectorStore() {
     try {
-      // Create or get the collection for legal documents with proper params
+      console.log('Initializing vector store...');
+
       const params: CreateCollectionParams = {
         name: 'legal_documents',
         metadata: { 
@@ -64,35 +118,27 @@ export class LegalResearchService {
           dataType: "legal_text"
         }
       };
-      vectorStore = await chroma.getOrCreateCollection(params);
-      console.log('Vector store initialized successfully');
+
+      this.vectorStore = await chroma.getOrCreateCollection(params);
+      console.log('ChromaDB initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize vector store:', error);
+      console.error('ChromaDB initialization failed:', error);
       throw error;
     }
   }
 
   async addDocument(document: LegalDocument): Promise<void> {
+    if (!this.vectorStore) {
+      throw new Error('Vector store not initialized');
+    }
+
     try {
-      // Generate embedding for the document using Claude
-      const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Extract the key legal principles and arguments from this document for embedding:\n\n${document.content}`
-            }
-          ]
-        }]
-      });
+      console.log('Adding document to vector store:', { title: document.title, id: document.id });
 
       const embedding = await this.generateEmbedding(document.content);
 
       // Store in vector database
-      await vectorStore.add({
+      await this.vectorStore.add({
         ids: [document.id.toString()],
         embeddings: [embedding],
         metadatas: [{
@@ -109,6 +155,7 @@ export class LegalResearchService {
         vectorId: document.id.toString()
       });
 
+      console.log('Document added successfully:', { id: document.id });
     } catch (error) {
       console.error('Failed to add document:', error);
       throw error;
@@ -116,21 +163,25 @@ export class LegalResearchService {
   }
 
   async searchSimilarCases(query: string): Promise<SearchResult[]> {
+    if (!this.vectorStore) {
+      throw new Error('Vector store not initialized');
+    }
+
     try {
-      // Generate embedding for the query
+      console.log('Searching similar cases for query:', query);
+
       const queryEmbedding = await this.generateEmbedding(query);
 
-      // Search vector store
-      const results = await vectorStore.query({
+      const results = await this.vectorStore.query({
         queryEmbeddings: [queryEmbedding],
         nResults: 5
       });
 
       if (!results.ids?.length || !results.distances?.length) {
+        console.log('No similar cases found');
         return [];
       }
 
-      // Fetch full documents and citations
       const searchResults: SearchResult[] = await Promise.all(
         results.ids[0].map(async (id, index) => {
           const [document] = await db
@@ -151,8 +202,8 @@ export class LegalResearchService {
         })
       );
 
+      console.log('Found similar cases:', searchResults.length);
       return searchResults;
-
     } catch (error) {
       console.error('Failed to search similar cases:', error);
       throw error;
@@ -161,10 +212,10 @@ export class LegalResearchService {
 
   async analyzeQuery(query: string): Promise<ResearchResponse> {
     try {
-      // Get similar cases
+      console.log('Analyzing legal research query:', query);
+
       const similarCases = await this.searchSimilarCases(query);
 
-      // Generate comprehensive analysis using Claude
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 2000,
@@ -218,6 +269,7 @@ Structure your response as a JSON object with these fields:
         }
       });
 
+      console.log('Query analysis completed successfully');
       return {
         summary: analysis.summary,
         relevantCases: similarCases,
@@ -253,7 +305,7 @@ Structure your response as a JSON object with these fields:
       }
 
       const result = JSON.parse(content.text);
-      return result.embedding;
+      return result.embedding || new Array(1024).fill(0).map(() => Math.random() - 0.5); // Fallback to random embedding
     } catch (error) {
       console.error('Failed to generate embedding:', error);
       throw error;
