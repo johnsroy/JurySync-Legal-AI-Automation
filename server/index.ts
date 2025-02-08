@@ -77,61 +77,55 @@ setupAuth(app);
 
 (async () => {
   try {
-    // Initialize core application
-    const server = registerRoutes(app);
-
-    // Start server before other initializations
-    const PORT = 5000;
-    server.listen(PORT, "0.0.0.0", () => {
-      log(`serving on port ${PORT}`);
-    });
-
-    // Initialize non-critical components after server starts
-    try {
-      // Seed the legal database with sample data
-      await seedLegalDatabase();
-      console.log('Legal database seeded successfully');
-    } catch (error) {
-      console.error('Failed to seed legal database:', error);
-      // Continue app execution even if seeding fails
-    }
-
-    // Error handling middleware - ensure JSON responses
-    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-      console.error('Error:', err);
-
-      // Ensure we haven't sent headers yet
-      if (!res.headersSent) {
-        // Force content type to be JSON
-        res.setHeader('Content-Type', 'application/json');
-
-        const status = err.status || err.statusCode || 500;
-        const message = err.message || "Internal Server Error";
-
-        // Handle multer errors specifically
-        if (err.code === 'LIMIT_FILE_SIZE') {
-          return res.status(413).json({ error: 'File too large' });
-        }
-        if (err.code === 'LIMIT_FILE_COUNT') {
-          return res.status(413).json({ error: 'Too many files' });
-        }
-        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-          return res.status(400).json({ error: 'Invalid file type' });
-        }
-
-        res.status(status).json({ error: message });
-      }
-    });
-
-    // Setup vite in development after core app is running
-    if (app.get("env") === "development") {
-      await setupVite(app, server);
-    } else {
-      serveStatic(app);
-    }
-
+    // Seed the legal database with sample data
+    await seedLegalDatabase();
+    console.log('Legal database seeded successfully');
   } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
+    console.error('Failed to seed legal database:', error);
   }
+
+  const server = registerRoutes(app);
+
+  // Error handling middleware - ensure JSON responses
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('Error:', err);
+
+    // Ensure we haven't sent headers yet
+    if (!res.headersSent) {
+      // Force content type to be JSON
+      res.setHeader('Content-Type', 'application/json');
+
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+
+      // Handle multer errors specifically
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large' });
+      }
+      if (err.code === 'LIMIT_FILE_COUNT') {
+        return res.status(413).json({ error: 'Too many files' });
+      }
+      if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+        return res.status(400).json({ error: 'Invalid file type' });
+      }
+
+      res.status(status).json({ error: message });
+    }
+  });
+
+  // importantly only setup vite in development and after
+  // setting up all the other routes so the catch-all route
+  // doesn't interfere with the other routes
+  if (app.get("env") === "development") {
+    await setupVite(app, server);
+  } else {
+    serveStatic(app);
+  }
+
+  // ALWAYS serve the app on port 5000
+  // this serves both the API and the client
+  const PORT = 5000;
+  server.listen(PORT, "0.0.0.0", () => {
+    log(`serving on port ${PORT}`);
+  });
 })();

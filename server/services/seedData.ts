@@ -129,18 +129,10 @@ export async function seedLegalDatabase() {
         if (!existingDoc) {
           const [insertedDoc] = await db
             .insert(legalDocuments)
-            .values({
-              ...doc,
-              createdAt: new Date(),
-              updatedAt: new Date()
-            })
+            .values(doc)
             .returning();
 
-          // Add to vector store in background
-          legalResearchService.addDocument(insertedDoc).catch(error => {
-            console.error(`Failed to add document ${doc.title} to vector store:`, error);
-          });
-
+          await legalResearchService.addDocument(insertedDoc);
           console.log(`Added document: ${doc.title}`);
         } else {
           console.log(`Document already exists: ${doc.title}`);
@@ -155,6 +147,6 @@ export async function seedLegalDatabase() {
     console.log('Legal database seeding completed');
   } catch (error) {
     console.error('Failed to seed legal database:', error);
-    // Don't throw error, let the application continue
+    throw error;
   }
 }

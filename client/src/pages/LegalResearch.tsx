@@ -10,7 +10,7 @@ import { FilePond, registerPlugin } from "react-filepond";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import "filepond/dist/filepond.min.css";
 import { queryClient } from "@/lib/queryClient";
-import { Loader2, Search, Upload } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 registerPlugin(FilePondPluginFileValidateType);
@@ -22,12 +22,11 @@ const searchSchema = z.object({
 type SearchForm = z.infer<typeof searchSchema>;
 
 const searchExamples = [
-  "Analyze the SOC 2 compliance requirements and controls for cloud service providers",
-  "What are the key controls and requirements in SOC 2 Type II compliance audits?",
-  "Compare SOC 1 vs SOC 2 compliance frameworks and their business impact",
-  "Research legal precedents related to SOC compliance violations",
-  "How does SOC 3 reporting differ from SOC 2 in terms of public disclosure?",
-  "Analyze the implementation of security controls across SOC reports"
+  "What are the key provisions of the Civil Rights Act of 1964?",
+  "How does the Americans with Disabilities Act protect against discrimination?",
+  "Analyze the impact of the Voting Rights Act of 1965 on electoral participation",
+  "Compare the civil rights protections in recent legislation with historical precedents",
+  "Research legal precedents related to disability discrimination in employment"
 ];
 
 export default function LegalResearch() {
@@ -97,8 +96,48 @@ export default function LegalResearch() {
     }
   };
 
-  const handleFilePondInit = () => {
-    console.log('FilePond initialized');
+  const renderSearchResults = () => {
+    if (!searchResults) return null;
+
+    return (
+      <div className="space-y-4">
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-2">Summary</h3>
+          <p>{searchResults.summary}</p>
+        </Card>
+
+        {searchResults.relevantCases?.length > 0 && (
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4">Relevant Cases</h3>
+            <div className="space-y-4">
+              {searchResults.relevantCases.map((result: any, index: number) => (
+                <div key={index} className="border-b last:border-0 pb-4">
+                  <h4 className="font-medium">{result.document.title}</h4>
+                  <p className="text-sm text-gray-600">
+                    Jurisdiction: {result.document.jurisdiction}
+                  </p>
+                  <p className="mt-2">{result.document.content.substring(0, 200)}...</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {searchResults.timeline && (
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4">Timeline</h3>
+            <div className="space-y-2">
+              {searchResults.timeline.map((event: any, index: number) => (
+                <div key={index} className="flex gap-4">
+                  <span className="font-medium">{event.date}</span>
+                  <span>{event.event}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
+    );
   };
 
   const handleFilePondError = (error: any) => {
@@ -110,67 +149,6 @@ export default function LegalResearch() {
     });
   };
 
-  const renderSearchResults = () => {
-    if (!searchResults) return null;
-
-    return (
-      <div className="space-y-4">
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-2">Analysis Summary</h3>
-          <p className="text-gray-700 whitespace-pre-wrap">{searchResults.summary}</p>
-        </Card>
-
-        {searchResults.relevantCases?.length > 0 && (
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Relevant Documents</h3>
-            <div className="space-y-4">
-              {searchResults.relevantCases.map((result: any, index: number) => (
-                <div key={index} className="border-b last:border-0 pb-4">
-                  <h4 className="font-medium">{result.document.title}</h4>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Type: {result.document.documentType} | Jurisdiction: {result.document.jurisdiction}
-                  </p>
-                  <p className="mt-2 text-gray-700 whitespace-pre-wrap">
-                    {result.document.content.substring(0, 300)}...
-                  </p>
-                  <div className="mt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => analyzeDocument(result.document.id)}
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      Analyze Further
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {searchResults.timeline && (
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Key Events Timeline</h3>
-            <div className="space-y-2">
-              {searchResults.timeline.map((event: any, index: number) => (
-                <div key={index} className="flex gap-4 items-start">
-                  <div className="text-sm font-medium text-gray-600 min-w-[100px]">
-                    {event.date}
-                  </div>
-                  <div>
-                    <p className="font-medium">{event.event}</p>
-                    <p className="text-sm text-gray-600 mt-1">{event.significance}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="container mx-auto py-8">
       <h1 className="text-3xl font-bold mb-8">Legal Research Assistant</h1>
@@ -179,10 +157,8 @@ export default function LegalResearch() {
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Search Legal Documents</h2>
           <div className="mb-4">
-            <p className="text-sm text-gray-600 mb-2">
-              Try these example queries or enter your own research question:
-            </p>
-            <div className="flex flex-wrap gap-2 mb-4">
+            <p className="text-sm text-gray-600 mb-2">Try these example searches:</p>
+            <div className="flex flex-wrap gap-2">
               {searchExamples.map((example, index) => (
                 <Button
                   key={index}
@@ -199,7 +175,7 @@ export default function LegalResearch() {
           <form onSubmit={form.handleSubmit(handleSearch)} className="space-y-4">
             <div>
               <Textarea
-                placeholder="Enter your legal research query. You can ask about SOC compliance, analyze documents, or compare different frameworks..."
+                placeholder="Enter your legal research query..."
                 {...form.register("query")}
                 className="min-h-[100px]"
               />
@@ -215,7 +191,7 @@ export default function LegalResearch() {
               {searchMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Analyzing...
+                  Searching...
                 </>
               ) : (
                 <>
@@ -230,15 +206,6 @@ export default function LegalResearch() {
         {/* File Upload Section */}
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Upload Legal Documents</h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Upload your legal documents for analysis. We support various formats including:
-            <ul className="list-disc ml-6 mt-2">
-              <li>SOC Reports (SOC 1, SOC 2, SOC 3)</li>
-              <li>Compliance Documents</li>
-              <li>Legal Agreements and Contracts</li>
-              <li>Regulatory Documents</li>
-            </ul>
-          </p>
           <FilePond
             files={files}
             onupdatefiles={setFiles}
@@ -248,6 +215,13 @@ export default function LegalResearch() {
               process: "/api/legal/documents",
               headers: {
                 'Accept': 'application/json'
+              },
+              ondata: (formData: FormData) => {
+                formData.append('title', 'Uploaded Document');
+                formData.append('documentType', 'CASE_LAW');
+                formData.append('jurisdiction', 'United States');
+                formData.append('date', new Date().toISOString());
+                return formData;
               }
             }}
             acceptedFileTypes={[
@@ -256,7 +230,6 @@ export default function LegalResearch() {
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
             ]}
             labelIdle='Drag & Drop your legal documents or <span class="filepond--label-action">Browse</span>'
-            oninit={handleFilePondInit}
             onerror={handleFilePondError}
           />
         </Card>
@@ -266,37 +239,30 @@ export default function LegalResearch() {
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Documents Available for Research</h2>
             <p className="text-sm text-gray-600 mb-4">
-              You can conduct research on any of the following documents, including sample legal precedents and your uploaded materials:
+              You can conduct research on any of the following legal documents, including sample cases and your uploaded materials:
             </p>
             <div className="space-y-4">
               {uploadedDocuments.map((doc: any) => (
-                <div key={doc.id} className="flex flex-col p-4 border rounded-lg hover:border-primary/50 transition-colors">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-grow">
+                <div key={doc.id} className="flex flex-col p-4 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
                       <h3 className="font-medium">{doc.title}</h3>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        <span className="text-sm text-gray-600">
-                          {new Date(doc.date).toLocaleDateString()}
-                        </span>
-                        <span className="text-sm text-gray-600">|</span>
-                        <span className="text-sm text-gray-600">
-                          {doc.documentType}
-                        </span>
-                      </div>
+                      <p className="text-sm text-gray-600">
+                        {new Date(doc.date).toLocaleDateString()} - {doc.documentType}
+                      </p>
                     </div>
                     <Button
                       onClick={() => analyzeDocument(doc.id)}
                       variant="outline"
                       size="sm"
-                      className="shrink-0"
                     >
                       <Search className="w-4 h-4 mr-2" />
                       Begin Research
                     </Button>
                   </div>
                   {doc.content && (
-                    <div className="mt-3 text-sm text-gray-700">
-                      <p className="line-clamp-3">{doc.content}</p>
+                    <div className="mt-2 text-sm text-gray-700 max-h-32 overflow-y-auto">
+                      <p>{doc.content.substring(0, 200)}...</p>
                     </div>
                   )}
                 </div>
