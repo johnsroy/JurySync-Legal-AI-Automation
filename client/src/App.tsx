@@ -12,7 +12,7 @@ import PricingPage from "@/pages/pricing-page";
 import Dashboard from "@/pages/dashboard";
 import ContractAutomation from "@/pages/contract-automation";
 import ComplianceAuditing from "@/pages/compliance-auditing";
-import LegalResearch from "@/pages/legal-research";
+import LegalResearch from "@/pages/LegalResearch";
 import ReportsDashboard from "@/pages/reports-dashboard";
 import { ProtectedRoute } from "./lib/protected-route";
 
