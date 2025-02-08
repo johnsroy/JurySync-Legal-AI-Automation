@@ -166,23 +166,60 @@ export default function LegalResearch() {
 
     return (
       <div className="mt-6 space-y-4">
-        <h3 className="text-lg font-semibold">Analysis Results</h3>
+        <h3 className="text-xl font-semibold">Document Analysis Results</h3>
         <div className="space-y-4">
-          <div className="p-4 border rounded-lg">
+          {/* Summary Section */}
+          <Card className="p-6">
             <h4 className="font-medium mb-2">Summary</h4>
-            <p>{uploadedDocResults.summary}</p>
-          </div>
+            <p className="text-gray-700">{uploadedDocResults.summary}</p>
+          </Card>
 
-          {uploadedDocResults.relevantCases?.length > 0 && (
-            <div className="p-4 border rounded-lg">
-              <h4 className="font-medium mb-2">Related Documents</h4>
-              {uploadedDocResults.relevantCases.map((result: any, index: number) => (
-                <div key={index} className="mt-2">
-                  <p className="font-medium">{result.document.title}</p>
-                  <p className="text-sm text-gray-600">{result.document.content.substring(0, 150)}...</p>
-                </div>
-              ))}
-            </div>
+          {/* Key Points Section */}
+          {uploadedDocResults.keyPoints?.length > 0 && (
+            <Card className="p-6">
+              <h4 className="font-medium mb-2">Key Points</h4>
+              <ul className="list-disc list-inside space-y-2">
+                {uploadedDocResults.keyPoints.map((point: string, index: number) => (
+                  <li key={index} className="text-gray-700">{point}</li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {/* Legal Implications Section */}
+          {uploadedDocResults.legalImplications?.length > 0 && (
+            <Card className="p-6">
+              <h4 className="font-medium mb-2">Legal Implications</h4>
+              <ul className="list-disc list-inside space-y-2">
+                {uploadedDocResults.legalImplications.map((implication: string, index: number) => (
+                  <li key={index} className="text-gray-700">{implication}</li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {/* Recommendations Section */}
+          {uploadedDocResults.recommendations?.length > 0 && (
+            <Card className="p-6">
+              <h4 className="font-medium mb-2">Recommendations</h4>
+              <ul className="list-disc list-inside space-y-2">
+                {uploadedDocResults.recommendations.map((rec: string, index: number) => (
+                  <li key={index} className="text-gray-700">{rec}</li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {/* Risk Areas Section */}
+          {uploadedDocResults.riskAreas?.length > 0 && (
+            <Card className="p-6">
+              <h4 className="font-medium mb-2 text-red-600">Risk Areas</h4>
+              <ul className="list-disc list-inside space-y-2">
+                {uploadedDocResults.riskAreas.map((risk: string, index: number) => (
+                  <li key={index} className="text-red-600">{risk}</li>
+                ))}
+              </ul>
+            </Card>
           )}
         </div>
       </div>
@@ -247,13 +284,13 @@ export default function LegalResearch() {
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Upload and Research Legal Documents</h2>
           <p className="text-sm text-gray-600 mb-4">
-            Upload your legal documents for instant analysis and research insights.
+            Upload your legal documents for instant AI-powered analysis and research insights.
           </p>
           <FilePond
             files={files}
             onupdatefiles={setFiles}
-            allowMultiple={true}
-            maxFiles={5}
+            allowMultiple={false}
+            maxFiles={1}
             server={{
               process: "/api/legal/documents",
               headers: {
@@ -266,14 +303,19 @@ export default function LegalResearch() {
                   console.log('Parsed upload response:', data);
                   if (data.documentId) {
                     await analyzeDocument(data.documentId);
+                    toast({
+                      title: "Analysis Complete",
+                      description: "Document has been uploaded and analyzed successfully.",
+                    });
                   }
                   invalidateLegalDocuments();
-                  toast({
-                    title: "Success",
-                    description: "Document uploaded and analysis started",
-                  });
                 } catch (error) {
                   console.error('Error processing upload response:', error);
+                  toast({
+                    title: "Error",
+                    description: "Failed to analyze document",
+                    variant: "destructive"
+                  });
                 }
               }
             }}
@@ -282,7 +324,7 @@ export default function LegalResearch() {
               'application/msword',
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
             ]}
-            labelIdle='Drag & Drop your legal documents or <span class="filepond--label-action">Browse</span>'
+            labelIdle='Drag & Drop your legal document or <span class="filepond--label-action">Browse</span>'
             onerror={handleFilePondError}
           />
           {renderUploadedDocResults()}

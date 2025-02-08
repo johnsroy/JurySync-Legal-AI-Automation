@@ -7,8 +7,16 @@ import mammoth from 'mammoth';
 import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq, desc } from 'drizzle-orm';
+import { Anthropic } from '@anthropic-ai/sdk';
 
-const router = Router();
+// Initialize Anthropic client
+if (!process.env.ANTHROPIC_API_KEY) {
+  throw new Error('Missing ANTHROPIC_API_KEY environment variable');
+}
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 // Configure multer for file uploads
 const upload = multer({
@@ -75,7 +83,7 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
     if (fileType === 'application/pdf') {
       extractedText = await extractTextFromBuffer(file.buffer);
     } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-        fileType === 'application/msword') {
+      fileType === 'application/msword') {
       const result = await mammoth.extractRawText({ buffer: file.buffer });
       extractedText = result.value;
     } else {
@@ -89,6 +97,8 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
     throw new Error(`Failed to extract text from ${file.originalname}: ${error.message}`);
   }
 }
+
+const router = Router();
 
 // Upload and process legal document
 router.post('/documents', async (req, res) => {
@@ -241,11 +251,43 @@ router.post('/documents/:id/analyze', async (req, res) => {
 
     console.log('Analyzing document:', { id: documentId, title: document.title });
 
-    // Analyze the document using the legal research service
-    const results = await legalResearchService.analyzeQuery(document.content);
+    // Use Anthropic to analyze the document
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 2000,
+      temperature: 0.2,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `Analyze this legal document comprehensively and provide a structured analysis. Include key findings, legal implications, and related precedents if applicable.
+
+Document Title: ${document.title}
+Content: ${document.content}
+
+Structure your response as a JSON object with these fields:
+{
+  "summary": "A concise summary of the document",
+  "keyPoints": ["Array of main points"],
+  "legalImplications": ["Array of legal implications"],
+  "recommendations": ["Array of recommendations or next steps"],
+  "riskAreas": ["Array of potential risk areas identified"]
+}`
+          }
+        ]
+      }]
+    });
+
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      throw new Error('Unexpected response format from Anthropic API');
+    }
+
+    const analysis = JSON.parse(content.text);
     console.log('Analysis completed');
 
-    res.json(results);
+    res.json(analysis);
 
   } catch (error: any) {
     console.error('Document analysis error:', error);
