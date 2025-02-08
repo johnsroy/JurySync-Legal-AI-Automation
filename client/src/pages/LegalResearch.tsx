@@ -10,7 +10,7 @@ import { FilePond, registerPlugin } from "react-filepond";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import "filepond/dist/filepond.min.css";
 import { queryClient } from "@/lib/queryClient";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 registerPlugin(FilePondPluginFileValidateType);
@@ -28,6 +28,16 @@ export default function LegalResearch() {
 
   const { register, handleSubmit, formState: { errors } } = useForm<SearchForm>({
     resolver: zodResolver(searchSchema),
+  });
+
+  // Query to fetch uploaded documents
+  const { data: uploadedDocuments } = useQuery({
+    queryKey: ["/api/legal/documents"],
+    queryFn: async () => {
+      const response = await fetch("/api/legal/documents");
+      if (!response.ok) throw new Error("Failed to fetch documents");
+      return response.json();
+    },
   });
 
   const searchMutation = useMutation({
@@ -48,6 +58,24 @@ export default function LegalResearch() {
 
   const handleSearch = (data: SearchForm) => {
     searchMutation.mutate(data);
+  };
+
+  // Function to analyze a specific document
+  const analyzeDocument = async (documentId: number) => {
+    try {
+      const response = await fetch(`/api/legal/documents/${documentId}/analyze`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("Failed to analyze document");
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (error: any) {
+      toast({
+        title: "Analysis Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   const renderSearchResults = () => {
@@ -167,6 +195,33 @@ export default function LegalResearch() {
             onerror={handleFilePondError}
           />
         </Card>
+
+        {/* Uploaded Documents Section */}
+        {uploadedDocuments?.length > 0 && (
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold mb-4">Uploaded Documents</h2>
+            <div className="space-y-4">
+              {uploadedDocuments.map((doc: any) => (
+                <div key={doc.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <h3 className="font-medium">{doc.title}</h3>
+                    <p className="text-sm text-gray-600">
+                      {new Date(doc.date).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => analyzeDocument(doc.id)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Search className="w-4 h-4 mr-2" />
+                    Begin Research
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {searchMutation.isPending ? (
           <div className="flex justify-center items-center p-8">

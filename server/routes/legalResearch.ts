@@ -199,4 +199,44 @@ router.get('/documents/:id/versions', async (req, res) => {
   }
 });
 
+// Add document analysis endpoint
+router.post('/documents/:id/analyze', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+
+    // Get the document
+    const [document] = await db
+      .select()
+      .from(legalDocuments)
+      .where(eq(legalDocuments.id, documentId));
+
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    // Analyze the document using the legal research service
+    const results = await legalResearchService.analyzeQuery(document.content);
+    res.json(results);
+
+  } catch (error: any) {
+    console.error('Document analysis error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add endpoint to fetch all documents
+router.get('/documents', async (req, res) => {
+  try {
+    const documents = await db
+      .select()
+      .from(legalDocuments)
+      .orderBy(desc(legalDocuments.createdAt));
+
+    res.json(documents);
+  } catch (error: any) {
+    console.error('Error fetching documents:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
