@@ -4,7 +4,6 @@ import type { InsertLegalDocument } from '@shared/schema';
 import multer from 'multer';
 import { z } from 'zod';
 import mammoth from 'mammoth';
-import { PDFDocument } from 'pdf-lib';
 import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq, desc } from 'drizzle-orm';
@@ -17,7 +16,7 @@ const upload = multer({
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
   }
-}).single('filepond'); // Changed from 'file' to 'filepond'
+}).single('filepond'); // For FilePond uploads
 
 // Validation schema for document upload
 const documentUploadSchema = z.object({
@@ -27,23 +26,36 @@ const documentUploadSchema = z.object({
   date: z.string().transform(str => new Date(str))
 });
 
+// Custom PDF text extraction function
+async function extractTextFromBuffer(buffer: Buffer): Promise<string> {
+  // Basic PDF structure markers
+  const startMarker = Buffer.from('%PDF-');
+  const endMarker = Buffer.from('%%EOF');
+
+  if (buffer.indexOf(startMarker) !== 0) {
+    throw new Error('Invalid PDF format');
+  }
+
+  // Convert buffer to string and extract text between PDF markers
+  const text = buffer.toString('utf-8');
+  const textContent = text
+    .split(/[\r\n]/)
+    .filter(line => line.trim() && !line.startsWith('%'))
+    .join(' ');
+
+  return textContent || 'No text could be extracted';
+}
+
 // Helper function to extract text from various document types
 async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
   const fileType = file.mimetype;
   let extractedText = '';
 
   try {
+    console.log('Extracting text from file:', { fileType, filename: file.originalname });
+
     if (fileType === 'application/pdf') {
-      const pdfBytes = file.buffer;
-      const pdfDoc = await PDFDocument.load(pdfBytes);
-      extractedText = pdfDoc.getPages().map(page => {
-        try {
-          return page.getText() || '';
-        } catch (e) {
-          console.error('Error extracting text from PDF page:', e);
-          return '';
-        }
-      }).join('\n');
+      extractedText = await extractTextFromBuffer(file.buffer);
     } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
         fileType === 'application/msword') {
       const result = await mammoth.extractRawText({ buffer: file.buffer });
@@ -54,7 +66,7 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
     }
 
     return extractedText || 'No text could be extracted from the document';
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error extracting text from file:', error);
     throw new Error(`Failed to extract text from ${file.originalname}: ${error.message}`);
   }
@@ -114,13 +126,12 @@ router.post('/documents', async (req, res) => {
     };
 
     // Add document to vector store and database
-    const result = await legalResearchService.addDocument(document);
+    await legalResearchService.addDocument(document);
 
     // Return success response with document details
     res.json({ 
       success: true, 
-      message: 'Document added successfully',
-      document: result
+      message: 'Document added successfully'
     });
 
   } catch (error: any) {
@@ -178,7 +189,7 @@ router.get('/documents/:id/versions', async (req, res) => {
     const versions = await db
       .select()
       .from(legalDocuments)
-      .where(eq(legalDocuments.parentDocumentId, documentId))
+      .where(eq(legalDocuments.id, documentId))
       .orderBy(desc(legalDocuments.createdAt));
 
     res.json(versions);

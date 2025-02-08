@@ -4,7 +4,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { FilePond, registerPlugin } from "react-filepond";
@@ -147,17 +146,17 @@ export default function LegalResearch() {
             allowMultiple={true}
             maxFiles={5}
             server={{
-              url: "/api/legal/documents",
-              process: {
-                ondata: (formData) => {
-                  // Add additional metadata
-                  formData.append('title', 'Uploaded Document');
-                  formData.append('documentType', 'CASE_LAW');
-                  formData.append('jurisdiction', 'United States');
-                  formData.append('date', new Date().toISOString());
-                  return formData;
-                },
+              process: "/api/legal/documents",
+              headers: {
+                'Accept': 'application/json'
               },
+              ondata: (formData: FormData) => {
+                formData.append('title', 'Uploaded Document');
+                formData.append('documentType', 'CASE_LAW');
+                formData.append('jurisdiction', 'United States');
+                formData.append('date', new Date().toISOString());
+                return formData;
+              }
             }}
             acceptedFileTypes={[
               'application/pdf',
