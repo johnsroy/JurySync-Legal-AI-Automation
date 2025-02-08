@@ -9,9 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { FilePond, registerPlugin } from "react-filepond";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import "filepond/dist/filepond.min.css";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, prefetchLegalDocuments, invalidateLegalDocuments } from "@/lib/queryClient";
 import { Loader2, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
 
 registerPlugin(FilePondPluginFileValidateType);
 
@@ -48,8 +49,13 @@ export default function LegalResearch() {
     }
   }, [selectedExample, form]);
 
-  // Query to fetch uploaded documents
-  const { data: uploadedDocuments } = useQuery({
+  // Prefetch documents on component mount
+  useEffect(() => {
+    prefetchLegalDocuments();
+  }, []);
+
+  // Query to fetch uploaded documents with loading state
+  const { data: uploadedDocuments, isLoading: isLoadingDocuments } = useQuery({
     queryKey: ["/api/legal/documents"],
     queryFn: async () => {
       const response = await fetch("/api/legal/documents");
@@ -72,10 +78,26 @@ export default function LegalResearch() {
       setSearchResults(data);
       queryClient.invalidateQueries({ queryKey: ["/api/legal/documents"] });
     },
+    onError: (error: Error) => {
+      toast({
+        title: "Search Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   });
 
   const handleSearch = (data: SearchForm) => {
     searchMutation.mutate(data);
+  };
+
+  const handleFilePondError = (error: any) => {
+    console.error('FilePond error:', error);
+    toast({
+      title: "Upload Error",
+      description: error.message || "Failed to upload document",
+      variant: "destructive",
+    });
   };
 
   // Function to analyze a specific document
@@ -96,57 +118,42 @@ export default function LegalResearch() {
     }
   };
 
-  const renderSearchResults = () => {
-    if (!searchResults) return null;
+  // Render documents list with loading state
+  const renderDocumentsList = () => {
+    if (isLoadingDocuments) {
+      return Array(3).fill(0).map((_, index) => (
+        <div key={index} className="flex flex-col p-4 border rounded-lg animate-pulse">
+          <Skeleton className="h-6 w-3/4 mb-2" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      ));
+    }
 
-    return (
-      <div className="space-y-4">
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-2">Summary</h3>
-          <p>{searchResults.summary}</p>
-        </Card>
-
-        {searchResults.relevantCases?.length > 0 && (
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Relevant Cases</h3>
-            <div className="space-y-4">
-              {searchResults.relevantCases.map((result: any, index: number) => (
-                <div key={index} className="border-b last:border-0 pb-4">
-                  <h4 className="font-medium">{result.document.title}</h4>
-                  <p className="text-sm text-gray-600">
-                    Jurisdiction: {result.document.jurisdiction}
-                  </p>
-                  <p className="mt-2">{result.document.content.substring(0, 200)}...</p>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {searchResults.timeline && (
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Timeline</h3>
-            <div className="space-y-2">
-              {searchResults.timeline.map((event: any, index: number) => (
-                <div key={index} className="flex gap-4">
-                  <span className="font-medium">{event.date}</span>
-                  <span>{event.event}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
+    return uploadedDocuments?.map((doc: any) => (
+      <div key={doc.id} className="flex flex-col p-4 border rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h3 className="font-medium">{doc.title}</h3>
+            <p className="text-sm text-gray-600">
+              {new Date(doc.date).toLocaleDateString()} - {doc.documentType}
+            </p>
+          </div>
+          <Button
+            onClick={() => analyzeDocument(doc.id)}
+            variant="outline"
+            size="sm"
+          >
+            <Search className="w-4 h-4 mr-2" />
+            Begin Research
+          </Button>
+        </div>
+        {doc.content && (
+          <div className="mt-2 text-sm text-gray-700 max-h-32 overflow-y-auto">
+            <p>{doc.content.substring(0, 200)}...</p>
+          </div>
         )}
       </div>
-    );
-  };
-
-  const handleFilePondError = (error: any) => {
-    console.error('FilePond error:', error);
-    toast({
-      title: "Upload Error",
-      description: error.message || "Failed to upload document",
-      variant: "destructive",
-    });
+    ));
   };
 
   return (
@@ -216,12 +223,12 @@ export default function LegalResearch() {
               headers: {
                 'Accept': 'application/json'
               },
-              ondata: (formData: FormData) => {
-                formData.append('title', 'Uploaded Document');
-                formData.append('documentType', 'CASE_LAW');
-                formData.append('jurisdiction', 'United States');
-                formData.append('date', new Date().toISOString());
-                return formData;
+              onload: (response) => {
+                invalidateLegalDocuments();
+                toast({
+                  title: "Success",
+                  description: "Document uploaded successfully",
+                });
               }
             }}
             acceptedFileTypes={[
@@ -235,48 +242,60 @@ export default function LegalResearch() {
         </Card>
 
         {/* Available Documents Section */}
-        {uploadedDocuments?.length > 0 && (
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Documents Available for Research</h2>
-            <p className="text-sm text-gray-600 mb-4">
-              You can conduct research on any of the following legal documents, including sample cases and your uploaded materials:
-            </p>
-            <div className="space-y-4">
-              {uploadedDocuments.map((doc: any) => (
-                <div key={doc.id} className="flex flex-col p-4 border rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <h3 className="font-medium">{doc.title}</h3>
-                      <p className="text-sm text-gray-600">
-                        {new Date(doc.date).toLocaleDateString()} - {doc.documentType}
-                      </p>
-                    </div>
-                    <Button
-                      onClick={() => analyzeDocument(doc.id)}
-                      variant="outline"
-                      size="sm"
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      Begin Research
-                    </Button>
-                  </div>
-                  {doc.content && (
-                    <div className="mt-2 text-sm text-gray-700 max-h-32 overflow-y-auto">
-                      <p>{doc.content.substring(0, 200)}...</p>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Documents Available for Research</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            You can conduct research on any of the following legal documents, including sample cases and your uploaded materials:
+          </p>
+          <div className="space-y-4">
+            {renderDocumentsList()}
+          </div>
+        </Card>
 
         {searchMutation.isPending ? (
           <div className="flex justify-center items-center p-8">
             <Loader2 className="h-8 w-8 animate-spin" />
           </div>
         ) : (
-          renderSearchResults()
+          searchResults && (
+            <div className="space-y-4">
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-2">Summary</h3>
+                <p>{searchResults.summary}</p>
+              </Card>
+
+              {searchResults.relevantCases?.length > 0 && (
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">Relevant Cases</h3>
+                  <div className="space-y-4">
+                    {searchResults.relevantCases.map((result: any, index: number) => (
+                      <div key={index} className="border-b last:border-0 pb-4">
+                        <h4 className="font-medium">{result.document.title}</h4>
+                        <p className="text-sm text-gray-600">
+                          Jurisdiction: {result.document.jurisdiction}
+                        </p>
+                        <p className="mt-2">{result.document.content.substring(0, 200)}...</p>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {searchResults.timeline && (
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">Timeline</h3>
+                  <div className="space-y-2">
+                    {searchResults.timeline.map((event: any, index: number) => (
+                      <div key={index} className="flex gap-4">
+                        <span className="font-medium">{event.date}</span>
+                        <span>{event.event}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </div>
+          )
         )}
       </div>
     </div>
