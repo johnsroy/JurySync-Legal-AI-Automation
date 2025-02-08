@@ -178,62 +178,6 @@ router.post('/documents', async (req, res) => {
   }
 });
 
-// Query validation schema
-const querySchema = z.object({
-  query: z.string().min(1, "Query is required")
-});
-
-// Perform legal research query
-router.post('/query', async (req, res) => {
-  try {
-    const { query } = querySchema.parse(req.body);
-    const results = await legalResearchService.analyzeQuery(query);
-    res.json(results);
-
-  } catch (error: any) {
-    console.error('Query analysis error:', error);
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: error.errors });
-    }
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Search similar cases
-router.get('/similar', async (req, res) => {
-  try {
-    const { query } = req.query;
-
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({ error: 'Query parameter is required' });
-    }
-
-    const results = await legalResearchService.searchSimilarCases(query);
-    res.json(results);
-
-  } catch (error: any) {
-    console.error('Similar cases search error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get document versions
-router.get('/documents/:id/versions', async (req, res) => {
-  try {
-    const documentId = parseInt(req.params.id);
-    const versions = await db
-      .select()
-      .from(legalDocuments)
-      .where(eq(legalDocuments.id, documentId))
-      .orderBy(desc(legalDocuments.createdAt));
-
-    res.json(versions);
-  } catch (error: any) {
-    console.error('Error fetching document versions:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Add document analysis endpoint
 router.post('/documents/:id/analyze', async (req, res) => {
   try {
@@ -291,6 +235,62 @@ Structure your response as a JSON object with these fields:
 
   } catch (error: any) {
     console.error('Document analysis error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Query validation schema
+const querySchema = z.object({
+  query: z.string().min(1, "Query is required")
+});
+
+// Perform legal research query
+router.post('/query', async (req, res) => {
+  try {
+    const { query } = querySchema.parse(req.body);
+    const results = await legalResearchService.analyzeQuery(query);
+    res.json(results);
+
+  } catch (error: any) {
+    console.error('Query analysis error:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Search similar cases
+router.get('/similar', async (req, res) => {
+  try {
+    const { query } = req.query;
+
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Query parameter is required' });
+    }
+
+    const results = await legalResearchService.searchSimilarCases(query);
+    res.json(results);
+
+  } catch (error: any) {
+    console.error('Similar cases search error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get document versions
+router.get('/documents/:id/versions', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const versions = await db
+      .select()
+      .from(legalDocuments)
+      .where(eq(legalDocuments.id, documentId))
+      .orderBy(desc(legalDocuments.createdAt));
+
+    res.json(versions);
+  } catch (error: any) {
+    console.error('Error fetching document versions:', error);
     res.status(500).json({ error: error.message });
   }
 });

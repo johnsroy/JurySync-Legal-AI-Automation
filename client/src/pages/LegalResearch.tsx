@@ -160,7 +160,7 @@ export default function LegalResearch() {
     ));
   };
 
-  // Render research results for uploaded document
+  // Render results for uploaded document analysis
   const renderUploadedDocResults = () => {
     if (!uploadedDocResults) return null;
 
