@@ -128,13 +128,13 @@ router.post('/documents', async (req, res) => {
     const content = await extractTextFromFile(req.file);
 
     // Create new document version
-    const document: InsertLegalDocument = {
+    const document = {
       title: validatedData.title,
       content,
       documentType: validatedData.documentType,
       jurisdiction: validatedData.jurisdiction,
       date: validatedData.date,
-      status: 'ACTIVE',
+      status: 'ACTIVE' as const,
       metadata: {
         filename: req.file.originalname,
         fileType: req.file.mimetype,
@@ -143,13 +143,20 @@ router.post('/documents', async (req, res) => {
       citations: []
     };
 
-    // Add document to vector store and database
-    await legalResearchService.addDocument(document);
+    // Add document to database first
+    const [createdDoc] = await db
+      .insert(legalDocuments)
+      .values(document)
+      .returning();
 
-    // Return success response with document details
+    // Then add to vector store
+    await legalResearchService.addDocument(createdDoc);
+
+    // Return success response with document ID
     res.json({
       success: true,
-      message: 'Document added successfully'
+      message: 'Document added successfully',
+      documentId: createdDoc.id
     });
 
   } catch (error: any) {

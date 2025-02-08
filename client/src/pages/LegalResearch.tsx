@@ -34,6 +34,7 @@ export default function LegalResearch() {
   const [searchResults, setSearchResults] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
   const [selectedExample, setSelectedExample] = useState<string>("");
+  const [uploadedDocResults, setUploadedDocResults] = useState<any>(null);
   const { toast } = useToast();
 
   const form = useForm<SearchForm>({
@@ -108,7 +109,7 @@ export default function LegalResearch() {
       });
       if (!response.ok) throw new Error("Failed to analyze document");
       const data = await response.json();
-      setSearchResults(data);
+      setUploadedDocResults(data);
     } catch (error: any) {
       toast({
         title: "Analysis Error",
@@ -154,6 +155,35 @@ export default function LegalResearch() {
         )}
       </div>
     ));
+  };
+
+  // Render research results for uploaded document
+  const renderUploadedDocResults = () => {
+    if (!uploadedDocResults) return null;
+
+    return (
+      <div className="mt-6 space-y-4">
+        <h3 className="text-lg font-semibold">Analysis Results</h3>
+        <div className="space-y-4">
+          <div className="p-4 border rounded-lg">
+            <h4 className="font-medium mb-2">Summary</h4>
+            <p>{uploadedDocResults.summary}</p>
+          </div>
+
+          {uploadedDocResults.relevantCases?.length > 0 && (
+            <div className="p-4 border rounded-lg">
+              <h4 className="font-medium mb-2">Related Documents</h4>
+              {uploadedDocResults.relevantCases.map((result: any, index: number) => (
+                <div key={index} className="mt-2">
+                  <p className="font-medium">{result.document.title}</p>
+                  <p className="text-sm text-gray-600">{result.document.content.substring(0, 150)}...</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -210,9 +240,12 @@ export default function LegalResearch() {
           </form>
         </Card>
 
-        {/* File Upload Section */}
+        {/* Upload and Research Section */}
         <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Upload Legal Documents</h2>
+          <h2 className="text-xl font-semibold mb-4">Upload and Research Legal Documents</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Upload your legal documents for instant analysis and research insights.
+          </p>
           <FilePond
             files={files}
             onupdatefiles={setFiles}
@@ -223,12 +256,20 @@ export default function LegalResearch() {
               headers: {
                 'Accept': 'application/json'
               },
-              onload: (response) => {
-                invalidateLegalDocuments();
-                toast({
-                  title: "Success",
-                  description: "Document uploaded successfully",
-                });
+              load: async (response) => {
+                try {
+                  const data = JSON.parse(response);
+                  if (data.documentId) {
+                    await analyzeDocument(data.documentId);
+                  }
+                  invalidateLegalDocuments();
+                  toast({
+                    title: "Success",
+                    description: "Document uploaded and analysis started",
+                  });
+                } catch (error) {
+                  console.error('Error processing upload response:', error);
+                }
               }
             }}
             acceptedFileTypes={[
@@ -239,6 +280,7 @@ export default function LegalResearch() {
             labelIdle='Drag & Drop your legal documents or <span class="filepond--label-action">Browse</span>'
             onerror={handleFilePondError}
           />
+          {renderUploadedDocResults()}
         </Card>
 
         {/* Available Documents Section */}
