@@ -7,9 +7,16 @@ import mammoth from 'mammoth';
 import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq, desc } from 'drizzle-orm';
+import NodeCache from 'node-cache';
 import pdf from 'pdf-parse';
 
 const router = Router();
+
+// Initialize cache for document text extraction
+const extractionCache = new NodeCache({
+  stdTTL: 3600, // 1 hour
+  checkperiod: 300, // Check for expired entries every 5 minutes
+});
 
 // Configure multer for file uploads
 const upload = multer({
@@ -19,27 +26,28 @@ const upload = multer({
   }
 }).single('filepond'); // For FilePond uploads
 
-// Validation schema for document upload
-const documentUploadSchema = z.object({
-  title: z.string().min(1, "Title is required"),
-  documentType: z.string().min(1, "Document type is required"),
-  jurisdiction: z.string().min(1, "Jurisdiction is required"),
-  date: z.string().transform(str => new Date(str))
-});
-
-// Helper function to extract text from PDF
+// Helper function to extract text from PDF with caching
 async function extractTextFromBuffer(buffer: Buffer): Promise<string> {
+  const cacheKey = `pdf_${Buffer.from(buffer).toString('base64').slice(0, 32)}`;
+  const cachedText = extractionCache.get(cacheKey);
+
+  if (cachedText) {
+    console.log('Using cached PDF extraction');
+    return cachedText as string;
+  }
+
   try {
     console.log('Starting PDF text extraction...');
-    // Initialize pdf-parse with the buffer directly
     const data = await pdf(buffer, {
-      // Disable the version check that tries to load test files
-      version: "default"
+      version: "default", // Disable test file loading
+      max: 50, // Maximum number of pages to parse
     });
-    return data.text || 'No text could be extracted';
+
+    const extractedText = data.text || 'No text could be extracted';
+    extractionCache.set(cacheKey, extractedText);
+    return extractedText;
   } catch (error) {
     console.error('Error in PDF text extraction:', error);
-    // Return a placeholder text instead of throwing
     return 'PDF text extraction failed. Please try again or contact support.';
   }
 }
