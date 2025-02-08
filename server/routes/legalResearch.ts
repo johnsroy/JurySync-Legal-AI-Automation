@@ -239,8 +239,12 @@ router.post('/documents/:id/analyze', async (req, res) => {
       return res.status(404).json({ error: 'Document not found' });
     }
 
+    console.log('Analyzing document:', { id: documentId, title: document.title });
+
     // Analyze the document using the legal research service
     const results = await legalResearchService.analyzeQuery(document.content);
+    console.log('Analysis completed');
+
     res.json(results);
 
   } catch (error: any) {

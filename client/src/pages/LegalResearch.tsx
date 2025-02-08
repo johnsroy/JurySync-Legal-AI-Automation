@@ -104,13 +104,16 @@ export default function LegalResearch() {
   // Function to analyze a specific document
   const analyzeDocument = async (documentId: number) => {
     try {
+      console.log('Starting document analysis:', documentId);
       const response = await fetch(`/api/legal/documents/${documentId}/analyze`, {
         method: "POST",
       });
       if (!response.ok) throw new Error("Failed to analyze document");
       const data = await response.json();
+      console.log('Analysis results received:', data);
       setUploadedDocResults(data);
     } catch (error: any) {
+      console.error('Analysis error:', error);
       toast({
         title: "Analysis Error",
         description: error.message,
@@ -258,7 +261,9 @@ export default function LegalResearch() {
               },
               load: async (response) => {
                 try {
+                  console.log('Upload response:', response);
                   const data = JSON.parse(response);
+                  console.log('Parsed upload response:', data);
                   if (data.documentId) {
                     await analyzeDocument(data.documentId);
                   }
