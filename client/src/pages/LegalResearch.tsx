@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -21,14 +21,32 @@ const searchSchema = z.object({
 
 type SearchForm = z.infer<typeof searchSchema>;
 
+const searchExamples = [
+  "What are the key provisions of the Civil Rights Act of 1964?",
+  "How does the Americans with Disabilities Act protect against discrimination?",
+  "Analyze the impact of the Voting Rights Act of 1965 on electoral participation",
+  "Compare the civil rights protections in recent legislation with historical precedents",
+  "Research legal precedents related to disability discrimination in employment"
+];
+
 export default function LegalResearch() {
   const [searchResults, setSearchResults] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
+  const [selectedExample, setSelectedExample] = useState<string>("");
   const { toast } = useToast();
 
-  const { register, handleSubmit, formState: { errors } } = useForm<SearchForm>({
+  const form = useForm<SearchForm>({
     resolver: zodResolver(searchSchema),
+    defaultValues: {
+      query: selectedExample
+    }
   });
+
+  useEffect(() => {
+    if (selectedExample) {
+      form.setValue("query", selectedExample);
+    }
+  }, [selectedExample, form]);
 
   // Query to fetch uploaded documents
   const { data: uploadedDocuments } = useQuery({
@@ -138,15 +156,31 @@ export default function LegalResearch() {
       <div className="grid gap-8">
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Search Legal Documents</h2>
-          <form onSubmit={handleSubmit(handleSearch)} className="space-y-4">
+          <div className="mb-4">
+            <p className="text-sm text-gray-600 mb-2">Try these example searches:</p>
+            <div className="flex flex-wrap gap-2">
+              {searchExamples.map((example, index) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedExample(example)}
+                  className="text-xs"
+                >
+                  {example.slice(0, 50)}...
+                </Button>
+              ))}
+            </div>
+          </div>
+          <form onSubmit={form.handleSubmit(handleSearch)} className="space-y-4">
             <div>
               <Textarea
                 placeholder="Enter your legal research query..."
-                {...register("query")}
+                {...form.register("query")}
                 className="min-h-[100px]"
               />
-              {errors.query && (
-                <p className="text-red-500 text-sm mt-1">{errors.query.message}</p>
+              {form.formState.errors.query && (
+                <p className="text-red-500 text-sm mt-1">{form.formState.errors.query.message}</p>
               )}
             </div>
             <Button
@@ -160,12 +194,16 @@ export default function LegalResearch() {
                   Searching...
                 </>
               ) : (
-                "Begin Research"
+                <>
+                  <Search className="mr-2 h-4 w-4" />
+                  Begin Research
+                </>
               )}
             </Button>
           </form>
         </Card>
 
+        {/* File Upload Section */}
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Upload Legal Documents</h2>
           <FilePond
@@ -196,27 +234,37 @@ export default function LegalResearch() {
           />
         </Card>
 
-        {/* Uploaded Documents Section */}
+        {/* Available Documents Section */}
         {uploadedDocuments?.length > 0 && (
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Uploaded Documents</h2>
+            <h2 className="text-xl font-semibold mb-4">Documents Available for Research</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              You can conduct research on any of the following legal documents, including sample cases and your uploaded materials:
+            </p>
             <div className="space-y-4">
               {uploadedDocuments.map((doc: any) => (
-                <div key={doc.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h3 className="font-medium">{doc.title}</h3>
-                    <p className="text-sm text-gray-600">
-                      {new Date(doc.date).toLocaleDateString()}
-                    </p>
+                <div key={doc.id} className="flex flex-col p-4 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <h3 className="font-medium">{doc.title}</h3>
+                      <p className="text-sm text-gray-600">
+                        {new Date(doc.date).toLocaleDateString()} - {doc.documentType}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => analyzeDocument(doc.id)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <Search className="w-4 h-4 mr-2" />
+                      Begin Research
+                    </Button>
                   </div>
-                  <Button
-                    onClick={() => analyzeDocument(doc.id)}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <Search className="w-4 h-4 mr-2" />
-                    Begin Research
-                  </Button>
+                  {doc.content && (
+                    <div className="mt-2 text-sm text-gray-700 max-h-32 overflow-y-auto">
+                      <p>{doc.content.substring(0, 200)}...</p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

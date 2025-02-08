@@ -28,22 +28,40 @@ const documentUploadSchema = z.object({
 
 // Custom PDF text extraction function
 async function extractTextFromBuffer(buffer: Buffer): Promise<string> {
-  // Basic PDF structure markers
-  const startMarker = Buffer.from('%PDF-');
-  const endMarker = Buffer.from('%%EOF');
+  try {
+    console.log('Starting PDF text extraction...');
 
-  if (buffer.indexOf(startMarker) !== 0) {
-    throw new Error('Invalid PDF format');
+    // Convert buffer to string and extract text
+    const text = buffer.toString('utf-8');
+
+    // Look for text content markers in PDF
+    const contentStart = text.indexOf('stream');
+    const contentEnd = text.lastIndexOf('endstream');
+
+    if (contentStart === -1 || contentEnd === -1) {
+      console.log('No stream markers found, returning full content');
+      return text;
+    }
+
+    // Extract text between markers and clean it
+    const textContent = text
+      .substring(contentStart + 6, contentEnd)
+      .split(/[\r\n]/)
+      .filter(line => {
+        const trimmed = line.trim();
+        return trimmed && !trimmed.startsWith('%') && !/^\d+$/.test(trimmed);
+      })
+      .join(' ')
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '')
+      .replace(/\\/g, '');
+
+    console.log('Text extraction completed successfully');
+    return textContent || 'No text could be extracted';
+  } catch (error) {
+    console.error('Error in PDF text extraction:', error);
+    throw error;
   }
-
-  // Convert buffer to string and extract text between PDF markers
-  const text = buffer.toString('utf-8');
-  const textContent = text
-    .split(/[\r\n]/)
-    .filter(line => line.trim() && !line.startsWith('%'))
-    .join(' ');
-
-  return textContent || 'No text could be extracted';
 }
 
 // Helper function to extract text from various document types
@@ -56,7 +74,7 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
 
     if (fileType === 'application/pdf') {
       extractedText = await extractTextFromBuffer(file.buffer);
-    } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+    } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
         fileType === 'application/msword') {
       const result = await mammoth.extractRawText({ buffer: file.buffer });
       extractedText = result.value;
@@ -129,8 +147,8 @@ router.post('/documents', async (req, res) => {
     await legalResearchService.addDocument(document);
 
     // Return success response with document details
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'Document added successfully'
     });
 
