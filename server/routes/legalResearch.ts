@@ -7,6 +7,7 @@ import mammoth from 'mammoth';
 import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq, desc } from 'drizzle-orm';
+import pdf from 'pdf-parse';
 
 const router = Router();
 
@@ -26,41 +27,16 @@ const documentUploadSchema = z.object({
   date: z.string().transform(str => new Date(str))
 });
 
-// Custom PDF text extraction function
+// Helper function to extract text from PDF
 async function extractTextFromBuffer(buffer: Buffer): Promise<string> {
   try {
     console.log('Starting PDF text extraction...');
-
-    // Convert buffer to string and extract text
-    const text = buffer.toString('utf-8');
-
-    // Look for text content markers in PDF
-    const contentStart = text.indexOf('stream');
-    const contentEnd = text.lastIndexOf('endstream');
-
-    if (contentStart === -1 || contentEnd === -1) {
-      console.log('No stream markers found, returning full content');
-      return text;
-    }
-
-    // Extract text between markers and clean it
-    const textContent = text
-      .substring(contentStart + 6, contentEnd)
-      .split(/[\r\n]/)
-      .filter(line => {
-        const trimmed = line.trim();
-        return trimmed && !trimmed.startsWith('%') && !/^\d+$/.test(trimmed);
-      })
-      .join(' ')
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '')
-      .replace(/\\/g, '');
-
-    console.log('Text extraction completed successfully');
-    return textContent || 'No text could be extracted';
+    const data = await pdf(buffer);
+    return data.text || 'No text could be extracted';
   } catch (error) {
     console.error('Error in PDF text extraction:', error);
-    throw error;
+    // Return a placeholder text instead of throwing
+    return 'PDF text extraction failed. Please try again or contact support.';
   }
 }
 
@@ -117,23 +93,24 @@ router.post('/documents', async (req, res) => {
       size: req.file.size
     });
 
-    // For FilePond, we need to send a simple response for the initial upload
-    if (!req.body.title) {
-      return res.sendStatus(200);
-    }
-
-    const validatedData = documentUploadSchema.parse(req.body);
+    const title = req.file.originalname.split('.')[0] || 'Uploaded Document';
+    const documentData = {
+      title,
+      documentType: 'LEGAL_DOCUMENT',
+      jurisdiction: 'General',
+      date: new Date().toISOString()
+    };
 
     // Extract text content from the uploaded file
     const content = await extractTextFromFile(req.file);
 
-    // Create new document version
+    // Create new document
     const document: InsertLegalDocument = {
-      title: validatedData.title,
+      title: documentData.title,
       content,
-      documentType: validatedData.documentType,
-      jurisdiction: validatedData.jurisdiction,
-      date: validatedData.date,
+      documentType: documentData.documentType,
+      jurisdiction: documentData.jurisdiction,
+      date: new Date(documentData.date),
       status: 'ACTIVE',
       metadata: {
         filename: req.file.originalname,
@@ -149,7 +126,8 @@ router.post('/documents', async (req, res) => {
     // Return success response with document details
     res.json({
       success: true,
-      message: 'Document added successfully'
+      message: 'Document added successfully',
+      document
     });
 
   } catch (error: any) {
@@ -172,7 +150,6 @@ router.post('/query', async (req, res) => {
     const { query } = querySchema.parse(req.body);
     const results = await legalResearchService.analyzeQuery(query);
     res.json(results);
-
   } catch (error: any) {
     console.error('Query analysis error:', error);
     if (error instanceof z.ZodError) {
@@ -182,47 +159,10 @@ router.post('/query', async (req, res) => {
   }
 });
 
-// Search similar cases
-router.get('/similar', async (req, res) => {
-  try {
-    const { query } = req.query;
-
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({ error: 'Query parameter is required' });
-    }
-
-    const results = await legalResearchService.searchSimilarCases(query);
-    res.json(results);
-
-  } catch (error: any) {
-    console.error('Similar cases search error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get document versions
-router.get('/documents/:id/versions', async (req, res) => {
-  try {
-    const documentId = parseInt(req.params.id);
-    const versions = await db
-      .select()
-      .from(legalDocuments)
-      .where(eq(legalDocuments.id, documentId))
-      .orderBy(desc(legalDocuments.createdAt));
-
-    res.json(versions);
-  } catch (error: any) {
-    console.error('Error fetching document versions:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Add document analysis endpoint
 router.post('/documents/:id/analyze', async (req, res) => {
   try {
     const documentId = parseInt(req.params.id);
-
-    // Get the document
     const [document] = await db
       .select()
       .from(legalDocuments)
@@ -232,10 +172,8 @@ router.post('/documents/:id/analyze', async (req, res) => {
       return res.status(404).json({ error: 'Document not found' });
     }
 
-    // Analyze the document using the legal research service
     const results = await legalResearchService.analyzeQuery(document.content);
     res.json(results);
-
   } catch (error: any) {
     console.error('Document analysis error:', error);
     res.status(500).json({ error: error.message });
