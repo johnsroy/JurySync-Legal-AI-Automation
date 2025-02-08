@@ -14,9 +14,6 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Initialize ChromaDB client for vector storage
-const chroma = new ChromaClient();
-
 // In-memory fallback storage
 class InMemoryVectorStore {
   private documents: Map<string, { embedding: number[], metadata: any }> = new Map();
@@ -61,42 +58,19 @@ class InMemoryVectorStore {
   }
 }
 
-interface SearchResult {
-  document: LegalDocument;
-  similarity: number;
-  citations: Citation[];
-}
-
-interface ResearchResponse {
-  summary: string;
-  relevantCases: SearchResult[];
-  timeline?: TimelineEvent[];
-  citationMap?: CitationNode[];
-}
-
-interface TimelineEvent {
-  date: string;
-  event: string;
-  significance: string;
-}
-
-interface CitationNode {
-  id: string;
-  title: string;
-  year: number;
-  citations: string[];
-}
-
 export class LegalResearchService {
   private static instance: LegalResearchService;
-  private vectorStore: Collection | InMemoryVectorStore | null = null;
-  private useInMemory = false;
+  private vectorStore: InMemoryVectorStore;
+  private isChromaInitialized: boolean = false;
 
   private constructor() {
-    this.initializeVectorStore().catch(error => {
-      console.error('Failed to initialize ChromaDB, falling back to in-memory storage:', error);
-      this.useInMemory = true;
-      this.vectorStore = new InMemoryVectorStore();
+    // Always start with in-memory store
+    this.vectorStore = new InMemoryVectorStore();
+    console.log('Initialized with in-memory vector store');
+
+    // Try to initialize ChromaDB in the background
+    this.initializeChromaDB().catch(error => {
+      console.error('ChromaDB initialization failed, continuing with in-memory storage:', error);
     });
   }
 
@@ -107,31 +81,35 @@ export class LegalResearchService {
     return LegalResearchService.instance;
   }
 
-  private async initializeVectorStore() {
+  private async initializeChromaDB() {
     try {
-      console.log('Initializing vector store...');
+      console.log('Attempting to initialize ChromaDB...');
+      const client = new ChromaClient();
 
-      const params: CreateCollectionParams = {
+      // Test connection first
+      await client.heartbeat().catch(() => {
+        throw new Error('ChromaDB is not responding');
+      });
+
+      const collection = await client.getOrCreateCollection({
         name: 'legal_documents',
         metadata: {
           description: "Vector embeddings for legal documents",
           dataType: "legal_text"
         }
-      };
+      });
 
-      this.vectorStore = await chroma.getOrCreateCollection(params);
-      console.log('ChromaDB initialized successfully');
+      // Only switch to ChromaDB if everything worked
+      this.vectorStore = collection;
+      this.isChromaInitialized = true;
+      console.log('Successfully switched to ChromaDB');
     } catch (error) {
-      console.error('ChromaDB initialization failed:', error);
-      throw error;
+      console.warn('ChromaDB initialization failed, will continue using in-memory store:', error);
+      // Keep using the in-memory store
     }
   }
 
   async addDocument(document: LegalDocument): Promise<void> {
-    if (!this.vectorStore) {
-      throw new Error('Vector store not initialized');
-    }
-
     try {
       console.log('Adding document to vector store:', { title: document.title, id: document.id });
 
@@ -340,3 +318,29 @@ Structure your response as a JSON object with these fields:
 }
 
 export const legalResearchService = LegalResearchService.getInstance();
+
+interface SearchResult {
+  document: LegalDocument;
+  similarity: number;
+  citations: Citation[];
+}
+
+interface ResearchResponse {
+  summary: string;
+  relevantCases: SearchResult[];
+  timeline?: TimelineEvent[];
+  citationMap?: CitationNode[];
+}
+
+interface TimelineEvent {
+  date: string;
+  event: string;
+  significance: string;
+}
+
+interface CitationNode {
+  id: string;
+  title: string;
+  year: number;
+  citations: string[];
+}

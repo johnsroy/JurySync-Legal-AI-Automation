@@ -31,7 +31,11 @@ const documentUploadSchema = z.object({
 async function extractTextFromBuffer(buffer: Buffer): Promise<string> {
   try {
     console.log('Starting PDF text extraction...');
-    const data = await pdf(buffer);
+    // Initialize pdf-parse with the buffer directly
+    const data = await pdf(buffer, {
+      // Disable the version check that tries to load test files
+      version: "default"
+    });
     return data.text || 'No text could be extracted';
   } catch (error) {
     console.error('Error in PDF text extraction:', error);
@@ -62,7 +66,7 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
     return extractedText || 'No text could be extracted from the document';
   } catch (error: any) {
     console.error('Error extracting text from file:', error);
-    throw new Error(`Failed to extract text from ${file.originalname}: ${error.message}`);
+    return `Failed to extract text from ${file.originalname}: ${error.message}`;
   }
 }
 
