@@ -192,7 +192,6 @@ export class LegalResearchService {
             {
               type: "text",
               text: `Analyze this legal document and provide a structured analysis:
-
 Document Title: ${document.title}
 Content: ${document.content}
 
@@ -219,6 +218,59 @@ Provide your response in this JSON format:
       return analysis;
     } catch (error) {
       console.error('Error analyzing document:', error);
+      throw error;
+    }
+  }
+  async analyzeQuery(query: string): Promise<any> {
+    try {
+      console.log('Analyzing legal research query:', query);
+      const similarCases = await this.searchSimilarCases(query);
+
+      const response = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 2000,
+        temperature: 0.2,
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Analyze this legal query and provide a comprehensive response.
+Query: ${query}
+
+Similar Cases:
+${similarCases.map(doc => `
+Title: ${doc.title}
+Content: ${doc.content}
+`).join('\n')}
+
+Structure your response as a JSON object with these fields:
+{
+  "summary": "A detailed analysis of the query and relevant cases",
+  "relevantCases": [{"document": CaseDocument, "relevance": string}],
+  "timeline": [{"date": string, "event": string}],
+  "recommendations": ["Array of recommendations based on the analysis"]
+}`
+            }
+          ]
+        }]
+      });
+
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response format from Anthropic API');
+      }
+
+      const analysis = JSON.parse(content.text);
+      analysis.relevantCases = similarCases.map((doc, index) => ({
+        document: doc,
+        relevance: analysis.relevantCases?.[index]?.relevance || "Related case"
+      }));
+
+      console.log('Query analysis completed successfully');
+      return analysis;
+    } catch (error) {
+      console.error('Failed to analyze query:', error);
       throw error;
     }
   }

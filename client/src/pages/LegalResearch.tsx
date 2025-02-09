@@ -51,6 +51,8 @@ export default function LegalResearch() {
   useEffect(() => {
     if (selectedExample) {
       form.setValue("query", selectedExample);
+      // Automatically trigger search when example is selected
+      form.handleSubmit(handleSearch)();
     }
   }, [selectedExample, form]);
 
@@ -91,6 +93,7 @@ export default function LegalResearch() {
   });
 
   const handleSearch = (data: SearchForm) => {
+    setSearchResults(null); // Clear previous results
     searchMutation.mutate(data);
   };
 
@@ -414,6 +417,7 @@ export default function LegalResearch() {
           </div>
         </Card>
 
+        {/* Search Results Section */}
         {searchMutation.isPending ? (
           <div className="flex justify-center items-center p-8">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -433,10 +437,11 @@ export default function LegalResearch() {
                     {searchResults.relevantCases.map((result: any, index: number) => (
                       <div key={index} className="border-b last:border-0 pb-4">
                         <h4 className="font-medium">{result.document.title}</h4>
-                        <p className="text-sm text-gray-600">
-                          Jurisdiction: {result.document.jurisdiction}
+                        <p className="text-sm text-gray-600 mt-1">
+                          Jurisdiction: {result.document.jurisdiction} | 
+                          Relevance: {result.relevance}
                         </p>
-                        <p className="mt-2">{result.document.content.substring(0, 200)}...</p>
+                        <p className="mt-2 text-gray-700">{result.document.content.substring(0, 200)}...</p>
                       </div>
                     ))}
                   </div>
@@ -448,12 +453,23 @@ export default function LegalResearch() {
                   <h3 className="text-lg font-semibold mb-4">Timeline</h3>
                   <div className="space-y-2">
                     {searchResults.timeline.map((event: any, index: number) => (
-                      <div key={index} className="flex gap-4">
-                        <span className="font-medium">{event.date}</span>
-                        <span>{event.event}</span>
+                      <div key={index} className="flex gap-4 items-start">
+                        <span className="font-medium text-gray-600 min-w-[100px]">{event.date}</span>
+                        <span className="text-gray-700">{event.event}</span>
                       </div>
                     ))}
                   </div>
+                </Card>
+              )}
+
+              {searchResults.recommendations?.length > 0 && (
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">Recommendations</h3>
+                  <ul className="list-disc list-inside space-y-2">
+                    {searchResults.recommendations.map((rec: string, index: number) => (
+                      <li key={index} className="text-gray-700">{rec}</li>
+                    ))}
+                  </ul>
                 </Card>
               )}
             </div>
