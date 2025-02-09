@@ -2,8 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, Shield, Upload, AlertTriangle, CheckCircle, Info } from "lucide-react";
-import { useDropzone } from "react-dropzone";
+import { Gavel, LogOut, Loader2, Shield, AlertTriangle, CheckCircle, Info } from "lucide-react";
 import { useState } from "react";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { BarChart2, TrendingUp, ShieldAlert, Download } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 
 // Interfaces remain the same...
 
@@ -64,11 +64,11 @@ export default function ComplianceAuditing() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [documentText, setDocumentText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
 
-  // Fetch uploaded documents with new parsing
+  // Fetch uploaded documents with new parsing - this part is kept mostly the same, but the use case changes
   const { data: uploadedDocuments = [], isLoading: isLoadingDocuments } = useQuery({
     queryKey: ['uploaded-documents'],
     queryFn: async () => {
@@ -98,72 +98,7 @@ export default function ComplianceAuditing() {
     }
   });
 
-  // Modified upload handler with better error handling
-  const onDrop = async (acceptedFiles: File[]) => {
-    setIsUploading(true);
-    setUploadProgress(0);
-
-    try {
-      for (const file of acceptedFiles) {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const interval = setInterval(() => {
-          setUploadProgress((prev) => Math.min(prev + 10, 90));
-        }, 500);
-
-        try {
-          const response = await fetch('/api/compliance/upload', {
-            method: 'POST',
-            body: formData,
-          });
-
-          clearInterval(interval);
-          setUploadProgress(100);
-
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(data.error || 'Upload failed');
-          }
-
-          // Refresh the documents list
-          await queryClient.invalidateQueries({ queryKey: ['uploaded-documents'] });
-
-          toast({
-            title: "Document Uploaded",
-            description: "Starting compliance analysis...",
-          });
-
-        } catch (error: any) {
-          console.error('Individual file upload error:', error);
-          throw error;
-        }
-      }
-    } catch (error: any) {
-      console.error('Upload process error:', error);
-      toast({
-        title: "Upload Failed",
-        description: error.message || "Could not upload document for analysis.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
-    }
-  };
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'application/msword': ['.doc'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'text/plain': ['.txt']
-    }
-  });
-
-  // Fetch compliance results for selected documents
+  // Fetch compliance results
   const { data: complianceResults = [], isLoading: isLoadingResults } = useQuery({
     queryKey: ['compliance-results', selectedDocuments],
     queryFn: async () => {
@@ -185,7 +120,38 @@ export default function ComplianceAuditing() {
     refetchInterval: 30000 // Refresh every 30 seconds
   });
 
-  // Start monitoring mutation
+  // Submit document mutation
+  const submitDocumentMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/compliance/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentText })
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText.startsWith('Error:') ? errorText.slice(6) : errorText);
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      setDocumentText("");
+      toast({
+        title: "Document Submitted",
+        description: "Starting compliance analysis...",
+      });
+      queryClient.invalidateQueries({ queryKey: ['compliance-results'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Submission Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Start monitoring mutation -  This part is kept, but the trigger changes
   const startMonitoringMutation = useMutation({
     mutationFn: async (documentIds: string[]) => {
       const response = await fetch('/api/compliance/monitor', {
@@ -409,43 +375,36 @@ export default function ComplianceAuditing() {
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
-            {/* Upload and Document Selection Section */}
+            {/* Document Input Section */}
             <div className="space-y-6">
               <Card className="bg-white/80 backdrop-blur-lg">
                 <CardHeader>
-                  <CardTitle>Document Upload</CardTitle>
+                  <CardTitle>Document Input</CardTitle>
                   <CardDescription>
-                    Upload documents for continuous compliance monitoring
+                    Paste your document text for compliance analysis
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div
-                    {...getRootProps()}
-                    className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-                      isDragActive ? 'border-green-500 bg-green-50' : 'border-gray-300'
-                    }`}
-                  >
-                    <input {...getInputProps()} />
-                    <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                    {isDragActive ? (
-                      <p className="text-green-600">Drop the files here...</p>
-                    ) : (
-                      <p className="text-gray-600">
-                        Drag & drop files here, or click to select
-                      </p>
-                    )}
-                    <p className="text-sm text-gray-500 mt-2">
-                      Supports PDF, DOC, DOCX, and TXT files
-                    </p>
+                  <div className="space-y-4">
+                    <Textarea
+                      placeholder="Paste your document text here..."
+                      className="min-h-[300px] resize-none"
+                      value={documentText}
+                      onChange={(e) => setDocumentText(e.target.value)}
+                    />
+                    <Button
+                      className="w-full"
+                      disabled={!documentText.trim() || submitDocumentMutation.isPending}
+                      onClick={() => submitDocumentMutation.mutate()}
+                    >
+                      {submitDocumentMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <Shield className="h-4 w-4 mr-2" />
+                      )}
+                      Submit for Analysis
+                    </Button>
                   </div>
-                  {isUploading && (
-                    <div className="mt-4">
-                      <Progress value={uploadProgress} className="h-2" />
-                      <p className="text-sm text-center mt-2 text-gray-600">
-                        Uploading... {uploadProgress}%
-                      </p>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
 
@@ -553,7 +512,7 @@ export default function ComplianceAuditing() {
                   </div>
                 ) : uploadedDocuments.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    Upload a document to begin monitoring
+                    Submit a document to begin analysis
                   </div>
                 ) : complianceResults.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">

@@ -3,6 +3,7 @@ import { db } from "../db";
 import { reports, analyticsData } from "@shared/schema/reports";
 import { and, eq, gte } from "drizzle-orm";
 import { subDays } from "date-fns";
+import { generateWeeklyAnalytics } from "../services/complianceMonitor";
 
 const router = Router();
 
@@ -28,25 +29,27 @@ interface AnalyticsResponse {
   }>;
 }
 
-// Get analytics data
+// Get analytics data with enhanced compliance metrics
 router.get("/", async (req, res) => {
   try {
     const { timeRange = "7d" } = req.query;
     const daysToSubtract = parseInt(timeRange.toString());
     const startDate = subDays(new Date(), daysToSubtract);
 
+    // Generate fresh weekly analytics
+    const weeklyAnalytics = await generateWeeklyAnalytics();
+
+    // Fetch historical analytics data
     const [documentsData, analyticsMetrics] = await Promise.all([
-      // Fetch document statistics
       db.select().from(analyticsData).where(
         and(
           eq(analyticsData.metric, "document_activity"),
           gte(analyticsData.timestamp, startDate)
         )
       ),
-      // Fetch key metrics
       db.select().from(analyticsData).where(
         and(
-          eq(analyticsData.metric, "key_metrics"),
+          eq(analyticsData.metric, "weekly_compliance_report"),
           gte(analyticsData.timestamp, startDate)
         )
       ),
@@ -59,32 +62,38 @@ router.get("/", async (req, res) => {
       uploaded: (d.value as any).uploaded || 0,
     }));
 
-    // Calculate metrics
-    const latestMetrics = analyticsMetrics[analyticsMetrics.length - 1]?.value as Record<string, number> || {};
-    const previousMetrics = analyticsMetrics[0]?.value as Record<string, number> || {};
+    // Calculate metrics from weekly analytics
+    const latestMetrics = weeklyAnalytics;
+    const previousMetrics = analyticsMetrics[0]?.value as any || {};
 
     const calculateChange = (current: number, previous: number) => 
       previous ? ((current - previous) / previous) * 100 : 0;
 
+    // Convert risk distribution to chart format
+    const riskDistribution = Object.entries(latestMetrics.riskDistribution).map(([name, value]) => ({
+      name: name.charAt(0).toUpperCase() + name.slice(1),
+      value
+    }));
+
+    // Create compliance metrics from common issues
+    const complianceMetrics = latestMetrics.commonIssues.map(issue => ({
+      name: issue.type,
+      value: issue.count
+    }));
+
     const response: AnalyticsResponse = {
-      totalDocuments: latestMetrics.totalDocuments || 0,
+      totalDocuments: latestMetrics.totalDocuments,
       documentIncrease: calculateChange(
-        latestMetrics.totalDocuments || 0,
+        latestMetrics.totalDocuments,
         previousMetrics.totalDocuments || 0
       ),
-      averageRiskScore: latestMetrics.averageRiskScore || 0,
-      riskScoreChange: calculateChange(
-        latestMetrics.averageRiskScore || 0,
-        previousMetrics.averageRiskScore || 0
-      ),
-      complianceRate: latestMetrics.complianceRate || 0,
-      complianceChange: calculateChange(
-        latestMetrics.complianceRate || 0,
-        previousMetrics.complianceRate || 0
-      ),
+      averageRiskScore: latestMetrics.averageRiskScore,
+      riskScoreChange: latestMetrics.trends.riskScoreTrend,
+      complianceRate: 100 - (latestMetrics.riskDistribution.high / latestMetrics.totalDocuments * 100),
+      complianceChange: latestMetrics.trends.complianceRateTrend,
       documentActivity,
-      riskDistribution: latestMetrics.riskDistribution || [],
-      complianceMetrics: latestMetrics.complianceMetrics || [],
+      riskDistribution,
+      complianceMetrics,
     };
 
     res.json(response);
