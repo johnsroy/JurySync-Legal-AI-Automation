@@ -26,18 +26,39 @@ function Router() {
       <Route path="/register" component={RegisterPage} />
       <Route path="/products" component={ProductsPage} />
       <Route path="/pricing" component={PricingPage} />
-      <Route path={["/dashboard", "/contract-automation", "/compliance-auditing", "/legal-research", "/reports", "/orchestrator"]}>
+
+      {/* Protected routes with Layout */}
+      <Route path="/dashboard">
         <Layout>
-          <Switch>
-            <ProtectedRoute path="/dashboard" component={Dashboard} />
-            <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
-            <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
-            <ProtectedRoute path="/legal-research" component={LegalResearch} />
-            <ProtectedRoute path="/reports" component={ReportsDashboard} />
-            <ProtectedRoute path="/orchestrator" component={Orchestrator} />
-          </Switch>
+          <ProtectedRoute path="/dashboard" component={Dashboard} />
         </Layout>
       </Route>
+      <Route path="/contract-automation">
+        <Layout>
+          <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
+        </Layout>
+      </Route>
+      <Route path="/compliance-auditing">
+        <Layout>
+          <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
+        </Layout>
+      </Route>
+      <Route path="/legal-research">
+        <Layout>
+          <ProtectedRoute path="/legal-research" component={LegalResearch} />
+        </Layout>
+      </Route>
+      <Route path="/reports">
+        <Layout>
+          <ProtectedRoute path="/reports" component={ReportsDashboard} />
+        </Layout>
+      </Route>
+      <Route path="/orchestrator">
+        <Layout>
+          <ProtectedRoute path="/orchestrator" component={Orchestrator} />
+        </Layout>
+      </Route>
+
       <Route component={NotFound} />
     </Switch>
   );
