@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -492,6 +492,32 @@ export const insertComplianceFileSchema = createInsertSchema(complianceFiles);
 export type InsertComplianceFile = z.infer<typeof insertComplianceFileSchema>;
 
 
+// Add after the existing tables
+export const complianceAudits = pgTable('compliance_audits', {
+  id: serial("id").primaryKey(),
+  documentText: text("document_text").notNull(),
+  openaiResponse: jsonb("openai_response").notNull(),
+  anthropicResponse: jsonb("anthropic_response").notNull(),
+  combinedReport: jsonb("combined_report").notNull(),
+  vectorId: text("vector_id"), // Reference to ChromaDB embedding
+  metadata: jsonb("metadata").$type<{
+    documentType?: string;
+    priority?: string;
+    tags?: string[];
+    confidence?: number;
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// Add after existing schemas
+export const insertComplianceAuditSchema = createInsertSchema(complianceAudits);
+
+// Add after existing types
+export type ComplianceAudit = typeof complianceAudits.$inferSelect;
+export type InsertComplianceAudit = z.infer<typeof insertComplianceAuditSchema>;
+
+
 // Additional tables after the existing ones...
 
 export const approvals = pgTable("approvals", {
@@ -635,3 +661,5 @@ export const insertResearchQuerySchema = createInsertSchema(researchQueries);
 export type InsertLegalDocument = typeof legalDocuments.$inferInsert;
 export type InsertCitation = typeof legalCitations.$inferInsert;
 export type InsertResearchQuery = typeof researchQueries.$inferInsert;
+
+import { boolean } from "drizzle-orm/pg-core";

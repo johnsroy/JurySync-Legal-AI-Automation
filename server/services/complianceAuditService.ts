@@ -1,5 +1,8 @@
 import { OpenAI } from "openai";
 import { Anthropic } from "@anthropic-ai/sdk";
+import { db } from '../db';
+import { complianceAudits, documents } from '@shared/schema';
+import { chromaStore } from './chromaStore';
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error("Missing OPENAI_API_KEY environment variable");
@@ -53,14 +56,14 @@ export class ComplianceAuditService {
             2. Ambiguous or unclear clauses
             3. Potential legal risks
             4. Standard regulatory language adherence
-            
+
             Provide a thorough analysis with specific examples and references.`
           }
         ],
         response_format: { type: "json_object" }
       });
 
-      const result = JSON.parse(response.choices[0].message.content);
+      const result = JSON.parse(response.choices[0].message.content || "{}");
       log('OpenAI analysis completed');
       return result;
     } catch (error: any) {
@@ -82,15 +85,15 @@ export class ComplianceAuditService {
             {
               type: "text",
               text: `Analyze this legal document for compliance issues and provide a detailed report. 
-              
+
               Document Text: ${documentText}
-              
+
               Focus on:
               1. Regulatory compliance deviations
               2. Ambiguous or unclear clauses
               3. Potential legal risks
               4. Standard regulatory language adherence
-              
+
               Format response as JSON with:
               {
                 "summary": "comprehensive overview",
@@ -141,7 +144,7 @@ export class ComplianceAuditService {
   async analyzeDocument(documentText: string) {
     try {
       log('Starting combined compliance analysis');
-      
+
       // Run both analyses in parallel
       const [openAIAnalysis, anthropicAnalysis] = await Promise.all([
         this.analyzeWithOpenAI(documentText),
@@ -194,8 +197,45 @@ export class ComplianceAuditService {
         }
       };
 
+      // Store document in ChromaDB
+      const [document] = await db.insert(documents).values({
+        title: `Compliance Audit - ${new Date().toISOString()}`,
+        content: documentText,
+        analysis: combinedReport,
+        agentType: 'COMPLIANCE_AUDITING',
+        userId: 1, // TODO: Replace with actual user ID from context
+      }).returning();
+
+      await chromaStore.addDocument(document, documentText);
+
+      // Log the audit in PostgreSQL
+      const regRefs = new Set<string>();
+      openAIAnalysis.flaggedIssues.forEach((i: any) => {
+        if (i.regulatoryReference) regRefs.add(i.regulatoryReference);
+      });
+      anthropicAnalysis.flaggedIssues.forEach((i: any) => {
+        if (i.regulatoryReference) regRefs.add(i.regulatoryReference);
+      });
+
+      const [auditRecord] = await db.insert(complianceAudits).values({
+        documentText,
+        openaiResponse: openAIAnalysis,
+        anthropicResponse: anthropicAnalysis,
+        combinedReport,
+        vectorId: document.id.toString(),
+        metadata: {
+          documentType: 'compliance_audit',
+          confidence: combinedReport.complianceScores.combined.overall / 100,
+          tags: Array.from(regRefs)
+        }
+      }).returning();
+
       log('Combined analysis completed');
-      return combinedReport;
+      return {
+        ...combinedReport,
+        auditId: auditRecord.id,
+        vectorId: document.id
+      };
     } catch (error: any) {
       log('Combined analysis failed', 'error', error);
       throw error;
