@@ -9,6 +9,7 @@ import { seedLegalDatabase } from './services/seedData';
 import cors from 'cors';
 
 const app = express();
+
 // Increased limit for file uploads
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
@@ -136,24 +137,20 @@ setupAuth(app);
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  const PORT = process.env.PORT || 5000;
-  const HOST = '0.0.0.0';
+  const port = Number(process.env.PORT) || 5000;
 
-  server.listen(PORT, HOST, () => {
-    console.log(`Server running at http://${HOST}:${PORT}`);
-  });
-
-  // Add error handler for server
-  server.on('error', (error: NodeJS.ErrnoException) => {
+  server.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+  }).on('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE') {
-      console.error(`Port ${PORT} is already in use`);
-      process.exit(1);
+      console.error(`Port ${port} is already in use. Trying port ${port + 1}`);
+      server.listen(port + 1);
     } else {
       console.error('Server error:', error);
       process.exit(1);
     }
   });
+
 })().catch((error) => {
   console.error('Failed to start server:', error);
   process.exit(1);
