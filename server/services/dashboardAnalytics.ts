@@ -34,6 +34,8 @@ interface DashboardInsights {
 
 export async function generateDashboardInsights(): Promise<DashboardInsights> {
   try {
+    console.log('Starting dashboard insights generation');
+
     // Fetch all compliance documents and their issues
     const documents = await db
       .select()
@@ -44,10 +46,28 @@ export async function generateDashboardInsights(): Promise<DashboardInsights> {
       .select()
       .from(complianceIssues);
 
+    console.log(`Fetched ${documents.length} documents and ${issues.length} issues`);
+
+    // Handle empty data case
+    if (documents.length === 0) {
+      return {
+        summary: "No compliance documents found in monitoring state.",
+        trends: [],
+        riskDistribution: [],
+        recommendations: [
+          {
+            priority: "HIGH",
+            action: "Upload your first compliance document",
+            impact: "Begin monitoring your compliance status"
+          }
+        ]
+      };
+    }
+
     // Calculate basic metrics
     const totalDocuments = documents.length;
     const totalIssues = issues.length;
-    const averageRiskScore = documents.reduce((acc, doc) => acc + (doc.riskScore || 0), 0) / totalDocuments;
+    const averageRiskScore = documents.reduce((acc, doc) => acc + (doc.riskScore || 0), 0) / totalDocuments || 0;
 
     // Prepare data for AI analysis
     const analysisData = {
@@ -61,14 +81,22 @@ export async function generateDashboardInsights(): Promise<DashboardInsights> {
       documents: documents.map(doc => ({
         title: doc.title,
         type: doc.documentType,
-        riskScore: doc.riskScore,
-        lastScanned: doc.lastScanned,
+        riskScore: doc.riskScore || 0,
+        lastScanned: doc.lastScanned?.toISOString() || null,
         status: doc.status
       })),
       recentIssues: issues
         .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
         .slice(0, 10)
+        .map(issue => ({
+          description: issue.description,
+          severity: issue.severity,
+          status: issue.status,
+          createdAt: issue.createdAt?.toISOString() || null
+        }))
     };
+
+    console.log('Analysis data prepared, requesting AI insights');
 
     // Get AI-powered insights
     const response = await anthropic.messages.create({
@@ -118,10 +146,12 @@ export async function generateDashboardInsights(): Promise<DashboardInsights> {
       throw new Error('Unexpected response format from Anthropic API');
     }
 
+    console.log('Received AI insights, processing response');
+
     const insights = JSON.parse(content.text);
 
-    // Add custom calculations to insights
-    insights.riskDistribution = [
+    // Add calculated risk distribution
+    const riskDistribution = [
       {
         category: "High Risk (75-100)",
         count: documents.filter(d => (d.riskScore || 0) >= 75).length,
@@ -139,9 +169,24 @@ export async function generateDashboardInsights(): Promise<DashboardInsights> {
       }
     ];
 
-    return insights;
+    return {
+      ...insights,
+      riskDistribution
+    };
   } catch (error) {
     console.error('Failed to generate dashboard insights:', error);
-    throw error;
+    // Return a graceful fallback response
+    return {
+      summary: "Unable to generate insights at this time. Please try again later.",
+      trends: [],
+      riskDistribution: [],
+      recommendations: [
+        {
+          priority: "HIGH",
+          action: "Check system connectivity",
+          impact: "Restore dashboard functionality"
+        }
+      ]
+    };
   }
 }

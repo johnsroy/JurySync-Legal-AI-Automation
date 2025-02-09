@@ -17,7 +17,9 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
       // Dynamic import to avoid initialization issues
       const pdfParse = (await import('pdf-parse')).default;
       textContent = await pdfParse(buffer, {
-        max: MAX_CONTENT_LENGTH
+        max: MAX_CONTENT_LENGTH,
+        pagerender: render_page,
+        version: 'v2.0.0'  // Use latest version
       }).then(data => data.text);
     } else if (fileType === 'docx') {
       textContent = await extractWordContent(buffer);
@@ -110,4 +112,25 @@ async function extractWordContent(buffer: Buffer): Promise<string> {
   } catch (error) {
     throw new Error(`Word document extraction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
+
+// Custom render function for PDF pages
+function render_page(pageData: any) {
+  let render_options = {
+    normalizeWhitespace: true,
+    disableCombineTextItems: false
+  };
+  return pageData.getTextContent(render_options)
+    .then(function(textContent: any) {
+      let lastY, text = '';
+      for (let item of textContent.items) {
+        if (lastY == item.transform[5] || !lastY) {
+          text += item.str;
+        } else {
+          text += '\n' + item.str;
+        }
+        lastY = item.transform[5];
+      }
+      return text;
+    });
 }
