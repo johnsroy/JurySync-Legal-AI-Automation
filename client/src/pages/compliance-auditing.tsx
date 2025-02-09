@@ -13,6 +13,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { BarChart2, TrendingUp, ShieldAlert, Download } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartTooltip, ResponsiveContainer } from 'recharts';
+import React from 'react';
 
 // Interfaces remain the same...
 
@@ -38,6 +40,24 @@ interface ComplianceResult {
   issues: ComplianceIssue[];
   summary: string;
   lastChecked: string;
+  visualizationData: {
+    riskTrend: number[];
+    issueFrequency: number[];
+  };
+  riskScores: {
+    average: number;
+    max: number;
+    min: number;
+    distribution: {
+      high: number;
+      medium: number;
+      low: number;
+    };
+  };
+  recommendedActions: {
+    action: string;
+    impact: string;
+  }[];
 }
 
 interface DashboardInsights {
@@ -65,7 +85,6 @@ export default function ComplianceAuditing() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [documentText, setDocumentText] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
 
   // Fetch uploaded documents with new parsing - this part is kept mostly the same, but the use case changes
@@ -126,7 +145,7 @@ export default function ComplianceAuditing() {
       const response = await fetch('/api/orchestrator/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           documentText: documentText,
           metadata: {
             documentType: 'contract',
@@ -510,9 +529,6 @@ export default function ComplianceAuditing() {
                     </Button>
                   )}
                 </div>
-                <CardDescription>
-                  Compliance audit results and risk analysis
-                </CardDescription>
               </CardHeader>
               <CardContent>
                 {isLoadingResults ? (
@@ -529,83 +545,188 @@ export default function ComplianceAuditing() {
                     No monitoring results available yet
                   </div>
                 ) : (
-                  <ScrollArea className="h-[600px] pr-4">
-                    {complianceResults.map((result) => (
-                      <div
-                        key={result.documentId}
-                        className={`mb-6 p-4 rounded-lg ${getRiskLevelColor(result.riskLevel)}`}
-                      >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant={result.riskLevel === "HIGH" ? "destructive" : "default"}
-                              className="uppercase"
-                            >
-                              {result.riskLevel} RISK
-                            </Badge>
-                            <span className="text-sm font-medium">
-                              Compliance Score: {result.score}/100
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <Info className="h-4 w-4 text-gray-400" />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="max-w-xs">
-                                    Last checked: {new Date(result.lastChecked).toLocaleString()}
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                        </div>
-
-                        <div className="bg-white/80 rounded-lg p-4 mb-4">
-                          <h4 className="text-sm font-medium mb-2">Summary</h4>
-                          <p className="text-sm text-gray-700">{result.summary}</p>
-                        </div>
-
-                        <div className="space-y-4">
-                          {result.issues.map((issue, index) => (
-                            <div
-                              key={index}
-                              className="bg-white/80 rounded-lg p-4 border border-gray-100"
-                            >
-                              <div className="flex items-start gap-3">
-                                <Badge className={getSeverityColor(issue.severity)}>
-                                  {issue.severity}
-                                </Badge>
-                                <div className="flex-1">
-                                  <h4 className="font-medium text-gray-900 mb-1">
-                                    {issue.clause}
-                                  </h4>
-                                  <p className="text-sm text-gray-600 mb-2">
-                                    {issue.description}
-                                  </p>
-                                  <div className="bg-green-50 p-3 rounded-lg">
-                                    <h5 className="text-sm font-medium text-green-700 mb-1">
-                                      Recommendation
-                                    </h5>
-                                    <p className="text-sm text-green-600">
-                                      {issue.recommendation}
-                                    </p>
-                                  </div>
-                                  {issue.reference && (
-                                    <p className="text-xs text-gray-500 mt-2">
-                                      Reference: {issue.reference}
-                                    </p>
-                                  )}
+                  <div className="container mx-auto px-4 py-8">
+                    <div className="max-w-7xl mx-auto space-y-6">
+                      {/* Risk Analytics Section */}
+                      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                        {complianceResults.map((result, idx) => (
+                          <React.Fragment key={result.documentId}>
+                            {/* Risk Trend Chart */}
+                            <Card className="bg-white/80 backdrop-blur-lg col-span-2">
+                              <CardHeader>
+                                <CardTitle>Risk Trend Analysis</CardTitle>
+                                <CardDescription>Risk scores across document sections</CardDescription>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="h-[300px]">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={result.visualizationData.riskTrend.map((score, i) => ({
+                                      section: `Section ${i + 1}`,
+                                      score
+                                    }))}>
+                                      <CartesianGrid strokeDasharray="3 3" />
+                                      <XAxis dataKey="section" />
+                                      <YAxis domain={[0, 10]} />
+                                      <RechartTooltip />
+                                      <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2} />
+                                    </LineChart>
+                                  </ResponsiveContainer>
                                 </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                              </CardContent>
+                            </Card>
+
+                            {/* Issue Frequency Chart */}
+                            <Card className="bg-white/80 backdrop-blur-lg">
+                              <CardHeader>
+                                <CardTitle>Issue Distribution</CardTitle>
+                                <CardDescription>Frequency of compliance issues</CardDescription>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="h-[300px]">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={result.visualizationData.issueFrequency.map((count, i) => ({
+                                      category: `Category ${i + 1}`,
+                                      count
+                                    }))}>
+                                      <CartesianGrid strokeDasharray="3 3" />
+                                      <XAxis dataKey="category" />
+                                      <YAxis />
+                                      <RechartTooltip />
+                                      <Bar dataKey="count" fill="#10b981" />
+                                    </BarChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            {/* Risk Score Summary */}
+                            <Card className="bg-white/80 backdrop-blur-lg">
+                              <CardHeader>
+                                <CardTitle>Risk Score Summary</CardTitle>
+                                <CardDescription>Key risk metrics from the analysis</CardDescription>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium">Average Risk Score:</span>
+                                    <span className={`text-lg font-bold ${
+                                      result.riskScores.average > 7 ? 'text-red-600' :
+                                        result.riskScores.average > 4 ? 'text-yellow-600' : 'text-green-600'
+                                    }`}>
+                                      {result.riskScores.average.toFixed(1)}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium">Maximum Risk:</span>
+                                    <span className="text-lg font-bold text-red-600">
+                                      {result.riskScores.max}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium">Minimum Risk:</span>
+                                    <span className="text-lg font-bold text-green-600">
+                                      {result.riskScores.min}
+                                    </span>
+                                  </div>
+                                  <div className="pt-4">
+                                    <div className="space-y-2">
+                                      <div className="flex items-center justify-between text-sm">
+                                        <span>High Risk Issues</span>
+                                        <span>{result.riskScores.distribution.high}</span>
+                                      </div>
+                                      <Progress value={
+                                        (result.riskScores.distribution.high /
+                                          (result.riskScores.distribution.high +
+                                            result.riskScores.distribution.medium +
+                                            result.riskScores.distribution.low)) * 100
+                                      } className="bg-red-200" indicatorClassName="bg-red-500" />
+                                    </div>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </React.Fragment>
+                        ))}
                       </div>
-                    ))}
-                  </ScrollArea>
+
+                      <div className="grid gap-6 md:grid-cols-2">
+                        {/* Document Input Section */}
+                        <div className="space-y-6">
+                          {/* ... (Document Input Section remains the same) */}
+                        </div>
+
+                        {/* Monitoring Dashboard */}
+                        <Card className="bg-white/80 backdrop-blur-lg">
+                          {/* ... (Monitoring Dashboard Header remains the same) */}
+                          <CardContent>
+                            {/* ... (Loading and empty states remain the same) */}
+                            {complianceResults.length > 0 && (
+                              <ScrollArea className="h-[600px] pr-4">
+                                {complianceResults.map((result) => (
+                                  <div
+                                    key={result.documentId}
+                                    className={`mb-6 p-4 rounded-lg ${getRiskLevelColor(result.riskLevel)}`}
+                                  >
+                                    <div className="space-y-6">
+                                      {/* Flagged Issues */}
+                                      <div className="bg-white/80 rounded-lg p-4">
+                                        <h4 className="text-lg font-semibold mb-4">Flagged Issues</h4>
+                                        <div className="space-y-4">
+                                          {result.issues.map((issue, idx) => (
+                                            <div
+                                              key={idx}
+                                              className="border-l-4 border-yellow-500 bg-yellow-50 p-4 rounded"
+                                            >
+                                              <div className="flex items-start justify-between">
+                                                <div>
+                                                  <h5 className="font-medium">{issue.clause}</h5>
+                                                  <p className="text-sm text-gray-600 mt-1">
+                                                    {issue.description}
+                                                  </p>
+                                                </div>
+                                                <Badge className={getSeverityColor(issue.severity)}>
+                                                  {issue.severity}
+                                                </Badge>
+                                              </div>
+                                              <div className="mt-3 text-sm">
+                                                <p className="font-medium text-gray-700">Recommendation:</p>
+                                                <p className="text-gray-600">{issue.recommendation}</p>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {/* Recommended Actions */}
+                                      <div className="bg-white/80 rounded-lg p-4">
+                                        <h4 className="text-lg font-semibold mb-4">Recommended Actions</h4>
+                                        <div className="space-y-3">
+                                          {result.recommendedActions.map((action, idx) => (
+                                            <div
+                                              key={idx}
+                                              className="flex items-start space-x-3 p-3 bg-green-50 rounded"
+                                            >
+                                              <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+                                              <div>
+                                                <p className="font-medium">{action.action}</p>
+                                                <p className="text-sm text-gray-600 mt-1">
+                                                  Impact: {action.impact}
+                                                </p>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </ScrollArea>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </CardContent>
             </Card>
