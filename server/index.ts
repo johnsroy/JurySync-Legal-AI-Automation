@@ -10,7 +10,7 @@ import cors from 'cors';
 
 const app = express();
 
-// Increased limit for file uploads
+// Basic middleware setup
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -110,8 +110,14 @@ setupAuth(app);
   });
 
   // Setup vite or serve static files based on environment
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
+  if (process.env.NODE_ENV !== "production") {
+    try {
+      await setupVite(app, server);
+      console.log('Vite middleware setup complete');
+    } catch (error) {
+      console.error('Failed to setup Vite middleware:', error);
+      process.exit(1);
+    }
   } else {
     serveStatic(app);
   }
