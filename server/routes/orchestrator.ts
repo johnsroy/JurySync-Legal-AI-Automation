@@ -17,7 +17,7 @@ const taskSchema = z.object({
 });
 
 const auditRequestSchema = z.object({
-  document: z.string().min(1, "Document text cannot be empty"),
+  documentText: z.string().min(1, "Document text cannot be empty"),
   metadata: z.object({
     documentType: z.enum(['contract', 'policy', 'regulation']).optional(),
     priority: z.enum(['low', 'medium', 'high']).optional(),
@@ -28,16 +28,16 @@ const auditRequestSchema = z.object({
 // Audit endpoint
 router.post('/audit', async (req, res) => {
   try {
-    log('Received audit request', 'info', { body: { ...req.body, document: '[REDACTED]' } });
+    log('Received audit request', 'info', { body: { ...req.body, documentText: '[REDACTED]' } });
 
     // Validate request
     const validatedData = auditRequestSchema.parse(req.body);
 
     // Create compliance audit task
     const task = {
-      type: 'compliance',
+      type: 'compliance' as const,
       data: {
-        document: validatedData.document,
+        document: validatedData.documentText,
         metadata: validatedData.metadata || {},
         requestedAt: new Date().toISOString()
       }
@@ -51,7 +51,7 @@ router.post('/audit', async (req, res) => {
     res.json({
       taskId: result.taskId,
       status: 'processing',
-      estimatedCompletionTime: result.estimatedCompletionTime
+      estimatedCompletionTime: new Date(Date.now() + 5 * 60 * 1000).toISOString() // Estimate 5 minutes
     });
 
   } catch (error: any) {

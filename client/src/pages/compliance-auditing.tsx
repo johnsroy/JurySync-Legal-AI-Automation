@@ -123,13 +123,23 @@ export default function ComplianceAuditing() {
   // Submit document mutation
   const submitDocumentMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('/api/compliance/audit', {
+      const response = await fetch('/api/orchestrator/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentText })
+        body: JSON.stringify({ 
+          documentText: documentText,
+          metadata: {
+            documentType: 'contract',
+            priority: 'medium'
+          }
+        })
       });
+
       if (!response.ok) {
         const errorText = await response.text();
+        if (errorText.includes('<!DOCTYPE>')) {
+          throw new Error('Server error occurred. Please try again.');
+        }
         throw new Error(errorText.startsWith('Error:') ? errorText.slice(6) : errorText);
       }
       return response.json();
