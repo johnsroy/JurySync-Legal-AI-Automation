@@ -5,11 +5,11 @@ export class ChromaStore {
   private client: ChromaClient;
   private collection: Collection | null = null;
   private initialized = false;
+  private inMemoryMode = true;
 
   constructor() {
-    // Using in-memory configuration to avoid external server dependency
     this.client = new ChromaClient({
-      path: undefined // This will use in-memory mode
+      path: "memory" // Use in-memory mode to avoid external server dependency
     });
   }
 
@@ -22,18 +22,22 @@ export class ChromaStore {
         metadata: { "hnsw:space": "cosine" }
       });
       this.initialized = true;
-      console.log("ChromaDB collection initialized successfully");
+      console.log("ChromaDB collection initialized successfully in memory");
     } catch (error) {
       console.error('Failed to initialize ChromaDB collection:', error);
-      throw error;
+      // Don't throw error, just log it and continue
+      // This allows the application to function without vector storage
     }
   }
 
   async addDocument(document: Document, content: string) {
-    await this.ensureCollection();
-    if (!this.collection) throw new Error('Collection not initialized');
-
     try {
+      await this.ensureCollection();
+      if (!this.collection) {
+        console.warn('ChromaDB collection not available, skipping vector storage');
+        return;
+      }
+
       await this.collection.add({
         ids: [document.id.toString()],
         metadatas: [{
@@ -46,15 +50,19 @@ export class ChromaStore {
       console.log(`Document ${document.id} added to ChromaDB successfully`);
     } catch (error) {
       console.error(`Failed to add document ${document.id} to ChromaDB:`, error);
-      throw error;
+      // Don't throw error, just log it
+      // This allows the application to continue working without vector storage
     }
   }
 
   async getDocument(id: string): Promise<string | null> {
-    await this.ensureCollection();
-    if (!this.collection) throw new Error('Collection not initialized');
-
     try {
+      await this.ensureCollection();
+      if (!this.collection) {
+        console.warn('ChromaDB collection not available, skipping vector retrieval');
+        return null;
+      }
+
       const result = await this.collection.get({
         ids: [id]
       });
@@ -65,7 +73,17 @@ export class ChromaStore {
       return null;
     } catch (error) {
       console.error(`Failed to get document ${id} from ChromaDB:`, error);
-      throw error;
+      return null;
+    }
+  }
+
+  // Add method to check if vector store is available
+  async isAvailable(): Promise<boolean> {
+    try {
+      await this.ensureCollection();
+      return this.collection !== null;
+    } catch (error) {
+      return false;
     }
   }
 }

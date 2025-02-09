@@ -276,7 +276,12 @@ export class ComplianceAuditService {
         userId: 1, // TODO: Replace with actual user ID from context
       }).returning();
 
-      await chromaStore.addDocument(document, documentText);
+      // Try to store in vector database, but don't block if it fails
+      try {
+        await chromaStore.addDocument(document, documentText);
+      } catch (error) {
+        log('Vector storage failed but continuing with analysis', 'error', error);
+      }
 
       // Log the audit
       const [auditRecord] = await db.insert(complianceAudits).values({
