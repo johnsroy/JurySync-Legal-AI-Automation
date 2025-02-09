@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FilePond, registerPlugin } from "react-filepond";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import "filepond/dist/filepond.min.css";
-import { queryClient, prefetchLegalDocuments, invalidateLegalDocuments } from "@/lib/queryClient";
+import { queryClient, prefetchLegalDocuments, invalidateLegalDocuments, apiRequest } from "@/lib/queryClient";
 import { Loader2, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,14 +44,13 @@ export default function LegalResearch() {
   const form = useForm<SearchForm>({
     resolver: zodResolver(searchSchema),
     defaultValues: {
-      query: selectedExample
+      query: ""
     }
   });
 
   useEffect(() => {
     if (selectedExample) {
       form.setValue("query", selectedExample);
-      // Automatically trigger search when example is selected
       form.handleSubmit(handleSearch)();
     }
   }, [selectedExample, form]);
@@ -63,20 +62,14 @@ export default function LegalResearch() {
   const { data: uploadedDocuments, isLoading: isLoadingDocuments } = useQuery({
     queryKey: ["/api/legal/documents"],
     queryFn: async () => {
-      const response = await fetch("/api/legal/documents");
-      if (!response.ok) throw new Error("Failed to fetch documents");
+      const response = await apiRequest("GET", "/api/legal/documents");
       return response.json();
     },
   });
 
   const searchMutation = useMutation({
     mutationFn: async (data: SearchForm) => {
-      const response = await fetch("/api/legal/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error("Failed to search");
+      const response = await apiRequest("POST", "/api/legal/query", data);
       return response.json();
     },
     onSuccess: (data) => {
@@ -92,9 +85,13 @@ export default function LegalResearch() {
     }
   });
 
-  const handleSearch = (data: SearchForm) => {
-    setSearchResults(null); // Clear previous results
-    searchMutation.mutate(data);
+  const handleSearch = async (data: SearchForm) => {
+    try {
+      setSearchResults(null);
+      await searchMutation.mutateAsync(data);
+    } catch (error) {
+      console.error('Search error:', error);
+    }
   };
 
   const simulateProgress = () => {
@@ -116,27 +113,11 @@ export default function LegalResearch() {
       setIsAnalyzing(true);
       const progressInterval = simulateProgress();
 
-      console.log('Starting document analysis:', documentId);
-      const response = await fetch(`/api/legal/documents/${documentId}/analyze`, {
-        method: "POST",
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Analysis failed:', errorText);
-        throw new Error(errorText || "Failed to analyze document");
-      }
-
+      const response = await apiRequest("POST", `/api/legal/documents/${documentId}/analyze`);
       const data = await response.json();
-      console.log('Analysis results received:', data);
 
       clearInterval(progressInterval);
       setAnalysisProgress(100);
-
-      // Force a re-render by creating a new object
       setUploadedDocResults({...data});
 
       toast({
@@ -179,17 +160,12 @@ export default function LegalResearch() {
     },
     load: async (source: string, load: Function, error: Function) => {
       try {
-        console.log('Upload response received:', source);
         const data = JSON.parse(source);
-        console.log('Parsed upload response:', data);
-
         if (data.documentId) {
-          console.log('Document uploaded successfully:', data.documentId);
           setUploadedDocId(data.documentId);
           invalidateLegalDocuments();
           load(source);
         } else {
-          console.error('No document ID in response');
           error('Invalid upload response');
         }
       } catch (err: any) {
@@ -321,41 +297,16 @@ export default function LegalResearch() {
             onerror={handleFilePondError}
           />
 
-          {uploadedDocId && !isAnalyzing && !uploadedDocResults && (
-            <div className="mt-4 flex justify-center">
-              <Button 
-                onClick={() => analyzeDocument(uploadedDocId)}
-                className="w-full md:w-auto"
-              >
-                <Search className="w-4 h-4 mr-2" />
-                Begin Research on Uploaded Document
-              </Button>
-            </div>
-          )}
-
-          {/* Analysis Progress */}
-          {isAnalyzing && (
-            <div className="mt-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>Analyzing document...</span>
-                <span>{analysisProgress}%</span>
-              </div>
-              <Progress value={analysisProgress} className="w-full" />
-            </div>
-          )}
-
           {/* Document Analysis Results Section */}
           {uploadedDocResults && !isAnalyzing && (
             <div className="mt-8 space-y-6">
               <h3 className="text-xl font-semibold">Document Analysis Results</h3>
 
-              {/* Summary Card */}
               <Card className="p-6">
                 <h4 className="font-medium mb-2">Summary</h4>
                 <p className="text-gray-700">{uploadedDocResults.summary}</p>
               </Card>
 
-              {/* Key Points Card */}
               {uploadedDocResults.keyPoints?.length > 0 && (
                 <Card className="p-6">
                   <h4 className="font-medium mb-2">Key Points</h4>
@@ -367,7 +318,6 @@ export default function LegalResearch() {
                 </Card>
               )}
 
-              {/* Legal Implications Card */}
               {uploadedDocResults.legalImplications?.length > 0 && (
                 <Card className="p-6">
                   <h4 className="font-medium mb-2">Legal Implications</h4>
@@ -379,7 +329,6 @@ export default function LegalResearch() {
                 </Card>
               )}
 
-              {/* Recommendations Card */}
               {uploadedDocResults.recommendations?.length > 0 && (
                 <Card className="p-6">
                   <h4 className="font-medium mb-2">Recommendations</h4>
@@ -391,7 +340,6 @@ export default function LegalResearch() {
                 </Card>
               )}
 
-              {/* Risk Areas Card */}
               {uploadedDocResults.riskAreas?.length > 0 && (
                 <Card className="p-6">
                   <h4 className="font-medium mb-2 text-red-600">Risk Areas</h4>
