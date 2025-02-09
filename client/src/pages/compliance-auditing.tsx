@@ -12,7 +12,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { BarChart2, TrendingUp, ShieldAlert } from "lucide-react";
+import { BarChart2, TrendingUp, ShieldAlert, Download } from "lucide-react";
+
+// Interfaces remain the same...
 
 interface UploadedDocument {
   id: string;
@@ -214,12 +216,55 @@ export default function ComplianceAuditing() {
   });
 
 
+  // Add export functionality
+  const handleExportReport = async () => {
+    try {
+      const response = await fetch('/api/compliance/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ results: complianceResults })
+      });
+
+      if (!response.ok) throw new Error('Failed to generate export');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `compliance-audit-${new Date().toISOString()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Export Successful",
+        description: "Your audit report has been downloaded.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
   function getSeverityColor(severity: string) {
-    switch (severity) {
-      case 'CRITICAL': return 'bg-red-500';
-      case 'WARNING': return 'bg-yellow-500';
-      case 'INFO': return 'bg-blue-500';
-      default: return 'bg-gray-500';
+    switch (severity.toUpperCase()) {
+      case 'CRITICAL': return 'bg-red-500 text-white';
+      case 'WARNING': return 'bg-yellow-500 text-white';
+      case 'INFO': return 'bg-blue-500 text-white';
+      default: return 'bg-gray-500 text-white';
+    }
+  }
+
+  function getRiskLevelColor(level: string) {
+    switch (level.toUpperCase()) {
+      case 'HIGH': return 'border-l-4 border-red-500 bg-red-50';
+      case 'MEDIUM': return 'border-l-4 border-yellow-500 bg-yellow-50';
+      case 'LOW': return 'border-l-4 border-green-500 bg-green-50';
+      default: return 'border-l-4 border-gray-500 bg-gray-50';
     }
   }
 
@@ -334,8 +379,8 @@ export default function ComplianceAuditing() {
                       <div key={index} className="flex items-start gap-4">
                         <span className={`px-2 py-1 text-xs rounded-full ${
                           rec.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
-                          rec.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-green-100 text-green-700'
+                            rec.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-green-100 text-green-700'
                         }`}>
                           {rec.priority}
                         </span>
@@ -483,30 +528,28 @@ export default function ComplianceAuditing() {
             <Card className="bg-white/80 backdrop-blur-lg">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Monitoring Dashboard</CardTitle>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <Info className="h-4 w-4 text-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="max-w-xs">
-                          Real-time compliance monitoring results.
-                          View risk levels, compliance scores, and detailed
-                          analysis of potential issues in your documents.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <CardTitle>Audit Results</CardTitle>
+                  {complianceResults.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportReport}
+                      className="flex items-center gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      Export Report
+                    </Button>
+                  )}
                 </div>
                 <CardDescription>
-                  Real-time compliance monitoring status
+                  Compliance audit results and risk analysis
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {isLoadingResults ? (
-                  <div className="flex items-center justify-center p-8">
+                  <div className="flex flex-col items-center justify-center p-8 space-y-4">
                     <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+                    <p className="text-sm text-gray-500">Analyzing document...</p>
                   </div>
                 ) : uploadedDocuments.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
@@ -519,34 +562,78 @@ export default function ComplianceAuditing() {
                 ) : (
                   <ScrollArea className="h-[600px] pr-4">
                     {complianceResults.map((result) => (
-                      <div key={result.documentId} className="mb-6 p-4 border rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <Badge
-                            variant={result.riskLevel === "HIGH" ? "destructive" : "default"}
-                          >
-                            {result.riskLevel} RISK
-                          </Badge>
-                          <span className="text-sm text-gray-500">
-                            Score: {result.score}/100
-                          </span>
+                      <div
+                        key={result.documentId}
+                        className={`mb-6 p-4 rounded-lg ${getRiskLevelColor(result.riskLevel)}`}
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={result.riskLevel === "HIGH" ? "destructive" : "default"}
+                              className="uppercase"
+                            >
+                              {result.riskLevel} RISK
+                            </Badge>
+                            <span className="text-sm font-medium">
+                              Compliance Score: {result.score}/100
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Info className="h-4 w-4 text-gray-400" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="max-w-xs">
+                                    Last checked: {new Date(result.lastChecked).toLocaleString()}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
                         </div>
-                        <p className="text-sm text-gray-700 mb-4">{result.summary}</p>
-                        {result.issues.map((issue, index) => (
-                          <div key={index} className="mb-2 text-sm">
-                            <div className="flex items-start gap-2">
-                              <Badge className={getSeverityColor(issue.severity)}>
-                                {issue.severity}
-                              </Badge>
-                              <div>
-                                <p className="font-medium">{issue.clause}</p>
-                                <p className="text-gray-600">{issue.description}</p>
-                                <p className="text-green-600 mt-1">
-                                  Recommendation: {issue.recommendation}
-                                </p>
+
+                        <div className="bg-white/80 rounded-lg p-4 mb-4">
+                          <h4 className="text-sm font-medium mb-2">Summary</h4>
+                          <p className="text-sm text-gray-700">{result.summary}</p>
+                        </div>
+
+                        <div className="space-y-4">
+                          {result.issues.map((issue, index) => (
+                            <div
+                              key={index}
+                              className="bg-white/80 rounded-lg p-4 border border-gray-100"
+                            >
+                              <div className="flex items-start gap-3">
+                                <Badge className={getSeverityColor(issue.severity)}>
+                                  {issue.severity}
+                                </Badge>
+                                <div className="flex-1">
+                                  <h4 className="font-medium text-gray-900 mb-1">
+                                    {issue.clause}
+                                  </h4>
+                                  <p className="text-sm text-gray-600 mb-2">
+                                    {issue.description}
+                                  </p>
+                                  <div className="bg-green-50 p-3 rounded-lg">
+                                    <h5 className="text-sm font-medium text-green-700 mb-1">
+                                      Recommendation
+                                    </h5>
+                                    <p className="text-sm text-green-600">
+                                      {issue.recommendation}
+                                    </p>
+                                  </div>
+                                  {issue.reference && (
+                                    <p className="text-xs text-gray-500 mt-2">
+                                      Reference: {issue.reference}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </ScrollArea>
