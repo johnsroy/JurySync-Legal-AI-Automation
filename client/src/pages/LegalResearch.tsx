@@ -93,15 +93,6 @@ export default function LegalResearch() {
     searchMutation.mutate(data);
   };
 
-  const handleFilePondError = (error: any) => {
-    console.error('FilePond error:', error);
-    toast({
-      title: "Upload Error",
-      description: error.message || "Failed to upload document",
-      variant: "destructive",
-    });
-  };
-
   const simulateProgress = () => {
     setAnalysisProgress(0);
     const interval = setInterval(() => {
@@ -166,6 +157,15 @@ export default function LegalResearch() {
       });
       throw error;
     }
+  };
+
+  const handleFilePondError = (error: any) => {
+    console.error('FilePond error:', error);
+    toast({
+      title: "Upload Error",
+      description: error.message || "Failed to upload document",
+      variant: "destructive",
+    });
   };
 
   const serverConfig = {

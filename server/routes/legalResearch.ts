@@ -23,8 +23,23 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
+    files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+
+    if (!allowedTypes.includes(file.mimetype)) {
+      cb(new Error(`Invalid file type. Allowed types: ${allowedTypes.join(', ')}`));
+      return;
+    }
+    cb(null, true);
   }
-}).single('filepond'); // For FilePond uploads
+}).single('filepond');
 
 // Validation schema for document upload
 const documentUploadSchema = z.object({
@@ -38,34 +53,8 @@ const documentUploadSchema = z.object({
 async function extractTextFromBuffer(buffer: Buffer): Promise<string> {
   try {
     console.log('Starting PDF text extraction...');
-
-    // Convert buffer to string and extract text
     const text = buffer.toString('utf-8');
-
-    // Look for text content markers in PDF
-    const contentStart = text.indexOf('stream');
-    const contentEnd = text.lastIndexOf('endstream');
-
-    if (contentStart === -1 || contentEnd === -1) {
-      console.log('No stream markers found, returning full content');
-      return text;
-    }
-
-    // Extract text between markers and clean it
-    const textContent = text
-      .substring(contentStart + 6, contentEnd)
-      .split(/[\r\n]/)
-      .filter(line => {
-        const trimmed = line.trim();
-        return trimmed && !trimmed.startsWith('%') && !/^\d+$/.test(trimmed);
-      })
-      .join(' ')
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '')
-      .replace(/\\/g, '');
-
-    console.log('Text extraction completed successfully');
-    return textContent || 'No text could be extracted';
+    return text || 'No text could be extracted';
   } catch (error) {
     console.error('Error in PDF text extraction:', error);
     throw error;
@@ -87,11 +76,14 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
       const result = await mammoth.extractRawText({ buffer: file.buffer });
       extractedText = result.value;
     } else {
-      // Fallback to treating as plain text
       extractedText = file.buffer.toString('utf-8');
     }
 
-    return extractedText || 'No text could be extracted from the document';
+    if (!extractedText || extractedText.trim().length === 0) {
+      throw new Error('No text could be extracted from the document');
+    }
+
+    return extractedText;
   } catch (error: any) {
     console.error('Error extracting text from file:', error);
     throw new Error(`Failed to extract text from ${file.originalname}: ${error.message}`);
@@ -105,14 +97,15 @@ router.post('/documents', async (req, res) => {
   try {
     console.log('Received document upload request');
 
+    // Handle file upload with proper error handling
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
         if (err) {
           console.error('Multer upload error:', err);
           reject(err);
-        } else {
-          resolve(undefined);
+          return;
         }
+        resolve(undefined);
       });
     });
 
@@ -129,52 +122,70 @@ router.post('/documents', async (req, res) => {
 
     // For FilePond, we need to send a simple response for the initial upload
     if (!req.body.title) {
-      return res.sendStatus(200);
+      console.log('Initial upload successful, awaiting metadata');
+      return res.json({ 
+        success: true,
+        message: 'File uploaded successfully'
+      });
     }
 
-    const validatedData = documentUploadSchema.parse(req.body);
+    try {
+      const validatedData = documentUploadSchema.parse(req.body);
+      console.log('Validated document metadata:', validatedData);
 
-    // Extract text content from the uploaded file
-    const content = await extractTextFromFile(req.file);
+      // Extract text content from the uploaded file
+      const content = await extractTextFromFile(req.file);
+      console.log('Text extraction successful, content length:', content.length);
 
-    // Create new document version
-    const document = {
-      title: validatedData.title,
-      content,
-      documentType: validatedData.documentType,
-      jurisdiction: validatedData.jurisdiction,
-      date: validatedData.date,
-      status: 'ACTIVE' as const,
-      metadata: {
-        filename: req.file.originalname,
-        fileType: req.file.mimetype,
-        uploadDate: new Date().toISOString()
-      },
-      citations: []
-    };
+      // Create new document
+      const document = {
+        title: validatedData.title,
+        content,
+        documentType: validatedData.documentType,
+        jurisdiction: validatedData.jurisdiction,
+        date: validatedData.date,
+        status: 'ACTIVE' as const,
+        metadata: {
+          filename: req.file.originalname,
+          fileType: req.file.mimetype,
+          uploadDate: new Date().toISOString()
+        },
+        citations: []
+      };
 
-    // Add document to database first
-    const [createdDoc] = await db
-      .insert(legalDocuments)
-      .values(document)
-      .returning();
+      // Add document to database first
+      const [createdDoc] = await db
+        .insert(legalDocuments)
+        .values(document)
+        .returning();
 
-    // Then add to vector store
-    await legalResearchService.addDocument(createdDoc);
+      console.log('Document saved to database:', { id: createdDoc.id, title: createdDoc.title });
 
-    // Return success response with document ID
-    res.json({
-      success: true,
-      message: 'Document added successfully',
-      documentId: createdDoc.id
-    });
+      // Then add to vector store
+      await legalResearchService.addDocument(createdDoc);
+      console.log('Document added to vector store');
+
+      // Return success response with document ID
+      res.json({
+        success: true,
+        message: 'Document processed successfully',
+        documentId: createdDoc.id
+      });
+
+    } catch (error: any) {
+      console.error('Document processing error:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      throw error;
+    }
 
   } catch (error: any) {
     console.error('Document upload error:', error);
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: error.errors });
-    }
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      error: error.message,
+      details: error.toString()
+    });
   }
 });
 
