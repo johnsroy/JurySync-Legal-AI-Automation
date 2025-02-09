@@ -170,7 +170,7 @@ export const riskAssessments = pgTable("risk_assessments", {
   description: text("description").notNull(),
   impact: text("impact").notNull(),
   mitigation: text("mitigation").notNull(),
-  references: jsonb("references").default([]),
+  references: jsonb("ref_links").default([]),
   context: text("context"),
   confidence: integer("confidence").notNull(),
   detectedAt: timestamp("detected_at").defaultNow(),
