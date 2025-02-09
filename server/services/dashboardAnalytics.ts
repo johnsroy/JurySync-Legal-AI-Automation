@@ -56,7 +56,7 @@ export async function generateDashboardInsights(): Promise<DashboardInsights> {
         totalIssues,
         averageRiskScore,
         documentsWithHighRisk: documents.filter(doc => (doc.riskScore || 0) > 75).length,
-        documentsNeedingReview: documents.filter(doc => new Date(doc.nextScanDue) < new Date()).length
+        documentsNeedingReview: documents.filter(doc => doc.nextScanDue && new Date(doc.nextScanDue) < new Date()).length
       },
       documents: documents.map(doc => ({
         title: doc.title,

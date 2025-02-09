@@ -1,9 +1,15 @@
 import path from "path";
 import fs from "fs/promises";
-import { type ComplianceFile, complianceFiles } from "@shared/schema";
+import { type ComplianceFile, complianceFiles, complianceDocuments } from "@shared/schema";
 import { db } from "../db";
+import { eq } from "drizzle-orm";
+import { analyzePDFContent } from "./fileAnalyzer";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+const ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+];
 
 // Ensure upload directory exists
 async function ensureUploadDir() {
@@ -17,9 +23,14 @@ async function ensureUploadDir() {
 
 export async function saveUploadedFile(
   file: Express.Multer.File,
-  userId: number
+  userId: number,
+  title: string
 ): Promise<ComplianceFile> {
   await ensureUploadDir();
+
+  if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+    throw new Error('Invalid file type. Only PDF and DOCX files are allowed.');
+  }
 
   const timestamp = Date.now();
   const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
@@ -30,7 +41,7 @@ export async function saveUploadedFile(
     // Save file to disk
     await fs.writeFile(filePath, file.buffer);
 
-    // Create database record
+    // Create file record
     const [fileRecord] = await db
       .insert(complianceFiles)
       .values({
@@ -39,11 +50,55 @@ export async function saveUploadedFile(
         filePath: uniqueFilename,
         fileType: file.mimetype,
         fileSize: file.size,
-        status: "UPLOADED",
+        status: "PROCESSING",
+        processingStartedAt: new Date()
       })
       .returning();
 
-    return fileRecord;
+    // Process the document content
+    try {
+      const content = await analyzePDFContent(file.buffer, -1);
+
+      // Create compliance document record
+      const [docRecord] = await db
+        .insert(complianceDocuments)
+        .values({
+          userId,
+          title: title || file.originalname,
+          content,
+          documentType: file.mimetype.includes('pdf') ? 'PDF' : 'DOCX',
+          status: "MONITORING",
+          lastScanned: new Date(),
+          nextScanDue: new Date(Date.now() + 24 * 60 * 60 * 1000)
+        })
+        .returning();
+
+      // Update file record status
+      await db
+        .update(complianceFiles)
+        .set({
+          status: "PROCESSED",
+          processingCompletedAt: new Date()
+        })
+        .where(eq(complianceFiles.id, fileRecord.id));
+
+      return {
+        ...fileRecord,
+        status: "PROCESSED"
+      };
+    } catch (error: any) {
+      // Update file record with error status
+      const [updatedRecord] = await db
+        .update(complianceFiles)
+        .set({
+          status: "ERROR",
+          errorMessage: error.message
+        })
+        .where(eq(complianceFiles.id, fileRecord.id))
+        .returning();
+
+      throw error;
+    }
   } catch (error) {
     // Cleanup on failure
     try {

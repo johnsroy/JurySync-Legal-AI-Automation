@@ -1,26 +1,10 @@
 import { type Buffer } from "buffer";
-import PDFNet from '@pdftron/pdfnet-node';
 import mammoth from 'mammoth';
 import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 const MAX_CONTENT_LENGTH = 32000;
-
-// PDFNet initialization function
-let pdfnetInitialized = false;
-async function initializePDFNet() {
-  if (!pdfnetInitialized) {
-    try {
-      await PDFNet.initialize();
-      pdfnetInitialized = true;
-      console.log('PDFNet initialized successfully');
-    } catch (error) {
-      console.error('Failed to initialize PDFNet:', error);
-      throw new Error('PDF processing system initialization failed');
-    }
-  }
-}
 
 export async function analyzePDFContent(buffer: Buffer, documentId: number): Promise<string> {
   try {
@@ -30,8 +14,11 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     const fileType = await detectFileType(buffer);
 
     if (fileType === 'pdf') {
-      await initializePDFNet(); // Initialize PDFNet when needed
-      textContent = await extractPDFContent(buffer);
+      // Dynamic import to avoid initialization issues
+      const pdfParse = (await import('pdf-parse')).default;
+      textContent = await pdfParse(buffer, {
+        max: MAX_CONTENT_LENGTH
+      }).then(data => data.text);
     } else if (fileType === 'docx') {
       textContent = await extractWordContent(buffer);
     } else {
@@ -114,27 +101,6 @@ async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
   }
 
   throw new Error('Unsupported file format');
-}
-
-async function extractPDFContent(buffer: Buffer): Promise<string> {
-  try {
-    const doc = await PDFNet.PDFDoc.createFromBuffer(buffer);
-    await doc.initSecurityHandler();
-
-    const pageCount = await doc.getPageCount();
-    let textContent = '';
-
-    for (let i = 1; i <= pageCount; i++) {
-      const page = await doc.getPage(i);
-      const txt = await PDFNet.TextExtractor.create();
-      await txt.begin(page);
-      textContent += await txt.getAsText();
-    }
-
-    return textContent;
-  } catch (error) {
-    throw new Error(`PDF extraction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
 }
 
 async function extractWordContent(buffer: Buffer): Promise<string> {
