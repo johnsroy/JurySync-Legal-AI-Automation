@@ -11,6 +11,12 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+const COMPLIANCE_KEYWORDS = [
+  'regulation', 'compliance', 'requirements', 'policy', 'guidelines',
+  'standards', 'rules', 'procedures', 'audit', 'assessment',
+  'control', 'risk', 'regulatory', 'framework', 'governance'
+];
+
 // Task management with persistent state
 class TaskManager {
   private static instance: TaskManager;
@@ -63,7 +69,6 @@ class TaskManager {
       updatedAt: Date.now()
     };
 
-    // Record the update in history
     const history = this.taskHistory.get(taskId) || [];
     history.push({
       timestamp: Date.now(),
@@ -113,14 +118,78 @@ export class OrchestratorService {
     return OrchestratorService.instance;
   }
 
+  private async classifyDocument(text: string): Promise<{
+    type: 'contract' | 'compliance' | 'research',
+    confidence: number,
+    keywords: string[]
+  }> {
+    // Simple keyword-based classification
+    const textLower = text.toLowerCase();
+    const matchedKeywords = COMPLIANCE_KEYWORDS.filter(keyword => 
+      textLower.includes(keyword.toLowerCase())
+    );
+
+    // If we find multiple compliance keywords, classify as compliance
+    if (matchedKeywords.length >= 2) {
+      return {
+        type: 'compliance',
+        confidence: Math.min(matchedKeywords.length / 5, 1), // Normalize confidence
+        keywords: matchedKeywords
+      };
+    }
+
+    // If insufficient keywords found, use Claude for advanced classification
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 150,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `Classify this document as either 'contract', 'compliance', or 'research'. First 500 chars:
+            ${text.substring(0, 500)}
+
+            Format response as JSON:
+            {
+              "type": "contract|compliance|research",
+              "confidence": number between 0-1,
+              "reasoning": "brief explanation"
+            }`
+          }
+        ]
+      }]
+    });
+
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      throw new Error('Unexpected response format from Anthropic API');
+    }
+
+    const result = JSON.parse(content.text);
+    return {
+      type: result.type as 'contract' | 'compliance' | 'research',
+      confidence: result.confidence,
+      keywords: matchedKeywords
+    };
+  }
+
   async distributeTask(input: {
     type: 'contract' | 'compliance' | 'research',
     data: any
   }) {
     const taskId = `task_${Date.now()}`;
-    const task = this.taskManager.createTask(taskId, input.type, input.data);
 
     try {
+      // If type is not explicitly provided, classify the document
+      if (!input.type && input.data.document) {
+        const classification = await this.classifyDocument(input.data.document);
+        input.type = classification.type;
+        input.data.classification = classification;
+      }
+
+      const task = this.taskManager.createTask(taskId, input.type, input.data);
+
       // Analyze task requirements using Claude
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
