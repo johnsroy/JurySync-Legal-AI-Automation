@@ -33,33 +33,47 @@ export class PredictiveMonitoringService {
       throw new Error("Document not found");
     }
 
-    // Generate prediction using AI
-    const message = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1024,
-      messages: [{
-        role: "user",
-        content: `Analyze this document for potential compliance risks and provide a prediction in JSON format:
-        
-        Document Content:
-        ${document.content}
-        
-        Analyze the document and provide:
-        1. Predicted compliance status
-        2. Confidence level (HIGH/MEDIUM/LOW)
-        3. Risk factors (array of objects with factor, impact score 0-100, and description)
-        4. Suggested actions (array of objects with action, priority HIGH/MEDIUM/LOW, and optional deadline)
-        `
-      }]
-    });
-
     try {
+      // Generate prediction using AI
+      const message = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: `Analyze this document for potential compliance risks and provide a prediction in JSON format:
+
+          Document Content:
+          ${document.content}
+
+          Return a JSON object with:
+          {
+            "status": "COMPLIANT" | "AT_RISK" | "NON_COMPLIANT",
+            "confidence": "HIGH" | "MEDIUM" | "LOW",
+            "riskFactors": [
+              {
+                "factor": string,
+                "impact": number (0-100),
+                "description": string
+              }
+            ],
+            "suggestedActions": [
+              {
+                "action": string,
+                "priority": "HIGH" | "MEDIUM" | "LOW",
+                "deadline": string (optional, ISO date)
+              }
+            ]
+          }`
+        }],
+        response_format: { type: "json_object" }
+      });
+
       const analysis = JSON.parse(message.content[0].text);
-      
+
       const prediction: InsertPrediction = {
         documentId,
         predictedStatus: analysis.status,
-        confidence: analysis.confidence,
+        confidence: analysis.confidence as PredictionConfidence,
         riskFactors: analysis.riskFactors,
         suggestedActions: analysis.suggestedActions,
         deadline: analysis.suggestedActions.find((a: any) => a.deadline)?.deadline,
@@ -72,14 +86,14 @@ export class PredictiveMonitoringService {
 
       // Generate alerts for high-risk factors
       const highRiskFactors = analysis.riskFactors.filter((rf: any) => rf.impact > 75);
-      
+
       if (highRiskFactors.length > 0) {
         await this.createAlerts(savedPrediction.id, documentId, highRiskFactors);
       }
 
-      return savedPrediction;
+      return prediction;
     } catch (error) {
-      console.error('Failed to parse AI response:', error);
+      console.error('Failed to generate prediction:', error);
       throw new Error('Failed to generate prediction');
     }
   }
@@ -130,7 +144,7 @@ export class PredictiveMonitoringService {
     for (const schedule of dueSchedules) {
       try {
         await this.generatePrediction(schedule.documentId);
-        
+
         // Update next scheduled check
         await db.update(complianceMonitoringSchedules)
           .set({

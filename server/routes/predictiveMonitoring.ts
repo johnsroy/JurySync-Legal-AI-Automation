@@ -22,9 +22,9 @@ router.post("/schedule/:documentId", async (req, res) => {
     );
 
     res.json(schedule);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to create monitoring schedule:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: error?.message || "Failed to create monitoring schedule" });
   }
 });
 
@@ -34,9 +34,9 @@ router.post("/predict/:documentId", async (req, res) => {
     const documentId = parseInt(req.params.documentId);
     const prediction = await predictiveMonitoringService.generatePrediction(documentId);
     res.json(prediction);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to generate prediction:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: error?.message || "Failed to generate prediction" });
   }
 });
 
@@ -50,9 +50,9 @@ router.get("/predictions/:documentId", async (req, res) => {
       .orderBy(compliancePredictions.createdAt);
 
     res.json(predictions);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to fetch predictions:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: error?.message || "Failed to fetch predictions" });
   }
 });
 
@@ -66,9 +66,9 @@ router.get("/alerts/:documentId", async (req, res) => {
       .orderBy(complianceAlerts.createdAt);
 
     res.json(alerts);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to fetch alerts:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: error?.message || "Failed to fetch alerts" });
   }
 });
 
@@ -92,9 +92,9 @@ router.post("/alerts/:alertId/acknowledge", async (req, res) => {
       .returning();
 
     res.json(updatedAlert);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to acknowledge alert:", error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: error?.message || "Failed to acknowledge alert" });
   }
 });
 
