@@ -298,47 +298,42 @@ export default function LegalResearch() {
               onerror={handleFilePondError}
             />
 
-            {uploadedDocId && !isAnalyzing && (
-              <>
-                {/* Document Preview */}
-                <div className="mt-4 p-4 border rounded-lg">
-                  <h4 className="text-sm font-medium mb-2">Document Preview</h4>
-                  <div className="max-h-48 overflow-y-auto p-4 bg-gray-50 rounded border text-sm">
-                    <p className="whitespace-pre-wrap">
-                      {uploadedDocuments?.find((doc: any) => doc.id === uploadedDocId)?.content.substring(0, 500)}
-                      {uploadedDocuments?.find((doc: any) => doc.id === uploadedDocId)?.content.length > 500 && '...'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Begin Research Button */}
-                <div className="flex justify-center mt-4">
-                  <Button
-                    onClick={() => analyzeDocument(uploadedDocId)}
-                    className="w-full"
-                    disabled={isAnalyzing}
-                  >
-                    {isAnalyzing ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <Search className="w-4 h-4 mr-2" />
-                        Begin Research
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </>
-            )}
+            <Button
+              onClick={() => uploadedDocId && analyzeDocument(uploadedDocId)}
+              className="w-full"
+              disabled={!uploadedDocId || isAnalyzing}
+            >
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <Search className="w-4 h-4 mr-2" />
+                  Begin Research
+                </>
+              )}
+            </Button>
 
             {/* Analysis Progress Bar */}
             {isAnalyzing && (
               <div className="mt-4">
                 <Progress value={analysisProgress} className="w-full" />
                 <p className="text-sm text-center mt-2">Analyzing document... {analysisProgress}%</p>
+              </div>
+            )}
+
+            {/* Document Preview */}
+            {uploadedDocId && !isAnalyzing && uploadedDocuments?.find((doc: any) => doc.id === uploadedDocId) && (
+              <div className="mt-4 p-4 border rounded-lg">
+                <h4 className="text-sm font-medium mb-2">Document Preview</h4>
+                <div className="max-h-48 overflow-y-auto p-4 bg-gray-50 rounded border text-sm">
+                  <p className="whitespace-pre-wrap">
+                    {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.substring(0, 500)}
+                    {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.length > 500 && '...'}
+                  </p>
+                </div>
               </div>
             )}
 
