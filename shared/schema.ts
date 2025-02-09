@@ -124,7 +124,23 @@ export const RiskSeverity = z.enum([
 
 export type RiskSeverity = z.infer<typeof RiskSeverity>;
 
-// Define risk assessment schema
+// Add these new types after the RiskSeverity definition
+export const RiskTrendIndicator = z.enum([
+  "INCREASING",
+  "STABLE",
+  "DECREASING"
+]);
+
+export type RiskTrendIndicator = z.infer<typeof RiskTrendIndicator>;
+
+export const RiskFactors = z.object({
+  regulatory: z.number().min(0).max(100),
+  contractual: z.number().min(0).max(100),
+  litigation: z.number().min(0).max(100),
+  operational: z.number().min(0).max(100)
+});
+
+// Update the RiskAssessmentSchema
 export const RiskAssessmentSchema = z.object({
   score: z.number().min(0).max(100),
   severity: RiskSeverity,
@@ -136,6 +152,10 @@ export const RiskAssessmentSchema = z.object({
   context: z.string().optional(),
   confidence: z.number().min(0).max(100),
   detectedAt: z.string(),
+  riskFactors: RiskFactors.optional(),
+  trendIndicator: RiskTrendIndicator.optional(),
+  timeToMitigate: z.string().optional(),
+  potentialCost: z.string().optional()
 });
 
 export type RiskAssessment = z.infer<typeof RiskAssessmentSchema>;
@@ -156,6 +176,10 @@ export const riskAssessments = pgTable("risk_assessments", {
   detectedAt: timestamp("detected_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  riskFactors: jsonb("risk_factors").$type<z.infer<typeof RiskFactors>>(),
+  trendIndicator: text("trend_indicator"),
+  timeToMitigate: text("time_to_mitigate"),
+  potentialCost: text("potential_cost")
 });
 
 // Schema for compliance documents
@@ -406,7 +430,6 @@ export const signatures = pgTable("signatures", {
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
-
 
 // Add types for the new tables
 export type Approval = typeof approvals.$inferSelect;
