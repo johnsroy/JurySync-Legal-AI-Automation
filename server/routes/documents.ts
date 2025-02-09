@@ -5,7 +5,7 @@ import { documents } from "@shared/schema";
 import { eq } from 'drizzle-orm';
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
-import { generateContract, suggestRequirements, getAutocomplete, getCustomInstructionSuggestions, analyzeDocument } from "../services/openai";
+import { generateContract, suggestRequirements, getAutocomplete, getCustomInstructionSuggestions } from "../services/openai";
 import { getAllTemplates, getTemplate } from "../services/templateStore";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import PDFDocument from "pdfkit";
@@ -27,13 +27,16 @@ const upload = multer({
       // Add additional MIME types for better compatibility
       'application/x-pdf',
       'application/acrobat',
-      'text/pdf'
+      'applications/vnd.pdf',
+      'text/pdf',
+      'application/doc',
+      'application/vnd.ms-word.document.macroEnabled.12'
     ];
 
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF and Word documents are supported.'));
+      cb(new Error(`Invalid file type: ${file.mimetype}. Only PDF and Word documents are supported.`));
     }
   }
 });
@@ -72,6 +75,8 @@ router.post("/api/legal/documents", upload.single('file'), async (req, res) => {
         .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
         .replace(/[\u0000-\u001F]/g, ' ')
         .replace(/\s+/g, ' ')
+        .replace(/<!DOCTYPE[^>]*>/g, '') // Remove DOCTYPE declarations
+        .replace(/<\/?[^>]+(>|$)/g, '') // Remove any HTML tags
         .trim();
 
       // Create document record in database

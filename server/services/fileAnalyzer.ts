@@ -16,6 +16,17 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
   try {
     log(`Starting document analysis${documentId !== -1 ? ` for document ${documentId}` : ''}`);
 
+    // Ensure we have a valid buffer
+    if (!Buffer.isBuffer(buffer)) {
+      log('Invalid input: not a buffer', 'error');
+      throw new Error('Invalid input: not a buffer');
+    }
+
+    if (buffer.length === 0) {
+      log('Invalid input: empty buffer', 'error');
+      throw new Error('Invalid input: empty buffer');
+    }
+
     let textContent = '';
     const fileType = await detectFileType(buffer);
     log(`Detected file type: ${fileType}`);
@@ -24,9 +35,20 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
       log('Starting PDF parsing');
       try {
         const pdfParse = (await import('pdf-parse')).default;
-        const data = await pdfParse(buffer);
+
+        // Add PDF specific validation
+        const pdfHeader = buffer.slice(0, 5).toString();
+        if (!pdfHeader.startsWith('%PDF-')) {
+          throw new Error('Invalid PDF format: Missing PDF header');
+        }
+
+        const data = await pdfParse(buffer, {
+          max: 0, // No page limit
+          version: 'v2.0.550'
+        });
+
         textContent = data.text;
-        log('PDF parsing completed successfully', { contentLength: textContent.length });
+        log('PDF parsing completed successfully', 'info', { contentLength: textContent.length });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         log(`PDF parsing failed: ${errorMessage}`, 'error', { error });
@@ -34,8 +56,20 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
       }
     } else if (fileType === 'docx') {
       log('Starting Word document parsing');
-      textContent = await extractWordContent(buffer);
-      log('Word document parsing completed', { contentLength: textContent.length });
+      try {
+        // Add DOCX specific validation
+        if (buffer.length < 4 || buffer.slice(0, 4).toString('hex') !== '504b0304') {
+          throw new Error('Invalid DOCX format: Missing ZIP header');
+        }
+
+        const result = await mammoth.extractRawText({ buffer });
+        textContent = result.value;
+        log('Word document parsing completed', 'info', { contentLength: textContent.length });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log('Word document extraction error:', 'error', { error: errorMessage });
+        throw new Error(`Failed to extract content from Word document: ${errorMessage}`);
+      }
     } else {
       throw new Error('Unsupported file format. Please upload PDF or Word documents only.');
     }
@@ -47,12 +81,14 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
 
     log(`Raw content extracted, length: ${textContent.length}`);
 
-    // Basic content cleaning
+    // Content cleaning
     textContent = textContent
       .replace(/\u0000/g, '') // Remove null characters
       .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
       .replace(/[\u0000-\u001F]/g, ' ') // Replace control characters with spaces
       .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/<!DOCTYPE[^>]*>/g, '') // Remove DOCTYPE declarations
+      .replace(/<\/?[^>]+(>|$)/g, '') // Remove any HTML tags
       .trim();
 
     // Truncate if necessary while preserving word boundaries
