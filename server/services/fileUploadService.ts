@@ -20,12 +20,18 @@ const ALLOWED_MIME_TYPES = [
   'application/vnd.ms-word.document.macroEnabled.12'
 ];
 
+// Enhanced logging function
+function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [FileUpload] [${type.toUpperCase()}] ${message}`, context ? context : '');
+}
+
 // Ensure upload directory exists
 async function ensureUploadDir() {
   try {
     await fs.mkdir(UPLOAD_DIR, { recursive: true });
   } catch (error) {
-    console.error("Failed to create upload directory:", error);
+    log("Failed to create upload directory", 'error', error);
     throw new Error("Failed to initialize upload system");
   }
 }
@@ -37,7 +43,7 @@ export async function saveUploadedFile(
 ): Promise<ComplianceFile> {
   await ensureUploadDir();
 
-  console.log('Starting file upload process:', {
+  log('Starting file upload process', 'info', {
     filename: file.originalname,
     mimetype: file.mimetype,
     size: file.size
@@ -51,7 +57,7 @@ export async function saveUploadedFile(
   );
 
   if (!isAllowedType) {
-    console.error('Invalid file type:', file.mimetype);
+    log('Invalid file type', 'error', { mimetype: file.mimetype });
     throw new Error('Invalid file type. Only PDF and Word documents are allowed.');
   }
 
@@ -80,9 +86,9 @@ export async function saveUploadedFile(
 
     // Process the document content
     try {
-      console.log('Starting document analysis...');
+      log('Starting document analysis...');
       const content = await analyzePDFContent(file.buffer, -1);
-      console.log('Document analysis completed successfully');
+      log('Document analysis completed successfully');
 
       // Create compliance document record
       const [docRecord] = await db
@@ -112,7 +118,7 @@ export async function saveUploadedFile(
         status: "PROCESSED"
       };
     } catch (error: any) {
-      console.error('Document processing error:', error);
+      log('Document processing error', 'error', error);
 
       // Update file record with error status
       const [updatedRecord] = await db
@@ -127,12 +133,12 @@ export async function saveUploadedFile(
       throw error;
     }
   } catch (error) {
-    console.error('File upload error:', error);
+    log('File upload error', 'error', error);
     // Cleanup on failure
     try {
       await fs.unlink(filePath).catch(() => {});
     } catch (cleanupError) {
-      console.error("Failed to cleanup file after error:", cleanupError);
+      log("Failed to cleanup file after error", 'error', cleanupError);
     }
     throw error;
   }
