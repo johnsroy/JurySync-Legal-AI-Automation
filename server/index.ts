@@ -14,8 +14,11 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-// Simple CORS setup for development
-app.use(cors());
+// Configure CORS with proper options
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' ? false : true,
+  credentials: true
+}));
 
 // Initialize session store
 const PostgresStore = connectPg(session);
@@ -40,10 +43,35 @@ app.use(session({
   },
 }));
 
-// Setup basic security headers
+// Setup security headers with CSP
 app.use((req, res, next) => {
+  // Basic security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+
+  // Content Security Policy
+  const cspDirectives = [
+    "default-src 'self'",
+    "img-src 'self' data: blob: https:",
+    "style-src 'self' 'unsafe-inline'", // Allow inline styles for development
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Allow inline scripts and eval for development
+    "connect-src 'self' ws: wss: http: https:", // Allow WebSocket connections
+    "font-src 'self' data:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "upgrade-insecure-requests"
+  ];
+
+  if (process.env.NODE_ENV === 'production') {
+    // Stricter CSP for production
+    cspDirectives[2] = "style-src 'self'";
+    cspDirectives[3] = "script-src 'self'";
+  }
+
+  res.setHeader('Content-Security-Policy', cspDirectives.join('; '));
   next();
 });
 
@@ -76,9 +104,16 @@ setupAuth(app);
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error('Error:', err);
 
+    // Check if headers have already been sent
     if (!res.headersSent) {
-      res.status(err.status || 500).json({
-        error: err.message || "Internal Server Error"
+      const statusCode = err.status || 500;
+      const errorMessage = process.env.NODE_ENV === 'production' 
+        ? 'Internal Server Error' 
+        : (err.message || 'Internal Server Error');
+
+      res.status(statusCode).json({
+        error: errorMessage,
+        ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
       });
     }
   });

@@ -492,7 +492,7 @@ export const insertComplianceFileSchema = createInsertSchema(complianceFiles);
 export type InsertComplianceFile = z.infer<typeof insertComplianceFileSchema>;
 
 
-// Add after the existing tables
+// Update complianceAudits table to include updated_at
 export const complianceAudits = pgTable('compliance_audits', {
   id: serial("id").primaryKey(),
   documentText: text("document_text").notNull(),
@@ -507,7 +507,7 @@ export const complianceAudits = pgTable('compliance_audits', {
     confidence?: number;
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Add after existing schemas
@@ -517,9 +517,7 @@ export const insertComplianceAuditSchema = createInsertSchema(complianceAudits);
 export type ComplianceAudit = typeof complianceAudits.$inferSelect;
 export type InsertComplianceAudit = z.infer<typeof insertComplianceAuditSchema>;
 
-
-// Additional tables after the existing ones...
-
+// Add after the existing tables
 export const approvals = pgTable("approvals", {
   id: serial("id").primaryKey(),
   documentId: integer("document_id").notNull(),

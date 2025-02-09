@@ -5,11 +5,11 @@ export class ChromaStore {
   private client: ChromaClient;
   private collection: Collection | null = null;
   private initialized = false;
-  private inMemoryMode = true;
 
   constructor() {
+    // Initialize ChromaDB with proper configuration for in-memory mode
     this.client = new ChromaClient({
-      path: "memory" // Use in-memory mode to avoid external server dependency
+      path: "http://localhost:8000" // Use HTTP protocol for in-memory mode
     });
   }
 
@@ -17,16 +17,19 @@ export class ChromaStore {
     if (this.initialized) return;
 
     try {
-      this.collection = await this.client.getOrCreateCollection({
+      // Create collection with proper configuration
+      this.collection = await this.client.createCollection({
         name: "legal_documents",
         metadata: { "hnsw:space": "cosine" }
       });
+
       this.initialized = true;
-      console.log("ChromaDB collection initialized successfully in memory");
+      console.log("ChromaDB collection initialized successfully");
     } catch (error) {
       console.error('Failed to initialize ChromaDB collection:', error);
-      // Don't throw error, just log it and continue
-      // This allows the application to function without vector storage
+      // Set collection to null but don't throw error
+      // This allows the application to continue without vector storage
+      this.collection = null;
     }
   }
 
@@ -47,11 +50,11 @@ export class ChromaStore {
         }],
         documents: [content]
       });
+
       console.log(`Document ${document.id} added to ChromaDB successfully`);
     } catch (error) {
       console.error(`Failed to add document ${document.id} to ChromaDB:`, error);
       // Don't throw error, just log it
-      // This allows the application to continue working without vector storage
     }
   }
 
@@ -64,7 +67,8 @@ export class ChromaStore {
       }
 
       const result = await this.collection.get({
-        ids: [id]
+        ids: [id],
+        include: ["documents"]
       });
 
       if (result.documents.length > 0) {
@@ -77,12 +81,12 @@ export class ChromaStore {
     }
   }
 
-  // Add method to check if vector store is available
   async isAvailable(): Promise<boolean> {
     try {
-      await this.ensureCollection();
-      return this.collection !== null;
+      await this.client.heartbeat();
+      return true;
     } catch (error) {
+      console.error('ChromaDB is not available:', error);
       return false;
     }
   }
