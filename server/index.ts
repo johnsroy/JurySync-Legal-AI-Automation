@@ -13,8 +13,11 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-// Enable CORS for development
-app.use(cors());
+// Enable CORS for all origins in development
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 
 // Initialize session store
 const PostgresStore = connectPg(session);
@@ -35,7 +38,8 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    sameSite: 'lax'
   },
 }));
 
@@ -125,9 +129,7 @@ setupAuth(app);
     }
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
+  // Setup vite or serve static files based on environment
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
@@ -135,9 +137,24 @@ setupAuth(app);
   }
 
   // ALWAYS serve the app on port 5000
-  // this serves both the API and the client
-  const PORT = 5000;
-  server.listen(PORT, "0.0.0.0", () => {
-    log(`serving on port ${PORT}`);
+  const PORT = process.env.PORT || 5000;
+  const HOST = '0.0.0.0';
+
+  server.listen(PORT, HOST, () => {
+    console.log(`Server running at http://${HOST}:${PORT}`);
   });
-})();
+
+  // Add error handler for server
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use`);
+      process.exit(1);
+    } else {
+      console.error('Server error:', error);
+      process.exit(1);
+    }
+  });
+})().catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+});
