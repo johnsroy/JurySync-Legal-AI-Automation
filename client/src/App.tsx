@@ -29,34 +29,46 @@ function Router() {
 
       {/* Protected routes with Layout */}
       <Route path="/dashboard">
-        <Layout>
-          <ProtectedRoute path="/dashboard" component={Dashboard} />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/dashboard" component={Dashboard} />
+          </Layout>
+        )}
       </Route>
       <Route path="/contract-automation">
-        <Layout>
-          <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
+          </Layout>
+        )}
       </Route>
       <Route path="/compliance-auditing">
-        <Layout>
-          <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
+          </Layout>
+        )}
       </Route>
       <Route path="/legal-research">
-        <Layout>
-          <ProtectedRoute path="/legal-research" component={LegalResearch} />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/legal-research" component={LegalResearch} />
+          </Layout>
+        )}
       </Route>
       <Route path="/reports">
-        <Layout>
-          <ProtectedRoute path="/reports" component={ReportsDashboard} />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/reports" component={ReportsDashboard} />
+          </Layout>
+        )}
       </Route>
       <Route path="/orchestrator">
-        <Layout>
-          <ProtectedRoute path="/orchestrator" component={Orchestrator} />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/orchestrator" component={Orchestrator} />
+          </Layout>
+        )}
       </Route>
 
       <Route component={NotFound} />
