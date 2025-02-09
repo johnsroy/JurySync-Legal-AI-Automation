@@ -6,11 +6,15 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { db } from "./db";
 import { seedLegalDatabase } from './services/seedData';
+import cors from 'cors';
 
 const app = express();
 // Increased limit for file uploads
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
+
+// Enable CORS for development
+app.use(cors());
 
 // Initialize session store
 const PostgresStore = connectPg(session);
@@ -34,6 +38,14 @@ app.use(session({
     maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   },
 }));
+
+// Add security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
 
 // Add a middleware to ensure JSON responses for API routes
 app.use('/api', (req, res, next) => {
