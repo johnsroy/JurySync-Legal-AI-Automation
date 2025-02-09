@@ -104,6 +104,49 @@ class TaskManager {
   }
 }
 
+const validateAuditReport = (report: any) => {
+  if (!report?.auditReport) {
+    throw new Error('Missing auditReport structure');
+  }
+
+  const { auditReport } = report;
+
+  // Validate required sections
+  const requiredSections = [
+    'summary',
+    'flaggedIssues',
+    'riskScores',
+    'recommendedActions',
+    'visualizationData'
+  ];
+
+  const missingSections = requiredSections.filter(section => !auditReport[section]);
+  if (missingSections.length > 0) {
+    throw new Error(`Missing required sections: ${missingSections.join(', ')}`);
+  }
+
+  // Validate sub-structures
+  if (!Array.isArray(auditReport.flaggedIssues)) {
+    throw new Error('flaggedIssues must be an array');
+  }
+
+  if (!auditReport.riskScores?.distribution ||
+      typeof auditReport.riskScores.average !== 'number') {
+    throw new Error('Invalid riskScores structure');
+  }
+
+  if (!Array.isArray(auditReport.recommendedActions)) {
+    throw new Error('recommendedActions must be an array');
+  }
+
+  if (!auditReport.visualizationData?.complianceScores ||
+      !Array.isArray(auditReport.visualizationData.riskTrend)) {
+    throw new Error('Invalid visualizationData structure');
+  }
+
+  return true;
+};
+
 export class OrchestratorService {
   private static instance: OrchestratorService;
   private taskManager: TaskManager;
@@ -239,8 +282,16 @@ export class OrchestratorService {
 
       // Process based on task type
       if (task.type === 'compliance') {
-        // Use the new compliance audit service
+        // Use the compliance audit service
         result = await complianceAuditService.analyzeDocument(data.document);
+
+        // Validate the audit report structure
+        try {
+          validateAuditReport(result);
+        } catch (error) {
+          console.error('Invalid audit report structure:', error);
+          throw new Error(`Audit report validation failed: ${error.message}`);
+        }
 
         this.taskManager.updateTask(taskId, {
           status: 'completed',
@@ -248,11 +299,16 @@ export class OrchestratorService {
           completedAt: new Date().toISOString()
         });
 
+        // Store the validated result
         this.taskManager.setTaskResult(taskId, {
           status: 'completed',
           data: result,
           completedAt: new Date().toISOString()
         });
+
+        // Log successful completion
+        console.log(`Task ${taskId} completed successfully with validated audit report`);
+
       } else {
         throw new Error(`Unsupported task type: ${task.type}`);
       }
@@ -263,6 +319,13 @@ export class OrchestratorService {
         status: 'error',
         error: error.message,
         progress: 0
+      });
+
+      // Store error result
+      this.taskManager.setTaskResult(taskId, {
+        status: 'error',
+        error: error.message,
+        completedAt: new Date().toISOString()
       });
     }
   }
