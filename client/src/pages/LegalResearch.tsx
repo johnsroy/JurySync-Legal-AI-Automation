@@ -38,6 +38,7 @@ export default function LegalResearch() {
   const [uploadedDocResults, setUploadedDocResults] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [uploadedDocId, setUploadedDocId] = useState<number | null>(null);
   const { toast } = useToast();
 
   const form = useForm<SearchForm>({
@@ -180,9 +181,8 @@ export default function LegalResearch() {
         console.log('Parsed upload response:', data);
 
         if (data.documentId) {
-          console.log('Starting analysis for document:', data.documentId);
-          const analysisResult = await analyzeDocument(data.documentId);
-          console.log('Analysis complete:', analysisResult);
+          console.log('Document uploaded successfully:', data.documentId);
+          setUploadedDocId(data.documentId);
           invalidateLegalDocuments();
           load(source);
         } else {
@@ -317,6 +317,18 @@ export default function LegalResearch() {
             labelIdle='Drag & Drop your legal document or <span class="filepond--label-action">Browse</span>'
             onerror={handleFilePondError}
           />
+
+          {uploadedDocId && !isAnalyzing && !uploadedDocResults && (
+            <div className="mt-4 flex justify-center">
+              <Button 
+                onClick={() => analyzeDocument(uploadedDocId)}
+                className="w-full md:w-auto"
+              >
+                <Search className="w-4 h-4 mr-2" />
+                Begin Research on Uploaded Document
+              </Button>
+            </div>
+          )}
 
           {/* Analysis Progress */}
           {isAnalyzing && (
