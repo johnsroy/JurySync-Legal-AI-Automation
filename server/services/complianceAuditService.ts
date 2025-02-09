@@ -119,60 +119,55 @@ export class ComplianceAuditService {
         max_tokens: 1500,
         messages: [{
           role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Analyze this legal document thoroughly for compliance issues and provide a detailed JSON report.
+          content: `Analyze this legal document thoroughly for compliance issues and provide a detailed JSON report.
 
-              Document Text: ${documentText}
+          Document Text: ${documentText}
 
-              Format your response as a JSON object with this exact structure:
-              {
-                "auditReport": {
-                  "summary": "comprehensive analysis overview",
-                  "flaggedIssues": [
-                    {
-                      "issue": "detailed description of the issue",
-                      "riskScore": number between 1 and 10,
-                      "severity": "low|medium|high",
-                      "section": "document section reference",
-                      "recommendation": "specific action to resolve",
-                      "regulatoryReference": "applicable regulation or standard",
-                      "impact": "potential consequences"
-                    }
-                  ],
-                  "riskScores": {
-                    "average": number between 1 and 10,
-                    "max": number between 1 and 10,
-                    "min": number between 1 and 10,
-                    "distribution": {
-                      "high": number,
-                      "medium": number,
-                      "low": number
-                    }
-                  },
-                  "recommendedActions": [
-                    {
-                      "action": "specific recommendation",
-                      "priority": "high|medium|low",
-                      "timeline": "immediate|short-term|long-term",
-                      "impact": "expected outcome"
-                    }
-                  ],
-                  "visualizationData": {
-                    "issueFrequency": [number array representing issue count by category],
-                    "riskTrend": [number array representing risk scores across document sections],
-                    "complianceScores": {
-                      "overall": number between 0 and 100,
-                      "regulatory": number between 0 and 100,
-                      "clarity": number between 0 and 100,
-                      "risk": number between 0 and 100
-                    }
-                  }
+          Format your response as JSON with this exact structure:
+          {
+            "auditReport": {
+              "summary": "comprehensive analysis overview",
+              "flaggedIssues": [
+                {
+                  "issue": "detailed description of the issue",
+                  "riskScore": number between 1 and 10,
+                  "severity": "low|medium|high",
+                  "section": "document section reference",
+                  "recommendation": "specific action to resolve",
+                  "regulatoryReference": "applicable regulation or standard",
+                  "impact": "potential consequences"
                 }
-              }`
+              ],
+              "riskScores": {
+                "average": number between 1 and 10,
+                "max": number between 1 and 10,
+                "min": number between 1 and 10,
+                "distribution": {
+                  "high": number,
+                  "medium": number,
+                  "low": number
+                }
+              },
+              "recommendedActions": [
+                {
+                  "action": "specific recommendation",
+                  "priority": "high|medium|low",
+                  "timeline": "immediate|short-term|long-term",
+                  "impact": "expected outcome"
+                }
+              ],
+              "visualizationData": {
+                "issueFrequency": [number array representing issue count by category],
+                "riskTrend": [number array representing risk scores across document sections],
+                "complianceScores": {
+                  "overall": number between 0 and 100,
+                  "regulatory": number between 0 and 100,
+                  "clarity": number between 0 and 100,
+                  "risk": number between 0 and 100
+                }
+              }
             }
-          ]
+          }`
         }]
       });
 
@@ -200,13 +195,26 @@ export class ComplianceAuditService {
         this.analyzeWithAnthropic(documentText)
       ]);
 
-      // Combine and aggregate results with enhanced visualization data
+      // Create document record
+      const [document] = await db.insert(documents).values({
+        title: `Compliance Audit - ${new Date().toISOString()}`,
+        content: documentText,
+        analysis: { openAIAnalysis, anthropicAnalysis },
+        agentType: 'COMPLIANCE_AUDITING',
+        userId: 1, // TODO: Replace with actual user ID from context
+      }).returning();
+
+      // Try to store in vector database, but don't block if it fails
+      try {
+        await chromaStore.addDocument(document, documentText);
+      } catch (error) {
+        log('Vector storage failed but continuing with analysis', 'error', error);
+      }
+
+      // Combine and aggregate results
       const combinedReport = {
         auditReport: {
-          summary: {
-            openai: openAIAnalysis.auditReport.summary,
-            anthropic: anthropicAnalysis.auditReport.summary
-          },
+          summary: openAIAnalysis.auditReport.summary,
           flaggedIssues: [
             ...openAIAnalysis.auditReport.flaggedIssues.map((issue: any) => ({
               ...issue,
@@ -226,11 +234,11 @@ export class ComplianceAuditService {
                          anthropicAnalysis.auditReport.riskScores.min),
             distribution: {
               high: Math.round((openAIAnalysis.auditReport.riskScores.distribution.high +
-                               anthropicAnalysis.auditReport.riskScores.distribution.high) / 2),
+                              anthropicAnalysis.auditReport.riskScores.distribution.high) / 2),
               medium: Math.round((openAIAnalysis.auditReport.riskScores.distribution.medium +
-                                 anthropicAnalysis.auditReport.riskScores.distribution.medium) / 2),
+                                anthropicAnalysis.auditReport.riskScores.distribution.medium) / 2),
               low: Math.round((openAIAnalysis.auditReport.riskScores.distribution.low +
-                              anthropicAnalysis.auditReport.riskScores.distribution.low) / 2)
+                             anthropicAnalysis.auditReport.riskScores.distribution.low) / 2)
             }
           },
           recommendedActions: [
@@ -248,48 +256,25 @@ export class ComplianceAuditService {
             riskTrend: openAIAnalysis.auditReport.visualizationData.riskTrend,
             complianceScores: {
               overall: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.overall +
-                        anthropicAnalysis.auditReport.visualizationData.complianceScores.overall) / 2),
+                         anthropicAnalysis.auditReport.visualizationData.complianceScores.overall) / 2),
               regulatory: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.regulatory +
-                          anthropicAnalysis.auditReport.visualizationData.complianceScores.regulatory) / 2),
+                           anthropicAnalysis.auditReport.visualizationData.complianceScores.regulatory) / 2),
               clarity: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.clarity +
-                       anthropicAnalysis.auditReport.visualizationData.complianceScores.clarity) / 2),
+                        anthropicAnalysis.auditReport.visualizationData.complianceScores.clarity) / 2),
               risk: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.risk +
-                    anthropicAnalysis.auditReport.visualizationData.complianceScores.risk) / 2)
+                     anthropicAnalysis.auditReport.visualizationData.complianceScores.risk) / 2)
             }
-          }
-        },
-        metadata: {
-          analyzedAt: new Date().toISOString(),
-          models: {
-            openai: "gpt-4o",
-            anthropic: "claude-3-5-sonnet-20241022"
           }
         }
       };
 
-      // Store results in database and vector store
-      const [document] = await db.insert(documents).values({
-        title: `Compliance Audit - ${new Date().toISOString()}`,
-        content: documentText,
-        analysis: combinedReport,
-        agentType: 'COMPLIANCE_AUDITING',
-        userId: 1, // TODO: Replace with actual user ID from context
-      }).returning();
-
-      // Try to store in vector database, but don't block if it fails
-      try {
-        await chromaStore.addDocument(document, documentText);
-      } catch (error) {
-        log('Vector storage failed but continuing with analysis', 'error', error);
-      }
-
       // Log the audit
       const [auditRecord] = await db.insert(complianceAudits).values({
-        documentText,
-        openaiResponse: openAIAnalysis,
-        anthropicResponse: anthropicAnalysis,
-        combinedReport,
-        vectorId: document.id.toString(),
+        document_text: documentText,
+        openai_response: openAIAnalysis,
+        anthropic_response: anthropicAnalysis,
+        combined_report: combinedReport,
+        vector_id: document.id.toString(),
         metadata: {
           documentType: 'compliance_audit',
           confidence: combinedReport.auditReport.visualizationData.complianceScores.overall / 100,
@@ -298,11 +283,7 @@ export class ComplianceAuditService {
       }).returning();
 
       log('Combined analysis completed');
-      return {
-        ...combinedReport,
-        auditId: auditRecord.id,
-        vectorId: document.id
-      };
+      return combinedReport;
     } catch (error: any) {
       log('Combined analysis failed', 'error', error);
       throw error;
