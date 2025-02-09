@@ -14,9 +14,9 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-// Configure CORS with proper options
+// Configure CORS for development
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? false : true,
+  origin: true, // Allow all origins in development
   credentials: true
 }));
 
@@ -43,30 +43,10 @@ app.use(session({
   },
 }));
 
-// Setup security headers with CSP that won't block necessary resources
+// Setup minimal security headers without restrictive CSP in development
 app.use((req, res, next) => {
-  // Basic security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-
-  // Content Security Policy adjusted to allow necessary resources
-  const cspDirectives = [
-    "default-src 'self'",
-    "img-src 'self' data: blob: https:",
-    "style-src 'self' 'unsafe-inline' https:",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
-    "connect-src 'self' ws: wss: http: https:",
-    "font-src 'self' data: https:",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-    "worker-src 'self' blob:",
-    process.env.NODE_ENV === 'production' ? "upgrade-insecure-requests" : ""
-  ].filter(Boolean);
-
-  res.setHeader('Content-Security-Policy', cspDirectives.join('; '));
   next();
 });
 
