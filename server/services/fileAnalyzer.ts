@@ -1,4 +1,4 @@
-import { type Buffer } from "buffer";
+import { Buffer } from "buffer";
 import mammoth from 'mammoth';
 import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
@@ -14,25 +14,27 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     const fileType = await detectFileType(buffer);
 
     if (fileType === 'pdf') {
-      // Dynamic import to avoid initialization issues and use simpler parsing
+      // Dynamic import to avoid initialization issues
       const pdfParse = (await import('pdf-parse')).default;
+      console.log('PDF parsing started');
       try {
-        const data = await pdfParse(buffer, {
-          max: MAX_CONTENT_LENGTH,
-          // Use minimal options to avoid parsing issues
-          pagerender: undefined,
-          version: undefined
-        });
+        const data = await pdfParse(buffer);
         textContent = data.text;
+        console.log('PDF parsing completed successfully');
       } catch (pdfError) {
         console.error('PDF parsing error:', pdfError);
-        // Fallback to raw text extraction if parsing fails
-        textContent = buffer.toString('utf-8').replace(/[^\x20-\x7E\n]/g, '');
+        throw new Error(`PDF parsing failed: ${pdfError.message}`);
       }
     } else if (fileType === 'docx') {
+      console.log('Word document parsing started');
       textContent = await extractWordContent(buffer);
+      console.log('Word document parsing completed');
     } else {
       throw new Error('Unsupported file format. Please upload PDF or Word documents only.');
+    }
+
+    if (!textContent || textContent.trim().length === 0) {
+      throw new Error('No valid content could be extracted from document');
     }
 
     console.log(`Raw content extracted, length: ${textContent.length}`);
@@ -44,10 +46,6 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
       .replace(/[\u0000-\u001F]/g, ' ') // Replace control characters with spaces
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim();
-
-    if (!textContent) {
-      throw new Error('No valid content could be extracted from document');
-    }
 
     // Truncate if necessary while preserving word boundaries
     if (textContent.length > MAX_CONTENT_LENGTH) {
@@ -93,17 +91,15 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
       }
     }
 
-    throw new Error(`Failed to analyze document: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw error;
   }
 }
 
 async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
-  // More lenient file type detection
   const header = buffer.slice(0, 4);
-  const content = buffer.toString('ascii', 0, 1000);
 
-  // Check for PDF signature
-  if (buffer.includes(Buffer.from('%PDF'))) {
+  // Check for PDF signature (%PDF)
+  if (buffer.indexOf(Buffer.from('%PDF')) === 0) {
     return 'pdf';
   }
 
@@ -112,13 +108,9 @@ async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
     return 'docx';
   }
 
-  // Check for HTML content and treat as invalid
-  if (content.includes('<!DOCTYPE') || content.includes('<html')) {
-    throw new Error('HTML files are not supported. Please upload PDF or Word documents only.');
-  }
-
-  // Default to PDF if content looks like text
-  if (/^[\x20-\x7E\n\r\t]*$/.test(content)) {
+  // Check content type more thoroughly for PDF
+  const content = buffer.toString('ascii', 0, 1000);
+  if (content.includes('%PDF')) {
     return 'pdf';
   }
 
@@ -131,7 +123,6 @@ async function extractWordContent(buffer: Buffer): Promise<string> {
     return result.value;
   } catch (error) {
     console.error('Word document extraction error:', error);
-    // Fallback to basic text extraction
-    return buffer.toString('utf-8').replace(/[^\x20-\x7E\n]/g, '');
+    throw new Error('Failed to extract content from Word document');
   }
 }
