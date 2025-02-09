@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { legalDocuments } from '@shared/schema';
+import { legalDocuments, complianceDocuments } from '@shared/schema';
 import { legalResearchService } from './legalResearchService';
 import { eq } from 'drizzle-orm';
 
@@ -113,14 +113,78 @@ const statuteSamples = [
   }
 ];
 
+const sampleComplianceDocuments = [
+  {
+    userId: 1, // Default admin user
+    title: "Privacy Policy Compliance Report",
+    content: `This document outlines our organization's privacy policy compliance with GDPR, CCPA, and other relevant data protection regulations. Key findings include data collection practices, storage security measures, and third-party data sharing agreements.`,
+    documentType: "COMPLIANCE_REPORT",
+    status: "MONITORING",
+    riskScore: 75,
+    lastScanned: new Date(),
+    nextScanDue: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+  },
+  {
+    userId: 1,
+    title: "ISO 27001 Security Assessment",
+    content: `Annual security assessment report detailing compliance with ISO 27001 standards. Covers information security policies, access control, cryptography, physical security, and operational security measures.`,
+    documentType: "SECURITY_AUDIT",
+    status: "MONITORING",
+    riskScore: 85,
+    lastScanned: new Date(),
+    nextScanDue: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14 days from now
+  },
+  {
+    userId: 1,
+    title: "Employee Data Handling Guidelines",
+    content: `Internal guidelines for proper handling of employee personal data. Includes protocols for data collection, storage, processing, and deletion in accordance with labor laws and privacy regulations.`,
+    documentType: "INTERNAL_POLICY",
+    status: "MONITORING",
+    riskScore: 65,
+    lastScanned: new Date(),
+    nextScanDue: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+  }
+];
+
+export async function seedComplianceDocuments() {
+  try {
+    console.log('Starting compliance documents seeding...');
+
+    for (const doc of sampleComplianceDocuments) {
+      try {
+        // Check if document already exists by title
+        const [existingDoc] = await db
+          .select()
+          .from(complianceDocuments)
+          .where(eq(complianceDocuments.title, doc.title));
+
+        if (!existingDoc) {
+          await db
+            .insert(complianceDocuments)
+            .values(doc);
+          console.log(`Added compliance document: ${doc.title}`);
+        } else {
+          console.log(`Compliance document already exists: ${doc.title}`);
+        }
+      } catch (error) {
+        console.error(`Failed to add compliance document ${doc.title}:`, error);
+        continue;
+      }
+    }
+
+    console.log('Compliance documents seeding completed');
+  } catch (error) {
+    console.error('Failed to seed compliance documents:', error);
+    throw error;
+  }
+}
+
 export async function seedLegalDatabase() {
   try {
     console.log('Starting legal database seeding...');
 
-    // Insert documents into database and vector store
     for (const doc of [...sampleCases, ...statuteSamples]) {
       try {
-        // Check if document already exists by title
         const [existingDoc] = await db
           .select()
           .from(legalDocuments)
@@ -139,12 +203,13 @@ export async function seedLegalDatabase() {
         }
       } catch (error) {
         console.error(`Failed to add document ${doc.title}:`, error);
-        // Continue with next document even if one fails
         continue;
       }
     }
 
-    console.log('Legal database seeding completed');
+    await seedComplianceDocuments();
+
+    console.log('Legal and compliance database seeding completed');
   } catch (error) {
     console.error('Failed to seed legal database:', error);
     throw error;

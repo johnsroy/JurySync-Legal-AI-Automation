@@ -4,34 +4,46 @@ import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
-const MAX_CONTENT_LENGTH = 32000; // Maximum content length for analysis
+const MAX_CONTENT_LENGTH = 32000;
 
 export async function analyzePDFContent(buffer: Buffer, documentId: number): Promise<string> {
   try {
     console.log(`Starting PDF analysis${documentId !== -1 ? ` for document ${documentId}` : ''}`);
 
-    // Parse PDF and extract text
+    // Parse PDF with more robust options
     const pdfData = await pdf(buffer, {
-      max: 0, // No page limit
-      version: 'v2.0.550'
+      max: 0,
+      version: 'v2.0.550',
+      pagerender: function(pageData: any) {
+        return pageData.getTextContent();
+      }
+    }).catch(async (err) => {
+      console.log('Initial PDF parse failed, attempting fallback method:', err);
+      // Fallback to raw buffer parsing if standard parse fails
+      return pdf(buffer, { max: 0, version: 'v2.0.550' });
     });
-    let textContent = pdfData.text || '';
+
+    let textContent = '';
+    if (pdfData && typeof pdfData.text === 'string') {
+      textContent = pdfData.text;
+    } else if (pdfData && Array.isArray(pdfData.text)) {
+      textContent = pdfData.text.join(' ');
+    }
 
     console.log(`Raw content extracted, length: ${textContent.length}`);
 
-    // Enhanced content cleaning
+    // Enhanced content cleaning with better DOCTYPE handling
     textContent = textContent
-      .replace(/\u0000/g, '') // Remove null bytes
-      .replace(/^\s*<!DOCTYPE[^>]*>/i, '') // Remove DOCTYPE at start
+      .replace(/^\s*(?:<!DOCTYPE[^>]*>|<\?xml[^>]*\?>)/gi, '') // Remove DOCTYPE and XML declarations
       .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
-      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // Remove control characters
-      .replace(/<[^>]*>/g, '') // Remove any HTML-like tags
-      .replace(/&[a-z]+;/gi, ' ') // Replace HTML entities with space
+      .replace(/[\u0000-\u001F]/g, ' ') // Replace control characters with spaces
+      .replace(/<[^>]*>/g, ' ') // Replace HTML tags with spaces
+      .replace(/&[a-z]+;/gi, ' ') // Replace HTML entities with spaces
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim();
 
     if (!textContent) {
-      throw new Error('Failed to extract valid content from PDF');
+      throw new Error('No valid content could be extracted from PDF');
     }
 
     // Truncate if necessary while preserving word boundaries
@@ -64,7 +76,7 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
 
     return textContent;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("PDF analysis error:", error);
 
     if (documentId !== -1) {
@@ -78,6 +90,6 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
       }
     }
 
-    throw error;
+    throw new Error(`Failed to analyze PDF: ${error.message}`);
   }
 }

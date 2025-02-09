@@ -8,7 +8,7 @@ import {
   SidebarMenuButton,
   SidebarProvider,
 } from "@/components/ui/sidebar";
-import { BarChart2, Book, FileText, GitMerge, LayoutDashboard, Scale } from "lucide-react";
+import { BarChart2, Book, FileText, GitMerge, LayoutDashboard, Scale, Terminal } from "lucide-react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -84,7 +84,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   tooltip="Orchestrator"
                 >
                   <Link href="/orchestrator" className="flex items-center">
-                    <BarChart2 className="mr-2" />
+                    <Terminal className="mr-2" />
                     Orchestrator
                   </Link>
                 </SidebarMenuButton>

@@ -30,6 +30,14 @@ const agentOptions = [
     icon: Book,
     path: "/legal-research",
     gradient: "from-yellow-50 to-green-100"
+  },
+  {
+    id: "orchestrator",
+    title: "Central Orchestrator",
+    description: "Monitor and manage AI agents and workflows",
+    icon: AlertTriangle,
+    path: "/orchestrator",
+    gradient: "from-blue-50 to-purple-100"
   }
 ];
 
@@ -106,8 +114,8 @@ export default function Dashboard() {
 
           <div className="grid gap-6">
             {agentOptions.map((option) => (
-              <Card 
-                key={option.id} 
+              <Card
+                key={option.id}
                 className={`bg-gradient-to-r ${option.gradient} hover:shadow-lg transition-all cursor-pointer group overflow-hidden relative`}
                 onClick={() => handleAgentSelect(option)}
               >

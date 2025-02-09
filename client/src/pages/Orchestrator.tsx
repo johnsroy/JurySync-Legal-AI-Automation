@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
@@ -37,7 +37,7 @@ export default function Orchestrator() {
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const { data: tasks, isLoading: isLoadingTasks } = useQuery<Task[]>({
+  const { data: tasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
     queryKey: ["/api/orchestrator/tasks"],
     refetchInterval: 5000,
   });
@@ -144,7 +144,7 @@ export default function Orchestrator() {
                   <div className="h-4 w-48 ml-4 bg-gray-200 rounded" />
                 </div>
               ))
-            ) : tasks?.length > 0 ? (
+            ) : tasks.length > 0 ? (
               tasks.map((task) => (
                 <div
                   key={task.id}
