@@ -12,76 +12,88 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Shared memory to store agent states and tasks
-class SharedMemory {
-  private static instance: SharedMemory;
-  private taskQueue: Map<string, any>;
-  private contextStore: Map<string, any>;
+// Task management with persistent state
+class TaskManager {
+  private static instance: TaskManager;
+  private tasks: Map<string, any>;
+  private taskHistory: Map<string, any[]>;
 
   private constructor() {
-    this.taskQueue = new Map();
-    this.contextStore = new Map();
+    this.tasks = new Map();
+    this.taskHistory = new Map();
   }
 
-  static getInstance(): SharedMemory {
-    if (!SharedMemory.instance) {
-      SharedMemory.instance = new SharedMemory();
+  static getInstance(): TaskManager {
+    if (!TaskManager.instance) {
+      TaskManager.instance = new TaskManager();
     }
-    return SharedMemory.instance;
+    return TaskManager.instance;
   }
 
-  addTask(taskId: string, task: any) {
+  createTask(taskId: string, type: string, data: any) {
     const timestamp = Date.now();
-    this.taskQueue.set(taskId, { 
-      ...task, 
+    const task = {
+      id: taskId,
+      type,
+      data,
       status: 'pending',
+      progress: 0,
+      events: [{
+        timestamp,
+        status: 'created',
+        details: 'Task created and pending analysis'
+      }],
       createdAt: timestamp,
       updatedAt: timestamp
-    });
+    };
+    this.tasks.set(taskId, task);
+    this.taskHistory.set(taskId, []);
+    return task;
   }
 
-  updateTaskStatus(taskId: string, status: string, result?: any) {
-    const task = this.taskQueue.get(taskId);
-    if (task) {
-      this.taskQueue.set(taskId, { 
-        ...task, 
-        status, 
-        result,
-        updatedAt: Date.now()
-      });
-    }
+  updateTask(taskId: string, updates: Partial<any>) {
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error('Task not found');
+
+    const updatedTask = {
+      ...task,
+      ...updates,
+      updatedAt: Date.now()
+    };
+
+    // Record the update in history
+    const history = this.taskHistory.get(taskId) || [];
+    history.push({
+      timestamp: Date.now(),
+      changes: updates,
+      previousState: { ...task }
+    });
+
+    this.tasks.set(taskId, updatedTask);
+    this.taskHistory.set(taskId, history);
+    return updatedTask;
   }
 
   getTask(taskId: string) {
-    return this.taskQueue.get(taskId);
-  }
-
-  setContext(key: string, value: any) {
-    this.contextStore.set(key, value);
-  }
-
-  getContext(key: string) {
-    return this.contextStore.get(key);
+    return this.tasks.get(taskId);
   }
 
   getAllTasks() {
-    return Array.from(this.taskQueue.entries()).map(([id, task]) => ({
-      id,
-      type: task.type,
-      status: task.status,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt,
-      ...task
-    })).sort((a, b) => b.createdAt - a.createdAt);
+    return Array.from(this.tasks.values())
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  getTaskHistory(taskId: string) {
+    return this.taskHistory.get(taskId) || [];
   }
 }
 
 export class OrchestratorService {
   private static instance: OrchestratorService;
-  private sharedMemory: SharedMemory;
+  private taskManager: TaskManager;
 
   private constructor() {
-    this.sharedMemory = SharedMemory.getInstance();
+    this.taskManager = TaskManager.getInstance();
   }
 
   static getInstance(): OrchestratorService {
@@ -96,7 +108,7 @@ export class OrchestratorService {
     data: any
   }) {
     const taskId = `task_${Date.now()}`;
-    this.sharedMemory.addTask(taskId, input);
+    const task = this.taskManager.createTask(taskId, input.type, input.data);
 
     try {
       // Analyze task requirements using Claude
@@ -108,16 +120,26 @@ export class OrchestratorService {
           content: [
             {
               type: "text",
-              text: `Analyze this legal task and determine the required steps and agents:
-              Task Type: ${input.type}
-              Data: ${JSON.stringify(input.data, null, 2)}
+              text: `Analyze this ${input.type} task and provide execution plan:
+              Task Data: ${JSON.stringify(input.data, null, 2)}
 
-              Provide your response as a JSON object with:
+              Format response as JSON with:
               {
-                "requiredAgents": ["Array of required agent types"],
-                "steps": ["Array of processing steps"],
-                "riskFactors": ["Array of potential risks to monitor"],
-                "qualityThresholds": {"key": "value" pairs of quality metrics}
+                "steps": [
+                  {
+                    "name": "step name",
+                    "description": "detailed description",
+                    "estimatedDuration": "duration in minutes",
+                    "requiredAgents": ["agent types needed"],
+                    "outputs": ["expected outputs"]
+                  }
+                ],
+                "riskFactors": ["potential risks"],
+                "qualityChecks": {
+                  "accuracy": "minimum required accuracy",
+                  "completeness": "completeness criteria",
+                  "reliability": "reliability requirements"
+                }
               }`
             }
           ]
@@ -130,106 +152,93 @@ export class OrchestratorService {
       }
 
       const analysis = JSON.parse(content.text);
-      this.sharedMemory.setContext(`${taskId}_analysis`, analysis);
 
-      // Initialize task progress tracking
-      this.sharedMemory.updateTaskStatus(taskId, 'in_progress', {
+      // Update task with analysis and start processing
+      this.taskManager.updateTask(taskId, {
+        status: 'analyzing',
+        analysis,
+        progress: 10,
         currentStep: 0,
-        totalSteps: analysis.steps.length,
-        startTime: Date.now(),
-        analysis
+        totalSteps: analysis.steps.length
       });
 
-      // Start background processing
+      // Start processing in background
       this.processTask(taskId).catch(error => {
-        console.error('Task processing error:', error);
-        this.sharedMemory.updateTaskStatus(taskId, 'error', { error: error.message });
+        console.error(`Task processing error (${taskId}):`, error);
+        this.taskManager.updateTask(taskId, {
+          status: 'error',
+          error: error.message,
+          progress: 0
+        });
       });
 
       return {
         taskId,
+        status: 'analyzing',
         analysis
       };
+
     } catch (error: any) {
       console.error('Task distribution error:', error);
-      this.sharedMemory.updateTaskStatus(taskId, 'error', { error: error.message });
+      this.taskManager.updateTask(taskId, {
+        status: 'error',
+        error: error.message,
+        progress: 0
+      });
       throw error;
     }
   }
 
   private async processTask(taskId: string) {
-    const task = this.sharedMemory.getTask(taskId);
-    const analysis = this.sharedMemory.getContext(`${taskId}_analysis`);
+    const task = this.taskManager.getTask(taskId);
+    if (!task) throw new Error('Task not found');
 
-    if (!task || !analysis) {
-      throw new Error('Task or analysis not found');
-    }
+    const { analysis } = task;
 
     for (let i = 0; i < analysis.steps.length; i++) {
+      const step = analysis.steps[i];
       try {
-        // Update progress
-        this.sharedMemory.updateTaskStatus(taskId, 'processing', {
+        this.taskManager.updateTask(taskId, {
+          status: 'processing',
           currentStep: i,
-          totalSteps: analysis.steps.length,
-          analysis
+          progress: Math.round((i / analysis.steps.length) * 90) + 10,
+          currentStepDetails: step
         });
 
-        // Simulate step processing time
+        // Simulate step processing (replace with actual processing logic)
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Check quality at each step
-        const qualityCheck = await this.evaluateQuality(task, analysis.qualityThresholds);
-        if (!qualityCheck.passed) {
-          this.sharedMemory.updateTaskStatus(taskId, 'quality_review', {
-            currentStep: i,
-            totalSteps: analysis.steps.length,
-            qualityCheck,
-            analysis
+        // Verify step completion
+        const stepResult = await this.verifyStepQuality(step, task);
+        if (!stepResult.passed) {
+          this.taskManager.updateTask(taskId, {
+            status: 'quality_review',
+            qualityIssues: stepResult.issues,
+            progress: Math.round((i / analysis.steps.length) * 90) + 10
           });
           return;
         }
+
       } catch (error: any) {
-        console.error(`Error processing step ${i}:`, error);
-        this.sharedMemory.updateTaskStatus(taskId, 'error', {
+        console.error(`Error processing step ${i} for task ${taskId}:`, error);
+        this.taskManager.updateTask(taskId, {
+          status: 'error',
           error: error.message,
-          currentStep: i,
-          totalSteps: analysis.steps.length
+          progress: Math.round((i / analysis.steps.length) * 90) + 10
         });
         return;
       }
     }
 
     // Task completed successfully
-    this.sharedMemory.updateTaskStatus(taskId, 'completed', {
-      currentStep: analysis.steps.length - 1,
-      totalSteps: analysis.steps.length,
-      completedAt: Date.now(),
-      analysis
+    this.taskManager.updateTask(taskId, {
+      status: 'completed',
+      progress: 100,
+      completedAt: Date.now()
     });
   }
 
-  async monitorTask(taskId: string) {
-    const task = this.sharedMemory.getTask(taskId);
-    if (!task) {
-      throw new Error('Task not found');
-    }
-
-    const analysis = this.sharedMemory.getContext(`${taskId}_analysis`);
-    if (!analysis) {
-      throw new Error('Task analysis not found');
-    }
-
-    return {
-      status: task.status,
-      currentStep: task.result?.currentStep || 0,
-      totalSteps: analysis.steps.length,
-      qualityMetrics: task.result?.qualityCheck,
-      analysis,
-      updatedAt: task.updatedAt
-    };
-  }
-
-  private async evaluateQuality(task: any, thresholds: Record<string, any>) {
+  private async verifyStepQuality(step: any, task: any) {
     try {
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
@@ -239,16 +248,16 @@ export class OrchestratorService {
           content: [
             {
               type: "text",
-              text: `Evaluate this task's quality against the given thresholds:
-              Task: ${JSON.stringify(task, null, 2)}
-              Thresholds: ${JSON.stringify(thresholds, null, 2)}
+              text: `Verify this step's quality:
+              Step: ${JSON.stringify(step, null, 2)}
+              Task Context: ${JSON.stringify(task, null, 2)}
 
-              Provide your evaluation as a JSON object with:
+              Format response as JSON with:
               {
                 "passed": boolean,
-                "metrics": {"key": "value" pairs of measured metrics},
-                "issues": ["Array of identified issues"],
-                "recommendations": ["Array of improvement suggestions"]
+                "score": number (0-100),
+                "issues": ["list of issues if any"],
+                "recommendations": ["improvement suggestions"]
               }`
             }
           ]
@@ -262,29 +271,27 @@ export class OrchestratorService {
 
       return JSON.parse(content.text);
     } catch (error: any) {
-      console.error('Quality evaluation error:', error);
+      console.error('Quality verification error:', error);
       return {
         passed: false,
-        error: error.message
+        score: 0,
+        issues: [error.message]
       };
     }
   }
 
-  async getTaskHistory(taskId: string) {
-    const task = this.sharedMemory.getTask(taskId);
-    if (!task) {
-      throw new Error('Task not found');
-    }
+  async monitorTask(taskId: string) {
+    const task = this.taskManager.getTask(taskId);
+    if (!task) throw new Error('Task not found');
 
     return {
-      task,
-      analysis: this.sharedMemory.getContext(`${taskId}_analysis`),
-      history: this.sharedMemory.getContext(`${taskId}_history`) || []
+      ...task,
+      history: this.taskManager.getTaskHistory(taskId)
     };
   }
 
   async getAllTasks() {
-    return this.sharedMemory.getAllTasks();
+    return this.taskManager.getAllTasks();
   }
 }
 

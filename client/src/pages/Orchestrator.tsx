@@ -4,59 +4,76 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Terminal, FileText, Scale, Book } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 type Task = {
   id: string;
   type: 'contract' | 'compliance' | 'research';
   status: string;
+  progress: number;
   createdAt: number;
   updatedAt: number;
+  analysis?: {
+    steps: Array<{
+      name: string;
+      description: string;
+      estimatedDuration: string;
+      requiredAgents: string[];
+      outputs: string[];
+    }>;
+    riskFactors: string[];
+    qualityChecks: {
+      accuracy: string;
+      completeness: string;
+      reliability: string;
+    };
+  };
+  currentStep?: number;
+  currentStepDetails?: any;
+  qualityIssues?: string[];
+  error?: string;
 };
 
-type TaskDetails = {
-  status: string;
-  currentStep: number;
-  totalSteps: number;
-  qualityMetrics?: {
-    passed: boolean;
-    metrics: Record<string, string | number>;
-    issues?: string[];
-    recommendations?: string[];
-  };
-  analysis: {
-    requiredAgents: string[];
-    steps: string[];
-    riskFactors: string[];
-    qualityThresholds: Record<string, any>;
-  };
+const TASK_TYPE_ICONS = {
+  contract: <FileText className="w-5 h-5" />,
+  compliance: <Scale className="w-5 h-5" />,
+  research: <Book className="w-5 h-5" />,
 };
 
 export default function Orchestrator() {
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // Fetch all tasks
   const { data: tasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
     queryKey: ["/api/orchestrator/tasks"],
-    refetchInterval: 5000,
+    refetchInterval: 5000, // Refresh every 5 seconds
   });
 
-  const { data: taskDetails, isLoading: isLoadingDetails } = useQuery<TaskDetails>({
+  // Fetch selected task details
+  const { data: taskDetails } = useQuery<Task>({
     queryKey: ["/api/orchestrator/tasks", selectedTask],
     enabled: !!selectedTask,
-    refetchInterval: 3000,
+    refetchInterval: 3000, // Refresh details every 3 seconds
   });
 
+  // Create new task mutation
   const createTaskMutation = useMutation({
-    mutationFn: async (taskData: { type: 'contract' | 'compliance' | 'research', data: any }) => {
-      const response = await apiRequest("POST", "/api/orchestrator/tasks", taskData);
+    mutationFn: async (type: 'contract' | 'compliance' | 'research') => {
+      const response = await apiRequest("POST", "/api/orchestrator/tasks", {
+        type,
+        data: {
+          timestamp: new Date().toISOString(),
+          priority: "normal",
+        }
+      });
       return response.json();
     },
     onSuccess: (data) => {
       toast({
         title: "Task Created",
-        description: `Task ID: ${data.taskId}`,
+        description: `New ${data.type} task created successfully.`
       });
       setSelectedTask(data.taskId);
     },
@@ -69,33 +86,22 @@ export default function Orchestrator() {
     },
   });
 
-  const handleCreateTask = async (type: 'contract' | 'compliance' | 'research') => {
-    try {
-      await createTaskMutation.mutateAsync({
-        type,
-        data: {
-          timestamp: new Date().toISOString(),
-          priority: "normal",
-        }
-      });
-    } catch (error) {
-      console.error('Error creating task:', error);
-    }
-  };
-
-  const renderTaskStatus = (status: string) => {
+  const renderTaskStatus = (status: string, progress: number) => {
     switch (status) {
-      case 'pending':
+      case 'analyzing':
       case 'processing':
-      case 'in_progress':
-        return <Loader2 className="h-4 w-4 animate-spin text-yellow-500" />;
+        return (
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-yellow-500" />
+            <span className="text-sm text-yellow-600">{progress}%</span>
+          </div>
+        );
       case 'error':
-      case 'quality_review':
         return <AlertCircle className="h-4 w-4 text-red-500" />;
       case 'completed':
         return <CheckCircle2 className="h-4 w-4 text-green-500" />;
       default:
-        return <div className="h-4 w-4 rounded-full bg-gray-200" />;
+        return <Terminal className="h-4 w-4 text-gray-400" />;
     }
   };
 
@@ -105,114 +111,182 @@ export default function Orchestrator() {
 
   return (
     <div className="container mx-auto py-8">
-      <h1 className="text-3xl font-bold mb-8">Central Orchestrator</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold">Task Orchestrator</h1>
 
-      <div className="grid gap-8">
-        {/* Task Creation Section */}
-        <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Create New Task</h2>
-          <div className="flex gap-4">
-            <Button
-              onClick={() => handleCreateTask('contract')}
-              disabled={createTaskMutation.isPending}
-            >
-              Contract Analysis
-            </Button>
-            <Button
-              onClick={() => handleCreateTask('compliance')}
-              disabled={createTaskMutation.isPending}
-            >
-              Compliance Check
-            </Button>
-            <Button
-              onClick={() => handleCreateTask('research')}
-              disabled={createTaskMutation.isPending}
-            >
-              Legal Research
-            </Button>
-          </div>
-        </Card>
+        <div className="flex gap-4">
+          <Button
+            onClick={() => createTaskMutation.mutate('contract')}
+            disabled={createTaskMutation.isPending}
+            className="gap-2"
+          >
+            {TASK_TYPE_ICONS.contract}
+            Contract Analysis
+          </Button>
+          <Button
+            onClick={() => createTaskMutation.mutate('compliance')}
+            disabled={createTaskMutation.isPending}
+            className="gap-2"
+          >
+            {TASK_TYPE_ICONS.compliance}
+            Compliance Check
+          </Button>
+          <Button
+            onClick={() => createTaskMutation.mutate('research')}
+            disabled={createTaskMutation.isPending}
+            className="gap-2"
+          >
+            {TASK_TYPE_ICONS.research}
+            Legal Research
+          </Button>
+        </div>
+      </div>
 
-        {/* Tasks List Section */}
-        <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Active Tasks</h2>
-          <div className="space-y-4">
-            {isLoadingTasks ? (
-              Array(3).fill(0).map((_, index) => (
-                <div key={index} className="flex items-center p-4 border rounded-lg animate-pulse">
-                  <div className="h-4 w-4 rounded-full bg-gray-200" />
-                  <div className="h-4 w-48 ml-4 bg-gray-200 rounded" />
-                </div>
-              ))
-            ) : tasks.length > 0 ? (
-              tasks.map((task) => (
-                <div
-                  key={task.id}
-                  className={`flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${
-                    selectedTask === task.id ? 'border-blue-500 bg-blue-50' : ''
-                  }`}
-                  onClick={() => setSelectedTask(task.id)}
-                >
-                  <div className="flex items-center">
-                    {renderTaskStatus(task.status)}
-                    <span className="ml-4 font-medium capitalize">{task.type}</span>
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    {formatDate(task.createdAt)}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-center text-gray-500">No active tasks</p>
-            )}
-          </div>
-        </Card>
-
-        {/* Selected Task Details */}
-        {selectedTask && taskDetails && (
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Task Details</h2>
+      <div className="grid gap-8 grid-cols-1 xl:grid-cols-2">
+        {/* Tasks List */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Active Tasks</CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="font-medium">Progress</h3>
-                <span className="text-sm text-gray-500">
-                  Step {taskDetails.currentStep + 1} of {taskDetails.totalSteps}
-                </span>
-              </div>
-              <Progress
-                value={(taskDetails.currentStep / taskDetails.totalSteps) * 100}
-                className="w-full"
-              />
+              {isLoadingTasks ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                </div>
+              ) : tasks.length > 0 ? (
+                tasks.map((task) => (
+                  <button
+                    key={task.id}
+                    className={`w-full text-left p-4 rounded-lg border transition-colors ${
+                      selectedTask === task.id
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-200 hover:bg-gray-50'
+                    }`}
+                    onClick={() => setSelectedTask(task.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {TASK_TYPE_ICONS[task.type]}
+                        <div>
+                          <div className="font-medium capitalize">{task.type}</div>
+                          <div className="text-sm text-gray-500">
+                            Created: {formatDate(task.createdAt)}
+                          </div>
+                        </div>
+                      </div>
+                      {renderTaskStatus(task.status, task.progress)}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  No active tasks
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
-              {taskDetails.qualityMetrics && (
-                <div className="mt-4">
-                  <h3 className="font-medium mb-2">Quality Metrics</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    {Object.entries(taskDetails.qualityMetrics.metrics || {}).map(([key, value]) => (
-                      <div key={key} className="p-3 border rounded-lg">
-                        <div className="text-sm text-gray-500 capitalize">{key.replace(/_/g, ' ')}</div>
-                        <div className="font-medium">{value}</div>
+        {/* Task Details */}
+        {taskDetails && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Task Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Progress Section */}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-medium">Progress</span>
+                  <span className="text-sm text-gray-500">
+                    {taskDetails.progress}%
+                  </span>
+                </div>
+                <Progress value={taskDetails.progress} className="h-2" />
+              </div>
+
+              {/* Current Step */}
+              {taskDetails.currentStepDetails && (
+                <div>
+                  <h3 className="font-medium mb-2">Current Step</h3>
+                  <Card className="bg-gray-50">
+                    <CardContent className="p-4">
+                      <h4 className="font-medium">
+                        {taskDetails.currentStepDetails.name}
+                      </h4>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {taskDetails.currentStepDetails.description}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {taskDetails.currentStepDetails.requiredAgents.map(
+                          (agent: string, index: number) => (
+                            <span
+                              key={index}
+                              className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                            >
+                              {agent}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Analysis Section */}
+              {taskDetails.analysis && (
+                <div>
+                  <h3 className="font-medium mb-2">Analysis</h3>
+
+                  {/* Steps */}
+                  <div className="space-y-2">
+                    {taskDetails.analysis.steps.map((step, index) => (
+                      <div
+                        key={index}
+                        className={`p-3 border rounded-lg ${
+                          index === taskDetails.currentStep
+                            ? 'border-blue-500 bg-blue-50'
+                            : index < (taskDetails.currentStep || 0)
+                            ? 'border-green-500 bg-green-50'
+                            : ''
+                        }`}
+                      >
+                        <div className="font-medium">{step.name}</div>
+                        <div className="text-sm text-gray-600">
+                          {step.description}
+                        </div>
                       </div>
                     ))}
                   </div>
 
-                  {taskDetails.qualityMetrics.issues && taskDetails.qualityMetrics.issues.length > 0 && (
+                  {/* Risk Factors */}
+                  {taskDetails.analysis.riskFactors.length > 0 && (
                     <div className="mt-4">
-                      <h4 className="font-medium mb-2">Issues</h4>
-                      <ul className="list-disc pl-5 space-y-1">
-                        {taskDetails.qualityMetrics.issues.map((issue, index) => (
-                          <li key={index} className="text-red-600">{issue}</li>
+                      <h4 className="text-sm font-medium mb-2">Risk Factors</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {taskDetails.analysis.riskFactors.map((risk, index) => (
+                          <span
+                            key={index}
+                            className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full"
+                          >
+                            {risk}
+                          </span>
                         ))}
-                      </ul>
+                      </div>
                     </div>
                   )}
 
-                  {taskDetails.qualityMetrics.recommendations && taskDetails.qualityMetrics.recommendations.length > 0 && (
+                  {/* Quality Issues */}
+                  {taskDetails.qualityIssues && taskDetails.qualityIssues.length > 0 && (
                     <div className="mt-4">
-                      <h4 className="font-medium mb-2">Recommendations</h4>
+                      <h4 className="text-sm font-medium mb-2">Quality Issues</h4>
                       <ul className="list-disc pl-5 space-y-1">
-                        {taskDetails.qualityMetrics.recommendations.map((rec, index) => (
-                          <li key={index} className="text-blue-600">{rec}</li>
+                        {taskDetails.qualityIssues.map((issue, index) => (
+                          <li key={index} className="text-sm text-red-600">
+                            {issue}
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -220,49 +294,19 @@ export default function Orchestrator() {
                 </div>
               )}
 
-              <div className="mt-4">
-                <h3 className="font-medium mb-2">Analysis</h3>
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-500">Required Agents</h4>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {taskDetails.analysis.requiredAgents.map((agent, index) => (
-                        <span key={index} className="px-2 py-1 bg-gray-100 rounded-full text-sm">
-                          {agent}
-                        </span>
-                      ))}
-                    </div>
+              {/* Error Display */}
+              {taskDetails.error && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-red-600">
+                    <AlertCircle className="h-5 w-5" />
+                    <span className="font-medium">Error</span>
                   </div>
-
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-500">Processing Steps</h4>
-                    <div className="space-y-2 mt-1">
-                      {taskDetails.analysis.steps.map((step, index) => (
-                        <div
-                          key={index}
-                          className={`p-3 border rounded-lg ${
-                            index <= taskDetails.currentStep ? 'bg-green-50' : ''
-                          }`}
-                        >
-                          {step}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-500">Risk Factors</h4>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {taskDetails.analysis.riskFactors.map((risk, index) => (
-                        <span key={index} className="px-2 py-1 bg-red-50 text-red-700 rounded-full text-sm">
-                          {risk}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                  <p className="mt-1 text-sm text-red-600">
+                    {taskDetails.error}
+                  </p>
                 </div>
-              </div>
-            </div>
+              )}
+            </CardContent>
           </Card>
         )}
       </div>

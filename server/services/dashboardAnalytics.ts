@@ -33,28 +33,44 @@ interface DashboardInsights {
 }
 
 export async function generateDashboardInsights(): Promise<DashboardInsights> {
-  // Fetch all compliance documents and their issues
-  const documents = await db
-    .select()
-    .from(complianceDocuments)
-    .where(eq(complianceDocuments.status, "MONITORING"));
-
-  const issues = await db
-    .select()
-    .from(complianceIssues);
-
-  // Prepare data for AI analysis
-  const analysisData = {
-    documentCount: documents.length,
-    issueCount: issues.length,
-    riskLevels: documents.map(doc => doc.riskScore),
-    issueTypes: issues.map(issue => issue.severity),
-    recentIssues: issues
-      .sort((a, b) => new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime())
-      .slice(0, 10)
-  };
-
   try {
+    // Fetch all compliance documents and their issues
+    const documents = await db
+      .select()
+      .from(complianceDocuments)
+      .where(eq(complianceDocuments.status, "MONITORING"));
+
+    const issues = await db
+      .select()
+      .from(complianceIssues);
+
+    // Calculate basic metrics
+    const totalDocuments = documents.length;
+    const totalIssues = issues.length;
+    const averageRiskScore = documents.reduce((acc, doc) => acc + (doc.riskScore || 0), 0) / totalDocuments;
+
+    // Prepare data for AI analysis
+    const analysisData = {
+      metrics: {
+        totalDocuments,
+        totalIssues,
+        averageRiskScore,
+        documentsWithHighRisk: documents.filter(doc => (doc.riskScore || 0) > 75).length,
+        documentsNeedingReview: documents.filter(doc => new Date(doc.nextScanDue) < new Date()).length
+      },
+      documents: documents.map(doc => ({
+        title: doc.title,
+        type: doc.documentType,
+        riskScore: doc.riskScore,
+        lastScanned: doc.lastScanned,
+        status: doc.status
+      })),
+      recentIssues: issues
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+        .slice(0, 10)
+    };
+
+    // Get AI-powered insights
     const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
@@ -63,12 +79,34 @@ export async function generateDashboardInsights(): Promise<DashboardInsights> {
         content: [
           {
             type: "text",
-            text: `Generate dashboard insights from this compliance data:\n${JSON.stringify(analysisData, null, 2)}\n\nProvide insights in JSON format with:
+            text: `Analyze this compliance data and generate dashboard insights:
+            ${JSON.stringify(analysisData, null, 2)}
+
+            Format response as JSON with:
             {
-              "summary": "Overall state of compliance",
-              "trends": [{"label": "string", "value": number, "change": number, "insight": "string"}],
-              "riskDistribution": [{"category": "string", "count": number, "percentage": number}],
-              "recommendations": [{"priority": "HIGH|MEDIUM|LOW", "action": "string", "impact": "string"}]
+              "summary": "Overall state of compliance (2-3 sentences)",
+              "trends": [
+                {
+                  "label": "metric name",
+                  "value": number,
+                  "change": number (-100 to 100),
+                  "insight": "brief explanation"
+                }
+              ],
+              "riskDistribution": [
+                {
+                  "category": "risk level",
+                  "count": number,
+                  "percentage": number
+                }
+              ],
+              "recommendations": [
+                {
+                  "priority": "HIGH|MEDIUM|LOW",
+                  "action": "specific action",
+                  "impact": "expected impact"
+                }
+              ]
             }`
           }
         ]
@@ -80,7 +118,28 @@ export async function generateDashboardInsights(): Promise<DashboardInsights> {
       throw new Error('Unexpected response format from Anthropic API');
     }
 
-    return JSON.parse(content.text);
+    const insights = JSON.parse(content.text);
+
+    // Add custom calculations to insights
+    insights.riskDistribution = [
+      {
+        category: "High Risk (75-100)",
+        count: documents.filter(d => (d.riskScore || 0) >= 75).length,
+        percentage: (documents.filter(d => (d.riskScore || 0) >= 75).length / totalDocuments) * 100
+      },
+      {
+        category: "Medium Risk (50-74)",
+        count: documents.filter(d => (d.riskScore || 0) >= 50 && (d.riskScore || 0) < 75).length,
+        percentage: (documents.filter(d => (d.riskScore || 0) >= 50 && (d.riskScore || 0) < 75).length / totalDocuments) * 100
+      },
+      {
+        category: "Low Risk (0-49)",
+        count: documents.filter(d => (d.riskScore || 0) < 50).length,
+        percentage: (documents.filter(d => (d.riskScore || 0) < 50).length / totalDocuments) * 100
+      }
+    ];
+
+    return insights;
   } catch (error) {
     console.error('Failed to generate dashboard insights:', error);
     throw error;
