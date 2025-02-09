@@ -87,59 +87,61 @@ export default function ComplianceAuditing() {
   const [documentText, setDocumentText] = useState("");
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
 
-  // Fetch uploaded documents with new parsing - this part is kept mostly the same, but the use case changes
+  // Fetch uploaded documents with enhanced error handling
   const { data: uploadedDocuments = [], isLoading: isLoadingDocuments } = useQuery({
     queryKey: ['uploaded-documents'],
     queryFn: async () => {
-      const response = await fetch('/api/compliance/documents');
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText.startsWith('Error:') ? errorText.slice(6) : errorText);
-      }
-      const text = await response.text();
-
-      // Parse the new text format
-      return text.split('---')
-        .filter(block => block.trim())
-        .map(block => {
-          const lines = block.trim().split('\n');
-          const documentId = lines.find(l => l.startsWith('Document:'))?.split(': ')[1] || '';
-          const title = lines.find(l => l.startsWith('Title:'))?.split(': ')[1] || '';
-          const status = lines.find(l => l.startsWith('Status:'))?.split(': ')[1] || '';
-
-          return {
-            id: documentId,
-            name: title,
-            status,
-            uploadedAt: new Date().toISOString()
-          };
+      try {
+        const response = await fetch('/api/compliance/documents');
+        if (!response.ok) {
+          throw new Error('Failed to fetch documents');
+        }
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('Document fetch error:', error);
+        toast({
+          title: "Error Loading Documents",
+          description: "Failed to load documents. Please try again.",
+          variant: "destructive"
         });
+        return [];
+      }
     }
   });
 
-  // Fetch compliance results
+  // Enhanced compliance results fetch with structured error handling
   const { data: complianceResults = [], isLoading: isLoadingResults } = useQuery({
     queryKey: ['compliance-results', selectedDocuments],
     queryFn: async () => {
-      // If no documents are selected but we have uploaded documents,
-      // use the first document by default
       const documentsToMonitor = selectedDocuments.length === 0 && uploadedDocuments.length > 0
         ? [uploadedDocuments[0].id]
         : selectedDocuments;
 
       if (documentsToMonitor.length === 0) return [];
 
-      const response = await fetch(`/api/compliance/results?documents=${documentsToMonitor.join(',')}`);
-      if (!response.ok) throw new Error('Failed to fetch compliance results');
-      const data = await response.json();
-      console.log('Fetched compliance results:', data);
-      return data as ComplianceResult[];
+      try {
+        const response = await fetch(`/api/compliance/results?documents=${documentsToMonitor.join(',')}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch compliance results');
+        }
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('Compliance results fetch error:', error);
+        toast({
+          title: "Error Loading Results",
+          description: "Failed to load compliance results. Please try again.",
+          variant: "destructive"
+        });
+        return [];
+      }
     },
     enabled: uploadedDocuments.length > 0,
-    refetchInterval: 30000 // Refresh every 30 seconds
+    refetchInterval: 30000
   });
 
-  // Submit document mutation
+  // Enhanced submit document mutation with proper error handling
   const submitDocumentMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch('/api/orchestrator/audit', {
@@ -156,9 +158,6 @@ export default function ComplianceAuditing() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        if (errorText.includes('<!DOCTYPE>')) {
-          throw new Error('Server error occurred. Please try again.');
-        }
         throw new Error(errorText.startsWith('Error:') ? errorText.slice(6) : errorText);
       }
       return response.json();
@@ -180,7 +179,7 @@ export default function ComplianceAuditing() {
     }
   });
 
-  // Start monitoring mutation -  This part is kept, but the trigger changes
+  // Enhanced start monitoring mutation with proper error handling
   const startMonitoringMutation = useMutation({
     mutationFn: async (documentIds: string[]) => {
       const response = await fetch('/api/compliance/monitor', {
@@ -188,7 +187,10 @@ export default function ComplianceAuditing() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ documentIds })
       });
-      if (!response.ok) throw new Error('Failed to start monitoring');
+
+      if (!response.ok) {
+        throw new Error('Failed to start monitoring');
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -197,21 +199,17 @@ export default function ComplianceAuditing() {
         title: "Monitoring Started",
         description: "Selected documents are now being monitored for compliance.",
       });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Monitoring Failed",
+        description: error.message,
+        variant: "destructive"
+      });
     }
   });
 
-  const { data: dashboardInsights, isLoading: isLoadingInsights } = useQuery<DashboardInsights>({
-    queryKey: ['compliance-insights'],
-    queryFn: async () => {
-      const response = await fetch('/api/compliance/dashboard-insights');
-      if (!response.ok) throw new Error('Failed to fetch dashboard insights');
-      return response.json();
-    },
-    refetchInterval: 300000, // Refresh every 5 minutes
-  });
-
-
-  // Add export functionality
+  // Enhanced export functionality with proper error handling
   const handleExportReport = async () => {
     try {
       const response = await fetch('/api/compliance/export', {
@@ -220,7 +218,9 @@ export default function ComplianceAuditing() {
         body: JSON.stringify({ results: complianceResults })
       });
 
-      if (!response.ok) throw new Error('Failed to generate export');
+      if (!response.ok) {
+        throw new Error('Failed to generate export');
+      }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -239,12 +239,13 @@ export default function ComplianceAuditing() {
     } catch (error) {
       toast({
         title: "Export Failed",
-        description: error.message,
+        description: error instanceof Error ? error.message : 'An unknown error occurred',
         variant: "destructive"
       });
     }
   };
 
+  // Utility functions remain unchanged
   function getSeverityColor(severity: string) {
     switch (severity.toUpperCase()) {
       case 'CRITICAL': return 'bg-red-500 text-white';
@@ -263,6 +264,7 @@ export default function ComplianceAuditing() {
     }
   }
 
+  // Keep the return JSX structure unchanged but with enhanced error handling
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
       {/* Header */}
@@ -534,7 +536,7 @@ export default function ComplianceAuditing() {
                 {isLoadingResults ? (
                   <div className="flex flex-col items-center justify-center p-8 space-y-4">
                     <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-                    <p className="text-sm text-gray-500">Analyzing document...</p>
+                    <p className="text-sm text-gray-500">Analyzing documents...</p>
                   </div>
                 ) : uploadedDocuments.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
@@ -652,14 +654,14 @@ export default function ComplianceAuditing() {
                       <div className="grid gap-6 md:grid-cols-2">
                         {/* Document Input Section */}
                         <div className="space-y-6">
-                          {/* ... (Document Input Section remains the same) */}
+                          {/* Document Input Section remains the same */}
                         </div>
 
                         {/* Monitoring Dashboard */}
                         <Card className="bg-white/80 backdrop-blur-lg">
-                          {/* ... (Monitoring Dashboard Header remains the same) */}
+                          {/* Monitoring Dashboard Header remains the same */}
                           <CardContent>
-                            {/* ... (Loading and empty states remain the same) */}
+                            {/* Loading and empty states remain the same */}
                             {complianceResults.length > 0 && (
                               <ScrollArea className="h-[600px] pr-4">
                                 {complianceResults.map((result) => (

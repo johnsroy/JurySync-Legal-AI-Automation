@@ -268,13 +268,13 @@ export class ComplianceAuditService {
         }
       };
 
-      // Log the audit
+      // Log the audit with correct column names
       const [auditRecord] = await db.insert(complianceAudits).values({
-        document_text: documentText,
-        openai_response: openAIAnalysis,
-        anthropic_response: anthropicAnalysis,
-        combined_report: combinedReport,
-        vector_id: document.id.toString(),
+        documentText: documentText,
+        openaiResponse: openAIAnalysis,
+        anthropicResponse: anthropicAnalysis,
+        combinedReport: combinedReport,
+        vectorId: document.id.toString(),
         metadata: {
           documentType: 'compliance_audit',
           confidence: combinedReport.auditReport.visualizationData.complianceScores.overall / 100,
