@@ -8,7 +8,16 @@ import { analyzePDFContent } from "./fileAnalyzer";
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const ALLOWED_MIME_TYPES = [
   'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  // Add more flexible MIME types
+  'application/x-pdf',
+  'application/acrobat',
+  'applications/vnd.pdf',
+  'text/pdf',
+  'application/msword',
+  'application/doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-word.document.macroEnabled.12'
 ];
 
 // Ensure upload directory exists
@@ -28,8 +37,15 @@ export async function saveUploadedFile(
 ): Promise<ComplianceFile> {
   await ensureUploadDir();
 
-  if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-    throw new Error('Invalid file type. Only PDF and DOCX files are allowed.');
+  // More lenient MIME type checking
+  const isAllowedType = ALLOWED_MIME_TYPES.some(type => 
+    file.mimetype.includes('pdf') || 
+    file.mimetype.includes('word') || 
+    file.mimetype === type
+  );
+
+  if (!isAllowedType) {
+    throw new Error('Invalid file type. Only PDF and Word documents are allowed.');
   }
 
   const timestamp = Date.now();
@@ -57,7 +73,9 @@ export async function saveUploadedFile(
 
     // Process the document content
     try {
+      console.log('Starting document analysis...');
       const content = await analyzePDFContent(file.buffer, -1);
+      console.log('Document analysis completed successfully');
 
       // Create compliance document record
       const [docRecord] = await db
@@ -87,6 +105,8 @@ export async function saveUploadedFile(
         status: "PROCESSED"
       };
     } catch (error: any) {
+      console.error('Document processing error:', error);
+
       // Update file record with error status
       const [updatedRecord] = await db
         .update(complianceFiles)
@@ -100,6 +120,7 @@ export async function saveUploadedFile(
       throw error;
     }
   } catch (error) {
+    console.error('File upload error:', error);
     // Cleanup on failure
     try {
       await fs.unlink(filePath).catch(() => {});

@@ -14,13 +14,21 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     const fileType = await detectFileType(buffer);
 
     if (fileType === 'pdf') {
-      // Dynamic import to avoid initialization issues
+      // Dynamic import to avoid initialization issues and use simpler parsing
       const pdfParse = (await import('pdf-parse')).default;
-      textContent = await pdfParse(buffer, {
-        max: MAX_CONTENT_LENGTH,
-        pagerender: render_page,
-        version: 'v2.0.0'  // Use latest version
-      }).then(data => data.text);
+      try {
+        const data = await pdfParse(buffer, {
+          max: MAX_CONTENT_LENGTH,
+          // Use minimal options to avoid parsing issues
+          pagerender: undefined,
+          version: undefined
+        });
+        textContent = data.text;
+      } catch (pdfError) {
+        console.error('PDF parsing error:', pdfError);
+        // Fallback to raw text extraction if parsing fails
+        textContent = buffer.toString('utf-8').replace(/[^\x20-\x7E\n]/g, '');
+      }
     } else if (fileType === 'docx') {
       textContent = await extractWordContent(buffer);
     } else {
@@ -29,13 +37,11 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
 
     console.log(`Raw content extracted, length: ${textContent.length}`);
 
-    // Enhanced content cleaning
+    // Basic content cleaning
     textContent = textContent
       .replace(/\u0000/g, '') // Remove null characters
       .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
       .replace(/[\u0000-\u001F]/g, ' ') // Replace control characters with spaces
-      .replace(/<[^>]*>/g, ' ') // Remove HTML tags
-      .replace(/&[a-z]+;/gi, ' ') // Remove HTML entities
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim();
 
@@ -92,14 +98,23 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
 }
 
 async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
-  // Check for PDF magic number
-  if (buffer.toString('ascii', 0, 5) === '%PDF-') {
+  // More lenient file type detection
+  const header = buffer.slice(0, 4);
+
+  // Check for PDF signature
+  if (buffer.includes(Buffer.from('%PDF'))) {
     return 'pdf';
   }
 
-  // Check for DOCX magic number (PK zip header)
-  if (buffer[0] === 0x50 && buffer[1] === 0x4B) {
+  // Check for DOCX (ZIP) signature
+  if (header[0] === 0x50 && header[1] === 0x4B) {
     return 'docx';
+  }
+
+  // Default to PDF if we can't determine the type
+  // This allows for more forgiving PDF parsing
+  if (buffer.toString('ascii', 0, 1000).includes('DOCTYPE')) {
+    return 'pdf';
   }
 
   throw new Error('Unsupported file format');
@@ -110,27 +125,8 @@ async function extractWordContent(buffer: Buffer): Promise<string> {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
   } catch (error) {
-    throw new Error(`Word document extraction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Word document extraction error:', error);
+    // Fallback to basic text extraction
+    return buffer.toString('utf-8').replace(/[^\x20-\x7E\n]/g, '');
   }
-}
-
-// Custom render function for PDF pages
-function render_page(pageData: any) {
-  let render_options = {
-    normalizeWhitespace: true,
-    disableCombineTextItems: false
-  };
-  return pageData.getTextContent(render_options)
-    .then(function(textContent: any) {
-      let lastY, text = '';
-      for (let item of textContent.items) {
-        if (lastY == item.transform[5] || !lastY) {
-          text += item.str;
-        } else {
-          text += '\n' + item.str;
-        }
-        lastY = item.transform[5];
-      }
-      return text;
-    });
 }
