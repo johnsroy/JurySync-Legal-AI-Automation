@@ -113,17 +113,23 @@ export default function LegalResearch() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to analyze document");
+        const errorText = await response.text();
+        console.error('Analysis failed:', errorText);
+        throw new Error(errorText || "Failed to analyze document");
       }
 
       const data = await response.json();
       console.log('Analysis results received:', data);
-      setUploadedDocResults(data);
+
+      // Force a re-render by creating a new object
+      setUploadedDocResults({...data});
 
       toast({
         title: "Analysis Complete",
         description: "Document analysis has been completed successfully.",
       });
+
+      return data;
     } catch (error: any) {
       console.error('Analysis error:', error);
       toast({
@@ -131,8 +137,39 @@ export default function LegalResearch() {
         description: error.message,
         variant: "destructive",
       });
+      throw error;
     }
   };
+
+  // Update the FilePond server configuration
+  const serverConfig = {
+    process: "/api/legal/documents",
+    headers: {
+      'Accept': 'application/json'
+    },
+    load: async (source: string, load: Function, error: Function) => {
+      try {
+        console.log('Upload response received:', source);
+        const data = JSON.parse(source);
+        console.log('Parsed upload response:', data);
+
+        if (data.documentId) {
+          console.log('Starting analysis for document:', data.documentId);
+          const analysisResult = await analyzeDocument(data.documentId);
+          console.log('Analysis complete:', analysisResult);
+          invalidateLegalDocuments();
+          load(source);
+        } else {
+          console.error('No document ID in response');
+          error('Invalid upload response');
+        }
+      } catch (err: any) {
+        console.error('Error processing upload response:', err);
+        error('Upload processing failed');
+      }
+    }
+  };
+
 
   // Render documents list with loading state
   const renderDocumentsList = () => {
@@ -308,36 +345,7 @@ export default function LegalResearch() {
             onupdatefiles={setFiles}
             allowMultiple={false}
             maxFiles={1}
-            server={{
-              process: "/api/legal/documents",
-              headers: {
-                'Accept': 'application/json'
-              },
-              load: async (source, load, error, progress, abort, headers) => {
-                try {
-                  console.log('Upload response received:', source);
-                  const data = JSON.parse(source);
-                  console.log('Parsed upload response:', data);
-
-                  if (data.documentId) {
-                    console.log('Starting analysis for document:', data.documentId);
-                    await analyzeDocument(data.documentId);
-                    invalidateLegalDocuments();
-                  } else {
-                    console.error('No document ID in response');
-                    throw new Error('Invalid upload response');
-                  }
-                } catch (err: any) {
-                  console.error('Error processing upload response:', err);
-                  toast({
-                    title: "Error",
-                    description: "Failed to process document",
-                    variant: "destructive"
-                  });
-                  error('Upload processing failed');
-                }
-              }
-            }}
+            server={serverConfig}
             acceptedFileTypes={[
               'application/pdf',
               'application/msword',
@@ -347,8 +355,70 @@ export default function LegalResearch() {
             onerror={handleFilePondError}
           />
 
-          {/* Display analysis results */}
-          {renderUploadedDocResults()}
+          {/* Document Analysis Results Section */}
+          <div className="mt-8">
+            {uploadedDocResults ? (
+              <div className="space-y-6">
+                <h3 className="text-xl font-semibold">Document Analysis Results</h3>
+
+                {/* Summary Card */}
+                <Card className="p-6">
+                  <h4 className="font-medium mb-2">Summary</h4>
+                  <p className="text-gray-700">{uploadedDocResults.summary}</p>
+                </Card>
+
+                {/* Key Points Card */}
+                {uploadedDocResults.keyPoints?.length > 0 && (
+                  <Card className="p-6">
+                    <h4 className="font-medium mb-2">Key Points</h4>
+                    <ul className="list-disc list-inside space-y-2">
+                      {uploadedDocResults.keyPoints.map((point: string, index: number) => (
+                        <li key={index} className="text-gray-700">{point}</li>
+                      ))}
+                    </ul>
+                  </Card>
+                )}
+
+                {/* Legal Implications Card */}
+                {uploadedDocResults.legalImplications?.length > 0 && (
+                  <Card className="p-6">
+                    <h4 className="font-medium mb-2">Legal Implications</h4>
+                    <ul className="list-disc list-inside space-y-2">
+                      {uploadedDocResults.legalImplications.map((implication: string, index: number) => (
+                        <li key={index} className="text-gray-700">{implication}</li>
+                      ))}
+                    </ul>
+                  </Card>
+                )}
+
+                {/* Recommendations Card */}
+                {uploadedDocResults.recommendations?.length > 0 && (
+                  <Card className="p-6">
+                    <h4 className="font-medium mb-2">Recommendations</h4>
+                    <ul className="list-disc list-inside space-y-2">
+                      {uploadedDocResults.recommendations.map((rec: string, index: number) => (
+                        <li key={index} className="text-gray-700">{rec}</li>
+                      ))}
+                    </ul>
+                  </Card>
+                )}
+
+                {/* Risk Areas Card */}
+                {uploadedDocResults.riskAreas?.length > 0 && (
+                  <Card className="p-6">
+                    <h4 className="font-medium mb-2 text-red-600">Risk Areas</h4>
+                    <ul className="list-disc list-inside space-y-2">
+                      {uploadedDocResults.riskAreas.map((risk: string, index: number) => (
+                        <li key={index} className="text-red-600">{risk}</li>
+                      ))}
+                    </ul>
+                  </Card>
+                )}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-center">Upload a document to see AI-powered analysis results</p>
+            )}
+          </div>
         </Card>
 
         {/* Available Documents Section */}

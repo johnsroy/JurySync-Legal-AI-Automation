@@ -182,6 +182,7 @@ router.post('/documents', async (req, res) => {
 router.post('/documents/:id/analyze', async (req, res) => {
   try {
     const documentId = parseInt(req.params.id);
+    console.log('Starting document analysis for ID:', documentId);
 
     // Get the document
     const [document] = await db
@@ -190,6 +191,7 @@ router.post('/documents/:id/analyze', async (req, res) => {
       .where(eq(legalDocuments.id, documentId));
 
     if (!document) {
+      console.error('Document not found:', documentId);
       return res.status(404).json({ error: 'Document not found' });
     }
 
@@ -228,14 +230,22 @@ Structure your response as a JSON object with these fields:
       throw new Error('Unexpected response format from Anthropic API');
     }
 
+    console.log('Received Anthropic response, parsing JSON...');
     const analysis = JSON.parse(content.text);
-    console.log('Analysis completed');
+    console.log('Analysis completed successfully:', {
+      summaryLength: analysis.summary?.length,
+      numKeyPoints: analysis.keyPoints?.length,
+      numImplications: analysis.legalImplications?.length
+    });
 
     res.json(analysis);
 
   } catch (error: any) {
     console.error('Document analysis error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      error: error.message,
+      details: error.toString()
+    });
   }
 });
 
