@@ -6,38 +6,46 @@ import { eq } from "drizzle-orm";
 
 const MAX_CONTENT_LENGTH = 32000;
 
+// Enhanced logging function
+function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [FileAnalyzer] [${type.toUpperCase()}] ${message}`, context ? context : '');
+}
+
 export async function analyzePDFContent(buffer: Buffer, documentId: number): Promise<string> {
   try {
-    console.log(`Starting document analysis${documentId !== -1 ? ` for document ${documentId}` : ''}`);
+    log(`Starting document analysis${documentId !== -1 ? ` for document ${documentId}` : ''}`);
 
     let textContent = '';
     const fileType = await detectFileType(buffer);
+    log(`Detected file type: ${fileType}`);
 
     if (fileType === 'pdf') {
-      // Dynamic import to avoid initialization issues
-      const pdfParse = (await import('pdf-parse')).default;
-      console.log('PDF parsing started');
+      log('Starting PDF parsing');
       try {
+        const pdfParse = (await import('pdf-parse')).default;
         const data = await pdfParse(buffer);
         textContent = data.text;
-        console.log('PDF parsing completed successfully');
-      } catch (pdfError) {
-        console.error('PDF parsing error:', pdfError);
-        throw new Error(`PDF parsing failed: ${pdfError.message}`);
+        log('PDF parsing completed successfully', { contentLength: textContent.length });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        log(`PDF parsing failed: ${errorMessage}`, 'error', { error });
+        throw new Error(`PDF parsing failed: ${errorMessage}`);
       }
     } else if (fileType === 'docx') {
-      console.log('Word document parsing started');
+      log('Starting Word document parsing');
       textContent = await extractWordContent(buffer);
-      console.log('Word document parsing completed');
+      log('Word document parsing completed', { contentLength: textContent.length });
     } else {
       throw new Error('Unsupported file format. Please upload PDF or Word documents only.');
     }
 
     if (!textContent || textContent.trim().length === 0) {
+      log('No valid content extracted from document', 'error');
       throw new Error('No valid content could be extracted from document');
     }
 
-    console.log(`Raw content extracted, length: ${textContent.length}`);
+    log(`Raw content extracted, length: ${textContent.length}`);
 
     // Basic content cleaning
     textContent = textContent
@@ -49,11 +57,11 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
 
     // Truncate if necessary while preserving word boundaries
     if (textContent.length > MAX_CONTENT_LENGTH) {
-      console.log(`Content exceeds maximum length, truncating from ${textContent.length} to ~${MAX_CONTENT_LENGTH} chars`);
+      log(`Content exceeds maximum length, truncating from ${textContent.length} to ~${MAX_CONTENT_LENGTH} chars`);
       textContent = textContent.substring(0, MAX_CONTENT_LENGTH).replace(/\s+[^\s]*$/, '');
     }
 
-    console.log(`Final content length: ${textContent.length}`);
+    log(`Final content length: ${textContent.length}`);
 
     // Only update database if a valid document ID was provided
     if (documentId !== -1) {
@@ -68,9 +76,10 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
           })
           .where(eq(complianceDocuments.id, documentId));
 
-        console.log('Database updated successfully');
-      } catch (dbError) {
-        console.error('Database update error:', dbError);
+        log('Database updated successfully');
+      } catch (error) {
+        const dbError = error instanceof Error ? error.message : String(error);
+        log('Database update error:', 'error', { error: dbError });
         throw new Error('Failed to update document in database');
       }
     }
@@ -78,7 +87,8 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     return textContent;
 
   } catch (error) {
-    console.error("Document analysis error:", error);
+    const finalError = error instanceof Error ? error.message : String(error);
+    log("Document analysis error:", 'error', { error: finalError });
 
     if (documentId !== -1) {
       try {
@@ -87,7 +97,7 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
           .set({ status: "ERROR" })
           .where(eq(complianceDocuments.id, documentId));
       } catch (dbError) {
-        console.error('Failed to update error status:', dbError);
+        log('Failed to update error status:', 'error', { error: dbError });
       }
     }
 
@@ -97,32 +107,40 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
 
 async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
   const header = buffer.slice(0, 4);
+  log('Detecting file type', 'debug', { headerHex: header.toString('hex') });
 
   // Check for PDF signature (%PDF)
   if (buffer.indexOf(Buffer.from('%PDF')) === 0) {
+    log('Detected PDF signature');
     return 'pdf';
   }
 
   // Check for DOCX (ZIP) signature
   if (header[0] === 0x50 && header[1] === 0x4B) {
+    log('Detected DOCX signature');
     return 'docx';
   }
 
   // Check content type more thoroughly for PDF
   const content = buffer.toString('ascii', 0, 1000);
   if (content.includes('%PDF')) {
+    log('Detected PDF content signature');
     return 'pdf';
   }
 
+  log('Unsupported file format detected', 'error');
   throw new Error('Unsupported file format. Please upload PDF or Word documents only.');
 }
 
 async function extractWordContent(buffer: Buffer): Promise<string> {
   try {
+    log('Starting Word document extraction');
     const result = await mammoth.extractRawText({ buffer });
+    log('Word document extraction completed successfully');
     return result.value;
   } catch (error) {
-    console.error('Word document extraction error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Word document extraction error:', 'error', { error: errorMessage });
     throw new Error('Failed to extract content from Word document');
   }
 }

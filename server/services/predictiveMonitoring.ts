@@ -9,65 +9,71 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Enhanced logging function
+function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [PredictiveMonitoring] [${type.toUpperCase()}] ${message}`, context ? context : '');
+}
+
 export class PredictiveMonitoringService {
   async scheduleMonitoring(documentId: number, frequency: MonitoringFrequency) {
+    log(`Scheduling monitoring for document ${documentId} with frequency ${frequency}`);
     const nextCheck = this.calculateNextCheck(frequency);
 
-    return await db.insert(complianceMonitoringSchedules)
-      .values({
-        documentId,
-        frequency,
-        nextScheduled: nextCheck,
-        isActive: true,
-      })
-      .returning();
+    try {
+      const [schedule] = await db.insert(complianceMonitoringSchedules)
+        .values({
+          documentId,
+          frequency,
+          nextScheduled: nextCheck,
+          isActive: true,
+        })
+        .returning();
+
+      log(`Successfully scheduled monitoring`, 'info', { schedule });
+      return schedule;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log(`Failed to schedule monitoring`, 'error', { error: errorMessage });
+      throw new Error(`Failed to schedule monitoring: ${errorMessage}`);
+    }
   }
 
   async generatePrediction(documentId: number): Promise<InsertPrediction> {
+    log(`Generating prediction for document ${documentId}`);
+
     // Get document content
     const [document] = await db.select()
       .from(complianceDocuments)
       .where(eq(complianceDocuments.id, documentId));
 
     if (!document) {
+      log(`Document not found`, 'error', { documentId });
       throw new Error("Document not found");
     }
 
     try {
-      // Generate prediction using AI
+      log('Initiating AI analysis');
       const message = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 1024,
         messages: [{
           role: "user",
-          content: `Analyze this document for potential compliance risks and provide a prediction in JSON format:
+          content: `Analyze this document for potential compliance risks and provide a prediction:
 
-          Document Content:
           ${document.content}
 
-          Return a JSON object with:
-          {
-            "status": "COMPLIANT" | "AT_RISK" | "NON_COMPLIANT",
-            "confidence": "HIGH" | "MEDIUM" | "LOW",
-            "riskFactors": [
-              {
-                "factor": string,
-                "impact": number (0-100),
-                "description": string
-              }
-            ],
-            "suggestedActions": [
-              {
-                "action": string,
-                "priority": "HIGH" | "MEDIUM" | "LOW",
-                "deadline": string (optional, ISO date)
-              }
-            ]
-          }`
-        }],
-        response_format: { type: "json_object" }
+          Analyze the document focusing on:
+          1. Compliance status (COMPLIANT/AT_RISK/NON_COMPLIANT)
+          2. Confidence level (HIGH/MEDIUM/LOW)
+          3. Risk factors with impact scores
+          4. Required actions with priorities and deadlines
+
+          Format your response as a JSON object.`
+        }]
       });
 
+      log('AI analysis completed, parsing response');
       const analysis = JSON.parse(message.content[0].text);
 
       const prediction: InsertPrediction = {
@@ -80,6 +86,7 @@ export class PredictiveMonitoringService {
       };
 
       // Save prediction
+      log('Saving prediction to database');
       const [savedPrediction] = await db.insert(compliancePredictions)
         .values(prediction)
         .returning();
@@ -88,73 +95,109 @@ export class PredictiveMonitoringService {
       const highRiskFactors = analysis.riskFactors.filter((rf: any) => rf.impact > 75);
 
       if (highRiskFactors.length > 0) {
+        log(`Creating alerts for ${highRiskFactors.length} high-risk factors`);
         await this.createAlerts(savedPrediction.id, documentId, highRiskFactors);
       }
 
+      log('Prediction generation completed successfully');
       return prediction;
     } catch (error) {
-      console.error('Failed to generate prediction:', error);
-      throw new Error('Failed to generate prediction');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log('Failed to generate prediction', 'error', { error: errorMessage });
+      throw new Error(`Failed to generate prediction: ${errorMessage}`);
     }
   }
 
   private async createAlerts(predictionId: number, documentId: number, riskFactors: any[]): Promise<void> {
-    const alerts = riskFactors.map(rf => ({
-      predictionId,
-      documentId,
-      severity: 'HIGH',
-      message: `High risk detected: ${rf.factor} (Impact Score: ${rf.impact}) - ${rf.description}`,
-      status: 'PENDING'
-    }));
+    try {
+      log(`Creating alerts for prediction ${predictionId}`);
+      const alerts = riskFactors.map(rf => ({
+        predictionId,
+        documentId,
+        severity: 'HIGH',
+        message: `High risk detected: ${rf.factor} (Impact Score: ${rf.impact}) - ${rf.description}`,
+        status: 'PENDING'
+      }));
 
-    await db.insert(complianceAlerts)
-      .values(alerts);
+      await db.insert(complianceAlerts)
+        .values(alerts);
+
+      log(`Successfully created ${alerts.length} alerts`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log('Failed to create alerts', 'error', { error: errorMessage });
+      throw new Error(`Failed to create alerts: ${errorMessage}`);
+    }
   }
 
   private calculateNextCheck(frequency: MonitoringFrequency): Date {
     const now = new Date();
+    let nextCheck: Date;
+
     switch (frequency) {
       case "REALTIME":
-        return now;
+        nextCheck = now;
+        break;
       case "HOURLY":
-        return new Date(now.setHours(now.getHours() + 1));
+        nextCheck = new Date(now.setHours(now.getHours() + 1));
+        break;
       case "DAILY":
-        return new Date(now.setDate(now.getDate() + 1));
+        nextCheck = new Date(now.setDate(now.getDate() + 1));
+        break;
       case "WEEKLY":
-        return new Date(now.setDate(now.getDate() + 7));
+        nextCheck = new Date(now.setDate(now.getDate() + 7));
+        break;
       case "MONTHLY":
-        return new Date(now.setMonth(now.getMonth() + 1));
+        nextCheck = new Date(now.setMonth(now.getMonth() + 1));
+        break;
       default:
-        return new Date(now.setDate(now.getDate() + 1)); // Default to daily
+        nextCheck = new Date(now.setDate(now.getDate() + 1)); // Default to daily
     }
+
+    log(`Calculated next check time`, 'debug', { frequency, nextCheck });
+    return nextCheck;
   }
 
   async checkScheduledMonitoring(): Promise<void> {
-    // Get all active schedules that are due
-    const dueSchedules = await db.select()
-      .from(complianceMonitoringSchedules)
-      .where(
-        and(
-          eq(complianceMonitoringSchedules.isActive, true),
-          lte(complianceMonitoringSchedules.nextScheduled, new Date())
-        )
-      );
+    log('Starting scheduled monitoring check');
 
-    // Generate new predictions for each due schedule
-    for (const schedule of dueSchedules) {
-      try {
-        await this.generatePrediction(schedule.documentId);
+    try {
+      // Get all active schedules that are due
+      const dueSchedules = await db.select()
+        .from(complianceMonitoringSchedules)
+        .where(
+          and(
+            eq(complianceMonitoringSchedules.isActive, true),
+            lte(complianceMonitoringSchedules.nextScheduled, new Date())
+          )
+        );
 
-        // Update next scheduled check
-        await db.update(complianceMonitoringSchedules)
-          .set({
-            lastChecked: new Date(),
-            nextScheduled: this.calculateNextCheck(schedule.frequency as MonitoringFrequency),
-          })
-          .where(eq(complianceMonitoringSchedules.id, schedule.id));
-      } catch (error) {
-        console.error(`Failed to process schedule ${schedule.id}:`, error);
+      log(`Found ${dueSchedules.length} schedules due for monitoring`);
+
+      // Generate new predictions for each due schedule
+      for (const schedule of dueSchedules) {
+        try {
+          log(`Processing schedule ${schedule.id} for document ${schedule.documentId}`);
+          await this.generatePrediction(schedule.documentId);
+
+          // Update next scheduled check
+          await db.update(complianceMonitoringSchedules)
+            .set({
+              lastChecked: new Date(),
+              nextScheduled: this.calculateNextCheck(schedule.frequency as MonitoringFrequency),
+            })
+            .where(eq(complianceMonitoringSchedules.id, schedule.id));
+
+          log(`Successfully processed schedule ${schedule.id}`);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          log(`Failed to process schedule ${schedule.id}`, 'error', { error: errorMessage });
+        }
       }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log('Failed to check scheduled monitoring', 'error', { error: errorMessage });
+      throw new Error(`Failed to check scheduled monitoring: ${errorMessage}`);
     }
   }
 }
