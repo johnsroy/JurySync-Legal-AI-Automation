@@ -43,33 +43,28 @@ app.use(session({
   },
 }));
 
-// Setup security headers with CSP
+// Setup security headers with CSP that won't block necessary resources
 app.use((req, res, next) => {
   // Basic security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
 
-  // Content Security Policy
+  // Content Security Policy adjusted to allow necessary resources
   const cspDirectives = [
     "default-src 'self'",
     "img-src 'self' data: blob: https:",
-    "style-src 'self' 'unsafe-inline'", // Allow inline styles for development
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Allow inline scripts and eval for development
-    "connect-src 'self' ws: wss: http: https:", // Allow WebSocket connections
-    "font-src 'self' data:",
+    "style-src 'self' 'unsafe-inline' https:",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
+    "connect-src 'self' ws: wss: http: https:",
+    "font-src 'self' data: https:",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    "upgrade-insecure-requests"
-  ];
-
-  if (process.env.NODE_ENV === 'production') {
-    // Stricter CSP for production
-    cspDirectives[2] = "style-src 'self'";
-    cspDirectives[3] = "script-src 'self'";
-  }
+    "worker-src 'self' blob:",
+    process.env.NODE_ENV === 'production' ? "upgrade-insecure-requests" : ""
+  ].filter(Boolean);
 
   res.setHeader('Content-Security-Policy', cspDirectives.join('; '));
   next();
