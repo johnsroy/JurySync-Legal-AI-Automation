@@ -31,13 +31,24 @@ class SharedMemory {
   }
 
   addTask(taskId: string, task: any) {
-    this.taskQueue.set(taskId, { ...task, status: 'pending' });
+    const timestamp = Date.now();
+    this.taskQueue.set(taskId, { 
+      ...task, 
+      status: 'pending',
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
   }
 
   updateTaskStatus(taskId: string, status: string, result?: any) {
     const task = this.taskQueue.get(taskId);
     if (task) {
-      this.taskQueue.set(taskId, { ...task, status, result });
+      this.taskQueue.set(taskId, { 
+        ...task, 
+        status, 
+        result,
+        updatedAt: Date.now()
+      });
     }
   }
 
@@ -56,8 +67,12 @@ class SharedMemory {
   getAllTasks() {
     return Array.from(this.taskQueue.entries()).map(([id, task]) => ({
       id,
+      type: task.type,
+      status: task.status,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
       ...task
-    }));
+    })).sort((a, b) => b.createdAt - a.createdAt);
   }
 }
 
@@ -96,7 +111,7 @@ export class OrchestratorService {
               text: `Analyze this legal task and determine the required steps and agents:
               Task Type: ${input.type}
               Data: ${JSON.stringify(input.data, null, 2)}
-              
+
               Provide your response as a JSON object with:
               {
                 "requiredAgents": ["Array of required agent types"],
@@ -117,21 +132,80 @@ export class OrchestratorService {
       const analysis = JSON.parse(content.text);
       this.sharedMemory.setContext(`${taskId}_analysis`, analysis);
 
-      // Update task with initial analysis
-      this.sharedMemory.updateTaskStatus(taskId, 'analyzed', {
-        analysis,
-        currentStep: 0
+      // Initialize task progress tracking
+      this.sharedMemory.updateTaskStatus(taskId, 'in_progress', {
+        currentStep: 0,
+        totalSteps: analysis.steps.length,
+        startTime: Date.now(),
+        analysis
+      });
+
+      // Start background processing
+      this.processTask(taskId).catch(error => {
+        console.error('Task processing error:', error);
+        this.sharedMemory.updateTaskStatus(taskId, 'error', { error: error.message });
       });
 
       return {
         taskId,
         analysis
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Task distribution error:', error);
       this.sharedMemory.updateTaskStatus(taskId, 'error', { error: error.message });
       throw error;
     }
+  }
+
+  private async processTask(taskId: string) {
+    const task = this.sharedMemory.getTask(taskId);
+    const analysis = this.sharedMemory.getContext(`${taskId}_analysis`);
+
+    if (!task || !analysis) {
+      throw new Error('Task or analysis not found');
+    }
+
+    for (let i = 0; i < analysis.steps.length; i++) {
+      try {
+        // Update progress
+        this.sharedMemory.updateTaskStatus(taskId, 'processing', {
+          currentStep: i,
+          totalSteps: analysis.steps.length,
+          analysis
+        });
+
+        // Simulate step processing time
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Check quality at each step
+        const qualityCheck = await this.evaluateQuality(task, analysis.qualityThresholds);
+        if (!qualityCheck.passed) {
+          this.sharedMemory.updateTaskStatus(taskId, 'quality_review', {
+            currentStep: i,
+            totalSteps: analysis.steps.length,
+            qualityCheck,
+            analysis
+          });
+          return;
+        }
+      } catch (error: any) {
+        console.error(`Error processing step ${i}:`, error);
+        this.sharedMemory.updateTaskStatus(taskId, 'error', {
+          error: error.message,
+          currentStep: i,
+          totalSteps: analysis.steps.length
+        });
+        return;
+      }
+    }
+
+    // Task completed successfully
+    this.sharedMemory.updateTaskStatus(taskId, 'completed', {
+      currentStep: analysis.steps.length - 1,
+      totalSteps: analysis.steps.length,
+      completedAt: Date.now(),
+      analysis
+    });
   }
 
   async monitorTask(taskId: string) {
@@ -145,19 +219,13 @@ export class OrchestratorService {
       throw new Error('Task analysis not found');
     }
 
-    // Check quality thresholds and risk factors
-    const qualityCheck = await this.evaluateQuality(task, analysis.qualityThresholds);
-    if (!qualityCheck.passed) {
-      // Handle quality issues
-      this.sharedMemory.updateTaskStatus(taskId, 'quality_review', qualityCheck);
-      return qualityCheck;
-    }
-
     return {
       status: task.status,
       currentStep: task.result?.currentStep || 0,
       totalSteps: analysis.steps.length,
-      qualityMetrics: qualityCheck
+      qualityMetrics: task.result?.qualityCheck,
+      analysis,
+      updatedAt: task.updatedAt
     };
   }
 
@@ -174,7 +242,7 @@ export class OrchestratorService {
               text: `Evaluate this task's quality against the given thresholds:
               Task: ${JSON.stringify(task, null, 2)}
               Thresholds: ${JSON.stringify(thresholds, null, 2)}
-              
+
               Provide your evaluation as a JSON object with:
               {
                 "passed": boolean,
@@ -193,7 +261,7 @@ export class OrchestratorService {
       }
 
       return JSON.parse(content.text);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Quality evaluation error:', error);
       return {
         passed: false,

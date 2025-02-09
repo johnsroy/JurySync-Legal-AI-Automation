@@ -3,6 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/use-auth";
+import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing-page";
 import LoginPage from "@/pages/login-page";
@@ -25,12 +26,18 @@ function Router() {
       <Route path="/register" component={RegisterPage} />
       <Route path="/products" component={ProductsPage} />
       <Route path="/pricing" component={PricingPage} />
-      <ProtectedRoute path="/dashboard" component={Dashboard} />
-      <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
-      <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
-      <ProtectedRoute path="/legal-research" component={LegalResearch} />
-      <ProtectedRoute path="/reports" component={ReportsDashboard} />
-      <ProtectedRoute path="/orchestrator" component={Orchestrator} />
+      <Route path={["/dashboard", "/contract-automation", "/compliance-auditing", "/legal-research", "/reports", "/orchestrator"]}>
+        <Layout>
+          <Switch>
+            <ProtectedRoute path="/dashboard" component={Dashboard} />
+            <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
+            <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
+            <ProtectedRoute path="/legal-research" component={LegalResearch} />
+            <ProtectedRoute path="/reports" component={ReportsDashboard} />
+            <ProtectedRoute path="/orchestrator" component={Orchestrator} />
+          </Switch>
+        </Layout>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
