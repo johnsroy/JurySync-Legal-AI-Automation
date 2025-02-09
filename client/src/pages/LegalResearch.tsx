@@ -163,27 +163,33 @@ export default function LegalResearch() {
         const data = JSON.parse(source);
         if (data.documentId) {
           setUploadedDocId(data.documentId);
-          invalidateLegalDocuments();
-          queryClient.invalidateQueries({ queryKey: ["/api/legal/documents"] });
+          // Immediately fetch the document content
+          const response = await apiRequest("GET", `/api/legal/documents/${data.documentId}`);
+          const docData = await response.json();
+
+          // Update documents cache
+          queryClient.setQueryData(["/api/legal/documents"], (oldData: any) => {
+            const existing = oldData || [];
+            return [...existing, docData];
+          });
+
           load(source);
+
+          toast({
+            title: "Document Uploaded",
+            description: "Your document has been uploaded successfully and is ready for analysis.",
+          });
         } else {
           error('Invalid upload response');
         }
       } catch (err: any) {
         console.error('Error processing upload response:', err);
+        toast({
+          title: "Upload Error",
+          description: err.message || "Failed to process document",
+          variant: "destructive",
+        });
         error('Upload processing failed');
-      }
-    },
-    onload: (response: any) => {
-      // Parse response and update state
-      try {
-        const data = JSON.parse(response);
-        if (data.documentId) {
-          setUploadedDocId(data.documentId);
-          queryClient.invalidateQueries({ queryKey: ["/api/legal/documents"] });
-        }
-      } catch (error) {
-        console.error('Error processing upload response:', error);
       }
     }
   };
@@ -338,14 +344,18 @@ export default function LegalResearch() {
             )}
 
             {/* Document Preview */}
-            {uploadedDocId && !isAnalyzing && uploadedDocuments?.find((doc: any) => doc.id === uploadedDocId) && (
+            {uploadedDocId && !isAnalyzing && (
               <div className="mt-4 p-4 border rounded-lg">
                 <h4 className="text-sm font-medium mb-2">Document Preview</h4>
                 <div className="max-h-48 overflow-y-auto p-4 bg-gray-50 rounded border text-sm">
-                  <p className="whitespace-pre-wrap">
-                    {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.substring(0, 500)}
-                    {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.length > 500 && '...'}
-                  </p>
+                  {uploadedDocuments?.find((doc: any) => doc.id === uploadedDocId)?.content ? (
+                    <p className="whitespace-pre-wrap">
+                      {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.substring(0, 500)}
+                      {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.length > 500 && '...'}
+                    </p>
+                  ) : (
+                    <p className="text-gray-500">Loading document content...</p>
+                  )}
                 </div>
               </div>
             )}
