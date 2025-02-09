@@ -6,6 +6,7 @@ import documentsRouter from "./routes/documents"; // Import the documents router
 import { UserRole } from "@shared/schema";
 import { createCheckoutSession, createPortalSession } from './stripe';
 import legalResearchRouter from "./routes/legalResearch";
+import orchestratorRouter from "./routes/orchestrator"; // Add this import at the top with other imports
 
 function requireRole(role: UserRole) {
   return (req: any, res: any, next: any) => {
@@ -393,6 +394,8 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+
+  app.use("/api/orchestrator", orchestratorRouter); // Add this line in the registerRoutes function after other routes
 
   return server;
 }

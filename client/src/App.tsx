@@ -15,6 +15,7 @@ import ComplianceAuditing from "@/pages/compliance-auditing";
 import LegalResearch from "@/pages/LegalResearch";
 import ReportsDashboard from "@/pages/reports-dashboard";
 import { ProtectedRoute } from "./lib/protected-route";
+import Orchestrator from "@/pages/Orchestrator";
 
 function Router() {
   return (
@@ -29,6 +30,7 @@ function Router() {
       <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
       <ProtectedRoute path="/legal-research" component={LegalResearch} />
       <ProtectedRoute path="/reports" component={ReportsDashboard} />
+      <ProtectedRoute path="/orchestrator" component={Orchestrator} />
       <Route component={NotFound} />
     </Switch>
   );
