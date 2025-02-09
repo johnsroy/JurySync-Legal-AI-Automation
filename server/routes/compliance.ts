@@ -6,6 +6,7 @@ import { analyzePDFContent } from "../services/fileAnalyzer";
 import { riskAssessmentService } from "../services/riskAssessment";
 import { monitorDocument } from "../services/complianceMonitor";
 import { eq } from "drizzle-orm";
+import { generateDashboardInsights } from "../services/dashboardAnalytics";
 
 const router = Router();
 
@@ -249,6 +250,21 @@ router.get('/api/compliance/documents/:id/risks', async (req, res) => {
     res.json(risks);
   } catch (error: any) {
     console.error('Risk assessment fetch error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/dashboard-insights', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const insights = await generateDashboardInsights();
+    res.json(insights);
+  } catch (error: any) {
+    console.error('Dashboard insights error:', error);
     res.status(500).json({ error: error.message });
   }
 });

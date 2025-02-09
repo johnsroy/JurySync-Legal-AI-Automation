@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { BarChart2, TrendingUp, ShieldAlert } from "lucide-react";
 
 interface UploadedDocument {
   id: string;
@@ -35,6 +36,26 @@ interface ComplianceResult {
   issues: ComplianceIssue[];
   summary: string;
   lastChecked: string;
+}
+
+interface DashboardInsights {
+  summary: string;
+  trends: {
+    label: string;
+    value: number;
+    change: number;
+    insight: string;
+  }[];
+  riskDistribution: {
+    category: string;
+    count: number;
+    percentage: number;
+  }[];
+  recommendations: {
+    priority: 'HIGH' | 'MEDIUM' | 'LOW';
+    action: string;
+    impact: string;
+  }[];
 }
 
 export default function ComplianceAuditing() {
@@ -182,6 +203,17 @@ export default function ComplianceAuditing() {
     }
   });
 
+  const { data: dashboardInsights, isLoading: isLoadingInsights } = useQuery<DashboardInsights>({
+    queryKey: ['compliance-insights'],
+    queryFn: async () => {
+      const response = await fetch('/api/compliance/dashboard-insights');
+      if (!response.ok) throw new Error('Failed to fetch dashboard insights');
+      return response.json();
+    },
+    refetchInterval: 300000, // Refresh every 5 minutes
+  });
+
+
   function getSeverityColor(severity: string) {
     switch (severity) {
       case 'CRITICAL': return 'bg-red-500';
@@ -221,6 +253,108 @@ export default function ComplianceAuditing() {
           </div>
         </div>
       </header>
+
+      {/* Dashboard Overview */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-semibold mb-4">Dashboard Overview</h2>
+        {isLoadingInsights ? (
+          <div className="grid gap-4 md:grid-cols-3">
+            {Array(3).fill(0).map((_, i) => (
+              <Card key={i} className="bg-white/80 backdrop-blur-lg animate-pulse">
+                <CardHeader className="h-32" />
+              </Card>
+            ))}
+          </div>
+        ) : dashboardInsights ? (
+          <>
+            <div className="grid gap-4 md:grid-cols-3 mb-6">
+              {dashboardInsights.trends.map((trend, index) => (
+                <Card key={index} className="bg-white/80 backdrop-blur-lg">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-medium text-gray-500">
+                      {trend.label}
+                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <div className="text-2xl font-bold">{trend.value}</div>
+                      <div className={`flex items-center ${
+                        trend.change > 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        <TrendingUp className="h-4 w-4 mr-1" />
+                        {Math.abs(trend.change)}%
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-gray-600">{trend.insight}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Risk Distribution */}
+              <Card className="bg-white/80 backdrop-blur-lg">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Risk Distribution</CardTitle>
+                    <BarChart2 className="h-4 w-4 text-gray-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {dashboardInsights.riskDistribution.map((risk, index) => (
+                      <div key={index}>
+                        <div className="flex items-center justify-between text-sm">
+                          <span>{risk.category}</span>
+                          <span className="font-medium">{risk.percentage}%</span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full mt-1">
+                          <div
+                            className="h-full bg-green-500 rounded-full"
+                            style={{ width: `${risk.percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Key Recommendations */}
+              <Card className="bg-white/80 backdrop-blur-lg">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Key Recommendations</CardTitle>
+                    <ShieldAlert className="h-4 w-4 text-gray-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {dashboardInsights.recommendations.map((rec, index) => (
+                      <div key={index} className="flex items-start gap-4">
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          rec.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
+                          rec.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-green-100 text-green-700'
+                        }`}>
+                          {rec.priority}
+                        </span>
+                        <div>
+                          <p className="font-medium">{rec.action}</p>
+                          <p className="text-sm text-gray-600">{rec.impact}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        ) : (
+          <p className="text-center text-gray-500">Unable to load dashboard insights</p>
+        )}
+      </div>
+
 
       <main className="container mx-auto px-4 py-16">
         <div className="max-w-6xl mx-auto">
