@@ -110,10 +110,29 @@ router.get('/audit/:taskId/result', async (req, res) => {
       });
     }
 
+    // Validate the presence of required fields in the audit report
+    if (!result.data.auditReport) {
+      throw new Error('Audit report data is missing from the result');
+    }
+
+    const { auditReport } = result.data;
+
+    // Ensure all required fields are present
+    if (!auditReport.flaggedIssues || !auditReport.riskScores || 
+        !auditReport.recommendedActions || !auditReport.visualizationData) {
+      throw new Error('Audit report is missing required fields');
+    }
+
     // Return the complete audit report structure
     res.json({
       status: 'completed',
-      auditReport: result.data.auditReport,
+      auditReport: {
+        summary: auditReport.summary,
+        flaggedIssues: auditReport.flaggedIssues,
+        riskScores: auditReport.riskScores,
+        recommendedActions: auditReport.recommendedActions,
+        visualizationData: auditReport.visualizationData
+      },
       metadata: result.data.metadata,
       completedAt: result.completedAt
     });
