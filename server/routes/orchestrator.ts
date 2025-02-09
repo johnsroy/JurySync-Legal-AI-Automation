@@ -11,11 +11,6 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
 }
 
 // Input validation schemas
-const taskSchema = z.object({
-  type: z.enum(['contract', 'compliance', 'research']),
-  data: z.record(z.any())
-});
-
 const auditRequestSchema = z.object({
   documentText: z.string().min(1, "Document text cannot be empty"),
   metadata: z.object({
@@ -115,17 +110,12 @@ router.get('/audit/:taskId/result', async (req, res) => {
       });
     }
 
+    // Return the complete audit report structure
     res.json({
       status: 'completed',
-      auditReport: {
-        summary: result.data.summary,
-        riskRating: result.data.riskRating,
-        flaggedIssues: result.data.flaggedIssues,
-        recommendations: result.data.recommendations,
-        visualizationData: result.data.visualizationData,
-        completedAt: result.completedAt,
-        metadata: result.data.metadata
-      }
+      auditReport: result.data.auditReport,
+      metadata: result.data.metadata,
+      completedAt: result.completedAt
     });
 
   } catch (error: any) {

@@ -37,65 +37,63 @@ export class ComplianceAuditService {
   private async analyzeWithOpenAI(documentText: string) {
     try {
       log('Starting OpenAI analysis');
+      // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           {
             role: "system",
-            content: "You are a legal compliance expert. Analyze the provided document and return a detailed JSON response with compliance analysis, risk assessment, and visualization-ready metrics."
+            content: "You are a legal compliance expert. Analyze the provided document and return a detailed JSON response with comprehensive compliance analysis, risk assessment, and visualization-ready metrics."
           },
           {
             role: "user",
-            content: `Analyze this legal document and provide a detailed JSON report with the following structure:
+            content: `Analyze this legal document thoroughly and provide a detailed JSON report. Consider regulatory compliance, risk assessment, and visualization data.
 
             Document Text: ${documentText}
 
-            Please format your response as JSON with these fields:
+            Please format your response as JSON with this exact structure:
             {
-              "summary": "comprehensive overview",
-              "riskRating": number between 1-5,
-              "flaggedIssues": [
-                {
-                  "id": "unique_id",
-                  "title": "issue title",
-                  "description": "detailed description",
-                  "severity": "low|medium|high",
-                  "category": "regulatory|clarity|risk",
-                  "section": "relevant document section",
-                  "impact": "potential impact",
-                  "regulatoryReference": "specific regulation"
-                }
-              ],
-              "recommendations": [
-                {
-                  "id": "unique_id",
-                  "title": "action title",
-                  "description": "detailed description",
-                  "priority": "low|medium|high",
-                  "implementationSteps": ["step1", "step2"],
-                  "expectedOutcome": "description of outcome",
-                  "timelineEstimate": "short|medium|long"
-                }
-              ],
-              "visualizationData": {
-                "riskDistribution": {
-                  "low": number,
-                  "medium": number,
-                  "high": number
-                },
-                "complianceScore": {
-                  "overall": number between 0-100,
-                  "regulatory": number between 0-100,
-                  "clarity": number between 0-100,
-                  "risk": number between 0-100
-                },
-                "categoryBreakdown": [
+              "auditReport": {
+                "summary": "comprehensive analysis overview",
+                "flaggedIssues": [
                   {
-                    "category": "string",
-                    "count": number,
-                    "severity": "low|medium|high"
+                    "issue": "detailed description of the issue",
+                    "riskScore": number between 1 and 10,
+                    "severity": "low|medium|high",
+                    "section": "document section reference",
+                    "recommendation": "specific action to resolve",
+                    "regulatoryReference": "applicable regulation or standard",
+                    "impact": "potential consequences"
                   }
-                ]
+                ],
+                "riskScores": {
+                  "average": number between 1 and 10,
+                  "max": number between 1 and 10,
+                  "min": number between 1 and 10,
+                  "distribution": {
+                    "high": number,
+                    "medium": number,
+                    "low": number
+                  }
+                },
+                "recommendedActions": [
+                  {
+                    "action": "specific recommendation",
+                    "priority": "high|medium|low",
+                    "timeline": "immediate|short-term|long-term",
+                    "impact": "expected outcome"
+                  }
+                ],
+                "visualizationData": {
+                  "issueFrequency": [number array representing issue count by category],
+                  "riskTrend": [number array representing risk scores across document sections],
+                  "complianceScores": {
+                    "overall": number between 0 and 100,
+                    "regulatory": number between 0 and 100,
+                    "clarity": number between 0 and 100,
+                    "risk": number between 0 and 100
+                  }
+                }
               }
             }`
           }
@@ -124,42 +122,53 @@ export class ComplianceAuditService {
           content: [
             {
               type: "text",
-              text: `Analyze this legal document for compliance issues and provide a detailed report. 
-              
+              text: `Analyze this legal document thoroughly for compliance issues and provide a detailed JSON report.
+
               Document Text: ${documentText}
-              
-              Focus on:
-              1. Regulatory compliance deviations
-              2. Ambiguous or unclear clauses
-              3. Potential legal risks
-              4. Standard regulatory language adherence
-              
-              Format response as JSON with:
+
+              Format your response as a JSON object with this exact structure:
               {
-                "summary": "comprehensive overview",
-                "riskRating": number between 1-5,
-                "flaggedIssues": [
-                  {
-                    "issue": "description",
-                    "severity": "low|medium|high",
-                    "section": "relevant section",
-                    "impact": "potential impact",
-                    "regulatoryReference": "specific regulation if applicable"
+                "auditReport": {
+                  "summary": "comprehensive analysis overview",
+                  "flaggedIssues": [
+                    {
+                      "issue": "detailed description of the issue",
+                      "riskScore": number between 1 and 10,
+                      "severity": "low|medium|high",
+                      "section": "document section reference",
+                      "recommendation": "specific action to resolve",
+                      "regulatoryReference": "applicable regulation or standard",
+                      "impact": "potential consequences"
+                    }
+                  ],
+                  "riskScores": {
+                    "average": number between 1 and 10,
+                    "max": number between 1 and 10,
+                    "min": number between 1 and 10,
+                    "distribution": {
+                      "high": number,
+                      "medium": number,
+                      "low": number
+                    }
+                  },
+                  "recommendedActions": [
+                    {
+                      "action": "specific recommendation",
+                      "priority": "high|medium|low",
+                      "timeline": "immediate|short-term|long-term",
+                      "impact": "expected outcome"
+                    }
+                  ],
+                  "visualizationData": {
+                    "issueFrequency": [number array representing issue count by category],
+                    "riskTrend": [number array representing risk scores across document sections],
+                    "complianceScores": {
+                      "overall": number between 0 and 100,
+                      "regulatory": number between 0 and 100,
+                      "clarity": number between 0 and 100,
+                      "risk": number between 0 and 100
+                    }
                   }
-                ],
-                "recommendations": [
-                  {
-                    "recommendation": "specific action",
-                    "priority": "low|medium|high",
-                    "rationale": "explanation",
-                    "implementationSteps": ["step1", "step2"]
-                  }
-                ],
-                "complianceScore": {
-                  "overall": number between 0-100,
-                  "regulatory": number between 0-100,
-                  "clarity": number between 0-100,
-                  "risk": number between 0-100
                 }
               }`
             }
@@ -193,52 +202,61 @@ export class ComplianceAuditService {
 
       // Combine and aggregate results with enhanced visualization data
       const combinedReport = {
-        summary: {
-          openai: openAIAnalysis.summary,
-          anthropic: anthropicAnalysis.summary
-        },
-        riskRating: Math.round((openAIAnalysis.riskRating + anthropicAnalysis.riskRating) / 2),
-        flaggedIssues: [
-          ...openAIAnalysis.flaggedIssues.map((issue: any) => ({
-            ...issue,
-            source: 'openai'
-          })),
-          ...anthropicAnalysis.flaggedIssues.map((issue: any) => ({
-            ...issue,
-            source: 'anthropic'
-          }))
-        ],
-        recommendations: [
-          ...openAIAnalysis.recommendations.map((rec: any) => ({
-            ...rec,
-            source: 'openai'
-          })),
-          ...anthropicAnalysis.recommendations.map((rec: any) => ({
-            ...rec,
-            source: 'anthropic'
-          }))
-        ],
-        visualizationData: {
-          riskDistribution: {
-            low: openAIAnalysis.visualizationData.riskDistribution.low,
-            medium: openAIAnalysis.visualizationData.riskDistribution.medium,
-            high: openAIAnalysis.visualizationData.riskDistribution.high
+        auditReport: {
+          summary: {
+            openai: openAIAnalysis.auditReport.summary,
+            anthropic: anthropicAnalysis.auditReport.summary
           },
-          complianceScores: {
-            openai: openAIAnalysis.visualizationData.complianceScore,
-            anthropic: anthropicAnalysis.complianceScore,
-            combined: {
-              overall: Math.round((openAIAnalysis.visualizationData.complianceScore.overall + 
-                        anthropicAnalysis.complianceScore.overall) / 2),
-              regulatory: Math.round((openAIAnalysis.visualizationData.complianceScore.regulatory + 
-                          anthropicAnalysis.complianceScore.regulatory) / 2),
-              clarity: Math.round((openAIAnalysis.visualizationData.complianceScore.clarity + 
-                       anthropicAnalysis.complianceScore.clarity) / 2),
-              risk: Math.round((openAIAnalysis.visualizationData.complianceScore.risk + 
-                    anthropicAnalysis.complianceScore.risk) / 2)
+          flaggedIssues: [
+            ...openAIAnalysis.auditReport.flaggedIssues.map((issue: any) => ({
+              ...issue,
+              source: 'openai'
+            })),
+            ...anthropicAnalysis.auditReport.flaggedIssues.map((issue: any) => ({
+              ...issue,
+              source: 'anthropic'
+            }))
+          ],
+          riskScores: {
+            average: (openAIAnalysis.auditReport.riskScores.average + 
+                     anthropicAnalysis.auditReport.riskScores.average) / 2,
+            max: Math.max(openAIAnalysis.auditReport.riskScores.max,
+                         anthropicAnalysis.auditReport.riskScores.max),
+            min: Math.min(openAIAnalysis.auditReport.riskScores.min,
+                         anthropicAnalysis.auditReport.riskScores.min),
+            distribution: {
+              high: Math.round((openAIAnalysis.auditReport.riskScores.distribution.high +
+                               anthropicAnalysis.auditReport.riskScores.distribution.high) / 2),
+              medium: Math.round((openAIAnalysis.auditReport.riskScores.distribution.medium +
+                                 anthropicAnalysis.auditReport.riskScores.distribution.medium) / 2),
+              low: Math.round((openAIAnalysis.auditReport.riskScores.distribution.low +
+                              anthropicAnalysis.auditReport.riskScores.distribution.low) / 2)
             }
           },
-          categoryBreakdown: openAIAnalysis.visualizationData.categoryBreakdown
+          recommendedActions: [
+            ...openAIAnalysis.auditReport.recommendedActions.map((action: any) => ({
+              ...action,
+              source: 'openai'
+            })),
+            ...anthropicAnalysis.auditReport.recommendedActions.map((action: any) => ({
+              ...action,
+              source: 'anthropic'
+            }))
+          ],
+          visualizationData: {
+            issueFrequency: openAIAnalysis.auditReport.visualizationData.issueFrequency,
+            riskTrend: openAIAnalysis.auditReport.visualizationData.riskTrend,
+            complianceScores: {
+              overall: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.overall +
+                        anthropicAnalysis.auditReport.visualizationData.complianceScores.overall) / 2),
+              regulatory: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.regulatory +
+                          anthropicAnalysis.auditReport.visualizationData.complianceScores.regulatory) / 2),
+              clarity: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.clarity +
+                       anthropicAnalysis.auditReport.visualizationData.complianceScores.clarity) / 2),
+              risk: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.risk +
+                    anthropicAnalysis.auditReport.visualizationData.complianceScores.risk) / 2)
+            }
+          }
         },
         metadata: {
           analyzedAt: new Date().toISOString(),
@@ -269,8 +287,8 @@ export class ComplianceAuditService {
         vectorId: document.id.toString(),
         metadata: {
           documentType: 'compliance_audit',
-          confidence: combinedReport.visualizationData.complianceScores.combined.overall / 100,
-          tags: combinedReport.flaggedIssues.map(issue => issue.regulatoryReference).filter(Boolean)
+          confidence: combinedReport.auditReport.visualizationData.complianceScores.overall / 100,
+          tags: combinedReport.auditReport.flaggedIssues.map(issue => issue.regulatoryReference).filter(Boolean)
         }
       }).returning();
 
