@@ -14,13 +14,15 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-// Enable CORS for all origins in development
+// Enable CORS with proper configuration
 app.use(cors({
-  origin: true,
-  credentials: true
+  origin: ["http://localhost:5000", "http://0.0.0.0:5000"],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Initialize session store
+// Initialize session store with proper configuration
 const PostgresStore = connectPg(session);
 const sessionStore = new PostgresStore({
   conObject: {
@@ -29,7 +31,6 @@ const sessionStore = new PostgresStore({
   createTableIfMissing: true,
 });
 
-// Use REPL_OWNER or REPL_ID as fallback for session secret
 const sessionSecret = process.env.SESSION_SECRET || process.env.REPL_ID || 'your-session-secret';
 
 app.use(session({
@@ -61,29 +62,11 @@ app.use('/api', (req, res, next) => {
 // Logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  log(`${req.method} ${req.url} - Starting request`);
 
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
+  res.on('finish', () => {
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
+    log(`${req.method} ${req.url} - ${res.statusCode} - ${duration}ms`);
   });
 
   next();
@@ -103,19 +86,15 @@ setupAuth(app);
 
   const server = registerRoutes(app);
 
-  // Error handling middleware - ensure JSON responses
+  // Error handling middleware
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error('Error:', err);
 
-    // Ensure we haven't sent headers yet
     if (!res.headersSent) {
-      // Force content type to be JSON
       res.setHeader('Content-Type', 'application/json');
-
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
 
-      // Handle multer errors specifically
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({ error: 'File too large' });
       }
@@ -139,16 +118,12 @@ setupAuth(app);
 
   const port = Number(process.env.PORT) || 5000;
 
-  server.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+  // Bind to 0.0.0.0 to make the server accessible
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`Server running at http://0.0.0.0:${port}`);
   }).on('error', (error: NodeJS.ErrnoException) => {
-    if (error.code === 'EADDRINUSE') {
-      console.error(`Port ${port} is already in use. Trying port ${port + 1}`);
-      server.listen(port + 1);
-    } else {
-      console.error('Server error:', error);
-      process.exit(1);
-    }
+    console.error('Server error:', error);
+    process.exit(1);
   });
 
 })().catch((error) => {
