@@ -122,7 +122,9 @@ router.get('/audit/:taskId/result', async (req, res) => {
         riskRating: result.data.riskRating,
         flaggedIssues: result.data.flaggedIssues,
         recommendations: result.data.recommendations,
-        completedAt: result.completedAt
+        visualizationData: result.data.visualizationData,
+        completedAt: result.completedAt,
+        metadata: result.data.metadata
       }
     });
 
