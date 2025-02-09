@@ -37,6 +37,12 @@ export async function saveUploadedFile(
 ): Promise<ComplianceFile> {
   await ensureUploadDir();
 
+  console.log('Starting file upload process:', {
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size
+  });
+
   // More lenient MIME type checking
   const isAllowedType = ALLOWED_MIME_TYPES.some(type => 
     file.mimetype.includes('pdf') || 
@@ -45,6 +51,7 @@ export async function saveUploadedFile(
   );
 
   if (!isAllowedType) {
+    console.error('Invalid file type:', file.mimetype);
     throw new Error('Invalid file type. Only PDF and Word documents are allowed.');
   }
 

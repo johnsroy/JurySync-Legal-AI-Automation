@@ -100,6 +100,7 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
 async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
   // More lenient file type detection
   const header = buffer.slice(0, 4);
+  const content = buffer.toString('ascii', 0, 1000);
 
   // Check for PDF signature
   if (buffer.includes(Buffer.from('%PDF'))) {
@@ -111,13 +112,17 @@ async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
     return 'docx';
   }
 
-  // Default to PDF if we can't determine the type
-  // This allows for more forgiving PDF parsing
-  if (buffer.toString('ascii', 0, 1000).includes('DOCTYPE')) {
+  // Check for HTML content and treat as invalid
+  if (content.includes('<!DOCTYPE') || content.includes('<html')) {
+    throw new Error('HTML files are not supported. Please upload PDF or Word documents only.');
+  }
+
+  // Default to PDF if content looks like text
+  if (/^[\x20-\x7E\n\r\t]*$/.test(content)) {
     return 'pdf';
   }
 
-  throw new Error('Unsupported file format');
+  throw new Error('Unsupported file format. Please upload PDF or Word documents only.');
 }
 
 async function extractWordContent(buffer: Buffer): Promise<string> {
