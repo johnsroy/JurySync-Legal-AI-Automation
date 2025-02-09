@@ -297,6 +297,46 @@ export default function LegalResearch() {
             onerror={handleFilePondError}
           />
 
+          {/* Uploaded Document Section */}
+          {uploadedDocId && !uploadedDocResults && !isAnalyzing && (
+            <div className="mt-6 p-4 border rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h3 className="font-medium">Uploaded Document</h3>
+                  <p className="text-sm text-gray-600">
+                    Ready for analysis
+                  </p>
+                </div>
+                <Button
+                  onClick={() => analyzeDocument(uploadedDocId)}
+                  variant="outline"
+                  size="sm"
+                  disabled={isAnalyzing}
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4 mr-2" />
+                      Begin Research
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Analysis Progress Bar */}
+          {isAnalyzing && (
+            <div className="mt-4">
+              <Progress value={analysisProgress} className="w-full" />
+              <p className="text-sm text-center mt-2">Analyzing document... {analysisProgress}%</p>
+            </div>
+          )}
+
           {/* Document Analysis Results Section */}
           {uploadedDocResults && !isAnalyzing && (
             <div className="mt-8 space-y-6">
