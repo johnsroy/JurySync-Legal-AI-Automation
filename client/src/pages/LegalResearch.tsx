@@ -164,6 +164,7 @@ export default function LegalResearch() {
         if (data.documentId) {
           setUploadedDocId(data.documentId);
           invalidateLegalDocuments();
+          queryClient.invalidateQueries({ queryKey: ["/api/legal/documents"] });
           load(source);
         } else {
           error('Invalid upload response');
@@ -171,6 +172,18 @@ export default function LegalResearch() {
       } catch (err: any) {
         console.error('Error processing upload response:', err);
         error('Upload processing failed');
+      }
+    },
+    onload: (response: any) => {
+      // Parse response and update state
+      try {
+        const data = JSON.parse(response);
+        if (data.documentId) {
+          setUploadedDocId(data.documentId);
+          queryClient.invalidateQueries({ queryKey: ["/api/legal/documents"] });
+        }
+      } catch (error) {
+        console.error('Error processing upload response:', error);
       }
     }
   };
@@ -300,7 +313,7 @@ export default function LegalResearch() {
 
             <Button
               onClick={() => uploadedDocId && analyzeDocument(uploadedDocId)}
-              className="w-full"
+              className="w-full mt-4"
               disabled={!uploadedDocId || isAnalyzing}
             >
               {isAnalyzing ? (
