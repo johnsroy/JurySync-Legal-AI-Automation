@@ -1,4 +1,5 @@
 import { Anthropic } from '@anthropic-ai/sdk';
+import { complianceAuditService } from './complianceAuditService';
 import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq } from 'drizzle-orm';
@@ -125,7 +126,7 @@ export class OrchestratorService {
   }> {
     // Simple keyword-based classification
     const textLower = text.toLowerCase();
-    const matchedKeywords = COMPLIANCE_KEYWORDS.filter(keyword => 
+    const matchedKeywords = COMPLIANCE_KEYWORDS.filter(keyword =>
       textLower.includes(keyword.toLowerCase())
     );
 
@@ -190,57 +191,6 @@ export class OrchestratorService {
 
       const task = this.taskManager.createTask(taskId, input.type, input.data);
 
-      // Analyze task requirements using Claude
-      const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Analyze this ${input.type} task and provide execution plan:
-              Task Data: ${JSON.stringify(input.data, null, 2)}
-
-              Format response as JSON with:
-              {
-                "steps": [
-                  {
-                    "name": "step name",
-                    "description": "detailed description",
-                    "estimatedDuration": "duration in minutes",
-                    "requiredAgents": ["agent types needed"],
-                    "outputs": ["expected outputs"]
-                  }
-                ],
-                "riskFactors": ["potential risks"],
-                "qualityChecks": {
-                  "accuracy": "minimum required accuracy",
-                  "completeness": "completeness criteria",
-                  "reliability": "reliability requirements"
-                }
-              }`
-            }
-          ]
-        }]
-      });
-
-      const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response format from Anthropic API');
-      }
-
-      const analysis = JSON.parse(content.text);
-
-      // Update task with analysis and start processing
-      this.taskManager.updateTask(taskId, {
-        status: 'analyzing',
-        analysis,
-        progress: 10,
-        currentStep: 0,
-        totalSteps: analysis.steps.length
-      });
-
       // Start processing in background
       this.processTask(taskId).catch(error => {
         console.error(`Task processing error (${taskId}):`, error);
@@ -253,12 +203,13 @@ export class OrchestratorService {
 
       return {
         taskId,
-        status: 'analyzing',
-        analysis,
-        estimatedCompletionTime: analysis.steps.reduce(
-          (total: number, step: any) => total + parseInt(step.estimatedDuration), 
-          0
-        )
+        status: 'processing',
+        type: input.type,
+        classification: input.data.classification,
+        metadata: {
+          createdAt: new Date().toISOString(),
+          documentLength: input.data.document?.length || 0
+        }
       };
 
     } catch (error: any) {
@@ -276,144 +227,43 @@ export class OrchestratorService {
     const task = this.taskManager.getTask(taskId);
     if (!task) throw new Error('Task not found');
 
-    const { analysis, data } = task;
+    const { data } = task;
 
     try {
-      for (let i = 0; i < analysis.steps.length; i++) {
-        const step = analysis.steps[i];
+      this.taskManager.updateTask(taskId, {
+        status: 'processing',
+        progress: 25
+      });
+
+      let result;
+
+      // Process based on task type
+      if (task.type === 'compliance') {
+        // Use the new compliance audit service
+        result = await complianceAuditService.analyzeDocument(data.document);
 
         this.taskManager.updateTask(taskId, {
-          status: 'processing',
-          currentStep: i,
-          progress: Math.round((i / analysis.steps.length) * 90) + 10,
-          currentStepDetails: step
+          status: 'completed',
+          progress: 100,
+          completedAt: new Date().toISOString()
         });
 
-        // For compliance tasks, analyze the document
-        if (task.type === 'compliance') {
-          const documentAnalysis = await this.analyzeDocument(data.document);
-          const stepResult = await this.verifyStepQuality(step, documentAnalysis);
-
-          if (!stepResult.passed) {
-            this.taskManager.updateTask(taskId, {
-              status: 'quality_review',
-              qualityIssues: stepResult.issues,
-              progress: Math.round((i / analysis.steps.length) * 90) + 10
-            });
-            return;
-          }
-
-          // Store the final analysis result
-          if (i === analysis.steps.length - 1) {
-            this.taskManager.setTaskResult(taskId, {
-              status: 'completed',
-              data: documentAnalysis,
-              completedAt: new Date().toISOString()
-            });
-          }
-        }
+        this.taskManager.setTaskResult(taskId, {
+          status: 'completed',
+          data: result,
+          completedAt: new Date().toISOString()
+        });
+      } else {
+        throw new Error(`Unsupported task type: ${task.type}`);
       }
 
-      // Task completed successfully
-      this.taskManager.updateTask(taskId, {
-        status: 'completed',
-        progress: 100,
-        completedAt: Date.now()
-      });
     } catch (error: any) {
       console.error(`Error processing task ${taskId}:`, error);
       this.taskManager.updateTask(taskId, {
         status: 'error',
-        error: error.message
+        error: error.message,
+        progress: 0
       });
-    }
-  }
-
-  private async analyzeDocument(documentText: string) {
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1500,
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: `Analyze this legal document for compliance issues and provide a detailed report:
-
-            Document Text: ${documentText}
-
-            Format response as JSON with:
-            {
-              "summary": "brief overview of the document",
-              "riskRating": number between 1-5,
-              "flaggedIssues": [
-                {
-                  "issue": "description of the issue",
-                  "severity": "low|medium|high",
-                  "section": "relevant section of the document",
-                  "impact": "potential impact of the issue"
-                }
-              ],
-              "recommendations": [
-                {
-                  "recommendation": "specific recommendation",
-                  "priority": "low|medium|high",
-                  "rationale": "explanation of the recommendation"
-                }
-              ]
-            }`
-          }
-        ]
-      }]
-    });
-
-    const content = response.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response format from Anthropic API');
-    }
-
-    return JSON.parse(content.text);
-  }
-
-  private async verifyStepQuality(step: any, analysis: any) {
-    try {
-      const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Verify this analysis step's quality:
-              Step: ${JSON.stringify(step, null, 2)}
-              Analysis: ${JSON.stringify(analysis, null, 2)}
-
-              Format response as JSON with:
-              {
-                "passed": boolean,
-                "score": number (0-100),
-                "issues": ["list of issues if any"],
-                "recommendations": ["improvement suggestions"]
-              }`
-            }
-          ]
-        }]
-      });
-
-      const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response format from Anthropic API');
-      }
-
-      return JSON.parse(content.text);
-    } catch (error: any) {
-      console.error('Quality verification error:', error);
-      return {
-        passed: false,
-        score: 0,
-        issues: [error.message]
-      };
     }
   }
 
