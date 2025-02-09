@@ -8,6 +8,8 @@ import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq, desc } from 'drizzle-orm';
 import { Anthropic } from '@anthropic-ai/sdk';
+import { default as pdfParseLib } from 'pdf-parse';
+import { analyzePDFContent } from '../services/fileAnalyzer';
 
 // Initialize Anthropic client
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -29,8 +31,7 @@ const upload = multer({
     const allowedTypes = [
       'application/pdf',
       'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain'
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ];
 
     if (!allowedTypes.includes(file.mimetype)) {
@@ -41,55 +42,6 @@ const upload = multer({
   }
 }).single('filepond');
 
-// Validation schema for document upload
-const documentUploadSchema = z.object({
-  title: z.string().min(1, "Title is required"),
-  documentType: z.string().min(1, "Document type is required"),
-  jurisdiction: z.string().min(1, "Jurisdiction is required"),
-  date: z.string().transform(str => new Date(str))
-});
-
-// Custom PDF text extraction function
-async function extractTextFromBuffer(buffer: Buffer): Promise<string> {
-  try {
-    console.log('Starting PDF text extraction...');
-    const text = buffer.toString('utf-8');
-    return text || 'No text could be extracted';
-  } catch (error) {
-    console.error('Error in PDF text extraction:', error);
-    throw error;
-  }
-}
-
-// Helper function to extract text from various document types
-async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
-  const fileType = file.mimetype;
-  let extractedText = '';
-
-  try {
-    console.log('Extracting text from file:', { fileType, filename: file.originalname });
-
-    if (fileType === 'application/pdf') {
-      extractedText = await extractTextFromBuffer(file.buffer);
-    } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      fileType === 'application/msword') {
-      const result = await mammoth.extractRawText({ buffer: file.buffer });
-      extractedText = result.value;
-    } else {
-      extractedText = file.buffer.toString('utf-8');
-    }
-
-    if (!extractedText || extractedText.trim().length === 0) {
-      throw new Error('No text could be extracted from the document');
-    }
-
-    return extractedText;
-  } catch (error: any) {
-    console.error('Error extracting text from file:', error);
-    throw new Error(`Failed to extract text from ${file.originalname}: ${error.message}`);
-  }
-}
-
 const router = Router();
 
 // Upload and process legal document
@@ -97,7 +49,6 @@ router.post('/documents', async (req, res) => {
   try {
     console.log('Received document upload request');
 
-    // Handle file upload with proper error handling
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
         if (err) {
@@ -120,56 +71,35 @@ router.post('/documents', async (req, res) => {
       size: req.file.size
     });
 
-    // For FilePond, we need to send a simple response for the initial upload
-    if (!req.body.title) {
-      console.log('Initial upload successful, awaiting metadata');
-      return res.json({ 
-        success: true,
-        message: 'File uploaded successfully'
-      });
-    }
-
     try {
-      const validatedData = documentUploadSchema.parse(req.body);
-      console.log('Validated document metadata:', validatedData);
+      // Use fileAnalyzer service to extract and process content
+      const content = await analyzePDFContent(req.file.buffer, -1); // Use -1 to skip DB update
 
-      // Extract text content from the uploaded file
-      const content = await extractTextFromFile(req.file);
-      console.log('Text extraction successful, content length:', content.length);
-
-      // Create new document
-      const document = {
-        title: validatedData.title,
-        content,
-        documentType: validatedData.documentType,
-        jurisdiction: validatedData.jurisdiction,
-        date: validatedData.date,
-        status: 'ACTIVE' as const,
-        metadata: {
-          filename: req.file.originalname,
-          fileType: req.file.mimetype,
-          uploadDate: new Date().toISOString()
-        },
-        citations: []
-      };
-
-      // Add document to database first
-      const [createdDoc] = await db
+      // Create new document in database
+      const [document] = await db
         .insert(legalDocuments)
-        .values(document)
+        .values({
+          title: req.file.originalname,
+          content: content,
+          status: "UPLOADED",
+          createdAt: new Date().toISOString(),
+          metadata: {
+            fileType: req.file.mimetype,
+            fileName: req.file.originalname,
+            fileSize: req.file.size
+          }
+        })
         .returning();
 
-      console.log('Document saved to database:', { id: createdDoc.id, title: createdDoc.title });
+      console.log('Document processed successfully:', document.id);
 
-      // Then add to vector store
-      await legalResearchService.addDocument(createdDoc);
-      console.log('Document added to vector store');
-
-      // Return success response with document ID
+      // Return document data for FilePond
       res.json({
-        success: true,
-        message: 'Document processed successfully',
-        documentId: createdDoc.id
+        documentId: document.id,
+        title: document.title,
+        content: document.content,
+        status: document.status,
+        date: document.createdAt
       });
 
     } catch (error: any) {
@@ -182,7 +112,7 @@ router.post('/documents', async (req, res) => {
 
   } catch (error: any) {
     console.error('Document upload error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message,
       details: error.toString()
     });
@@ -253,49 +183,10 @@ Structure your response as a JSON object with these fields:
 
   } catch (error: any) {
     console.error('Document analysis error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message,
       details: error.toString()
     });
-  }
-});
-
-// Query validation schema
-const querySchema = z.object({
-  query: z.string().min(1, "Query is required")
-});
-
-// Perform legal research query
-router.post('/query', async (req, res) => {
-  try {
-    const { query } = querySchema.parse(req.body);
-    const results = await legalResearchService.analyzeQuery(query);
-    res.json(results);
-
-  } catch (error: any) {
-    console.error('Query analysis error:', error);
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: error.errors });
-    }
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Search similar cases
-router.get('/similar', async (req, res) => {
-  try {
-    const { query } = req.query;
-
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({ error: 'Query parameter is required' });
-    }
-
-    const results = await legalResearchService.searchSimilarCases(query);
-    res.json(results);
-
-  } catch (error: any) {
-    console.error('Similar cases search error:', error);
-    res.status(500).json({ error: error.message });
   }
 });
 
