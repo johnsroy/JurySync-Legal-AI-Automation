@@ -2,11 +2,12 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
-import documentsRouter from "./routes/documents"; // Import the documents router
+import documentsRouter from "./routes/documents";
 import { UserRole } from "@shared/schema";
 import { createCheckoutSession, createPortalSession } from './stripe';
 import legalResearchRouter from "./routes/legalResearch";
-import orchestratorRouter from "./routes/orchestrator"; // Add this import at the top with other imports
+import predictiveMonitoringRouter from "./routes/predictiveMonitoring"; // Add this import
+import orchestratorRouter from "./routes/orchestrator";
 
 function requireRole(role: UserRole) {
   return (req: any, res: any, next: any) => {
@@ -32,10 +33,13 @@ export function registerRoutes(app: Express): Server {
   const server = createServer(app);
 
   // Add the legal research router
-  app.use("/api/legal", legalResearchRouter);  // Mount under /api/legal prefix
+  app.use("/api/legal", legalResearchRouter);
 
   // Register the documents router
-  app.use(documentsRouter);  // Mount the documents router
+  app.use(documentsRouter);
+
+  // Add predictive monitoring routes
+  app.use("/api/monitoring", predictiveMonitoringRouter); // Add this line
 
   // Add Stripe payment endpoints
   app.post("/api/checkout", async (req, res) => {
@@ -395,7 +399,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.use("/api/orchestrator", orchestratorRouter); // Add this line in the registerRoutes function after other routes
+  app.use("/api/orchestrator", orchestratorRouter);
 
   return server;
 }

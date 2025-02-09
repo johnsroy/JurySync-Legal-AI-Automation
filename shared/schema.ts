@@ -182,6 +182,25 @@ export const riskAssessments = pgTable("risk_assessments", {
   potentialCost: text("potential_cost")
 });
 
+// Add after existing ComplianceStatus definition
+export const MonitoringFrequency = z.enum([
+  "REALTIME",
+  "HOURLY",
+  "DAILY",
+  "WEEKLY",
+  "MONTHLY"
+]);
+
+export type MonitoringFrequency = z.infer<typeof MonitoringFrequency>;
+
+export const PredictionConfidence = z.enum([
+  "HIGH",
+  "MEDIUM",
+  "LOW"
+]);
+
+export type PredictionConfidence = z.infer<typeof PredictionConfidence>;
+
 // Schema for compliance documents
 export const complianceDocuments = pgTable("compliance_documents", {
   id: serial("id").primaryKey(),
@@ -212,6 +231,41 @@ export const complianceIssues = pgTable("compliance_issues", {
   dueDate: timestamp("due_date"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Add after existing tables
+export const complianceMonitoringSchedules = pgTable("compliance_monitoring_schedules", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  frequency: text("frequency").notNull(),
+  lastChecked: timestamp("last_checked"),
+  nextScheduled: timestamp("next_scheduled"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const compliancePredictions = pgTable("compliance_predictions", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  predictedStatus: text("predicted_status").notNull(),
+  confidence: text("confidence").notNull(),
+  riskFactors: jsonb("risk_factors").notNull(),
+  suggestedActions: jsonb("suggested_actions").notNull(),
+  deadline: timestamp("deadline"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const complianceAlerts = pgTable("compliance_alerts", {
+  id: serial("id").primaryKey(),
+  predictionId: integer("prediction_id").notNull(),
+  documentId: integer("document_id").notNull(),
+  severity: text("severity").notNull(),
+  message: text("message").notNull(),
+  status: text("status").default("PENDING"),
+  createdAt: timestamp("created_at").defaultNow(),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  acknowledgedBy: integer("acknowledged_by"),
 });
 
 // Create insert schemas for the new tables
@@ -253,6 +307,37 @@ export const MonitoringConfig = z.object({
 });
 
 export type MonitoringConfig = z.infer<typeof MonitoringConfig>;
+
+// Add new schemas for the tables
+export const insertMonitoringScheduleSchema = createInsertSchema(complianceMonitoringSchedules)
+  .extend({
+    frequency: MonitoringFrequency,
+  });
+
+export const insertPredictionSchema = createInsertSchema(compliancePredictions)
+  .extend({
+    confidence: PredictionConfidence,
+    riskFactors: z.array(z.object({
+      factor: z.string(),
+      impact: z.number().min(0).max(100),
+      description: z.string()
+    })),
+    suggestedActions: z.array(z.object({
+      action: z.string(),
+      priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
+      deadline: z.string().optional()
+    }))
+  });
+
+export const insertAlertSchema = createInsertSchema(complianceAlerts);
+
+// Export types
+export type ComplianceMonitoringSchedule = typeof complianceMonitoringSchedules.$inferSelect;
+export type InsertMonitoringSchedule = z.infer<typeof insertMonitoringScheduleSchema>;
+export type CompliancePrediction = typeof compliancePredictions.$inferSelect;
+export type InsertPrediction = z.infer<typeof insertPredictionSchema>;
+export type ComplianceAlert = typeof complianceAlerts.$inferSelect;
+export type InsertAlert = z.infer<typeof insertAlertSchema>;
 
 // Extended contract details schema
 export const contractDetailsSchema = z.object({
