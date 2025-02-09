@@ -161,24 +161,30 @@ export default function LegalResearch() {
     load: async (source: string, load: Function, error: Function) => {
       try {
         const data = JSON.parse(source);
-        if (data.documentId) {
+        if (data.documentId && data.content) {
           setUploadedDocId(data.documentId);
-          // Immediately fetch the document content
-          const response = await apiRequest("GET", `/api/legal/documents/${data.documentId}`);
-          const docData = await response.json();
 
-          // Update documents cache
+          // Update documents cache immediately with the new document
           queryClient.setQueryData(["/api/legal/documents"], (oldData: any) => {
             const existing = oldData || [];
-            return [...existing, docData];
-          });
+            const newDoc = {
+              id: data.documentId,
+              title: data.title,
+              content: data.content,
+              status: "COMPLETED",
+              date: new Date().toISOString()
+            };
 
-          load(source);
+            // Add the new document to the beginning of the list
+            return [newDoc, ...existing];
+          });
 
           toast({
             title: "Document Uploaded",
             description: "Your document has been uploaded successfully and is ready for analysis.",
           });
+
+          load(source);
         } else {
           error('Invalid upload response');
         }
@@ -317,46 +323,51 @@ export default function LegalResearch() {
               onerror={handleFilePondError}
             />
 
-            <Button
-              onClick={() => uploadedDocId && analyzeDocument(uploadedDocId)}
-              className="w-full mt-4"
-              disabled={!uploadedDocId || isAnalyzing}
-            >
-              {isAnalyzing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Analyzing...
-                </>
-              ) : (
-                <>
-                  <Search className="w-4 h-4 mr-2" />
-                  Begin Research
-                </>
-              )}
-            </Button>
+            {uploadedDocId && !isAnalyzing && (
+              <div className="mt-4">
+                {/* Begin Research Button */}
+                <Button
+                  onClick={() => uploadedDocId && analyzeDocument(uploadedDocId)}
+                  className="w-full mb-4"
+                  disabled={!uploadedDocId || isAnalyzing}
+                  variant="default"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4 mr-2" />
+                      Begin Research
+                    </>
+                  )}
+                </Button>
+
+                {/* Document Preview */}
+                <div className="p-4 border rounded-lg">
+                  <h4 className="text-sm font-medium mb-2">Document Preview</h4>
+                  <div className="max-h-48 overflow-y-auto p-4 bg-gray-50 rounded border text-sm">
+                    {uploadedDocuments?.find((doc: any) => doc.id === uploadedDocId)?.content ? (
+                      <p className="whitespace-pre-wrap">
+                        {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.substring(0, 500)}
+                        {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.length > 500 && '...'}
+                      </p>
+                    ) : (
+                      <p className="text-gray-500">Loading document content...</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
 
             {/* Analysis Progress Bar */}
             {isAnalyzing && (
               <div className="mt-4">
                 <Progress value={analysisProgress} className="w-full" />
                 <p className="text-sm text-center mt-2">Analyzing document... {analysisProgress}%</p>
-              </div>
-            )}
-
-            {/* Document Preview */}
-            {uploadedDocId && !isAnalyzing && (
-              <div className="mt-4 p-4 border rounded-lg">
-                <h4 className="text-sm font-medium mb-2">Document Preview</h4>
-                <div className="max-h-48 overflow-y-auto p-4 bg-gray-50 rounded border text-sm">
-                  {uploadedDocuments?.find((doc: any) => doc.id === uploadedDocId)?.content ? (
-                    <p className="whitespace-pre-wrap">
-                      {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.substring(0, 500)}
-                      {uploadedDocuments.find((doc: any) => doc.id === uploadedDocId)?.content.length > 500 && '...'}
-                    </p>
-                  ) : (
-                    <p className="text-gray-500">Loading document content...</p>
-                  )}
-                </div>
               </div>
             )}
 
@@ -449,7 +460,7 @@ export default function LegalResearch() {
                       <div key={index} className="border-b last:border-0 pb-4">
                         <h4 className="font-medium">{result.document.title}</h4>
                         <p className="text-sm text-gray-600 mt-1">
-                          Jurisdiction: {result.document.jurisdiction} | 
+                          Jurisdiction: {result.document.jurisdiction} |
                           Relevance: {result.relevance}
                         </p>
                         <p className="mt-2 text-gray-700">{result.document.content.substring(0, 200)}...</p>

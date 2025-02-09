@@ -9,7 +9,7 @@ import { generateContract, suggestRequirements, getAutocomplete, getCustomInstru
 import { getAllTemplates, getTemplate } from "../services/templateStore";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import PDFDocument from "pdfkit";
-
+import { chromaStore } from '../services/chromaStore';
 
 const router = Router();
 
@@ -38,14 +38,14 @@ const upload = multer({
   }
 });
 
-// Contract document upload endpoint
-router.post("/api/contracts/documents", upload.single('file'), async (req, res) => {
+// Update the document upload endpoint
+router.post("/api/legal/documents", upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    console.log("Processing contract upload:", {
+    console.log("Processing document upload:", {
       filename: req.file.originalname,
       mimetype: req.file.mimetype,
       size: req.file.size
@@ -62,7 +62,6 @@ router.post("/api/contracts/documents", upload.single('file'), async (req, res) 
         content = result.value;
       }
 
-      // Validate extracted content
       if (!content || !content.trim()) {
         throw new Error('Failed to extract content from document');
       }
@@ -75,7 +74,33 @@ router.post("/api/contracts/documents", upload.single('file'), async (req, res) 
         .replace(/\s+/g, ' ')
         .trim();
 
-      console.log("Content extracted successfully, length:", content.length);
+      // Create document record in database
+      const [document] = await db
+        .insert(documents)
+        .values({
+          title: req.file.originalname,
+          content: content,
+          userId: req.user?.id || 1,
+          processingStatus: "COMPLETED",
+          agentType: "LEGAL_RESEARCH"
+        })
+        .returning();
+
+      // Store in ChromaDB
+      await chromaStore.addDocument(document, content);
+
+      console.log("Document uploaded successfully:", {
+        id: document.id,
+        title: document.title,
+        contentLength: content.length
+      });
+
+      return res.json({
+        documentId: document.id,
+        title: document.title,
+        content: content,
+        status: "COMPLETED"
+      });
 
     } catch (extractError: any) {
       console.error("Content extraction error:", extractError);
@@ -85,37 +110,8 @@ router.post("/api/contracts/documents", upload.single('file'), async (req, res) 
       });
     }
 
-    // Create document record
-    try {
-      const [document] = await db
-        .insert(documents)
-        .values({
-          title: req.file.originalname,
-          content: content,
-          userId: req.user?.id || 1, // Fallback for testing
-          processingStatus: "COMPLETED",
-          agentType: "CONTRACT_AUTOMATION"
-        })
-        .returning();
-
-      console.log("Contract document created with ID:", document.id);
-
-      return res.json({
-        documentId: document.id,
-        title: document.title,
-        status: "COMPLETED"
-      });
-
-    } catch (dbError: any) {
-      console.error("Database error:", dbError);
-      return res.status(500).json({
-        error: "Failed to save document",
-        details: dbError.message
-      });
-    }
-
   } catch (error: any) {
-    console.error("Contract document upload error:", error);
+    console.error("Document upload error:", error);
     return res.status(500).json({ 
       error: "Failed to process document",
       details: error.message
