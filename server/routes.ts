@@ -6,30 +6,14 @@ import documentsRouter from "./routes/documents";
 import { UserRole } from "@shared/schema";
 import { createCheckoutSession, createPortalSession } from './stripe';
 import legalResearchRouter from "./routes/legalResearch";
-import predictiveMonitoringRouter from "./routes/predictiveMonitoring"; // Add this import
+import predictiveMonitoringRouter from "./routes/predictiveMonitoring";
 import orchestratorRouter from "./routes/orchestrator";
-
-function requireRole(role: UserRole) {
-  return (req: any, res: any, next: any) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({
-        message: "Authentication required",
-        code: "NOT_AUTHENTICATED"
-      });
-    }
-
-    if (req.user.role !== role && req.user.role !== "ADMIN") {
-      return res.status(403).json({
-        message: "Insufficient permissions",
-        code: "FORBIDDEN"
-      });
-    }
-
-    next();
-  };
-}
+import cors from 'cors';
 
 export function registerRoutes(app: Express): Server {
+  // Enable CORS for all routes
+  app.use(cors());
+
   const server = createServer(app);
 
   // Add the legal research router
@@ -39,7 +23,10 @@ export function registerRoutes(app: Express): Server {
   app.use(documentsRouter);
 
   // Add predictive monitoring routes
-  app.use("/api/monitoring", predictiveMonitoringRouter); // Add this line
+  app.use("/api/monitoring", predictiveMonitoringRouter);
+
+  // Add orchestrator routes - update path to group all orchestrator endpoints
+  app.use("/api/orchestrator", orchestratorRouter);
 
   // Add Stripe payment endpoints
   app.post("/api/checkout", async (req, res) => {
@@ -416,3 +403,23 @@ const createHash = (algorithm: string) => ({
         digest: (encoding: string) => data //Replace with actual hash generation
     })
 })
+
+function requireRole(role: UserRole) {
+  return (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({
+        message: "Authentication required",
+        code: "NOT_AUTHENTICATED"
+      });
+    }
+
+    if (req.user.role !== role && req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        message: "Insufficient permissions",
+        code: "FORBIDDEN"
+      });
+    }
+
+    next();
+  };
+}

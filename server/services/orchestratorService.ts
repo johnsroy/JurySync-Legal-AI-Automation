@@ -3,7 +3,6 @@ import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 
-// Initialize Anthropic client
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error('Missing ANTHROPIC_API_KEY environment variable');
 }
@@ -17,10 +16,12 @@ class TaskManager {
   private static instance: TaskManager;
   private tasks: Map<string, any>;
   private taskHistory: Map<string, any[]>;
+  private taskResults: Map<string, any>;
 
   private constructor() {
     this.tasks = new Map();
     this.taskHistory = new Map();
+    this.taskResults = new Map();
   }
 
   static getInstance(): TaskManager {
@@ -48,6 +49,7 @@ class TaskManager {
     };
     this.tasks.set(taskId, task);
     this.taskHistory.set(taskId, []);
+    this.taskResults.set(taskId, null);
     return task;
   }
 
@@ -72,6 +74,14 @@ class TaskManager {
     this.tasks.set(taskId, updatedTask);
     this.taskHistory.set(taskId, history);
     return updatedTask;
+  }
+
+  setTaskResult(taskId: string, result: any) {
+    this.taskResults.set(taskId, result);
+  }
+
+  getTaskResult(taskId: string) {
+    return this.taskResults.get(taskId);
   }
 
   getTask(taskId: string) {
@@ -175,7 +185,11 @@ export class OrchestratorService {
       return {
         taskId,
         status: 'analyzing',
-        analysis
+        analysis,
+        estimatedCompletionTime: analysis.steps.reduce(
+          (total: number, step: any) => total + parseInt(step.estimatedDuration), 
+          0
+        )
       };
 
     } catch (error: any) {
@@ -193,11 +207,12 @@ export class OrchestratorService {
     const task = this.taskManager.getTask(taskId);
     if (!task) throw new Error('Task not found');
 
-    const { analysis } = task;
+    const { analysis, data } = task;
 
-    for (let i = 0; i < analysis.steps.length; i++) {
-      const step = analysis.steps[i];
-      try {
+    try {
+      for (let i = 0; i < analysis.steps.length; i++) {
+        const step = analysis.steps[i];
+
         this.taskManager.updateTask(taskId, {
           status: 'processing',
           currentStep: i,
@@ -205,40 +220,93 @@ export class OrchestratorService {
           currentStepDetails: step
         });
 
-        // Simulate step processing (replace with actual processing logic)
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // For compliance tasks, analyze the document
+        if (task.type === 'compliance') {
+          const documentAnalysis = await this.analyzeDocument(data.document);
+          const stepResult = await this.verifyStepQuality(step, documentAnalysis);
 
-        // Verify step completion
-        const stepResult = await this.verifyStepQuality(step, task);
-        if (!stepResult.passed) {
-          this.taskManager.updateTask(taskId, {
-            status: 'quality_review',
-            qualityIssues: stepResult.issues,
-            progress: Math.round((i / analysis.steps.length) * 90) + 10
-          });
-          return;
+          if (!stepResult.passed) {
+            this.taskManager.updateTask(taskId, {
+              status: 'quality_review',
+              qualityIssues: stepResult.issues,
+              progress: Math.round((i / analysis.steps.length) * 90) + 10
+            });
+            return;
+          }
+
+          // Store the final analysis result
+          if (i === analysis.steps.length - 1) {
+            this.taskManager.setTaskResult(taskId, {
+              status: 'completed',
+              data: documentAnalysis,
+              completedAt: new Date().toISOString()
+            });
+          }
         }
-
-      } catch (error: any) {
-        console.error(`Error processing step ${i} for task ${taskId}:`, error);
-        this.taskManager.updateTask(taskId, {
-          status: 'error',
-          error: error.message,
-          progress: Math.round((i / analysis.steps.length) * 90) + 10
-        });
-        return;
       }
-    }
 
-    // Task completed successfully
-    this.taskManager.updateTask(taskId, {
-      status: 'completed',
-      progress: 100,
-      completedAt: Date.now()
-    });
+      // Task completed successfully
+      this.taskManager.updateTask(taskId, {
+        status: 'completed',
+        progress: 100,
+        completedAt: Date.now()
+      });
+    } catch (error: any) {
+      console.error(`Error processing task ${taskId}:`, error);
+      this.taskManager.updateTask(taskId, {
+        status: 'error',
+        error: error.message
+      });
+    }
   }
 
-  private async verifyStepQuality(step: any, task: any) {
+  private async analyzeDocument(documentText: string) {
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1500,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `Analyze this legal document for compliance issues and provide a detailed report:
+
+            Document Text: ${documentText}
+
+            Format response as JSON with:
+            {
+              "summary": "brief overview of the document",
+              "riskRating": number between 1-5,
+              "flaggedIssues": [
+                {
+                  "issue": "description of the issue",
+                  "severity": "low|medium|high",
+                  "section": "relevant section of the document",
+                  "impact": "potential impact of the issue"
+                }
+              ],
+              "recommendations": [
+                {
+                  "recommendation": "specific recommendation",
+                  "priority": "low|medium|high",
+                  "rationale": "explanation of the recommendation"
+                }
+              ]
+            }`
+          }
+        ]
+      }]
+    });
+
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      throw new Error('Unexpected response format from Anthropic API');
+    }
+
+    return JSON.parse(content.text);
+  }
+
+  private async verifyStepQuality(step: any, analysis: any) {
     try {
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
@@ -248,9 +316,9 @@ export class OrchestratorService {
           content: [
             {
               type: "text",
-              text: `Verify this step's quality:
+              text: `Verify this analysis step's quality:
               Step: ${JSON.stringify(step, null, 2)}
-              Task Context: ${JSON.stringify(task, null, 2)}
+              Analysis: ${JSON.stringify(analysis, null, 2)}
 
               Format response as JSON with:
               {
@@ -278,6 +346,10 @@ export class OrchestratorService {
         issues: [error.message]
       };
     }
+  }
+
+  async getTaskResult(taskId: string) {
+    return this.taskManager.getTaskResult(taskId);
   }
 
   async monitorTask(taskId: string) {
