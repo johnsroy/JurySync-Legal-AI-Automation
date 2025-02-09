@@ -107,11 +107,23 @@ export default function LegalResearch() {
       console.log('Starting document analysis:', documentId);
       const response = await fetch(`/api/legal/documents/${documentId}/analyze`, {
         method: "POST",
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
-      if (!response.ok) throw new Error("Failed to analyze document");
+
+      if (!response.ok) {
+        throw new Error("Failed to analyze document");
+      }
+
       const data = await response.json();
       console.log('Analysis results received:', data);
       setUploadedDocResults(data);
+
+      toast({
+        title: "Analysis Complete",
+        description: "Document analysis has been completed successfully.",
+      });
     } catch (error: any) {
       console.error('Analysis error:', error);
       toast({
@@ -162,7 +174,12 @@ export default function LegalResearch() {
 
   // Render results for uploaded document analysis
   const renderUploadedDocResults = () => {
-    if (!uploadedDocResults) return null;
+    if (!uploadedDocResults) {
+      console.log('No analysis results to display');
+      return null;
+    }
+
+    console.log('Rendering analysis results:', uploadedDocResults);
 
     return (
       <div className="mt-6 space-y-4">
@@ -296,26 +313,28 @@ export default function LegalResearch() {
               headers: {
                 'Accept': 'application/json'
               },
-              load: async (response) => {
+              load: async (source, load, error, progress, abort, headers) => {
                 try {
-                  console.log('Upload response:', response);
-                  const data = JSON.parse(response);
+                  console.log('Upload response received:', source);
+                  const data = JSON.parse(source);
                   console.log('Parsed upload response:', data);
+
                   if (data.documentId) {
+                    console.log('Starting analysis for document:', data.documentId);
                     await analyzeDocument(data.documentId);
-                    toast({
-                      title: "Analysis Complete",
-                      description: "Document has been uploaded and analyzed successfully.",
-                    });
+                    invalidateLegalDocuments();
+                  } else {
+                    console.error('No document ID in response');
+                    throw new Error('Invalid upload response');
                   }
-                  invalidateLegalDocuments();
-                } catch (error) {
-                  console.error('Error processing upload response:', error);
+                } catch (err: any) {
+                  console.error('Error processing upload response:', err);
                   toast({
                     title: "Error",
-                    description: "Failed to analyze document",
+                    description: "Failed to process document",
                     variant: "destructive"
                   });
+                  error('Upload processing failed');
                 }
               }
             }}
@@ -327,6 +346,8 @@ export default function LegalResearch() {
             labelIdle='Drag & Drop your legal document or <span class="filepond--label-action">Browse</span>'
             onerror={handleFilePondError}
           />
+
+          {/* Display analysis results */}
           {renderUploadedDocResults()}
         </Card>
 
