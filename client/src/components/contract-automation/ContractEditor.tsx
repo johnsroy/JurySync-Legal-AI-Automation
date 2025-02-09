@@ -26,6 +26,12 @@ import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { FilePond, registerPlugin } from "react-filepond";
+import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
+import "filepond/dist/filepond.min.css";
+
+registerPlugin(FilePondPluginFileValidateType);
+
 
 interface DraftRequirement {
   type: "STANDARD" | "CUSTOM";
@@ -38,6 +44,7 @@ interface ContractEditorProps {
   content: string;
   analysis: DocumentAnalysis;
   onUpdate: () => void;
+  setUploadedDocId: (documentId: string) => void; // Added function type
 }
 
 export const ContractEditor: React.FC<ContractEditorProps> = ({
@@ -45,6 +52,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   content,
   analysis,
   onUpdate,
+  setUploadedDocId // Added prop
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -61,6 +69,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   const [newRequirement, setNewRequirement] = useState("");
   const [requirementType, setRequirementType] = useState<"STANDARD" | "CUSTOM">("STANDARD");
   const [requirementImportance, setRequirementImportance] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
+  const [files, setFiles] = useState<any[]>([]); // Added state for FilePond
+
 
   const standardRequirements = [
     "Include non-disclosure agreement",
@@ -97,7 +107,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     setProgress(0);
 
     try {
-      // Start progress animation
       const progressInterval = setInterval(() => {
         setProgress(prev => {
           if (prev >= 90) return prev;
@@ -105,7 +114,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         });
       }, 800);
 
-      // Enhanced API call with requirements
       const response = await apiRequest("POST", `/api/documents/${documentId}/generate-draft`, {
         requirements,
         baseContent: content,
@@ -145,10 +153,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     }
   };
 
-  // Determine if document is approved
   const isApproved = analysis.contractDetails?.workflowState?.status === "APPROVED";
 
-  // Fetch all users for approval requests
   const { data: users } = useQuery({
     queryKey: ["/api/users"],
     queryFn: async () => {
@@ -157,7 +163,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     },
   });
 
-  // Add query for pending approvals
   const { data: pendingApprovals } = useQuery({
     queryKey: ["/api/approvals/pending"],
     queryFn: async () => {
@@ -198,7 +203,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         description: "Changes have been saved successfully.",
       });
 
-      // Refresh queries to get updated versions
       queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
       setActiveTab("redline");
     } catch (error: any) {
@@ -210,7 +214,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     }
   };
 
-  // Handle review request
   const handleRequestReview = async () => {
     try {
       if (!selectedApprover) {
@@ -231,7 +234,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         throw new Error("Failed to send review request");
       }
 
-      // Invalidate both documents and pending approvals queries
       queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
 
@@ -240,7 +242,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         description: "Document has been sent for review",
       });
 
-      // Reset form fields
       setSelectedApprover("");
       setReviewComment("");
       onUpdate();
@@ -265,7 +266,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         throw new Error(error.message || `Failed to ${action} document`);
       }
 
-      // Refresh both queries
       queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
       onUpdate();
@@ -298,6 +298,38 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     }
   };
 
+  const handleFilePondError = (error: any) => {
+    console.error('FilePond error:', error);
+    toast({
+      title: "Upload Error",
+      description: error.message || "Failed to upload document",
+      variant: "destructive",
+    });
+  };
+
+  const serverConfig = {
+    process: "/api/contracts/documents",
+    headers: {
+      'Accept': 'application/json'
+    },
+    load: async (source: string, load: Function, error: Function) => {
+      try {
+        const data = JSON.parse(source);
+        if (data.documentId) {
+          setUploadedDocId(data.documentId);
+          queryClient.invalidateQueries({ queryKey: ["/api/contracts/documents"] });
+          load(source);
+        } else {
+          error('Invalid upload response');
+        }
+      } catch (err: any) {
+        console.error('Error processing upload response:', err);
+        error('Upload processing failed');
+      }
+    }
+  };
+
+
   const tabs = [
     { id: "requirements", label: "Requirements", icon: ListChecks },
     { id: "editor", label: "Document", icon: FileText },
@@ -321,7 +353,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </TabsList>
         </div>
 
-        {/* Requirements Tab Content */}
         <TabsContent value="requirements" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -342,6 +373,24 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                   </>
                 )}
               </Button>
+            </div>
+
+            <div className="mb-6">
+              <h4 className="text-sm font-medium mb-2">Upload Existing Contract</h4>
+              <FilePond
+                files={files}
+                onupdatefiles={setFiles}
+                allowMultiple={false}
+                maxFiles={1}
+                server={serverConfig}
+                acceptedFileTypes={[
+                  'application/pdf',
+                  'application/msword',
+                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                ]}
+                labelIdle='Drag & Drop your contract document or <span class="filepond--label-action">Browse</span>'
+                onerror={handleFilePondError}
+              />
             </div>
 
             <div className="space-y-4">
@@ -446,7 +495,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </div>
         </TabsContent>
 
-        {/* Document Tab Content */}
         <TabsContent value="editor" className="p-6">
           <ScrollArea className="h-[500px] w-full border rounded-md p-4">
             <div className="prose max-w-none">
@@ -455,7 +503,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </ScrollArea>
         </TabsContent>
 
-        {/* Generated Draft Tab Content */}
         {generatedDraft && (
           <TabsContent value="draft" className="p-6">
             <div className="space-y-6">
@@ -487,7 +534,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </TabsContent>
         )}
 
-        {/* Version History Tab */}
         <TabsContent value="redline" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -532,7 +578,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </div>
         </TabsContent>
 
-        {/* Approval Tab */}
         <TabsContent value="approvals" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -586,7 +631,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           </div>
         </TabsContent>
 
-        {/* Workflow Tab */}
         <TabsContent value="workflow" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -621,7 +665,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
             </div>
 
             <div className="space-y-4">
-              {/* Current Status Display */}
               <div className="flex items-center space-x-2">
                 <span className="font-medium">Current Status:</span>
                 <span className={`px-2 py-1 rounded-full text-sm ${
