@@ -4,6 +4,9 @@ import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 
+const HTML_TAG_REGEX = /<[^>]*>|<!DOCTYPE.*?>/i;
+const INVALID_CHARACTERS_REGEX = /[\u0000-\u0008\u000B-\u000C\u000E-\u001F]/g;
+
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error('Missing ANTHROPIC_API_KEY environment variable');
 }
@@ -190,6 +193,22 @@ const validateAuditReport = (report: any) => {
   return true;
 };
 
+// Add validation utilities
+function containsHTMLTags(text: string): boolean {
+  return HTML_TAG_REGEX.test(text);
+}
+
+function normalizeText(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n') // Normalize Windows line endings
+    .replace(/\r/g, '\n')   // Normalize Mac line endings
+    .replace(/\n\n+/g, '\n\n') // Normalize multiple line breaks
+    .replace(/\t/g, '    ') // Convert tabs to spaces
+    .replace(INVALID_CHARACTERS_REGEX, '') // Remove control characters
+    .trim();
+}
+
+
 export class OrchestratorService {
   private static instance: OrchestratorService;
   private taskManager: TaskManager;
@@ -315,7 +334,15 @@ export class OrchestratorService {
         throw new Error(`Invalid document text type: ${typeof input.data.documentText}`);
       }
 
-      if (input.data.documentText.trim().length === 0) {
+      // Check for HTML tags
+      if (containsHTMLTags(input.data.documentText)) {
+        throw new Error('Document must be plain text without HTML formatting');
+      }
+
+      // Normalize text
+      const normalizedText = normalizeText(input.data.documentText);
+
+      if (normalizedText.length === 0) {
         throw new Error('Document text cannot be empty');
       }
 
@@ -323,15 +350,15 @@ export class OrchestratorService {
         throw new Error(`Invalid document type: ${input.type}`);
       }
 
-      // Create task with validated data
+      // Create task with validated and normalized data
       const task = this.taskManager.createTask(taskId, input.type, {
         ...input.data,
-        documentText: input.data.documentText.trim()
+        documentText: normalizedText
       });
 
       log('Audit task created successfully', 'info', { 
         taskId,
-        documentLength: input.data.documentText.length,
+        documentLength: normalizedText.length,
         type: input.type
       });
 
@@ -357,7 +384,7 @@ export class OrchestratorService {
         type: input.type,
         metadata: {
           createdAt: new Date().toISOString(),
-          documentLength: input.data.documentText.length
+          documentLength: normalizedText.length
         }
       };
 
@@ -369,6 +396,13 @@ export class OrchestratorService {
         inputData: JSON.stringify(input)
       });
 
+      // Format error response
+      const errorResponse = {
+        error: 'Invalid request data',
+        details: error.message,
+        code: 'VALIDATION_ERROR'
+      };
+
       this.taskManager.updateTask(taskId, {
         status: 'error',
         error: error.message,
@@ -376,7 +410,7 @@ export class OrchestratorService {
         progress: 0
       });
 
-      throw error;
+      throw errorResponse;
     }
   }
 

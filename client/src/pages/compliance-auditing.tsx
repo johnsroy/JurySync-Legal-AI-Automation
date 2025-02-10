@@ -440,7 +440,7 @@ const ComplianceAuditing: FC = () => {
         <CardHeader>
           <CardTitle>Document Input</CardTitle>
           <CardDescription>
-            Paste your document text for compliance analysis
+            Paste your document text for compliance analysis. Please ensure the text is plain text without HTML formatting.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -487,6 +487,16 @@ const ComplianceAuditing: FC = () => {
                   toast({
                     title: "Validation Error",
                     description: "Please enter document text before submitting",
+                    variant: "destructive"
+                  });
+                  return;
+                }
+
+                // Additional validation
+                if (/<[^>]*>|<!DOCTYPE.*?>/i.test(documentText)) {
+                  toast({
+                    title: "Validation Error",
+                    description: "Document text cannot contain HTML tags. Please paste plain text only.",
                     variant: "destructive"
                   });
                   return;
@@ -943,7 +953,7 @@ const ComplianceAuditing: FC = () => {
             </div>
 
             {/* Document Input and Analysis */}
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6 md:gridcols-2">
               <DocumentInput />
 
               {/* Analysis Results Display */}
