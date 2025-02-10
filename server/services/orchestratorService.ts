@@ -18,6 +18,12 @@ const COMPLIANCE_KEYWORDS = [
   'control', 'risk', 'regulatory', 'framework', 'governance'
 ];
 
+// Enhanced logging function
+function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [Orchestrator] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
+}
+
 // Task management with persistent state
 class TaskManager {
   private static instance: TaskManager;
@@ -94,7 +100,29 @@ class TaskManager {
   getTaskResult(taskId: string) {
     const result = this.taskResults.get(taskId);
     const task = this.tasks.get(taskId);
-    if (!task) return null;
+    if (!task) {
+      return {
+        status: 'error',
+        error: 'Task not found',
+        details: 'The requested task ID does not exist'
+      };
+    }
+
+    if (task.status === 'error') {
+      return {
+        status: 'error',
+        error: task.error,
+        details: task.errorDetails || 'An error occurred during processing'
+      };
+    }
+
+    if (task.status === 'processing') {
+      return {
+        status: 'processing',
+        progress: task.progress,
+        message: 'Document analysis in progress'
+      };
+    }
 
     return {
       status: result ? 'completed' : task.status,
@@ -182,55 +210,78 @@ export class OrchestratorService {
     confidence: number,
     keywords: string[]
   }> {
-    // Simple keyword-based classification
-    const textLower = text.toLowerCase();
-    const matchedKeywords = COMPLIANCE_KEYWORDS.filter(keyword =>
-      textLower.includes(keyword.toLowerCase())
-    );
+    try {
+      log('Starting document classification', 'info');
 
-    // If we find multiple compliance keywords, classify as compliance
-    if (matchedKeywords.length >= 2) {
+      // Simple keyword-based classification
+      const textLower = text.toLowerCase();
+      const matchedKeywords = COMPLIANCE_KEYWORDS.filter(keyword =>
+        textLower.includes(keyword.toLowerCase())
+      );
+
+      // If we find multiple compliance keywords, classify as compliance
+      if (matchedKeywords.length >= 2) {
+        log('Document classified via keywords', 'info', {
+          type: 'compliance',
+          confidence: Math.min(matchedKeywords.length / 5, 1),
+          matchedKeywords
+        });
+
+        return {
+          type: 'compliance',
+          confidence: Math.min(matchedKeywords.length / 5, 1), // Normalize confidence
+          keywords: matchedKeywords
+        };
+      }
+
+      // If insufficient keywords found, use Claude for advanced classification
+      const response = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 150,
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Classify this document as either 'contract', 'compliance', or 'research'. First 500 chars:
+              ${text.substring(0, 500)}
+
+              Format response as JSON:
+              {
+                "type": "contract|compliance|research",
+                "confidence": number between 0-1,
+                "reasoning": "brief explanation"
+              }`
+            }
+          ]
+        }]
+      });
+
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response format from Anthropic API');
+      }
+
+      const result = JSON.parse(content.text);
+
+      log('Document classified via AI', 'info', {
+        type: result.type,
+        confidence: result.confidence,
+        reasoning: result.reasoning
+      });
+
       return {
-        type: 'compliance',
-        confidence: Math.min(matchedKeywords.length / 5, 1), // Normalize confidence
+        type: result.type as 'contract' | 'compliance' | 'research',
+        confidence: result.confidence,
         keywords: matchedKeywords
       };
+    } catch (error: any) {
+      log('Document classification failed', 'error', {
+        error: error.message,
+        stack: error.stack
+      });
+      throw new Error(`Classification failed: ${error.message}`);
     }
-
-    // If insufficient keywords found, use Claude for advanced classification
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 150,
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: `Classify this document as either 'contract', 'compliance', or 'research'. First 500 chars:
-            ${text.substring(0, 500)}
-
-            Format response as JSON:
-            {
-              "type": "contract|compliance|research",
-              "confidence": number between 0-1,
-              "reasoning": "brief explanation"
-            }`
-          }
-        ]
-      }]
-    });
-
-    const content = response.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response format from Anthropic API');
-    }
-
-    const result = JSON.parse(content.text);
-    return {
-      type: result.type as 'contract' | 'compliance' | 'research',
-      confidence: result.confidence,
-      keywords: matchedKeywords
-    };
   }
 
   async distributeTask(input: {
@@ -238,6 +289,7 @@ export class OrchestratorService {
     data: any
   }) {
     const taskId = `task_${Date.now()}`;
+    log('Received audit request', 'info', { body: input });
 
     try {
       // If type is not explicitly provided, classify the document
@@ -248,13 +300,20 @@ export class OrchestratorService {
       }
 
       const task = this.taskManager.createTask(taskId, input.type, input.data);
+      log('Audit task created successfully', 'info', { taskId });
 
       // Start processing in background
       this.processTask(taskId).catch(error => {
-        console.error(`Task processing error (${taskId}):`, error);
+        log('Task processing error', 'error', {
+          taskId,
+          error: error.message,
+          stack: error.stack
+        });
+
         this.taskManager.updateTask(taskId, {
           status: 'error',
           error: error.message,
+          errorDetails: error.stack,
           progress: 0
         });
       });
@@ -271,12 +330,18 @@ export class OrchestratorService {
       };
 
     } catch (error: any) {
-      console.error('Task distribution error:', error);
+      log('Task distribution error:', 'error', {
+        error: error.message,
+        stack: error.stack
+      });
+
       this.taskManager.updateTask(taskId, {
         status: 'error',
         error: error.message,
+        errorDetails: error.stack,
         progress: 0
       });
+
       throw error;
     }
   }
@@ -286,6 +351,7 @@ export class OrchestratorService {
     if (!task) throw new Error('Task not found');
 
     const { data } = task;
+    log('Starting task processing', 'info', { taskId, type: task.type });
 
     try {
       this.taskManager.updateTask(taskId, {
@@ -299,12 +365,19 @@ export class OrchestratorService {
       if (task.type === 'compliance') {
         // Pass taskId to complianceAuditService for proper state management
         result = await complianceAuditService.analyzeDocument(data.document, taskId);
+        log('Compliance analysis completed', 'info', {
+          taskId,
+          resultSummaryLength: result?.auditReport?.summary?.length
+        });
 
         // Validate the audit report structure
         try {
           validateAuditReport(result);
-        } catch (error) {
-          console.error('Invalid audit report structure:', error);
+        } catch (error: any) {
+          log('Invalid audit report structure:', 'error', {
+            error: error.message,
+            result: JSON.stringify(result, null, 2)
+          });
           throw new Error(`Audit report validation failed: ${error.message}`);
         }
 
@@ -322,17 +395,22 @@ export class OrchestratorService {
         });
 
         // Log successful completion
-        console.log(`Task ${taskId} completed successfully with validated audit report`);
+        log(`Task ${taskId} completed successfully with validated audit report`);
 
       } else {
         throw new Error(`Unsupported task type: ${task.type}`);
       }
 
     } catch (error: any) {
-      console.error(`Error processing task ${taskId}:`, error);
+      log(`Error processing task ${taskId}:`, 'error', {
+        error: error.message,
+        stack: error.stack
+      });
+
       this.taskManager.updateTask(taskId, {
         status: 'error',
         error: error.message,
+        errorDetails: error.stack,
         progress: 0
       });
 
@@ -346,7 +424,35 @@ export class OrchestratorService {
   }
 
   async getTaskResult(taskId: string) {
-    return this.taskManager.getTaskResult(taskId);
+    log('Fetching audit results', 'info', { taskId });
+    const result = this.taskManager.getTaskResult(taskId);
+
+    log('Task result status', 'debug', {
+      taskId,
+      status: result.status,
+      resultKeys: result.data ? Object.keys(result.data) : null
+    });
+
+    if (result.status === 'processing') {
+      log('Task still processing', 'info', {
+        taskId,
+        progress: result.progress
+      });
+    } else if (result.status === 'completed') {
+      log('Returning completed task result', 'info', {
+        taskId,
+        hasAuditReport: !!result.data?.auditReport,
+        completedAt: result.completedAt
+      });
+    } else if (result.status === 'error') {
+      log('Returning error task result', 'error', {
+        taskId,
+        error: result.error,
+        details: result.details
+      });
+    }
+
+    return result;
   }
 
   async monitorTask(taskId: string) {
