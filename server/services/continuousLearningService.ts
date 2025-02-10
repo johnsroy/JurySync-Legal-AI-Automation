@@ -5,7 +5,7 @@ import {
   caseLawUpdates, 
   continuousLearningUpdates,
   type RegulatoryUpdate,
-  type CaseLawUpdate
+  type CaseLawUpdate as CaseLawUpdateWithFullText // Assuming full_text is added here
 } from '@shared/schema';
 import { eq, and, lte, sql } from 'drizzle-orm';
 import { chromaStore } from './chromaStore';
@@ -58,7 +58,7 @@ export class ContinuousLearningService {
       const caseLawResults = await this.processCaseLawUpdates();
 
       // Update model context parameters
-      const modelUpdates = await this.updateModelParameters([...regulatoryResults, ...caseLawResults]);
+      const modelUpdates = await this.updateModelParameters(regulatoryResults.concat(caseLawResults));
 
       // Log the update summary
       const updateSummary = {
@@ -80,7 +80,6 @@ export class ContinuousLearningService {
 
   private async processRegulatoryUpdates(): Promise<RegulatoryUpdate[]> {
     try {
-      // Get unprocessed regulatory updates based on effectiveDate
       const updates = await db
         .select()
         .from(regulatoryUpdates)
@@ -97,8 +96,7 @@ export class ContinuousLearningService {
 
       for (const update of updates) {
         try {
-          // Generate vector embedding
-          const embedding = await chromaStore.addDocument({
+          const vectorResponse = await chromaStore.addDocument({
             id: update.id.toString(),
             content: update.content,
             metadata: {
@@ -109,14 +107,13 @@ export class ContinuousLearningService {
             }
           });
 
-          // Create continuous learning update record
           await db
             .insert(continuousLearningUpdates)
             .values({
               updateType: 'REGULATORY',
               updateId: update.id,
               processingStatus: 'COMPLETED',
-              vectorEmbeddingId: embedding.id,
+              vectorEmbeddingId: vectorResponse.id,
               contextParameters: {
                 jurisdiction: update.jurisdiction,
                 effectiveDate: update.effectiveDate,
@@ -139,9 +136,8 @@ export class ContinuousLearningService {
     }
   }
 
-  private async processCaseLawUpdates(): Promise<CaseLawUpdate[]> {
+  private async processCaseLawUpdates(): Promise<CaseLawUpdateWithFullText[]> {
     try {
-      // Get unprocessed case law updates based on decisionDate
       const updates = await db
         .select()
         .from(caseLawUpdates)
@@ -158,10 +154,9 @@ export class ContinuousLearningService {
 
       for (const update of updates) {
         try {
-          // Generate vector embedding
-          const embedding = await chromaStore.addDocument({
+          const vectorResponse = await chromaStore.addDocument({
             id: update.id.toString(),
-            content: update.fullText,
+            content: update.full_text,
             metadata: {
               type: 'case_law',
               court: update.court,
@@ -171,14 +166,13 @@ export class ContinuousLearningService {
             }
           });
 
-          // Create continuous learning update record
           await db
             .insert(continuousLearningUpdates)
             .values({
               updateType: 'CASE_LAW',
               updateId: update.id,
               processingStatus: 'COMPLETED',
-              vectorEmbeddingId: embedding.id,
+              vectorEmbeddingId: vectorResponse.id,
               contextParameters: {
                 jurisdiction: update.jurisdiction,
                 court: update.court,
@@ -198,6 +192,56 @@ export class ContinuousLearningService {
       return updates;
     } catch (error) {
       log('Case law updates processing failed', 'error', error);
+      throw error;
+    }
+  }
+
+  private async updateModelParameters(updates: (RegulatoryUpdate | CaseLawUpdateWithFullText)[]) {
+    try {
+      const modelUpdates = [];
+
+      const analysisResponse = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: "You will analyze legal updates and provide model parameter adjustments in JSON format. Response must be valid JSON with a 'modelUpdates' array containing objects with 'model', 'parameters', and 'confidence' fields."
+          },
+          {
+            role: "user",
+            content: `Please analyze these legal updates and provide JSON output: ${JSON.stringify({
+              updates: updates.map(update => ({
+                type: 'jurisdiction' in update ? 'REGULATORY' : 'CASE_LAW',
+                content: 'content' in update ? update.content : update.full_text,
+                metadata: update.metadata
+              }))
+            })}`
+          }
+        ],
+        response_format: { type: "json_object" }
+      });
+
+      if (!analysisResponse.choices[0].message.content) {
+        throw new Error("No content in OpenAI response");
+      }
+
+      const analysis = JSON.parse(analysisResponse.choices[0].message.content);
+
+      if (!analysis.modelUpdates || !Array.isArray(analysis.modelUpdates)) {
+        throw new Error("Invalid model updates format in response");
+      }
+
+      for (const modelUpdate of analysis.modelUpdates) {
+        modelUpdates.push({
+          model: modelUpdate.model,
+          parameters: modelUpdate.parameters,
+          confidence: modelUpdate.confidence
+        });
+      }
+
+      return modelUpdates;
+    } catch (error) {
+      log('Model parameter update failed', 'error', error);
       throw error;
     }
   }
@@ -222,7 +266,6 @@ export class ContinuousLearningService {
   }
 
   private async getModelUpdates() {
-    // Get recent model parameter updates
     const updates = await db
       .select()
       .from(continuousLearningUpdates)
@@ -235,50 +278,6 @@ export class ContinuousLearningService {
       type: update.updateType,
       parameters: update.contextParameters
     }));
-  }
-
-  private async updateModelParameters(updates: (RegulatoryUpdate | CaseLawUpdate)[]) {
-    try {
-      const modelUpdates = [];
-
-      // Analyze updates and generate model parameter adjustments
-      const analysisResponse = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: "Analyze recent legal updates and suggest model parameter adjustments to improve performance."
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              updates: updates.map(update => ({
-                type: 'jurisdiction' in update ? 'REGULATORY' : 'CASE_LAW',
-                content: update.content || update.fullText,
-                metadata: update.metadata
-              }))
-            })
-          }
-        ],
-        response_format: { type: "json_object" }
-      });
-
-      const analysis = JSON.parse(analysisResponse.choices[0].message.content);
-
-      // Apply model parameter updates
-      for (const modelUpdate of analysis.modelUpdates || []) {
-        modelUpdates.push({
-          model: modelUpdate.model,
-          parameters: modelUpdate.parameters,
-          confidence: modelUpdate.confidence
-        });
-      }
-
-      return modelUpdates;
-    } catch (error) {
-      log('Model parameter update failed', 'error', error);
-      throw error;
-    }
   }
 
   stop() {

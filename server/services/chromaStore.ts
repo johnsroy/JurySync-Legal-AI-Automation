@@ -1,15 +1,25 @@
 import { ChromaClient, Collection } from 'chromadb';
 import { Document } from '@shared/schema';
 
+interface ChromaDocument {
+  id: string;
+  content: string;
+  metadata: Record<string, any>;
+}
+
+interface ChromaResponse {
+  id: string;
+  metadata: Record<string, any>;
+}
+
 export class ChromaStore {
   private client: ChromaClient;
   private collection: Collection | null = null;
   private initialized = false;
 
   constructor() {
-    // Initialize ChromaDB with proper configuration for in-memory mode
     this.client = new ChromaClient({
-      path: "http://localhost:8000" // Use HTTP protocol for in-memory mode
+      path: "http://localhost:8000"
     });
   }
 
@@ -17,7 +27,6 @@ export class ChromaStore {
     if (this.initialized) return;
 
     try {
-      // Create collection with proper configuration
       this.collection = await this.client.createCollection({
         name: "legal_documents",
         metadata: { "hnsw:space": "cosine" }
@@ -27,34 +36,30 @@ export class ChromaStore {
       console.log("ChromaDB collection initialized successfully");
     } catch (error) {
       console.error('Failed to initialize ChromaDB collection:', error);
-      // Set collection to null but don't throw error
-      // This allows the application to continue without vector storage
       this.collection = null;
     }
   }
 
-  async addDocument(document: Document, content: string) {
+  async addDocument(document: ChromaDocument): Promise<ChromaResponse> {
     try {
       await this.ensureCollection();
       if (!this.collection) {
         console.warn('ChromaDB collection not available, skipping vector storage');
-        return;
+        return { id: document.id, metadata: document.metadata };
       }
 
       await this.collection.add({
-        ids: [document.id.toString()],
-        metadatas: [{
-          title: document.title,
-          userId: document.userId,
-          createdAt: new Date().toISOString()
-        }],
-        documents: [content]
+        ids: [document.id],
+        metadatas: [document.metadata],
+        documents: [document.content]
       });
 
       console.log(`Document ${document.id} added to ChromaDB successfully`);
+      return { id: document.id, metadata: document.metadata };
     } catch (error) {
       console.error(`Failed to add document ${document.id} to ChromaDB:`, error);
-      // Don't throw error, just log it
+      // Return the document ID even if storage fails
+      return { id: document.id, metadata: document.metadata };
     }
   }
 

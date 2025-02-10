@@ -737,12 +737,12 @@ export const caseLawUpdates = pgTable("case_law_updates", {
   caseNumber: text("case_number").notNull(),
   title: text("title").notNull(),
   summary: text("summary").notNull(),
-  fullText: text("full_text").notNull(),
+  full_text: text("full_text").notNull(), 
   court: text("court").notNull(),
   jurisdiction: text("jurisdiction").notNull(),
   category: text("category").notNull(),
   decisionDate: timestamp("decision_date").notNull(),
-  vectorId: text("vector_id"), // Reference to ChromaDB embedding
+  vectorId: text("vector_id"),
   metadata: jsonb("metadata").$type<{
     precedentValue?: "HIGH" | "MEDIUM" | "LOW";
     overruledCases?: string[];
@@ -784,3 +784,10 @@ export type ContinuousLearningUpdate = typeof continuousLearningUpdates.$inferSe
 export type InsertRegulatoryUpdate = z.infer<typeof insertRegulatoryUpdateSchema>;
 export type InsertCaseLawUpdate = z.infer<typeof insertCaseLawUpdateSchema>;
 export type InsertContinuousLearningUpdate = z.infer<typeof insertContinuousLearningUpdateSchema>;
+
+// Add this after CaseLawUpdate type declaration
+export interface CaseLawUpdateWithFullText extends CaseLawUpdate {
+  full_text: string;
+}
+
+import { boolean } from "drizzle-orm/pg-core";
