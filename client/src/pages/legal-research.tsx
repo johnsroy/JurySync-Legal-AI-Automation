@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Gavel, LogOut, Loader2, Book, Search, FileText, AlertTriangle } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -29,11 +29,32 @@ interface LegalResearchResponse {
   recommendations: string[];
 }
 
+interface LegalDocument {
+  id: number;
+  title: string;
+  content: string;
+  documentType: string;
+  date: string;
+  jurisdiction: string;
+}
+
 export default function LegalResearch() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<LegalResearchResponse | null>(null);
+
+  // Fetch pre-populated documents
+  const { data: prePoulatedDocs, isLoading: isLoadingDocs } = useQuery<LegalDocument[]>({
+    queryKey: ['/api/legal-research/documents'],
+    queryFn: async () => {
+      const response = await fetch('/api/legal-research/documents');
+      if (!response.ok) {
+        throw new Error('Failed to fetch documents');
+      }
+      return response.json();
+    }
+  });
 
   const researchMutation = useMutation({
     mutationFn: async (query: string) => {
@@ -103,6 +124,45 @@ export default function LegalResearch() {
           <div className="flex items-center gap-4 mb-8">
             <Book className="h-8 w-8 text-green-600" />
             <h2 className="text-3xl font-bold">Legal Research</h2>
+          </div>
+
+          {/* Pre-populated Documents */}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-8">
+            {isLoadingDocs ? (
+              <Card className="col-span-full">
+                <CardContent className="p-8">
+                  <div className="flex items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              prePoulatedDocs?.map((doc) => (
+                <Card 
+                  key={doc.id}
+                  className="bg-white/80 backdrop-blur-lg hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => setQuery(`Analyze the legal principles and implications of ${doc.title}`)}
+                >
+                  <CardContent className="p-6">
+                    <div className="space-y-4">
+                      <div className="flex items-start justify-between">
+                        <h3 className="font-semibold">{doc.title}</h3>
+                        <Badge variant="secondary">{doc.documentType}</Badge>
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        {doc.content.substring(0, 150)}...
+                      </p>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">
+                          {new Date(doc.date).toLocaleDateString()}
+                        </span>
+                        <Badge variant="outline">{doc.jurisdiction}</Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </div>
 
           <div className="grid gap-6">
