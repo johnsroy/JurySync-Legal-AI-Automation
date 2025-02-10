@@ -64,8 +64,11 @@ const auditReportSchema = z.object({
   })
 });
 
-// Audit endpoint
+// Audit endpoint with timeout handling
 router.post('/audit', async (req, res) => {
+  const requestTimeout = 60000; // 60 second timeout
+  let timeoutId: NodeJS.Timeout;
+
   try {
     log('Received audit request', 'info', { body: { ...req.body, documentText: '[REDACTED]' } });
 
@@ -82,8 +85,20 @@ router.post('/audit', async (req, res) => {
       }
     };
 
-    // Distribute task to orchestrator
-    const result = await orchestratorService.distributeTask(task);
+    // Set up timeout handler
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Request timeout exceeded'));
+      }, requestTimeout);
+    });
+
+    // Distribute task to orchestrator with timeout
+    const resultPromise = orchestratorService.distributeTask(task);
+
+    // Race between timeout and task distribution
+    const result = await Promise.race([resultPromise, timeoutPromise]);
+
+    clearTimeout(timeoutId);
 
     log('Audit task created successfully', 'info', { taskId: result.taskId });
 
@@ -94,6 +109,8 @@ router.post('/audit', async (req, res) => {
     });
 
   } catch (error: any) {
+    if (timeoutId) clearTimeout(timeoutId);
+
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Audit request failed', 'error', { error: errorMessage });
 
@@ -105,6 +122,14 @@ router.post('/audit', async (req, res) => {
       });
     }
 
+    if (error.message === 'Request timeout exceeded') {
+      return res.status(504).json({
+        error: 'Request timed out',
+        details: 'The server took too long to process the request',
+        code: 'TIMEOUT_ERROR'
+      });
+    }
+
     res.status(500).json({
       error: 'Failed to process audit request',
       details: errorMessage,
@@ -113,13 +138,27 @@ router.post('/audit', async (req, res) => {
   }
 });
 
-// Get task results - specific endpoint for audit results
+// Get task results with timeout handling
 router.get('/audit/:taskId/result', async (req, res) => {
+  const requestTimeout = 30000; // 30 second timeout
+  let timeoutId: NodeJS.Timeout;
+
   try {
     const { taskId } = req.params;
     log('Fetching audit results', 'info', { taskId });
 
-    const result = await orchestratorService.getTaskResult(taskId);
+    // Set up timeout handler
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Request timeout exceeded'));
+      }, requestTimeout);
+    });
+
+    // Get result with timeout
+    const resultPromise = orchestratorService.getTaskResult(taskId);
+    const result = await Promise.race([resultPromise, timeoutPromise]);
+
+    clearTimeout(timeoutId);
 
     if (!result) {
       return res.status(404).json({
@@ -165,8 +204,19 @@ router.get('/audit/:taskId/result', async (req, res) => {
     }
 
   } catch (error: any) {
+    if (timeoutId) clearTimeout(timeoutId);
+
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Failed to fetch audit results', 'error', { error: errorMessage });
+
+    if (error.message === 'Request timeout exceeded') {
+      return res.status(504).json({
+        error: 'Request timed out',
+        details: 'The server took too long to process the request',
+        code: 'TIMEOUT_ERROR'
+      });
+    }
+
     res.status(500).json({
       error: 'Failed to fetch audit results',
       details: errorMessage,
@@ -175,17 +225,42 @@ router.get('/audit/:taskId/result', async (req, res) => {
   }
 });
 
-// Get task status
+// Get task status with timeout
 router.get('/tasks/:taskId', async (req, res) => {
+  const requestTimeout = 10000; // 10 second timeout
+  let timeoutId: NodeJS.Timeout;
+
   try {
     const { taskId } = req.params;
     log('Fetching task status', 'info', { taskId });
 
-    const status = await orchestratorService.monitorTask(taskId);
+    // Set up timeout handler
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Request timeout exceeded'));
+      }, requestTimeout);
+    });
+
+    // Get status with timeout
+    const statusPromise = orchestratorService.monitorTask(taskId);
+    const status = await Promise.race([statusPromise, timeoutPromise]);
+
+    clearTimeout(timeoutId);
     res.json(status);
   } catch (error: any) {
+    if (timeoutId) clearTimeout(timeoutId);
+
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Task status fetch failed', 'error', { error: errorMessage });
+
+    if (error.message === 'Request timeout exceeded') {
+      return res.status(504).json({
+        error: 'Request timed out',
+        details: 'The server took too long to process the request',
+        code: 'TIMEOUT_ERROR'
+      });
+    }
+
     res.status(404).json({
       error: 'Failed to fetch task status',
       details: errorMessage,
@@ -194,15 +269,41 @@ router.get('/tasks/:taskId', async (req, res) => {
   }
 });
 
-// Get all tasks
+// Get all tasks with timeout
 router.get('/tasks', async (req, res) => {
+  const requestTimeout = 10000; // 10 second timeout
+  let timeoutId: NodeJS.Timeout;
+
   try {
     log('Fetching all tasks');
-    const tasks = await orchestratorService.getAllTasks();
+
+    // Set up timeout handler
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Request timeout exceeded'));
+      }, requestTimeout);
+    });
+
+    // Get tasks with timeout
+    const tasksPromise = orchestratorService.getAllTasks();
+    const tasks = await Promise.race([tasksPromise, timeoutPromise]);
+
+    clearTimeout(timeoutId);
     res.json(tasks);
   } catch (error: any) {
+    if (timeoutId) clearTimeout(timeoutId);
+
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Failed to fetch tasks list', 'error', { error: errorMessage });
+
+    if (error.message === 'Request timeout exceeded') {
+      return res.status(504).json({
+        error: 'Request timed out',
+        details: 'The server took too long to process the request',
+        code: 'TIMEOUT_ERROR'
+      });
+    }
+
     res.status(500).json({
       error: 'Failed to fetch tasks',
       details: errorMessage,
