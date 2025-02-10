@@ -8,6 +8,19 @@ import { db } from "./db";
 import { seedLegalDatabase } from './services/seedData';
 import { continuousLearningService } from './services/continuousLearningService';
 import cors from 'cors';
+import { createServer } from 'net';
+
+// Helper function to check if port is in use
+async function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer()
+      .once('error', () => resolve(true))
+      .once('listening', () => {
+        server.once('close', () => resolve(false)).close();
+      })
+      .listen(port, '0.0.0.0');
+  });
+}
 
 const app = express();
 
@@ -69,6 +82,13 @@ setupAuth(app);
 
 (async () => {
   try {
+    // Check if port 5000 is in use and find an available port
+    let port = Number(process.env.PORT) || 5000;
+    while (await isPortInUse(port)) {
+      console.log(`Port ${port} is in use, trying ${port + 1}`);
+      port++;
+    }
+
     // Initialize database and seed data
     await seedLegalDatabase();
     console.log('Legal database seeded successfully');
@@ -122,7 +142,6 @@ setupAuth(app);
       serveStatic(app);
     }
 
-    const port = Number(process.env.PORT) || 5000;
     server.listen(port, '0.0.0.0', () => {
       console.log(`Server running at http://0.0.0.0:${port}`);
     });

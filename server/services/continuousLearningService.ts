@@ -7,7 +7,7 @@ import {
   type RegulatoryUpdate,
   type CaseLawUpdate
 } from '@shared/schema';
-import { eq, and, lte } from 'drizzle-orm';
+import { eq, and, lte, sql } from 'drizzle-orm';
 import { chromaStore } from './chromaStore';
 
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
@@ -17,7 +17,7 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
 
 export class ContinuousLearningService {
   private static instance: ContinuousLearningService;
-  private updateInterval: NodeJS.Timer | null = null;
+  private updateInterval: NodeJS.Timeout | null = null;
   private readonly UPDATE_INTERVAL = 3600000; // 1 hour in milliseconds
 
   private constructor() {
@@ -53,7 +53,7 @@ export class ContinuousLearningService {
 
       // Process regulatory updates
       const regulatoryResults = await this.processRegulatoryUpdates();
-      
+
       // Process case law updates
       const caseLawResults = await this.processCaseLawUpdates();
 
@@ -70,7 +70,7 @@ export class ContinuousLearningService {
       };
 
       log('Update complete', 'info', updateSummary);
-      
+
       return updateSummary;
     } catch (error) {
       log('Update failed', 'error', error);
@@ -80,13 +80,17 @@ export class ContinuousLearningService {
 
   private async processRegulatoryUpdates(): Promise<RegulatoryUpdate[]> {
     try {
-      // Get unprocessed regulatory updates
+      // Get unprocessed regulatory updates based on effectiveDate
       const updates = await db
         .select()
         .from(regulatoryUpdates)
         .where(
           and(
-            eq(regulatoryUpdates.processed, false),
+            sql`NOT EXISTS (
+              SELECT 1 FROM ${continuousLearningUpdates} 
+              WHERE ${continuousLearningUpdates.updateType} = 'REGULATORY' 
+              AND ${continuousLearningUpdates.updateId} = ${regulatoryUpdates.id}
+            )`,
             lte(regulatoryUpdates.effectiveDate, new Date())
           )
         );
@@ -94,14 +98,16 @@ export class ContinuousLearningService {
       for (const update of updates) {
         try {
           // Generate vector embedding
-          const embedding = await chromaStore.addDocument(
-            update.content,
-            {
+          const embedding = await chromaStore.addDocument({
+            id: update.id.toString(),
+            content: update.content,
+            metadata: {
               type: 'regulatory',
-              id: update.id.toString(),
-              metadata: update.metadata
+              jurisdiction: update.jurisdiction,
+              effectiveDate: update.effectiveDate?.toISOString(),
+              source: update.source
             }
-          );
+          });
 
           // Create continuous learning update record
           await db
@@ -115,15 +121,8 @@ export class ContinuousLearningService {
                 jurisdiction: update.jurisdiction,
                 effectiveDate: update.effectiveDate,
                 type: update.type
-              },
-              processedAt: new Date()
+              }
             });
-
-          // Mark update as processed
-          await db
-            .update(regulatoryUpdates)
-            .set({ processed: true })
-            .where(eq(regulatoryUpdates.id, update.id));
 
         } catch (error) {
           log('Failed to process regulatory update', 'error', {
@@ -142,13 +141,17 @@ export class ContinuousLearningService {
 
   private async processCaseLawUpdates(): Promise<CaseLawUpdate[]> {
     try {
-      // Get unprocessed case law updates
+      // Get unprocessed case law updates based on decisionDate
       const updates = await db
         .select()
         .from(caseLawUpdates)
         .where(
           and(
-            eq(caseLawUpdates.processed, false),
+            sql`NOT EXISTS (
+              SELECT 1 FROM ${continuousLearningUpdates} 
+              WHERE ${continuousLearningUpdates.updateType} = 'CASE_LAW' 
+              AND ${continuousLearningUpdates.updateId} = ${caseLawUpdates.id}
+            )`,
             lte(caseLawUpdates.decisionDate, new Date())
           )
         );
@@ -156,14 +159,17 @@ export class ContinuousLearningService {
       for (const update of updates) {
         try {
           // Generate vector embedding
-          const embedding = await chromaStore.addDocument(
-            update.fullText,
-            {
+          const embedding = await chromaStore.addDocument({
+            id: update.id.toString(),
+            content: update.fullText,
+            metadata: {
               type: 'case_law',
-              id: update.id.toString(),
-              metadata: update.metadata
+              court: update.court,
+              jurisdiction: update.jurisdiction,
+              category: update.category,
+              decisionDate: update.decisionDate?.toISOString()
             }
-          );
+          });
 
           // Create continuous learning update record
           await db
@@ -178,15 +184,8 @@ export class ContinuousLearningService {
                 court: update.court,
                 category: update.category,
                 decisionDate: update.decisionDate
-              },
-              processedAt: new Date()
+              }
             });
-
-          // Mark update as processed
-          await db
-            .update(caseLawUpdates)
-            .set({ processed: true })
-            .where(eq(caseLawUpdates.id, update.id));
 
         } catch (error) {
           log('Failed to process case law update', 'error', {
@@ -201,6 +200,41 @@ export class ContinuousLearningService {
       log('Case law updates processing failed', 'error', error);
       throw error;
     }
+  }
+
+  async getLatestUpdates() {
+    try {
+      const recentUpdates = await db
+        .select()
+        .from(continuousLearningUpdates)
+        .orderBy(sql`${continuousLearningUpdates.createdAt} DESC`)
+        .limit(10);
+
+      return {
+        lastUpdated: recentUpdates[0]?.createdAt || new Date(),
+        recentUpdates: recentUpdates,
+        modelUpdates: await this.getModelUpdates()
+      };
+    } catch (error) {
+      log('Failed to get latest updates', 'error', error);
+      throw error;
+    }
+  }
+
+  private async getModelUpdates() {
+    // Get recent model parameter updates
+    const updates = await db
+      .select()
+      .from(continuousLearningUpdates)
+      .where(eq(continuousLearningUpdates.processingStatus, 'COMPLETED'))
+      .orderBy(sql`${continuousLearningUpdates.createdAt} DESC`)
+      .limit(5);
+
+    return updates.map(update => ({
+      timestamp: update.createdAt,
+      type: update.updateType,
+      parameters: update.contextParameters
+    }));
   }
 
   private async updateModelParameters(updates: (RegulatoryUpdate | CaseLawUpdate)[]) {
@@ -232,7 +266,7 @@ export class ContinuousLearningService {
       const analysis = JSON.parse(analysisResponse.choices[0].message.content);
 
       // Apply model parameter updates
-      for (const modelUpdate of analysis.modelUpdates) {
+      for (const modelUpdate of analysis.modelUpdates || []) {
         modelUpdates.push({
           model: modelUpdate.model,
           parameters: modelUpdate.parameters,
