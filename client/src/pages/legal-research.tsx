@@ -11,6 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
 
 interface LegalResearchResponse {
   summary: string;
@@ -39,17 +41,40 @@ interface LegalDocument {
   jurisdiction: string;
 }
 
+interface FilterState {
+  jurisdiction: string;
+  startDate: Date | null;
+  endDate: Date | null;
+  legalTopic: string;
+}
+
 export default function LegalResearch() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<LegalResearchResponse | null>(null);
+  const [filters, setFilters] = useState<FilterState>({
+    jurisdiction: "all",
+    startDate: null,
+    endDate: null,
+    legalTopic: "all"
+  });
+
+  // Available filter options
+  const jurisdictions = ["All", "Federal", "State", "Supreme Court"];
+  const legalTopics = ["All", "Constitutional", "Criminal", "Civil Rights", "Corporate", "Environmental"];
 
   // Fetch pre-populated documents
   const { data: prePoulatedDocs, isLoading: isLoadingDocs } = useQuery<LegalDocument[]>({
-    queryKey: ['/api/legal-research/documents'],
+    queryKey: ['/api/legal-research/documents', filters],
     queryFn: async () => {
-      const response = await fetch('/api/legal-research/documents');
+      const searchParams = new URLSearchParams();
+      if (filters.jurisdiction !== 'all') searchParams.append('jurisdiction', filters.jurisdiction);
+      if (filters.startDate) searchParams.append('startDate', filters.startDate.toISOString());
+      if (filters.endDate) searchParams.append('endDate', filters.endDate.toISOString());
+      if (filters.legalTopic !== 'all') searchParams.append('topic', filters.legalTopic);
+
+      const response = await fetch(`/api/legal-research/documents?${searchParams.toString()}`);
       if (!response.ok) {
         throw new Error('Failed to fetch documents');
       }
@@ -64,7 +89,7 @@ export default function LegalResearch() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ query, filters })
       });
 
       if (!response.ok) {
@@ -127,6 +152,73 @@ export default function LegalResearch() {
             <h2 className="text-3xl font-bold">Legal Research</h2>
           </div>
 
+          {/* Filters Section */}
+          <Card className="bg-white/80 backdrop-blur-lg">
+            <CardHeader>
+              <CardTitle>Filters</CardTitle>
+              <CardDescription>Refine your search results</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Jurisdiction</label>
+                  <Select
+                    value={filters.jurisdiction}
+                    onValueChange={(value) => setFilters(prev => ({ ...prev, jurisdiction: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select jurisdiction" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jurisdictions.map((j) => (
+                        <SelectItem key={j.toLowerCase()} value={j.toLowerCase()}>
+                          {j}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Legal Topic</label>
+                  <Select
+                    value={filters.legalTopic}
+                    onValueChange={(value) => setFilters(prev => ({ ...prev, legalTopic: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select topic" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {legalTopics.map((t) => (
+                        <SelectItem key={t.toLowerCase()} value={t.toLowerCase()}>
+                          {t}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Date Range</label>
+                  <div className="flex gap-2">
+                    <Calendar
+                      mode="single"
+                      selected={filters.startDate}
+                      onSelect={(date) => setFilters(prev => ({ ...prev, startDate: date }))}
+                      className="rounded-md border"
+                    />
+                    <Calendar
+                      mode="single"
+                      selected={filters.endDate}
+                      onSelect={(date) => setFilters(prev => ({ ...prev, endDate: date }))}
+                      className="rounded-md border"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Pre-populated Documents */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-8">
             {isLoadingDocs ? (
@@ -139,7 +231,7 @@ export default function LegalResearch() {
               </Card>
             ) : (
               prePoulatedDocs?.map((doc) => (
-                <Card 
+                <Card
                   key={doc.id}
                   className="bg-white/80 backdrop-blur-lg hover:shadow-lg transition-shadow cursor-pointer"
                   onClick={() => setQuery(`Analyze the legal principles and implications of ${doc.title}`)}
