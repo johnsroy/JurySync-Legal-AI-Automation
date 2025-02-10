@@ -16,7 +16,26 @@ import { Textarea } from "@/components/ui/textarea";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartTooltip, ResponsiveContainer } from 'recharts';
 import React from 'react';
 
-// Interfaces remain the same...
+// Add DashboardInsights query
+interface DashboardInsight {
+  summary: string;
+  trends: {
+    label: string;
+    value: number;
+    change: number;
+    insight: string;
+  }[];
+  riskDistribution: {
+    category: string;
+    count: number;
+    percentage: number;
+  }[];
+  recommendations: {
+    priority: 'HIGH' | 'MEDIUM' | 'LOW';
+    action: string;
+    impact: string;
+  }[];
+}
 
 interface UploadedDocument {
   id: string;
@@ -60,25 +79,6 @@ interface ComplianceResult {
   }[];
 }
 
-interface DashboardInsights {
-  summary: string;
-  trends: {
-    label: string;
-    value: number;
-    change: number;
-    insight: string;
-  }[];
-  riskDistribution: {
-    category: string;
-    count: number;
-    percentage: number;
-  }[];
-  recommendations: {
-    priority: 'HIGH' | 'MEDIUM' | 'LOW';
-    action: string;
-    impact: string;
-  }[];
-}
 
 export default function ComplianceAuditing() {
   const { user, logoutMutation } = useAuth();
@@ -86,6 +86,29 @@ export default function ComplianceAuditing() {
   const queryClient = useQueryClient();
   const [documentText, setDocumentText] = useState("");
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
+
+  // Add dashboard insights query
+  const { data: dashboardInsights, isLoading: isLoadingInsights } = useQuery<DashboardInsight | null>({
+    queryKey: ['dashboard-insights'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('/api/compliance/dashboard-insights');
+        if (!response.ok) {
+          throw new Error('Failed to fetch dashboard insights');
+        }
+        return response.json();
+      } catch (error) {
+        console.error('Dashboard insights fetch error:', error);
+        toast({
+          title: "Error Loading Insights",
+          description: "Failed to load dashboard insights. Please try again.",
+          variant: "destructive"
+        });
+        return null;
+      }
+    },
+    refetchInterval: 300000 // Refresh every 5 minutes
+  });
 
   // Fetch uploaded documents with enhanced error handling
   const { data: uploadedDocuments = [], isLoading: isLoadingDocuments } = useQuery({
@@ -369,104 +392,109 @@ export default function ComplianceAuditing() {
       </header>
 
       {/* Dashboard Overview */}
-      <div className="mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Dashboard Overview</h2>
-        {isLoadingInsights ? (
-          <div className="grid gap-4 md:grid-cols-3">
-            {Array(3).fill(0).map((_, i) => (
-              <Card key={i} className="bg-white/80 backdrop-blur-lg animate-pulse">
-                <CardHeader className="h-32" />
-              </Card>
-            ))}
-          </div>
-        ) : dashboardInsights ? (
-          <>
-            <div className="grid gap-4 md:grid-cols-3 mb-6">
-              {dashboardInsights.trends.map((trend, index) => (
-                <Card key={index} className="bg-white/80 backdrop-blur-lg">
-                  <CardHeader>
-                    <CardTitle className="text-sm font-medium text-gray-500">
-                      {trend.label}
-                    </CardTitle>
-                    <div className="flex items-center justify-between">
-                      <div className="text-2xl font-bold">{trend.value}</div>
-                      <div className={`flex items-center ${
-                        trend.change > 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        <TrendingUp className="h-4 w-4 mr-1" />
-                        {Math.abs(trend.change)}%
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-gray-600">{trend.insight}</p>
-                  </CardContent>
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-7xl mx-auto space-y-6">
+          <h2 className="text-2xl font-semibold mb-4">Dashboard Overview</h2>
+          {isLoadingInsights ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              {Array(3).fill(0).map((_, i) => (
+                <Card key={i} className="bg-white/80 backdrop-blur-lg animate-pulse">
+                  <CardHeader className="h-32" />
                 </Card>
               ))}
             </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
-              {/* Risk Distribution */}
-              <Card className="bg-white/80 backdrop-blur-lg">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>Risk Distribution</CardTitle>
-                    <BarChart2 className="h-4 w-4 text-gray-400" />
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {dashboardInsights.riskDistribution.map((risk, index) => (
-                      <div key={index}>
-                        <div className="flex items-center justify-between text-sm">
-                          <span>{risk.category}</span>
-                          <span className="font-medium">{risk.percentage}%</span>
+          ) : dashboardInsights ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-3 mb-6">
+                {dashboardInsights.trends.map((trend, index) => (
+                  <Card key={index} className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle className="text-sm font-medium text-gray-500">
+                        {trend.label}
+                      </CardTitle>
+                      <div className="flex items-center justify-between">
+                        <div className="text-2xl font-bold">{trend.value}</div>
+                        <div className={`flex items-center ${
+                          trend.change > 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          <TrendingUp className="h-4 w-4 mr-1" />
+                          {Math.abs(trend.change)}%
                         </div>
-                        <div className="h-2 bg-gray-100 rounded-full mt-1">
-                          <div
-                            className="h-full bg-green-500 rounded-full"
-                            style={{ width: `${risk.percentage}%` }}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-gray-600">{trend.insight}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="grid gap-6 md:grid-cols-2">
+                {/* Risk Distribution */}
+                <Card className="bg-white/80 backdrop-blur-lg">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>Risk Distribution</CardTitle>
+                      <BarChart2 className="h-4 w-4 text-gray-400" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {dashboardInsights.riskDistribution.map((risk, index) => (
+                        <div key={index}>
+                          <div className="flex items-center justify-between text-sm">
+                            <span>{risk.category}</span>
+                            <span className="font-medium">{risk.percentage}%</span>
+                          </div>
+                          <Progress 
+                            value={risk.percentage} 
+                            className="h-2"
+                            indicatorClassName={
+                              risk.category === 'High Risk' ? 'bg-red-500' :
+                              risk.category === 'Medium Risk' ? 'bg-yellow-500' :
+                              'bg-green-500'
+                            }
                           />
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
 
-              {/* Key Recommendations */}
-              <Card className="bg-white/80 backdrop-blur-lg">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>Key Recommendations</CardTitle>
-                    <ShieldAlert className="h-4 w-4 text-gray-400" />
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {dashboardInsights.recommendations.map((rec, index) => (
-                      <div key={index} className="flex items-start gap-4">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          rec.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
-                            rec.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-green-100 text-green-700'
-                        }`}>
-                          {rec.priority}
-                        </span>
-                        <div>
-                          <p className="font-medium">{rec.action}</p>
-                          <p className="text-sm text-gray-600">{rec.impact}</p>
+                {/* Key Recommendations */}
+                <Card className="bg-white/80 backdrop-blur-lg">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>Key Recommendations</CardTitle>
+                      <ShieldAlert className="h-4 w-4 text-gray-400" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {dashboardInsights.recommendations.map((rec, index) => (
+                        <div key={index} className="flex items-start gap-4">
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            rec.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
+                              rec.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-green-100 text-green-700'
+                          }`}>
+                            {rec.priority}
+                          </span>
+                          <div>
+                            <p className="font-medium">{rec.action}</p>
+                            <p className="text-sm text-gray-600">{rec.impact}</p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </>
-        ) : (
-          <p className="text-center text-gray-500">Unable to load dashboard insights</p>
-        )}
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          ) : (
+            <p className="text-center text-gray-500">Unable to load dashboard insights</p>
+          )}
+        </div>
       </div>
 
 
