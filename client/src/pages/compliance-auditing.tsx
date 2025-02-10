@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { useDropzone } from 'react-dropzone';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -108,8 +109,8 @@ const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ o
       {...getRootProps()}
       className={`
         border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all
-        ${isDragActive 
-          ? 'border-green-500 bg-green-50' 
+        ${isDragActive
+          ? 'border-green-500 bg-green-50'
           : 'border-gray-300 hover:border-green-400 hover:bg-gray-50'
         }
       `}
@@ -160,6 +161,104 @@ const PerformanceMetrics: React.FC<{ data: AuditResponse['data'] }> = ({ data })
   </Card>
 );
 
+// Add new components for better visualization
+function AnalyticsSummary({ data }: { data: AuditResponse['data'] }) {
+  return (
+    <Card className="bg-white/80 backdrop-blur-lg">
+      <CardHeader>
+        <CardTitle>Analysis Summary</CardTitle>
+        <CardDescription>Quick overview of document analysis</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {data?.quickStats && (
+            <>
+              <div className="p-4 rounded-lg bg-blue-50">
+                <p className="text-lg font-semibold text-blue-600">
+                  {data.quickStats.wordCount.toLocaleString()}
+                </p>
+                <p className="text-sm text-gray-600">Words Analyzed</p>
+              </div>
+              <div className="p-4 rounded-lg bg-green-50">
+                <p className="text-lg font-semibold text-green-600">
+                  {data.quickStats.paragraphCount.toLocaleString()}
+                </p>
+                <p className="text-sm text-gray-600">Paragraphs</p>
+              </div>
+              <div className="p-4 rounded-lg bg-purple-50">
+                <p className="text-lg font-semibold text-purple-600">
+                  {Math.round((data.quickStats.characterCount / data.quickStats.wordCount) * 10) / 10}
+                </p>
+                <p className="text-sm text-gray-600">Avg Word Length</p>
+              </div>
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Add trends visualization
+function TrendsVisualization({ data }: { data: AuditResponse['data'] }) {
+  if (!data?.riskTrend?.length) return null;
+
+  return (
+    <Card className="bg-white/80 backdrop-blur-lg">
+      <CardHeader>
+        <CardTitle>Risk Trends</CardTitle>
+        <CardDescription>Historical compliance risk analysis</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data.riskTrend}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip />
+              <Line
+                type="monotone"
+                dataKey="score"
+                stroke="#2563eb"
+                strokeWidth={2}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Add issue distribution chart
+function IssueDistribution({ data }: { data: AuditResponse['data'] }) {
+  if (!data?.issueFrequency?.length) return null;
+
+  return (
+    <Card className="bg-white/80 backdrop-blur-lg">
+      <CardHeader>
+        <CardTitle>Issue Distribution</CardTitle>
+        <CardDescription>Breakdown of compliance issues by category</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data.issueFrequency}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="category" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="count" fill="#2563eb" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Update the main component's results display section
 export const ComplianceAuditing: React.FC = () => {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
@@ -233,7 +332,7 @@ export const ComplianceAuditing: React.FC = () => {
       }
     },
     enabled: !!taskId,
-    refetchInterval: (data) => 
+    refetchInterval: (data) =>
       data?.status === 'processing' ? 2000 : false,
     retry: 3
   });
@@ -424,54 +523,78 @@ export const ComplianceAuditing: React.FC = () => {
                 </Alert>
               )}
 
-              {/* Results */}
-              {result?.data?.issues && (
-                <Card className="bg-white/80 backdrop-blur-lg">
-                  <CardHeader>
-                    <CardTitle>Compliance Issues</CardTitle>
-                    <CardDescription>
-                      Found {result.data.issues.length} potential compliance issues
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-[400px] pr-4">
-                      <div className="space-y-4">
-                        {result.data.issues.map((issue) => (
-                          <Card key={issue.id} className="bg-white">
-                            <CardContent className="pt-6">
-                              <div className="flex items-start justify-between gap-4">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Badge
-                                      variant={issue.riskScore > 7 ? "destructive" : issue.riskScore > 4 ? "default" : "secondary"}
-                                    >
-                                      Risk Score: {issue.riskScore}
-                                    </Badge>
-                                    <Badge variant="outline">{issue.category}</Badge>
-                                    <Badge variant={
-                                      issue.severity === 'high' ? 'destructive' :
-                                      issue.severity === 'medium' ? 'default' : 'secondary'
-                                    }>
-                                      {issue.severity}
-                                    </Badge>
+              {/* Enhanced Results Display */}
+              {result?.status === 'completed' && result.data && (
+                <div className="space-y-6">
+                  {/* Analytics Summary */}
+                  <AnalyticsSummary data={result.data} />
+
+                  {/* Risk Trends */}
+                  <TrendsVisualization data={result.data} />
+
+                  {/* Issue Distribution */}
+                  <IssueDistribution data={result.data} />
+
+                  {/* Detailed Issues List */}
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between">
+                        <span>Compliance Issues</span>
+                        {result.data.issues && (
+                          <Badge variant="outline" className="ml-2">
+                            {result.data.issues.length} found
+                          </Badge>
+                        )}
+                      </CardTitle>
+                      <CardDescription>
+                        Detailed analysis of potential compliance issues
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-[400px] pr-4">
+                        <div className="space-y-4">
+                          {result.data.issues?.map((issue) => (
+                            <Card key={issue.id} className="bg-white">
+                              <CardContent className="pt-6">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Badge
+                                        variant={
+                                          issue.severity === 'high' ? 'destructive' :
+                                          issue.severity === 'medium' ? 'default' : 'secondary'
+                                        }
+                                      >
+                                        {issue.severity}
+                                      </Badge>
+                                      <Badge variant="outline">{issue.category}</Badge>
+                                      <Badge variant={
+                                        issue.riskScore > 7 ? "destructive" :
+                                        issue.riskScore > 4 ? "default" : "secondary"
+                                      }>
+                                        Risk: {issue.riskScore}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-sm text-gray-600">{issue.description}</p>
+                                    {issue.regulatoryReference && (
+                                      <p className="text-sm text-gray-500 mt-1">
+                                        Reference: {issue.regulatoryReference}
+                                      </p>
+                                    )}
+                                    <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                                      <p className="text-sm font-medium text-gray-900">Recommendation:</p>
+                                      <p className="text-sm text-gray-600 mt-1">{issue.recommendation}</p>
+                                    </div>
                                   </div>
-                                  <p className="text-sm text-gray-600">{issue.description}</p>
-                                  {issue.regulatoryReference && (
-                                    <p className="text-sm text-gray-500 mt-1">
-                                      Reference: {issue.regulatoryReference}
-                                    </p>
-                                  )}
-                                  <p className="text-sm font-medium mt-2">Recommendation:</p>
-                                  <p className="text-sm text-gray-600">{issue.recommendation}</p>
                                 </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </div>
               )}
 
               {/* Empty State */}
