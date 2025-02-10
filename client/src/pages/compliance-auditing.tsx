@@ -14,6 +14,21 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { useDropzone } from 'react-dropzone';
 
+// Document cleaning utility
+const cleanDocumentText = (text: string): string => {
+  if (!text) return '';
+
+  // Remove DOCTYPE and HTML tags
+  return text
+    .replace(/<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi, '')
+    .replace(/<\?xml\s+[^>]*\?>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
 // Define interfaces for the compliance audit data
 interface QuickStats {
   characterCount: number;
@@ -57,16 +72,34 @@ interface AuditResponse {
   progress?: number;
 }
 
-// File upload component with improved file type support
+// Enhanced FileUploadZone with preprocessing
 const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ onFileSelect }) => {
-  const { getRootProps, getInputProps, isDragActive, acceptedFiles } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
       'application/pdf': ['.pdf'],
       'application/msword': ['.doc'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt']
     },
-    onDrop: onFileSelect,
+    onDrop: async (acceptedFiles) => {
+      // Process each file to extract and clean text content
+      const processedFiles = acceptedFiles.map(async (file) => {
+        if (file.type === 'text/plain') {
+          const text = await file.text();
+          const cleanedText = cleanDocumentText(text);
+          // Create a new file with cleaned content
+          return new File(
+            [cleanedText],
+            file.name,
+            { type: 'text/plain' }
+          );
+        }
+        return file;
+      });
+
+      const cleanedFiles = await Promise.all(processedFiles);
+      onFileSelect(cleanedFiles);
+    },
     multiple: true
   });
 
@@ -134,24 +167,36 @@ export const ComplianceAuditing: React.FC = () => {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
-  // Document submission mutation
+  // Document submission mutation with enhanced error handling
   const submitDocument = useMutation({
     mutationFn: async () => {
-      const formData = new FormData();
-      uploadedFiles.forEach(file => formData.append('files', file));
-      formData.append('text', documentText);
+      try {
+        const formData = new FormData();
 
-      const response = await fetch('/api/compliance/audit', {
-        method: 'POST',
-        body: formData
-      });
+        // Clean text input if present
+        if (documentText) {
+          const cleanedText = cleanDocumentText(documentText);
+          formData.append('text', cleanedText);
+        }
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to submit document');
+        // Add files
+        uploadedFiles.forEach(file => formData.append('files', file));
+
+        const response = await fetch('/api/compliance/audit', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to submit document');
+        }
+
+        return response.json();
+      } catch (error: any) {
+        console.error('Document submission error:', error);
+        throw new Error(error.message || 'An error occurred while submitting the document');
       }
-
-      return response.json();
     },
     onSuccess: (data: AuditResponse) => {
       setTaskId(data.taskId);
@@ -169,18 +214,23 @@ export const ComplianceAuditing: React.FC = () => {
     }
   });
 
-  // Results polling query
+  // Results polling query with better error handling
   const { data: result, isLoading } = useQuery<AuditResponse>({
     queryKey: ['audit-result', taskId],
     queryFn: async () => {
       if (!taskId) return null;
 
-      const response = await fetch(`/api/compliance/audit/${taskId}/result`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch results');
-      }
+      try {
+        const response = await fetch(`/api/compliance/audit/${taskId}/result`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch results');
+        }
 
-      return response.json();
+        return response.json();
+      } catch (error: any) {
+        console.error('Error fetching audit results:', error);
+        throw new Error('Failed to fetch audit results');
+      }
     },
     enabled: !!taskId,
     refetchInterval: (data) => 
@@ -188,8 +238,27 @@ export const ComplianceAuditing: React.FC = () => {
     retry: 3
   });
 
-  // Handle file selection
+  // Enhanced file selection handler with validation
   const handleFileSelect = (files: File[]) => {
+    if (files.length > 5) {
+      toast({
+        title: "Too Many Files",
+        description: "Please upload a maximum of 5 files at once",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalSize > 10 * 1024 * 1024) { // 10MB limit
+      toast({
+        title: "Files Too Large",
+        description: "Total file size should not exceed 10MB",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setUploadedFiles(files);
     toast({
       title: "Files Added",

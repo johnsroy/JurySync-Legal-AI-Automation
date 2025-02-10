@@ -1,10 +1,12 @@
 import { Anthropic } from '@anthropic-ai/sdk';
 import { complianceAuditService } from './complianceAuditService';
+import { legalResearchService } from './legalResearchService';
 import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 
 const HTML_TAG_REGEX = /<[^>]*>|<!DOCTYPE.*?>/i;
+const DOCTYPE_REGEX = /<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi;
 const INVALID_CHARACTERS_REGEX = /[\u0000-\u0008\u000B-\u000C\u000E-\u001F]/g;
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -27,7 +29,6 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
   console.log(`[${timestamp}] [Orchestrator] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
 }
 
-// Task management with persistent state
 class TaskManager {
   private static instance: TaskManager;
   private tasks: Map<string, any>;
@@ -150,65 +151,6 @@ class TaskManager {
   }
 }
 
-const validateAuditReport = (report: any) => {
-  if (!report?.auditReport) {
-    throw new Error('Missing auditReport structure');
-  }
-
-  const { auditReport } = report;
-
-  // Validate required sections
-  const requiredSections = [
-    'summary',
-    'flaggedIssues',
-    'riskScores',
-    'recommendedActions',
-    'visualizationData'
-  ];
-
-  const missingSections = requiredSections.filter(section => !auditReport[section]);
-  if (missingSections.length > 0) {
-    throw new Error(`Missing required sections: ${missingSections.join(', ')}`);
-  }
-
-  // Validate sub-structures
-  if (!Array.isArray(auditReport.flaggedIssues)) {
-    throw new Error('flaggedIssues must be an array');
-  }
-
-  if (!auditReport.riskScores?.distribution ||
-      typeof auditReport.riskScores.average !== 'number') {
-    throw new Error('Invalid riskScores structure');
-  }
-
-  if (!Array.isArray(auditReport.recommendedActions)) {
-    throw new Error('recommendedActions must be an array');
-  }
-
-  if (!auditReport.visualizationData?.complianceScores ||
-      !Array.isArray(auditReport.visualizationData.riskTrend)) {
-    throw new Error('Invalid visualizationData structure');
-  }
-
-  return true;
-};
-
-// Add validation utilities
-function containsHTMLTags(text: string): boolean {
-  return HTML_TAG_REGEX.test(text);
-}
-
-function normalizeText(text: string): string {
-  return text
-    .replace(/\r\n/g, '\n') // Normalize Windows line endings
-    .replace(/\r/g, '\n')   // Normalize Mac line endings
-    .replace(/\n\n+/g, '\n\n') // Normalize multiple line breaks
-    .replace(/\t/g, '    ') // Convert tabs to spaces
-    .replace(INVALID_CHARACTERS_REGEX, '') // Remove control characters
-    .trim();
-}
-
-
 export class OrchestratorService {
   private static instance: OrchestratorService;
   private taskManager: TaskManager;
@@ -225,54 +167,48 @@ export class OrchestratorService {
   }
 
   private async classifyDocument(text: string): Promise<{
-    type: 'contract' | 'compliance' | 'research',
+    type: 'contract' | 'compliance' | 'research' | 'mixed',
+    subtypes: string[],
     confidence: number,
-    keywords: string[]
+    keywords: string[],
+    crossModuleRelevance: {
+      compliance: boolean,
+      contract: boolean,
+      research: boolean
+    }
   }> {
     try {
-      log('Starting document classification', 'info');
+      log('Starting enhanced document classification', 'info');
 
-      // Simple keyword-based classification
+      // Advanced keyword-based pre-classification
       const textLower = text.toLowerCase();
       const matchedKeywords = COMPLIANCE_KEYWORDS.filter(keyword =>
         textLower.includes(keyword.toLowerCase())
       );
 
-      // If we find multiple compliance keywords, classify as compliance
-      if (matchedKeywords.length >= 2) {
-        log('Document classified via keywords', 'info', {
-          type: 'compliance',
-          confidence: Math.min(matchedKeywords.length / 5, 1),
-          matchedKeywords
-        });
-
-        return {
-          type: 'compliance',
-          confidence: Math.min(matchedKeywords.length / 5, 1), // Normalize confidence
-          keywords: matchedKeywords
-        };
-      }
-
-      // If insufficient keywords found, use Claude for advanced classification
+      // Use Claude for comprehensive classification
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
-        max_tokens: 150,
+        max_tokens: 1000,
         messages: [{
           role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Classify this document as either 'contract', 'compliance', or 'research'. First 500 chars:
-              ${text.substring(0, 500)}
+          content: `Analyze this legal document comprehensively and classify it. Consider multiple aspects and possible cross-module relevance.
 
-              Format response as JSON:
-              {
-                "type": "contract|compliance|research",
-                "confidence": number between 0-1,
-                "reasoning": "brief explanation"
-              }`
-            }
-          ]
+First 1000 chars: ${text.substring(0, 1000)}
+
+Provide response as JSON:
+{
+  "type": "contract|compliance|research|mixed",
+  "subtypes": ["array of specific document types"],
+  "confidence": number between 0-1,
+  "reasoning": "brief explanation",
+  "crossModuleRelevance": {
+    "compliance": boolean,
+    "contract": boolean,
+    "research": boolean
+  },
+  "keywords": ["key legal terms found"]
+}`
         }]
       });
 
@@ -283,102 +219,70 @@ export class OrchestratorService {
 
       const result = JSON.parse(content.text);
 
-      log('Document classified via AI', 'info', {
-        type: result.type,
-        confidence: result.confidence,
-        reasoning: result.reasoning
+      log('Enhanced document classification completed', 'info', {
+        classification: result,
+        keywordMatches: matchedKeywords
       });
 
       return {
-        type: result.type as 'contract' | 'compliance' | 'research',
-        confidence: result.confidence,
-        keywords: matchedKeywords
+        ...result,
+        keywords: [...new Set([...result.keywords, ...matchedKeywords])]
       };
+
     } catch (error: any) {
-      log('Document classification failed', 'error', {
-        error: error.message,
-        stack: error.stack
-      });
+      log('Document classification failed', 'error', { error });
       throw new Error(`Classification failed: ${error.message}`);
     }
   }
 
   async distributeTask(input: {
-    type: 'contract' | 'compliance' | 'research',
+    type?: 'contract' | 'compliance' | 'research',
     data: any
   }) {
     const taskId = `task_${Date.now()}`;
 
-    // Add detailed logging of input
-    log('Received audit request', 'info', { 
+    log('Received document processing request', 'info', {
       taskId,
       inputType: input.type,
-      hasData: !!input.data,
-      dataKeys: input.data ? Object.keys(input.data) : [],
-      documentTextLength: input.data?.documentText?.length,
-      documentTextType: typeof input.data?.documentText,
-      rawInput: JSON.stringify(input)
+      hasData: !!input.data
     });
 
     try {
-      // Enhanced input validation
       if (!input?.data) {
         throw new Error('Request data is required');
       }
 
-      if (!input.data.documentText) {
-        throw new Error('Document text is missing from request');
-      }
+      // Clean and validate document text
+      const cleanedText = this.cleanAndValidateDocument(input.data.documentText);
 
-      if (typeof input.data.documentText !== 'string') {
-        throw new Error(`Invalid document text type: ${typeof input.data.documentText}`);
-      }
-
-      // Check for HTML tags
-      if (containsHTMLTags(input.data.documentText)) {
-        log('Validation failed: HTML tags detected', 'error', {
-          taskId,
-          sampleText: input.data.documentText.substring(0, 100),
-          matches: input.data.documentText.match(HTML_TAG_REGEX)
-        });
-        throw new Error('Document must be plain text without HTML formatting');
-      }
-
-      // Normalize text
-      const normalizedText = normalizeText(input.data.documentText);
-
-      if (normalizedText.length === 0) {
-        throw new Error('Document text cannot be empty');
-      }
-
-      if (!input.type || !['contract', 'compliance', 'research'].includes(input.type)) {
-        throw new Error(`Invalid document type: ${input.type}`);
-      }
-
-      // Create task with validated and normalized data
-      const task = this.taskManager.createTask(taskId, input.type, {
+      // Create initial task
+      const task = this.taskManager.createTask(taskId, input.type || 'unknown', {
         ...input.data,
-        documentText: normalizedText
+        documentText: cleanedText
       });
 
-      log('Audit task created successfully', 'info', { 
-        taskId,
-        documentLength: normalizedText.length,
-        type: input.type
+      // Classify document if type not provided
+      const classification = await this.classifyDocument(cleanedText);
+
+      // Update task with classification
+      this.taskManager.updateTask(taskId, {
+        type: classification.type,
+        metadata: {
+          classification,
+          crossModuleRelevance: classification.crossModuleRelevance
+        }
       });
 
       // Start processing in background
-      this.processTask(taskId).catch(error => {
-        log('Task processing error', 'error', {
+      this.processDocument(taskId, classification).catch(error => {
+        log('Document processing error', 'error', {
           taskId,
-          error: error.message,
-          stack: error.stack
+          error: error.message
         });
 
         this.taskManager.updateTask(taskId, {
           status: 'error',
           error: error.message,
-          errorDetails: error.stack,
           progress: 0
         });
       });
@@ -386,141 +290,117 @@ export class OrchestratorService {
       return {
         taskId,
         status: 'processing',
-        type: input.type,
+        type: classification.type,
         metadata: {
           createdAt: new Date().toISOString(),
-          documentLength: normalizedText.length
+          classification
         }
       };
 
     } catch (error: any) {
-      log('Task distribution error:', 'error', {
+      log('Task distribution error', 'error', {
         taskId,
-        error: error.message,
-        stack: error.stack,
-        inputData: JSON.stringify(input)
+        error: error.message
       });
 
-      // Format error response
-      const errorResponse = {
-        error: 'Invalid request data',
+      throw {
+        error: 'Failed to process document',
         details: error.message,
-        code: 'VALIDATION_ERROR',
-        requestId: taskId,
-        timestamp: new Date().toISOString()
+        code: 'PROCESSING_ERROR',
+        requestId: taskId
       };
-
-      this.taskManager.updateTask(taskId, {
-        status: 'error',
-        error: error.message,
-        errorDetails: error.stack,
-        progress: 0
-      });
-
-      throw errorResponse;
     }
   }
 
-  private async processTask(taskId: string) {
+  private cleanAndValidateDocument(text: string): string {
+    if (!text || typeof text !== 'string') {
+      throw new Error('Invalid document text');
+    }
+
+    log('Starting document cleaning', 'debug', {
+      originalLength: text.length,
+      hasDOCTYPE: DOCTYPE_REGEX.test(text)
+    });
+
+    // Remove DOCTYPE and HTML
+    let cleaned = text
+      .replace(DOCTYPE_REGEX, '')
+      .replace(/<\?xml\s+[^>]*\?>/gi, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ');
+
+    // Normalize whitespace
+    cleaned = cleaned
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (cleaned.length === 0) {
+      throw new Error('Document text cannot be empty after cleaning');
+    }
+
+    log('Document cleaning completed', 'debug', {
+      finalLength: cleaned.length,
+      hasDOCTYPEAfterCleaning: DOCTYPE_REGEX.test(cleaned)
+    });
+
+    return cleaned;
+  }
+
+  private async processDocument(taskId: string, classification: any) {
     const task = this.taskManager.getTask(taskId);
     if (!task) throw new Error('Task not found');
 
-    const { data } = task;
-    log('Starting task processing', 'info', { taskId, type: task.type });
+    const { documentText } = task.data;
+    const results: any = {};
 
     try {
-      this.taskManager.updateTask(taskId, {
-        status: 'processing',
-        progress: 25
-      });
-
-      // Calculate basic statistics immediately
-      const quickStats = {
-        characterCount: data.documentText.length,
-        wordCount: data.documentText.trim().split(/\s+/).length,
-        lineCount: data.documentText.trim().split('\n').length,
-        paragraphCount: data.documentText.trim().split('\n\n').length,
-      };
-
-      // Update task with quick stats
-      this.taskManager.updateTask(taskId, {
-        status: 'processing',
-        progress: 50,
-        quickStats
-      });
-
-      let result;
-
-      // Process based on task type with timeout handling
-      if (task.type === 'policy' || task.type === 'compliance') {
-        // Set a longer timeout for AI analysis
-        const timeout = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Analysis timeout')), 180000); // 3 minute timeout
-        });
-
-        try {
-          // Return quick stats immediately while full analysis continues
-          this.taskManager.setTaskResult(taskId, {
-            status: 'processing',
-            data: {
-              quickStats,
-              auditReport: null
-            },
-            progress: 75
-          });
-
-          // Race between the analysis and timeout
-          result = await Promise.race([
-            complianceAuditService.analyzeDocument(data.documentText, taskId),
-            timeout
-          ]);
-
-          if (!result) {
-            throw new Error('Analysis produced no results');
-          }
-
-          // Add quick stats to final result
-          result.quickStats = quickStats;
-
-          this.taskManager.setTaskResult(taskId, {
-            status: 'completed',
-            data: result,
-            completedAt: new Date().toISOString()
-          });
-
-        } catch (error: any) {
-          log('Analysis error:', 'error', {
-            taskId,
-            error: error.message,
-            stack: error.stack
-          });
-
-          // Even if full analysis fails, return quick stats
-          this.taskManager.setTaskResult(taskId, {
-            status: 'error',
-            error: error.message,
-            data: { quickStats },
-            completedAt: new Date().toISOString()
-          });
-
-          throw error;
-        }
-      } else {
-        throw new Error(`Unsupported task type: ${task.type}`);
+      // Process for each relevant module based on classification
+      if (classification.crossModuleRelevance.compliance) {
+        results.compliance = await complianceAuditService.analyzeDocument(documentText, taskId);
       }
 
-    } catch (error: any) {
-      log(`Error processing task ${taskId}:`, 'error', {
-        error: error.message,
-        stack: error.stack
+      if (classification.crossModuleRelevance.research) {
+        results.research = await legalResearchService.analyzeDocument(task.data.documentId);
+      }
+
+      // Store results in database
+      const [document] = await db
+        .insert(legalDocuments)
+        .values({
+          title: task.data.title || 'Untitled Document',
+          content: documentText,
+          documentType: classification.type,
+          analysis: results,
+          metadata: {
+            classification,
+            processingDetails: {
+              taskId,
+              completedAt: new Date().toISOString(),
+              modules: Object.keys(results)
+            }
+          }
+        })
+        .returning();
+
+      this.taskManager.setTaskResult(taskId, {
+        documentId: document.id,
+        results,
+        classification
       });
 
-      this.taskManager.updateTask(taskId, {
-        status: 'error',
-        error: error.message,
-        errorDetails: error.stack,
-        progress: 0
+      log('Document processing completed', 'info', {
+        taskId,
+        documentId: document.id,
+        processedModules: Object.keys(results)
       });
+
+    } catch (error: any) {
+      log('Error processing document', 'error', {
+        taskId,
+        error: error.message
+      });
+      throw error;
     }
   }
 
