@@ -2,42 +2,37 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
-import { riskAssessmentService } from "../services/riskAssessment";
-import { monitorDocument } from "../services/complianceMonitor";
+import { complianceAuditService } from "../services/complianceAuditService";
 import { eq } from "drizzle-orm";
-import { modelRouter } from "../services/modelRouter";
 
 const router = Router();
 
 // Configure multer for memory storage
-const storage = multer.memoryStorage();
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (_req, file, cb) => {
-    // Check file type with more specific MIME types
     const allowedTypes = [
       'application/pdf',
-      'application/msword',                     // .doc
-      'application/vnd.ms-word',                // .doc
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-      'application/vnd.wordprocessing-draft',   // Alternative DOCX
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/plain'
     ];
 
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Invalid file type. Received: ${file.mimetype}. Only PDF, DOC, DOCX, and TXT files are supported`));
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are supported'));
     }
   }
 }).single('file');
 
+// Handle document upload
 router.post('/upload', async (req, res) => {
   try {
-    // Handle file upload with Promise wrapper
+    // Handle file upload
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
         if (err) reject(err);
@@ -54,7 +49,7 @@ router.post('/upload', async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Insert document record
+    // Create document record
     const [document] = await db
       .insert(complianceDocuments)
       .values({
@@ -65,71 +60,106 @@ router.post('/upload', async (req, res) => {
         status: "PENDING",
         riskScore: 0,
         lastScanned: null,
-        nextScanDue: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        nextScanDue: null
       })
       .returning();
 
-    // Process document using ModelRouter
-    const taskId = `compliance-${document.id}`;
-    const systemPrompt = `
-      You are a legal compliance expert. Analyze the provided document for compliance issues.
-      Provide a structured analysis with the following JSON format:
-      {
-        "compliance_score": number (0-100),
-        "identified_issues": [
-          {
-            "severity": "high" | "medium" | "low",
-            "description": string,
-            "recommendation": string
-          }
-        ],
-        "summary": string
-      }
-    `;
-
-    // Convert buffer to text safely
-    const textContent = req.file.buffer.toString('utf-8');
-
-    // Process in background
-    modelRouter.processTask(taskId, "compliance-analysis", textContent, systemPrompt)
-      .then(async (result) => {
-        // Update document with analysis results
-        await db
-          .update(complianceDocuments)
-          .set({ 
-            status: "MONITORING",
-            lastScanned: new Date(),
-            riskScore: result.qualityScore * 100,
-          })
-          .where(eq(complianceDocuments.id, document.id));
-
-        await riskAssessmentService.assessDocument(document.id, result.output);
-      })
-      .catch(error => {
-        console.error(`Analysis failed for document ${document.id}:`, error);
-        db.update(complianceDocuments)
-          .set({ 
-            status: "ERROR",
-          })
-          .where(eq(complianceDocuments.id, document.id))
-          .execute()
-          .catch(err => console.error('Failed to update document status:', err));
-      });
+    // Start analysis in background
+    complianceAuditService
+      .analyzeDocument(document.id, document.content)
+      .catch(error => console.error('Analysis failed:', error));
 
     return res.json({
       success: true,
       documentId: document.id,
-      title: req.file.originalname,
-      status: 'PENDING'
+      message: 'Document uploaded and queued for analysis'
     });
 
   } catch (error: any) {
     console.error('Upload error:', error);
-    const status = error.status || 500;
-    const message = error.message || 'Upload failed';
-    return res.status(status).json({ error: message });
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Handle pasted document content
+router.post('/analyze', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { content, title } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: 'No content provided' });
+    }
+
+    // Create document record
+    const [document] = await db
+      .insert(complianceDocuments)
+      .values({
+        userId,
+        title: title || 'Pasted Document',
+        content,
+        documentType: 'text/plain',
+        status: "PENDING",
+        riskScore: 0,
+        lastScanned: null,
+        nextScanDue: null
+      })
+      .returning();
+
+    // Start analysis in background
+    complianceAuditService
+      .analyzeDocument(document.id, content)
+      .catch(error => console.error('Analysis failed:', error));
+
+    return res.json({
+      success: true,
+      documentId: document.id,
+      message: 'Document queued for analysis'
+    });
+
+  } catch (error: any) {
+    console.error('Analysis error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Get analysis progress
+router.get('/progress/:documentId', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.documentId);
+    const progress = complianceAuditService.getAnalysisProgress(documentId);
+
+    if (!progress) {
+      return res.status(404).json({ error: 'Analysis not found' });
+    }
+
+    res.json(progress);
+  } catch (error: any) {
+    console.error('Progress check error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get document status
+router.get('/document/:documentId', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.documentId);
+    const [document] = await db
+      .select()
+      .from(complianceDocuments)
+      .where(eq(complianceDocuments.id, documentId));
+
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    res.json(document);
+  } catch (error: any) {
+    console.error('Document fetch error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
