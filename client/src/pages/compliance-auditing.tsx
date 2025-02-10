@@ -201,20 +201,17 @@ const ComplianceAuditing: FC = () => {
     const [submissionError, setSubmissionError] = useState<string | null>(null);
     const [taskPollingError, setTaskPollingError] = useState<string | null>(null);
 
-    // Task polling query with enhanced error handling
-    const { data: taskResult, isLoading: isLoadingTask, error: taskError } = useQuery({
+    // Updated taskResult query with proper typing and error handling
+    const { data: taskResult, isLoading: isLoadingTask, error: taskError } = useQuery<ComplianceResult>({
       queryKey: ['task-result', taskId],
       queryFn: async () => {
         if (!taskId) return null;
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        const timeout = setTimeout(() => controller.abort(), 30000);
 
         try {
-          const response = await fetch(`/api/orchestrator/audit/${taskId}/result`, {
-            signal: controller.signal
-          });
-
+          const response = await fetch(`/api/orchestrator/audit/${taskId}/result`);
           clearTimeout(timeout);
 
           if (!response.ok) {
@@ -230,12 +227,10 @@ const ComplianceAuditing: FC = () => {
             throw new Error(data.error || 'Analysis failed');
           }
 
-          if (data.status === 'completed') {
-            // Clear task ID and stop polling
-            setTaskId(null);
-            // Clear any previous errors
+          if (data.status === 'completed' && data.data?.auditReport) {
+            setTaskId(null); // Clear task ID on success
             setTaskPollingError(null);
-            return data.data;
+            return data.data as ComplianceResult;
           }
 
           return null;
@@ -250,7 +245,7 @@ const ComplianceAuditing: FC = () => {
         }
       },
       enabled: !!taskId,
-      refetchInterval: taskId ? 2000 : false, // Poll every 2 seconds while task is running
+      refetchInterval: taskId ? 2000 : false,
       retry: 3,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
     });
@@ -265,7 +260,7 @@ const ComplianceAuditing: FC = () => {
 
         try {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+          const timeout = setTimeout(() => controller.abort(), 30000);
 
           const response = await fetch('/api/orchestrator/audit', {
             method: 'POST',
@@ -274,9 +269,10 @@ const ComplianceAuditing: FC = () => {
               'Accept': 'application/json'
             },
             body: JSON.stringify({
-              documentText: documentText,
+              document: documentText,
+              type: 'compliance',
               metadata: {
-                documentType: 'contract',
+                documentType: 'compliance',
                 priority: 'medium',
                 timestamp: new Date().toISOString()
               }
@@ -321,10 +317,6 @@ const ComplianceAuditing: FC = () => {
           title: "Document Submitted",
           description: "Starting compliance analysis...",
         });
-        // Only clear document after successful submission and user confirmation
-        if (data.status !== 'error') {
-          setDocumentText("");
-        }
       },
       onError: (error: Error) => {
         setSubmissionError(error.message);
@@ -912,7 +904,7 @@ const ComplianceAuditing: FC = () => {
 
 
         <main className="container mx-auto px-4 py-8">
-          <div className="max-w-7xl mx-auto space-y-8">
+          <div className="max-w-7xl mx-auto space-y-6">
             <div className="flex items-center gap-4 mb-8">
               <Shield className="h-8 w-8 text-green-600" />
               <h2 className="text-3xl font-bold">Compliance Auditing</h2>
@@ -921,46 +913,62 @@ const ComplianceAuditing: FC = () => {
             {/* Document Input and Analysis */}
             <div className="grid gap-6 md:grid-cols-2">
               <DocumentInput />
-              {taskPollingError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Error Analyzing Document</AlertTitle>
-                  <AlertDescription>
-                    {taskPollingError}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setTaskPollingError(null);
-                        setTaskId(null);
-                      }}
-                      className="mt-2"
-                    >
-                      Retry Analysis
-                    </Button>
-                  </AlertDescription>
-                </Alert>
-              )}
-              {taskResult && <AnalysisResults result={taskResult} />}
-              {!taskResult && !taskPollingError && !isLoadingTask && (
-                <div className="flex items-center justify-center h-96">
-                  <div className="text-center space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                      Submit a document                      to see analysis results
-                    </p>
+
+              {/* Analysis Results Display */}
+              <div className="space-y-4">
+                {submitDocumentMutation.isPending && (
+                  <Alert>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <AlertTitle>Submitting Document</AlertTitle>
+                    <AlertDescription>
+                      Please wait while we process your document...
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {isLoadingTask && (
+                  <Alert>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <AlertTitle>Analyzing Document</AlertTitle>
+                    <AlertDescription>
+                      Performing compliance analysis...
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {taskPollingError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Analysis Error</AlertTitle>
+                    <AlertDescription className="space-y-2">
+                      <p>{taskPollingError}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setTaskPollingError(null);
+                          setTaskId(null);
+                        }}
+                      >
+                        Dismiss
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {taskResult && <AnalysisResults result={taskResult} />}
+
+                {!taskResult && !isLoadingTask && !taskPollingError && !submitDocumentMutation.isPending && (
+                  <div className="flex items-center justify-center h-96 border rounded-lg bg-white/50 backdrop-blur-sm">
+                    <div className="text-center space-y-2">
+                      <FileText className="h-12 w-12 text-muted-foreground mx-auto" />
+                      <p className="text-muted-foreground">
+                        Submit a document to see analysis results
+                      </p>
+                    </div>
                   </div>
-                </div>
-              )}
-              {isLoadingTask && (
-                <div className="flex items-center justify-center h-96">
-                  <div className="text-center space-y-4">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-                    <p className="text-sm text-muted-foreground">
-                      Analyzing document...
-                    </p>
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </main>
