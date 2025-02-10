@@ -7,7 +7,7 @@ const router = Router();
 // Enhanced logging
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] [Orchestrator] [${type.toUpperCase()}] ${message}`, context ? context : '');
+  console.log(`[${timestamp}] [Orchestrator] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
 }
 
 // Input validation schemas
@@ -18,6 +18,50 @@ const auditRequestSchema = z.object({
     priority: z.enum(['low', 'medium', 'high']).optional(),
     tags: z.array(z.string()).optional()
   }).optional()
+});
+
+// Response validation schemas
+const visualizationDataSchema = z.object({
+  issueFrequency: z.array(z.number()),
+  riskTrend: z.array(z.number()),
+  complianceScores: z.object({
+    overall: z.number().min(0).max(100),
+    regulatory: z.number().min(0).max(100),
+    clarity: z.number().min(0).max(100),
+    risk: z.number().min(0).max(100)
+  })
+});
+
+const auditReportSchema = z.object({
+  auditReport: z.object({
+    summary: z.string(),
+    flaggedIssues: z.array(z.object({
+      issue: z.string(),
+      riskScore: z.number().min(1).max(10),
+      severity: z.enum(['low', 'medium', 'high']),
+      section: z.string(),
+      recommendation: z.string(),
+      regulatoryReference: z.string(),
+      impact: z.string()
+    })),
+    riskScores: z.object({
+      average: z.number().min(1).max(10),
+      max: z.number().min(1).max(10),
+      min: z.number().min(1).max(10),
+      distribution: z.object({
+        high: z.number(),
+        medium: z.number(),
+        low: z.number()
+      })
+    }),
+    recommendedActions: z.array(z.object({
+      action: z.string(),
+      priority: z.enum(['high', 'medium', 'low']),
+      timeline: z.enum(['immediate', 'short-term', 'long-term']),
+      impact: z.string()
+    })),
+    visualizationData: visualizationDataSchema
+  })
 });
 
 // Audit endpoint
@@ -69,25 +113,6 @@ router.post('/audit', async (req, res) => {
   }
 });
 
-// Get task status
-router.get('/tasks/:taskId', async (req, res) => {
-  try {
-    const { taskId } = req.params;
-    log('Fetching task status', 'info', { taskId });
-
-    const status = await orchestratorService.monitorTask(taskId);
-    res.json(status);
-  } catch (error: any) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log('Task status fetch failed', 'error', { error: errorMessage });
-    res.status(404).json({
-      error: 'Failed to fetch task status',
-      details: errorMessage,
-      code: 'STATUS_ERROR'
-    });
-  }
-});
-
 // Get task results - specific endpoint for audit results
 router.get('/audit/:taskId/result', async (req, res) => {
   try {
@@ -110,32 +135,34 @@ router.get('/audit/:taskId/result', async (req, res) => {
       });
     }
 
-    // Validate the presence of required fields in the audit report
-    if (!result.data.auditReport) {
-      throw new Error('Audit report data is missing from the result');
+    try {
+      // Validate the audit report structure
+      const validatedResult = auditReportSchema.parse(result.data);
+
+      // Return the validated audit report
+      res.json({
+        status: 'completed',
+        ...validatedResult,
+        metadata: result.data.metadata,
+        completedAt: result.completedAt
+      });
+
+    } catch (validationError) {
+      log('Audit report validation failed', 'error', {
+        error: validationError instanceof z.ZodError ? validationError.errors : validationError,
+        taskId
+      });
+
+      res.status(500).json({
+        error: 'Invalid audit report format',
+        details: validationError instanceof z.ZodError ? 
+          validationError.errors.map(err => ({
+            path: err.path.join('.'),
+            message: err.message
+          })) : 'Unexpected validation error',
+        code: 'INVALID_REPORT_FORMAT'
+      });
     }
-
-    const { auditReport } = result.data;
-
-    // Ensure all required fields are present
-    if (!auditReport.flaggedIssues || !auditReport.riskScores || 
-        !auditReport.recommendedActions || !auditReport.visualizationData) {
-      throw new Error('Audit report is missing required fields');
-    }
-
-    // Return the complete audit report structure
-    res.json({
-      status: 'completed',
-      auditReport: {
-        summary: auditReport.summary,
-        flaggedIssues: auditReport.flaggedIssues,
-        riskScores: auditReport.riskScores,
-        recommendedActions: auditReport.recommendedActions,
-        visualizationData: auditReport.visualizationData
-      },
-      metadata: result.data.metadata,
-      completedAt: result.completedAt
-    });
 
   } catch (error: any) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -144,6 +171,25 @@ router.get('/audit/:taskId/result', async (req, res) => {
       error: 'Failed to fetch audit results',
       details: errorMessage,
       code: 'RESULT_ERROR'
+    });
+  }
+});
+
+// Get task status
+router.get('/tasks/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    log('Fetching task status', 'info', { taskId });
+
+    const status = await orchestratorService.monitorTask(taskId);
+    res.json(status);
+  } catch (error: any) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Task status fetch failed', 'error', { error: errorMessage });
+    res.status(404).json({
+      error: 'Failed to fetch task status',
+      details: errorMessage,
+      code: 'STATUS_ERROR'
     });
   }
 });
