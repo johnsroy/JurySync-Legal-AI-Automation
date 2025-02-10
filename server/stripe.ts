@@ -6,7 +6,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',  // Updated to a valid Stripe API version
+  apiVersion: '2025-01-27.acacia',
 });
 
 type ProductConfig = {
@@ -61,6 +61,7 @@ export async function createCheckoutSession(req: Request, res: Response) {
             currency: 'usd',
             product_data: {
               name: product.name,
+              description: `JurySync.io ${product.name} Subscription`,
             },
             unit_amount: product.price,
             recurring: {
@@ -71,8 +72,14 @@ export async function createCheckoutSession(req: Request, res: Response) {
         },
       ],
       mode: 'subscription',
-      success_url: `${req.headers.origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin}/pricing`,
+      success_url: `${req.headers.origin}/dashboard?session_id={CHECKOUT_SESSION_ID}&success=true`,
+      cancel_url: `${req.headers.origin}/pricing?canceled=true`,
+      customer_creation: 'always',
+      billing_address_collection: 'required',
+      allow_promotion_codes: true,
+      metadata: {
+        planType,
+      },
     });
 
     res.json({ sessionId: session.id });
@@ -85,6 +92,10 @@ export async function createCheckoutSession(req: Request, res: Response) {
 export async function createPortalSession(req: Request, res: Response) {
   try {
     const { customerId } = req.body;
+
+    if (!customerId) {
+      return res.status(400).json({ error: 'Customer ID is required' });
+    }
 
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: customerId,

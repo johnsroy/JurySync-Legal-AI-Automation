@@ -9,7 +9,26 @@ import { useAuth } from "@/hooks/use-auth";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
-const plans = {
+interface PlanFeature {
+  name: string;
+  included: boolean;
+}
+
+interface Plan {
+  name: string;
+  price: string;
+  period?: string;
+  savings?: string;
+  description: string;
+  features: string[];
+  note?: string;
+  highlighted?: boolean;
+  planType: string;
+  cta: string;
+  href: string;
+}
+
+const plans: { monthly: Plan[]; yearly: Plan[] } = {
   monthly: [
     {
       name: "Student",
@@ -55,6 +74,7 @@ const plans = {
         "Dedicated support and account manager"
       ],
       cta: "Contact Us",
+      planType: "enterprise",
       href: "mailto:contact@jurysync.io?subject=Enterprise%20Plan%20Inquiry"
     }
   ],
@@ -107,6 +127,7 @@ const plans = {
         "Dedicated support and account manager"
       ],
       cta: "Contact Us",
+      planType: "enterprise",
       href: "mailto:contact@jurysync.io?subject=Enterprise%20Plan%20Inquiry"
     }
   ]
@@ -118,7 +139,7 @@ export default function PricingPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const handleSubscribe = async (plan: any) => {
+  const handleSubscribe = async (plan: Plan) => {
     if (plan.price === "Custom") {
       window.location.href = plan.href;
       return;

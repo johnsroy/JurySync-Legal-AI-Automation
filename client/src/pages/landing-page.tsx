@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Gavel, Scale, Shield, CheckCircle, FileSearch, Book, GitCompare } from "lucide-react";
+import { Gavel, Scale, Shield, CheckCircle, FileSearch, Book, GitCompare, Star } from "lucide-react";
 
 export default function LandingPage() {
   return (
@@ -27,20 +27,34 @@ export default function LandingPage() {
       {/* Hero Section */}
       <section className="pt-32 pb-20 px-4 bg-gradient-to-br from-yellow-50 to-green-50 animate-gradient-x">
         <div className="container mx-auto max-w-6xl">
-          <h1 className="text-7xl font-bold text-center mb-6 text-gray-900 font-display">
-            Your Legal AI <br />
-            Assistant
-          </h1>
-          <p className="text-xl text-center text-gray-600 mb-8 max-w-2xl mx-auto">
-            Transform your legal practice with AI-powered document analysis, contract management, and legal research.
-            Start with a 1-day free trial.
-          </p>
-          <div className="flex justify-center">
-            <Link href="/register">
-              <Button className="bg-green-600 hover:bg-green-700 text-lg py-6 px-8 rounded-lg shadow-lg">
-                Start 1-Day Free Trial
-              </Button>
-            </Link>
+          <div className="flex flex-col items-center text-center">
+            <div className="inline-flex items-center px-4 py-2 bg-green-100 rounded-full text-green-800 mb-8">
+              <Star className="w-4 h-4 mr-2" />
+              <span className="text-sm font-medium">Trusted by Top Law Firms</span>
+            </div>
+            <h1 className="text-7xl font-bold mb-6 text-gray-900 font-display">
+              Transform Your Legal Practice <br />
+              with AI Intelligence
+            </h1>
+            <p className="text-xl text-gray-600 mb-8 max-w-2xl">
+              Streamline your legal workflow with AI-powered document analysis, 
+              contract management, and legal research. Experience the future of legal technology.
+            </p>
+            <div className="flex gap-4">
+              <Link href="/register">
+                <Button className="bg-green-600 hover:bg-green-700 text-lg py-6 px-8 rounded-lg shadow-lg">
+                  Start 1-Day Free Trial
+                </Button>
+              </Link>
+              <Link href="/pricing">
+                <Button variant="outline" className="text-lg py-6 px-8 rounded-lg">
+                  View Pricing
+                </Button>
+              </Link>
+            </div>
+            <div className="mt-8 text-sm text-gray-500">
+              No credit card required • Cancel anytime
+            </div>
           </div>
         </div>
       </section>
@@ -123,6 +137,25 @@ export default function LandingPage() {
               <p className="text-gray-600">
                 Streamline your workflow with intelligent document processing and management.
               </p>
+            </div>
+          </div>
+
+          {/* Trust Indicators */}
+          <div className="mt-20 text-center">
+            <h3 className="text-2xl font-bold mb-8">Trusted by Legal Professionals</h3>
+            <div className="grid grid-cols-3 gap-8">
+              <div className="bg-white/80 p-6 rounded-xl">
+                <div className="text-4xl font-bold text-green-600 mb-2">99.9%</div>
+                <div className="text-gray-600">Uptime Guarantee</div>
+              </div>
+              <div className="bg-white/80 p-6 rounded-xl">
+                <div className="text-4xl font-bold text-green-600 mb-2">10,000+</div>
+                <div className="text-gray-600">Legal Documents Processed</div>
+              </div>
+              <div className="bg-white/80 p-6 rounded-xl">
+                <div className="text-4xl font-bold text-green-600 mb-2">500+</div>
+                <div className="text-gray-600">Law Firms Worldwide</div>
+              </div>
             </div>
           </div>
         </div>
