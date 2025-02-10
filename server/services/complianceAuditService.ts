@@ -4,6 +4,28 @@ import { db } from '../db';
 import { complianceAudits, documents } from '@shared/schema';
 import { chromaStore } from './chromaStore';
 
+const MAX_CHUNK_SIZE = 8000; // Safe token limit for analysis
+
+function chunkDocument(text: string): string[] {
+  const paragraphs = text.split(/\n\n+/);
+  const chunks: string[] = [];
+  let currentChunk = '';
+
+  for (const paragraph of paragraphs) {
+    if ((currentChunk + paragraph).length > MAX_CHUNK_SIZE && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      currentChunk = '';
+    }
+    currentChunk += paragraph + '\n\n';
+  }
+
+  if (currentChunk.trim().length > 0) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks;
+}
+
 if (!process.env.OPENAI_API_KEY) {
   throw new Error("Missing OPENAI_API_KEY environment variable");
 }
@@ -12,17 +34,14 @@ if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("Missing ANTHROPIC_API_KEY environment variable");
 }
 
-// Initialize AI clients
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Enhanced logging function with more context
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [ComplianceAudit] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
 }
 
-// Task storage for managing ongoing tasks
 const taskStorage = new Map<string, {
   status: 'processing' | 'completed' | 'error';
   data?: any;
@@ -31,7 +50,6 @@ const taskStorage = new Map<string, {
   completedAt?: string;
 }>();
 
-// Retry logic for API calls
 async function retryOperation<T>(
   operation: () => Promise<T>,
   maxRetries: number = 3,
@@ -46,7 +64,7 @@ async function retryOperation<T>(
       lastError = error as Error;
       log(`Operation failed, attempt ${i + 1} of ${maxRetries}`, 'error', { error: error.message });
       if (i < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i))); // Exponential backoff
+        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
       }
     }
   }
@@ -138,10 +156,9 @@ export class ComplianceAuditService {
             }
           ],
           response_format: { type: "json_object" },
-          temperature: 0.2 // Lower temperature for more consistent formatting
+          temperature: 0.2
         });
 
-        // Race between timeout and API call
         const response = await Promise.race([analysisPromise, timeoutPromise]);
 
         log('OpenAI raw response received', 'debug', {
@@ -155,7 +172,7 @@ export class ComplianceAuditService {
 
         const result = JSON.parse(response.choices[0].message.content);
 
-        log('OpenAI analysis completed successfully', 'info', { 
+        log('OpenAI analysis completed successfully', 'info', {
           responseStructure: Object.keys(result),
           summary: result.auditReport?.summary?.substring(0, 100),
           issuesCount: result.auditReport?.flaggedIssues?.length
@@ -267,135 +284,62 @@ export class ComplianceAuditService {
     });
   }
 
-  async analyzeDocument(documentText: string, taskId: string) {
+  private async analyzeDocument(documentText: string, taskId: string) {
     try {
       log('Starting combined compliance analysis', 'info', { taskId });
 
-      // Store initial task state
       taskStorage.set(taskId, { status: 'processing', progress: 0 });
 
-      // Add detailed logging for API calls
-      log('Verifying API configurations', 'debug', {
-        openaiConfigured: !!process.env.OPENAI_API_KEY,
-        anthropicConfigured: !!process.env.ANTHROPIC_API_KEY
-      });
-
-      // Run both analyses with individual timeouts and retries
-      const [openAIAnalysis, anthropicAnalysis] = await Promise.allSettled([
-        this.analyzeWithOpenAI(documentText),
-        this.analyzeWithAnthropic(documentText)
-      ]);
-
-      // Log analysis results
-      log('Analysis results', 'debug', {
-        openAIStatus: openAIAnalysis.status,
-        anthropicStatus: anthropicAnalysis.status,
+      const chunks = chunkDocument(documentText);
+      log('Document split into chunks', 'info', {
+        numberOfChunks: chunks.length,
+        averageChunkSize: Math.round(chunks.reduce((sum, chunk) => sum + chunk.length, 0) / chunks.length),
         taskId
       });
 
-      // Check results and handle failures
-      const openAIResult = openAIAnalysis.status === 'fulfilled' ? openAIAnalysis.value : null;
-      const anthropicResult = anthropicAnalysis.status === 'fulfilled' ? anthropicAnalysis.value : null;
+      const chunkResults = await Promise.all(chunks.map(async (chunk, index) => {
+        log(`Processing chunk ${index + 1}/${chunks.length}`, 'info', { taskId });
 
-      if (!openAIResult && !anthropicResult) {
-        const error = new Error('Both AI analyses failed');
-        log('Complete analysis failure', 'error', {
-          openAIError: openAIAnalysis.status === 'rejected' ? openAIAnalysis.reason : null,
-          anthropicError: anthropicAnalysis.status === 'rejected' ? anthropicAnalysis.reason : null,
-          taskId
-        });
-
-        // Update task storage with error
         taskStorage.set(taskId, {
-          status: 'error',
-          error: error.message,
-          completedAt: new Date().toISOString()
+          status: 'processing',
+          progress: Math.round((index / chunks.length) * 50)
         });
 
-        throw error;
-      }
+        const [openAIAnalysis, anthropicAnalysis] = await Promise.allSettled([
+          this.analyzeWithOpenAI(chunk),
+          this.analyzeWithAnthropic(chunk)
+        ]);
+
+        return {
+          openAI: openAIAnalysis.status === 'fulfilled' ? openAIAnalysis.value : null,
+          anthropic: anthropicAnalysis.status === 'fulfilled' ? anthropicAnalysis.value : null,
+          chunkIndex: index
+        };
+      }));
+
+      const combinedReport = this.combineChunkResults(chunkResults);
+
+      taskStorage.set(taskId, {
+        status: 'processing',
+        progress: 75
+      });
 
       try {
-        // Create document record
         const [document] = await db.insert(documents).values({
           title: `Compliance Audit - ${new Date().toISOString()}`,
           content: documentText,
-          analysis: { openAIAnalysis: openAIResult, anthropicAnalysis: anthropicResult },
+          analysis: { openAIAnalysis: combinedReport, anthropicAnalysis: combinedReport },
           agentType: 'COMPLIANCE_AUDITING',
-          userId: 1, // TODO: Replace with actual user ID from context
+          userId: 1,
         }).returning();
 
         log('Document created in database', 'info', { documentId: document.id, taskId });
 
-        // Skip ChromaDB for now as it's failing
-        log('Skipping ChromaDB storage due to connection issues', 'info');
 
-        // Use the first successful analysis as primary and fall back as needed
-        const primaryAnalysis = openAIResult || anthropicResult;
-        const secondaryAnalysis = openAIResult ? anthropicResult : null;
-
-        // Combine and aggregate results
-        const combinedReport = {
-          auditReport: {
-            summary: primaryAnalysis.auditReport.summary,
-            flaggedIssues: [
-              ...(openAIResult?.auditReport.flaggedIssues || []).map((issue: any) => ({
-                ...issue,
-                source: 'openai'
-              })),
-              ...(anthropicResult?.auditReport.flaggedIssues || []).map((issue: any) => ({
-                ...issue,
-                source: 'anthropic'
-              }))
-            ],
-            riskScores: secondaryAnalysis ? {
-              average: (primaryAnalysis.auditReport.riskScores.average + 
-                      secondaryAnalysis.auditReport.riskScores.average) / 2,
-              max: Math.max(primaryAnalysis.auditReport.riskScores.max,
-                          secondaryAnalysis.auditReport.riskScores.max),
-              min: Math.min(primaryAnalysis.auditReport.riskScores.min,
-                          secondaryAnalysis.auditReport.riskScores.min),
-              distribution: {
-                high: Math.round((primaryAnalysis.auditReport.riskScores.distribution.high +
-                              secondaryAnalysis.auditReport.riskScores.distribution.high) / 2),
-                medium: Math.round((primaryAnalysis.auditReport.riskScores.distribution.medium +
-                                secondaryAnalysis.auditReport.riskScores.distribution.medium) / 2),
-                low: Math.round((primaryAnalysis.auditReport.riskScores.distribution.low +
-                             secondaryAnalysis.auditReport.riskScores.distribution.low) / 2)
-              }
-            } : primaryAnalysis.auditReport.riskScores,
-            recommendedActions: [
-              ...(openAIResult?.auditReport.recommendedActions || []).map((action: any) => ({
-                ...action,
-                source: 'openai'
-              })),
-              ...(anthropicResult?.auditReport.recommendedActions || []).map((action: any) => ({
-                ...action,
-                source: 'anthropic'
-              }))
-            ],
-            visualizationData: secondaryAnalysis ? {
-              issueFrequency: primaryAnalysis.auditReport.visualizationData.issueFrequency,
-              riskTrend: primaryAnalysis.auditReport.visualizationData.riskTrend,
-              complianceScores: {
-                overall: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.overall +
-                          secondaryAnalysis.auditReport.visualizationData.complianceScores.overall) / 2),
-                regulatory: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.regulatory +
-                           secondaryAnalysis.auditReport.visualizationData.complianceScores.regulatory) / 2),
-                clarity: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.clarity +
-                        secondaryAnalysis.auditReport.visualizationData.complianceScores.clarity) / 2),
-                risk: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.risk +
-                     secondaryAnalysis.auditReport.visualizationData.complianceScores.risk) / 2)
-              }
-            } : primaryAnalysis.auditReport.visualizationData
-          }
-        };
-
-        // Log the audit with correct column names
         const [auditRecord] = await db.insert(complianceAudits).values({
           documentText: documentText,
-          openaiResponse: openAIResult,
-          anthropicResponse: anthropicResult,
+          openaiResponse: combinedReport,
+          anthropicResponse: combinedReport,
           combinedReport: combinedReport,
           vectorId: document.id.toString(),
           metadata: {
@@ -405,7 +349,6 @@ export class ComplianceAuditService {
           }
         }).returning();
 
-        // Update task storage with success
         taskStorage.set(taskId, {
           status: 'completed',
           data: combinedReport,
@@ -421,6 +364,7 @@ export class ComplianceAuditService {
         });
 
         return combinedReport;
+
       } catch (dbError: any) {
         log('Database operation failed', 'error', {
           error: dbError.message,
@@ -428,7 +372,6 @@ export class ComplianceAuditService {
           taskId
         });
 
-        // Update task storage with error
         taskStorage.set(taskId, {
           status: 'error',
           error: dbError.message,
@@ -437,6 +380,7 @@ export class ComplianceAuditService {
 
         throw dbError;
       }
+
     } catch (error: any) {
       log('Combined analysis failed', 'error', {
         error: error.message,
@@ -444,20 +388,103 @@ export class ComplianceAuditService {
         taskId
       });
 
-      // Update task storage with error if not already set
-      if (!taskStorage.get(taskId)?.error) {
-        taskStorage.set(taskId, {
-          status: 'error',
-          error: error.message,
-          completedAt: new Date().toISOString()
-        });
-      }
+      taskStorage.set(taskId, {
+        status: 'error',
+        error: error.message,
+        completedAt: new Date().toISOString()
+      });
 
       throw error;
     }
   }
 
-  // New method to get task result
+  private combineChunkResults(chunkResults: Array<{
+    openAI: any | null;
+    anthropic: any | null;
+    chunkIndex: number;
+  }>): any {
+    const combined = {
+      auditReport: {
+        summary: '',
+        flaggedIssues: [],
+        riskScores: {
+          average: 0,
+          max: 0,
+          min: 10,
+          distribution: {
+            high: 0,
+            medium: 0,
+            low: 0
+          }
+        },
+        recommendedActions: [],
+        visualizationData: {
+          issueFrequency: [],
+          riskTrend: [],
+          complianceScores: {
+            overall: 0,
+            regulatory: 0,
+            clarity: 0,
+            risk: 0
+          }
+        }
+      }
+    };
+
+    let validChunks = 0;
+    const summaries: string[] = [];
+
+    chunkResults.forEach(({ openAI, anthropic, chunkIndex }) => {
+      const result = openAI || anthropic;
+      if (!result?.auditReport) return;
+
+      validChunks++;
+      const { auditReport } = result;
+
+      if (auditReport.summary) {
+        summaries.push(auditReport.summary);
+      }
+
+      combined.auditReport.flaggedIssues.push(...auditReport.flaggedIssues);
+
+      combined.auditReport.riskScores.max = Math.max(
+        combined.auditReport.riskScores.max,
+        auditReport.riskScores.max
+      );
+      combined.auditReport.riskScores.min = Math.min(
+        combined.auditReport.riskScores.min,
+        auditReport.riskScores.min
+      );
+
+      combined.auditReport.riskScores.distribution.high += auditReport.riskScores.distribution.high;
+      combined.auditReport.riskScores.distribution.medium += auditReport.riskScores.distribution.medium;
+      combined.auditReport.riskScores.distribution.low += auditReport.riskScores.distribution.low;
+
+      combined.auditReport.recommendedActions.push(...auditReport.recommendedActions);
+
+      combined.auditReport.visualizationData.riskTrend.push(...auditReport.visualizationData.riskTrend);
+
+      combined.auditReport.visualizationData.complianceScores.overall += auditReport.visualizationData.complianceScores.overall;
+      combined.auditReport.visualizationData.complianceScores.regulatory += auditReport.visualizationData.complianceScores.regulatory;
+      combined.auditReport.visualizationData.complianceScores.clarity += auditReport.visualizationData.complianceScores.clarity;
+      combined.auditReport.visualizationData.complianceScores.risk += auditReport.visualizationData.complianceScores.risk;
+    });
+
+    if (validChunks === 0) {
+      throw new Error('No valid analysis results from any chunk');
+    }
+
+    combined.auditReport.riskScores.average = combined.auditReport.riskScores.max + combined.auditReport.riskScores.min / 2;
+    combined.auditReport.visualizationData.complianceScores.overall /= validChunks;
+    combined.auditReport.visualizationData.complianceScores.regulatory /= validChunks;
+    combined.auditReport.visualizationData.complianceScores.clarity /= validChunks;
+    combined.auditReport.visualizationData.complianceScores.risk /= validChunks;
+
+    combined.auditReport.summary = summaries.join(' ');
+
+    return combined;
+  }
+
   async getTaskResult(taskId: string) {
     const task = taskStorage.get(taskId);
     if (!task) {

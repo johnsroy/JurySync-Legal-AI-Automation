@@ -10,14 +10,19 @@ import cors from 'cors';
 
 const app = express();
 
-// Basic middleware setup
+// Increase JSON payload limit for large documents
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-// Configure CORS for development
+// Configure CORS with specific options
 app.use(cors({
-  origin: true, // Allow all origins in development
-  credentials: true
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://jurysync.io'] // Replace with actual production domain
+    : true, // Allow all origins in development
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 600 // Cache preflight requests for 10 minutes
 }));
 
 // Initialize session store
@@ -43,11 +48,17 @@ app.use(session({
   },
 }));
 
-// Setup minimal security headers without restrictive CSP in development
+// Security headers with relaxed CSP for development
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  next();
+
+  // Add better error handling middleware
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
 });
 
 // Setup auth before other routes
@@ -55,7 +66,6 @@ setupAuth(app);
 
 (async () => {
   try {
-    // Seed the legal database with sample data
     await seedLegalDatabase();
     console.log('Legal database seeded successfully');
   } catch (error) {
@@ -75,20 +85,24 @@ setupAuth(app);
     }
   }
 
-  // Error handling middleware
+  // Enhanced error handling middleware
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error('Error:', err);
 
-    // Check if headers have already been sent
     if (!res.headersSent) {
       const statusCode = err.status || 500;
       const errorMessage = process.env.NODE_ENV === 'production' 
         ? 'Internal Server Error' 
         : (err.message || 'Internal Server Error');
 
+      // Send detailed error response
       res.status(statusCode).json({
         error: errorMessage,
-        ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+        code: err.code || 'INTERNAL_ERROR',
+        ...(process.env.NODE_ENV !== 'production' && { 
+          stack: err.stack,
+          details: err.details || null
+        })
       });
     }
   });
