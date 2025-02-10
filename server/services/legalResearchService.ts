@@ -14,6 +14,35 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Pre-populated legal documents
+const prePopulatedDocuments = [
+  {
+    title: "Brown v. Board of Education",
+    content: "This landmark case established that separate educational facilities are inherently unequal...",
+    documentType: "SUPREME_COURT_DECISION",
+    date: new Date("1954-05-17"),
+    jurisdiction: "United States Supreme Court",
+    citations: ["347 U.S. 483", "74 S. Ct. 686", "98 L. Ed. 873"]
+  },
+  {
+    title: "Miranda v. Arizona",
+    content: "This case established the requirement for law enforcement to inform arrestees of their rights...",
+    documentType: "SUPREME_COURT_DECISION",
+    date: new Date("1966-06-13"),
+    jurisdiction: "United States Supreme Court",
+    citations: ["384 U.S. 436", "86 S. Ct. 1602", "16 L. Ed. 2d 694"]
+  },
+  // Add more landmark cases
+  {
+    title: "Roe v. Wade",
+    content: "This decision of the U.S. Supreme Court established a woman's legal right to abortion...",
+    documentType: "SUPREME_COURT_DECISION",
+    date: new Date("1973-01-22"),
+    jurisdiction: "United States Supreme Court",
+    citations: ["410 U.S. 113", "93 S. Ct. 705", "35 L. Ed. 2d 147"]
+  }
+];
+
 // In-memory fallback storage
 class InMemoryVectorStore {
   private documents: Map<string, { embedding: number[], metadata: any }> = new Map();
@@ -65,7 +94,44 @@ export class LegalResearchService {
   private constructor() {
     // Initialize with in-memory store by default
     this.vectorStore = new InMemoryVectorStore();
+    this.initializePrePopulatedDocuments();
     console.log('Initialized LegalResearchService with in-memory vector store');
+  }
+
+  private async initializePrePopulatedDocuments() {
+    for (const doc of prePopulatedDocuments) {
+      try {
+        const [existingDoc] = await db
+          .select()
+          .from(legalDocuments)
+          .where(eq(legalDocuments.title, doc.title));
+
+        if (!existingDoc) {
+          const [newDoc] = await db.insert(legalDocuments).values({
+            title: doc.title,
+            content: doc.content,
+            documentType: doc.documentType,
+            date: doc.date,
+            jurisdiction: doc.jurisdiction
+          }).returning();
+
+          // Add citations
+          for (const citation of doc.citations) {
+            await db.insert(legalCitations).values({
+              documentId: newDoc.id,
+              citation: citation
+            });
+          }
+
+          console.log(`Document created: ${doc.title}`);
+          await this.addDocument(newDoc);
+        } else {
+          console.log(`Document already exists: ${doc.title}`);
+        }
+      } catch (error) {
+        console.error(`Failed to initialize document ${doc.title}:`, error);
+      }
+    }
   }
 
   static getInstance(): LegalResearchService {
@@ -109,12 +175,14 @@ export class LegalResearchService {
         max_tokens: 1000,
         messages: [{
           role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Generate a dense vector embedding for this legal text that captures its key legal concepts, principles, and arguments. Return only the numerical vector values as a JSON array:\n\n${text}`
-            }
-          ]
+          content: `Generate a dense vector embedding for this legal text that captures its key legal concepts, principles, and arguments. Consider:
+1. Legal principles and doctrines mentioned
+2. Key facts and precedents
+3. Legal reasoning and analysis
+4. Citations and references
+5. Jurisdictional context
+
+Return only the numerical vector values as a JSON array:\n\n${text}`
         }]
       });
 
@@ -154,23 +222,24 @@ export class LegalResearchService {
         max_tokens: 2000,
         messages: [{
           role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Analyze this legal document and provide a structured analysis:
+          content: `Analyze this legal document comprehensively. Consider:
+1. Key legal principles and holdings
+2. Precedential value
+3. Legal reasoning and analysis
+4. Implications for future cases
+5. Historical context and significance
+
 Document Title: ${document.title}
 Content: ${document.content}
 
 Provide your response in this JSON format:
 {
   "summary": "Brief overview of the document",
-  "keyPoints": ["Array of main points"],
+  "keyPoints": ["Array of main legal points"],
   "legalImplications": ["Array of legal implications"],
   "recommendations": ["Array of recommendations"],
-  "riskAreas": ["Array of potential risks"]
+  "precedentialValue": ["Array of precedential impacts"]
 }`
-            }
-          ]
         }]
       });
 
@@ -199,27 +268,32 @@ Provide your response in this JSON format:
         temperature: 0.2,
         messages: [{
           role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Analyze this legal query and provide a comprehensive response.
+          content: `Analyze this legal query comprehensively. Consider:
+1. Relevant case law and precedents
+2. Legal principles and doctrines
+3. Jurisdictional considerations
+4. Historical development
+5. Current trends and future implications
+
 Query: ${query}
 
 Similar Cases:
 ${similarCases.map(doc => `
 Title: ${doc.title}
 Content: ${doc.content}
+Jurisdiction: ${doc.jurisdiction}
+Date: ${doc.date}
 `).join('\n')}
 
 Structure your response as a JSON object with these fields:
 {
   "summary": "A detailed analysis of the query and relevant cases",
-  "relevantCases": [{"document": CaseDocument, "relevance": string}],
-  "timeline": [{"date": string, "event": string}],
-  "recommendations": ["Array of recommendations based on the analysis"]
+  "relevantCases": [{"document": "CaseDocument", "relevance": "string", "keyHoldings": ["array of key holdings"]}],
+  "timeline": [{"date": "string", "event": "string", "significance": "string"}],
+  "recommendations": ["Array of recommendations based on the analysis"],
+  "relatedPrinciples": ["Array of related legal principles and doctrines"],
+  "riskFactors": ["Array of potential risks or challenges"]
 }`
-            }
-          ]
         }]
       });
 
@@ -231,7 +305,8 @@ Structure your response as a JSON object with these fields:
       const analysis = JSON.parse(content.text);
       analysis.relevantCases = similarCases.map((doc, index) => ({
         document: doc,
-        relevance: analysis.relevantCases?.[index]?.relevance || "Related case"
+        relevance: analysis.relevantCases?.[index]?.relevance || "Related case",
+        keyHoldings: analysis.relevantCases?.[index]?.keyHoldings || []
       }));
 
       console.log('Query analysis completed successfully');
