@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, Shield, AlertTriangle, FileText, Upload, File, BarChart2 } from "lucide-react";
+import { Gavel, LogOut, Loader2, Shield, AlertTriangle, FileText, Upload, File, BarChart2, RefreshCcw, CircleDot } from "lucide-react";
 import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -258,6 +258,60 @@ function IssueDistribution({ data }: { data: AuditResponse['data'] }) {
   );
 }
 
+
+// Add loading animation components
+function LoadingSpinner() {
+  return (
+    <div className="flex items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+    </div>
+  );
+}
+
+function ProcessingStage({ stage, isActive }: { stage: string; isActive: boolean }) {
+  return (
+    <div className={`flex items-center gap-2 ${isActive ? 'text-primary' : 'text-muted-foreground'}`}>
+      {isActive ? (
+        <CircleDot className="h-4 w-4 animate-pulse" />
+      ) : (
+        <div className="h-4 w-4 rounded-full border" />
+      )}
+      <span className="text-sm">{stage}</span>
+    </div>
+  );
+}
+
+function DocumentProcessingStatus({ progress }: { progress: number }) {
+  const stages = [
+    'Document Analysis',
+    'Risk Assessment',
+    'Compliance Check',
+    'Report Generation'
+  ];
+
+  const currentStage = Math.floor((progress / 100) * stages.length);
+
+  return (
+    <div className="space-y-4">
+      <Progress value={progress} className="h-2">
+        <div
+          className="h-full bg-primary transition-all duration-500"
+          style={{ width: `${progress}%` }}
+        />
+      </Progress>
+      <div className="grid grid-cols-2 gap-4">
+        {stages.map((stage, index) => (
+          <ProcessingStage
+            key={stage}
+            stage={stage}
+            isActive={index === currentStage}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Update the main component's results display section
 export const ComplianceAuditing: React.FC = () => {
   const { user, logoutMutation } = useAuth();
@@ -459,10 +513,10 @@ export const ComplianceAuditing: React.FC = () => {
                       onClick={() => submitDocument.mutate()}
                     >
                       {submitDocument.isPending ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          Submitting...
-                        </>
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="animate-pulse">Analyzing Document...</span>
+                        </div>
                       ) : (
                         <>
                           <Shield className="h-4 w-4 mr-2" />
@@ -492,13 +546,31 @@ export const ComplianceAuditing: React.FC = () => {
               {/* Loading State */}
               {isLoading && (
                 <Card className="bg-white/80 backdrop-blur-lg">
-                  <CardContent className="pt-6">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-center space-x-4">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                        <p>Analyzing document...</p>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <RefreshCcw className="h-5 w-5 animate-spin" />
+                      Processing Document
+                    </CardTitle>
+                    <CardDescription>
+                      Analyzing content and generating compliance report
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <DocumentProcessingStatus progress={result?.progress || 30} />
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="p-4 bg-primary/5 rounded-lg animate-pulse">
+                        <div className="h-6 w-24 bg-primary/10 rounded mb-2" />
+                        <div className="h-4 w-16 bg-primary/10 rounded" />
                       </div>
-                      <Progress value={result?.progress || 30} className="w-full" />
+                      <div className="p-4 bg-primary/5 rounded-lg animate-pulse delay-150">
+                        <div className="h-6 w-24 bg-primary/10 rounded mb-2" />
+                        <div className="h-4 w-16 bg-primary/10 rounded" />
+                      </div>
+                      <div className="p-4 bg-primary/5 rounded-lg animate-pulse delay-300">
+                        <div className="h-6 w-24 bg-primary/10 rounded mb-2" />
+                        <div className="h-4 w-16 bg-primary/10 rounded" />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -562,7 +634,7 @@ export const ComplianceAuditing: React.FC = () => {
                                       <Badge
                                         variant={
                                           issue.severity === 'high' ? 'destructive' :
-                                          issue.severity === 'medium' ? 'default' : 'secondary'
+                                            issue.severity === 'medium' ? 'default' : 'secondary'
                                         }
                                       >
                                         {issue.severity}
@@ -570,7 +642,7 @@ export const ComplianceAuditing: React.FC = () => {
                                       <Badge variant="outline">{issue.category}</Badge>
                                       <Badge variant={
                                         issue.riskScore > 7 ? "destructive" :
-                                        issue.riskScore > 4 ? "default" : "secondary"
+                                          issue.riskScore > 4 ? "default" : "secondary"
                                       }>
                                         Risk: {issue.riskScore}
                                       </Badge>
