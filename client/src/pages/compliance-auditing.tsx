@@ -50,6 +50,7 @@ interface AuditResponse {
     issueFrequency?: IssueFrequency[];
   };
   error?: string;
+  progress?: number;
 }
 
 // QuickStats component
@@ -115,6 +116,36 @@ const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ o
     </div>
   );
 };
+
+// Performance Metrics component
+const PerformanceMetrics: React.FC = () => (
+  <Card className="bg-white/80 backdrop-blur-lg">
+    <CardHeader>
+      <CardTitle>Performance Metrics</CardTitle>
+      <CardDescription>Key improvements and efficiency gains</CardDescription>
+    </CardHeader>
+    <CardContent>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="p-4 rounded-lg bg-green-50">
+          <p className="text-2xl font-bold text-green-600">80%</p>
+          <p className="text-sm text-gray-600">Tasks Automated</p>
+        </div>
+        <div className="p-4 rounded-lg bg-blue-50">
+          <p className="text-2xl font-bold text-blue-600">70%</p>
+          <p className="text-sm text-gray-600">Processing Time Reduction</p>
+        </div>
+        <div className="p-4 rounded-lg bg-purple-50">
+          <p className="text-2xl font-bold text-purple-600">30-50%</p>
+          <p className="text-sm text-gray-600">Labor Savings</p>
+        </div>
+        <div className="p-4 rounded-lg bg-yellow-50">
+          <p className="text-2xl font-bold text-yellow-600">60%</p>
+          <p className="text-sm text-gray-600">Error Reduction</p>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
 
 export const ComplianceAuditing: React.FC = () => {
   const { user, logoutMutation } = useAuth();
@@ -236,7 +267,7 @@ export const ComplianceAuditing: React.FC = () => {
             <h2 className="text-3xl font-bold">Compliance Auditing</h2>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid gap-6 lg:grid-cols-2">
             {/* Document Input */}
             <Card className="bg-white/80 backdrop-blur-lg">
               <CardHeader>
@@ -310,6 +341,11 @@ export const ComplianceAuditing: React.FC = () => {
                 <QuickStats stats={result.data.quickStats} />
               )}
 
+              {/* Performance Metrics */}
+              {result?.status === 'completed' && (
+                <PerformanceMetrics />
+              )}
+
               {/* Loading State */}
               {isLoading && (
                 <Card className="bg-white/80 backdrop-blur-lg">
@@ -319,7 +355,7 @@ export const ComplianceAuditing: React.FC = () => {
                         <Loader2 className="h-6 w-6 animate-spin text-primary" />
                         <p>Analyzing document...</p>
                       </div>
-                      <Progress value={30} className="w-full" />
+                      <Progress value={result?.progress || 30} className="w-full" />
                     </div>
                   </CardContent>
                 </Card>

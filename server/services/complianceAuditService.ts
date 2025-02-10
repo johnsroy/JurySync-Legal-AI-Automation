@@ -12,29 +12,47 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
   const mimeType = file.mimetype;
 
   try {
+    let text = '';
+
     switch (mimeType) {
       case 'application/pdf':
-        // Import dynamically to avoid test file loading issue
         const pdfjsLib = await import('pdf-parse');
-        const pdfData = await pdfjsLib.default(buffer, {
-          // Disable test file loading
-          disableCopyPaste: true,
-          throwOnDataLength: false
-        });
-        return pdfData.text;
+        const pdfData = await pdfjsLib.default(buffer);
+        text = pdfData.text;
+        break;
 
       case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
       case 'application/msword':
         const mammoth = await import('mammoth');
         const result = await mammoth.extractRawText({ buffer });
-        return result.value;
+        text = result.value;
+        break;
 
       case 'text/plain':
-        return buffer.toString('utf-8');
+        text = buffer.toString('utf-8');
+        break;
 
       default:
         throw new Error(`Unsupported file type: ${mimeType}`);
     }
+
+    // Clean the text content
+    text = text
+      // Remove DOCTYPE declarations
+      .replace(/<!DOCTYPE[^>]*>/gi, '')
+      // Remove XML declarations
+      .replace(/<\?xml[^>]*\?>/gi, '')
+      // Remove HTML comments
+      .replace(/<!--[\s\S]*?-->/g, '')
+      // Remove excessive whitespace
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!text) {
+      throw new Error('No text content found in document');
+    }
+
+    return text;
   } catch (error: any) {
     log('Document parsing failed', 'error', { error: error.message });
     throw new Error(`Failed to parse document: ${error.message}`);
@@ -42,14 +60,13 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
 }
 
 function chunkDocument(text: string): string[] {
-  // Remove DOCTYPE and XML declarations that might cause issues
-  text = text.replace(/<!DOCTYPE[^>]*>/i, '')
-            .replace(/<\?xml[^>]*\?>/i, '')
-            .trim();
-
-  const paragraphs = text.split(/\n\n+/);
   const chunks: string[] = [];
   let currentChunk = '';
+
+  // Split by paragraphs but preserve meaningful breaks
+  const paragraphs = text
+    .split(/(?:\r?\n){2,}/)
+    .filter(p => p.trim().length > 0);
 
   for (const paragraph of paragraphs) {
     if ((currentChunk + paragraph).length > MAX_CHUNK_SIZE && currentChunk.length > 0) {
