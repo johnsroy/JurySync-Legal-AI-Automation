@@ -12,6 +12,19 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
   console.log(`[${timestamp}] [FileAnalyzer] [${type.toUpperCase()}] ${message}`, context ? context : '');
 }
 
+// Helper function to clean text content
+function cleanTextContent(text: string): string {
+  return text
+    .replace(/\u0000/g, '') // Remove null characters
+    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
+    .replace(/[\u0000-\u001F]/g, ' ') // Replace control characters with spaces
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .replace(/<!DOCTYPE[^>]*>/gi, '') // Remove DOCTYPE declarations
+    .replace(/<\/?[^>]+(>|$)/g, '') // Remove any HTML tags
+    .replace(/&[a-z]+;/gi, ' ') // Remove HTML entities
+    .trim();
+}
+
 export async function analyzePDFContent(buffer: Buffer, documentId: number): Promise<string> {
   try {
     log(`Starting document analysis${documentId !== -1 ? ` for document ${documentId}` : ''}`);
@@ -57,11 +70,6 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     } else if (fileType === 'docx') {
       log('Starting Word document parsing');
       try {
-        // Add DOCX specific validation
-        if (buffer.length < 4 || buffer.slice(0, 4).toString('hex') !== '504b0304') {
-          throw new Error('Invalid DOCX format: Missing ZIP header');
-        }
-
         const result = await mammoth.extractRawText({ buffer });
         textContent = result.value;
         log('Word document parsing completed', 'info', { contentLength: textContent.length });
@@ -82,14 +90,7 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     log(`Raw content extracted, length: ${textContent.length}`);
 
     // Content cleaning
-    textContent = textContent
-      .replace(/\u0000/g, '') // Remove null characters
-      .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
-      .replace(/[\u0000-\u001F]/g, ' ') // Replace control characters with spaces
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .replace(/<!DOCTYPE[^>]*>/g, '') // Remove DOCTYPE declarations
-      .replace(/<\/?[^>]+(>|$)/g, '') // Remove any HTML tags
-      .trim();
+    textContent = cleanTextContent(textContent);
 
     // Truncate if necessary while preserving word boundaries
     if (textContent.length > MAX_CONTENT_LENGTH) {
@@ -166,17 +167,4 @@ async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
 
   log('Unsupported file format detected', 'error');
   throw new Error('Unsupported file format. Please upload PDF or Word documents only.');
-}
-
-async function extractWordContent(buffer: Buffer): Promise<string> {
-  try {
-    log('Starting Word document extraction');
-    const result = await mammoth.extractRawText({ buffer });
-    log('Word document extraction completed successfully');
-    return result.value;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log('Word document extraction error:', 'error', { error: errorMessage });
-    throw new Error('Failed to extract content from Word document');
-  }
 }

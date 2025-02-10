@@ -38,38 +38,6 @@ function normalizeText(text: string): string {
     .trim();
 }
 
-function cleanHTMLContent(text: string): string {
-  log('Starting HTML content cleaning', 'debug', { 
-    originalLength: text.length,
-    hasDOCTYPE: DOCTYPE_REGEX.test(text)
-  });
-
-  // First pass: Remove DOCTYPE declarations specifically
-  let cleaned = text.replace(DOCTYPE_REGEX, '');
-
-  // Second pass: Remove other HTML elements
-  cleaned = cleaned
-    .replace(/<\?xml\s+[^>]*\?>/gi, '')  // Remove XML declarations
-    .replace(/<!--[\s\S]*?-->/g, '')     // Remove HTML comments
-    .replace(/<[^>]+>/g, ' ')            // Remove any remaining HTML tags
-    .replace(/&[a-z]+;/gi, ' ');         // Remove HTML entities
-
-  // Third pass: Clean up whitespace
-  cleaned = cleaned
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-    .join('\n')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  log('HTML content cleaning completed', 'debug', {
-    finalLength: cleaned.length,
-    hasDOCTYPEAfterCleaning: DOCTYPE_REGEX.test(cleaned)
-  });
-
-  return cleaned;
-}
 
 async function parseDocument(file: Express.Multer.File): Promise<string> {
   const buffer = file.buffer;
@@ -126,33 +94,20 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
       throw new Error('No text content found in document');
     }
 
-    log('Raw text extracted', 'debug', {
-      length: text.length,
-      containsHTML: containsHTMLTags(text),
-      hasDOCTYPE: DOCTYPE_REGEX.test(text),
-      sample: text.substring(0, 100)
-    });
-
-    // Clean HTML content first
-    text = cleanHTMLContent(text);
-
-    // Final normalization
-    text = normalizeText(text);
-
-    // Validate final text
-    if (DOCTYPE_REGEX.test(text)) {
-      log('Warning: DOCTYPE tags still present after cleaning', 'error', {
-        sample: text.substring(0, 200)
-      });
-      // One final attempt to remove any remaining DOCTYPE tags
-      text = text.replace(DOCTYPE_REGEX, '').trim();
-    }
+    // Clean up text content
+    text = text
+      .replace(/\u0000/g, '') // Remove null characters
+      .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
+      .replace(/[\u0000-\u001F]/g, ' ') // Replace control characters with spaces
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/<!DOCTYPE[^>]*>/gi, '') // Remove DOCTYPE declarations
+      .replace(/<\/?[^>]+(>|$)/g, '') // Remove any HTML tags
+      .replace(/&[a-z]+;/gi, ' ') // Remove HTML entities
+      .trim();
 
     log('Document processing completed', 'info', {
       originalLength: buffer.length,
-      finalLength: text.length,
-      containsHTMLAfterCleaning: containsHTMLTags(text),
-      hasDOCTYPEAfterCleaning: DOCTYPE_REGEX.test(text)
+      finalLength: text.length
     });
 
     return text;
