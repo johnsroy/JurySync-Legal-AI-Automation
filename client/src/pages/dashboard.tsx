@@ -3,11 +3,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
-import { Clock, FileCheck, Scale, TrendingUp, Users, GitMerge } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+import { Clock, FileCheck, Scale, GitMerge, Shield, Book } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, Gavel, LogOut, Loader2 } from "lucide-react";
-
 
 const performanceData = [
   { month: 'Jan', value: 65 },
@@ -49,12 +48,39 @@ const metrics = [
   }
 ];
 
+const agentOptions = [
+  {
+    id: "contract-automation",
+    title: "Contract Automation",
+    description: "Draft, review, and manage legal contracts with AI assistance",
+    icon: GitMerge,
+    path: "/contract-automation",
+    gradient: "from-yellow-50 to-green-100"
+  },
+  {
+    id: "compliance-auditing",
+    title: "Compliance Auditing",
+    description: "Scan and audit documents for regulatory compliance",
+    icon: Shield,
+    path: "/compliance-auditing",
+    gradient: "from-green-50 to-yellow-100"
+  },
+  {
+    id: "legal-research",
+    title: "Legal Research",
+    description: "Analyze legal databases and summarize case law",
+    icon: Book,
+    path: "/legal-research",
+    gradient: "from-yellow-50 to-green-100"
+  }
+];
+
 export default function Dashboard() {
   const { user, logoutMutation } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const handleAgentSelect = (option: any) => { //added any type for option
+  const handleAgentSelect = (option: typeof agentOptions[0]) => {
     if (!user) {
       toast({
         title: "Authentication Required",
@@ -81,6 +107,7 @@ export default function Dashboard() {
 
   return (
     <div className="p-8 space-y-8">
+      {/* Header */}
       <header className="bg-white/80 backdrop-blur-lg border-b border-green-100">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -113,6 +140,7 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {/* Welcome Section */}
       <div>
         <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome to JurySync.io</h2>
         <p className="text-gray-600">Your legal compliance and automation dashboard</p>
@@ -138,6 +166,33 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      {/* Agent Options */}
+      <div className="space-y-4">
+        <h3 className="text-2xl font-bold text-gray-900">Available Tools</h3>
+        <div className="grid gap-6">
+          {agentOptions.map((option) => (
+            <Card
+              key={option.id}
+              className={`bg-gradient-to-r ${option.gradient} hover:shadow-lg transition-all cursor-pointer group overflow-hidden relative`}
+              onClick={() => handleAgentSelect(option)}
+            >
+              <CardContent className="p-8">
+                <div className="flex items-start gap-6">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-green-500/10 rounded-full scale-110 group-hover:scale-125 transition-transform"></div>
+                    <option.icon className="h-12 w-12 text-green-600 relative z-10" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-2xl font-semibold mb-2">{option.title}</h3>
+                    <p className="text-gray-600">{option.description}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
 
       {/* Charts Grid */}
