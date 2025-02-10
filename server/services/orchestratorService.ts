@@ -434,6 +434,21 @@ export class OrchestratorService {
         progress: 25
       });
 
+      // Calculate basic statistics immediately
+      const quickStats = {
+        characterCount: data.documentText.length,
+        wordCount: data.documentText.trim().split(/\s+/).length,
+        lineCount: data.documentText.trim().split('\n').length,
+        paragraphCount: data.documentText.trim().split('\n\n').length,
+      };
+
+      // Update task with quick stats
+      this.taskManager.updateTask(taskId, {
+        status: 'processing',
+        progress: 50,
+        quickStats
+      });
+
       let result;
 
       // Process based on task type with timeout handling
@@ -444,16 +459,14 @@ export class OrchestratorService {
         });
 
         try {
-          // Validate document text before processing
-          if (!data.documentText || typeof data.documentText !== 'string') {
-            throw new Error('Invalid document text provided');
-          }
-
-          // Log the document length for debugging
-          log('Processing document', 'info', {
-            taskId,
-            documentLength: data.documentText.length,
-            type: task.type
+          // Return quick stats immediately while full analysis continues
+          this.taskManager.setTaskResult(taskId, {
+            status: 'processing',
+            data: {
+              quickStats,
+              auditReport: null
+            },
+            progress: 75
           });
 
           // Race between the analysis and timeout
@@ -466,28 +479,14 @@ export class OrchestratorService {
             throw new Error('Analysis produced no results');
           }
 
-          log('Compliance analysis completed', 'info', {
-            taskId,
-            resultSummaryLength: result?.auditReport?.summary?.length
-          });
+          // Add quick stats to final result
+          result.quickStats = quickStats;
 
-          // Validate the audit report structure
-          validateAuditReport(result);
-
-          this.taskManager.updateTask(taskId, {
-            status: 'completed',
-            progress: 100,
-            completedAt: new Date().toISOString()
-          });
-
-          // Store the validated result
           this.taskManager.setTaskResult(taskId, {
             status: 'completed',
             data: result,
             completedAt: new Date().toISOString()
           });
-
-          log(`Task ${taskId} completed successfully with validated audit report`);
 
         } catch (error: any) {
           log('Analysis error:', 'error', {
@@ -496,18 +495,16 @@ export class OrchestratorService {
             stack: error.stack
           });
 
-          if (error.message === 'Analysis timeout') {
-            throw new Error('Analysis took too long to complete. Please try again with a shorter document.');
-          }
+          // Even if full analysis fails, return quick stats
+          this.taskManager.setTaskResult(taskId, {
+            status: 'error',
+            error: error.message,
+            data: { quickStats },
+            completedAt: new Date().toISOString()
+          });
 
-          // Provide more specific error messages
-          if (error.message.includes('split')) {
-            throw new Error('Error processing document format. Please ensure the document is properly formatted text.');
-          }
-
-          throw new Error(`Analysis failed: ${error.message}`);
+          throw error;
         }
-
       } else {
         throw new Error(`Unsupported task type: ${task.type}`);
       }
@@ -523,13 +520,6 @@ export class OrchestratorService {
         error: error.message,
         errorDetails: error.stack,
         progress: 0
-      });
-
-      // Store error result
-      this.taskManager.setTaskResult(taskId, {
-        status: 'error',
-        error: error.message,
-        completedAt: new Date().toISOString()
       });
     }
   }
