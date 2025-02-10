@@ -1,6 +1,7 @@
 import { Anthropic } from '@anthropic-ai/sdk';
 import { complianceAuditService } from './complianceAuditService';
 import { legalResearchService } from './legalResearchService';
+import { continuousLearningService } from './continuousLearningService';
 import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import { eq } from 'drizzle-orm';
@@ -364,6 +365,9 @@ Provide response as JSON:
         results.research = await legalResearchService.analyzeDocument(task.data.documentId);
       }
 
+      // Get latest continuous learning updates
+      const learningContext = await continuousLearningService.getLatestUpdates();
+
       // Store results in database
       const [document] = await db
         .insert(legalDocuments)
@@ -378,6 +382,10 @@ Provide response as JSON:
               taskId,
               completedAt: new Date().toISOString(),
               modules: Object.keys(results)
+            },
+            continuousLearning: {
+              contextUpdated: learningContext.lastUpdated,
+              updates: learningContext.recentUpdates
             }
           }
         })
@@ -386,13 +394,19 @@ Provide response as JSON:
       this.taskManager.setTaskResult(taskId, {
         documentId: document.id,
         results,
-        classification
+        classification,
+        continuousLearning: {
+          contextUpdated: learningContext.lastUpdated,
+          modelUpdates: learningContext.modelUpdates,
+          recentUpdates: learningContext.recentUpdates
+        }
       });
 
       log('Document processing completed', 'info', {
         taskId,
         documentId: document.id,
-        processedModules: Object.keys(results)
+        processedModules: Object.keys(results),
+        learningContextUpdated: learningContext.lastUpdated
       });
 
     } catch (error: any) {

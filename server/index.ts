@@ -6,6 +6,7 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { db } from "./db";
 import { seedLegalDatabase } from './services/seedData';
+import { continuousLearningService } from './services/continuousLearningService';
 import cors from 'cors';
 
 const app = express();
@@ -68,57 +69,68 @@ setupAuth(app);
 
 (async () => {
   try {
+    // Initialize database and seed data
     await seedLegalDatabase();
     console.log('Legal database seeded successfully');
-  } catch (error) {
-    console.error('Failed to seed legal database:', error);
-  }
 
-  const server = registerRoutes(app);
-
-  // Setup Vite first in development
-  if (process.env.NODE_ENV !== "production") {
+    // Start continuous learning service
     try {
-      await setupVite(app, server);
-      console.log('Vite middleware setup complete');
+      await continuousLearningService.startContinuousLearning();
+      console.log('Continuous learning service started successfully');
     } catch (error) {
-      console.error('Failed to setup Vite middleware:', error);
-      process.exit(1);
+      console.error('Failed to start continuous learning service:', error);
+      // Continue app startup even if continuous learning fails
     }
-  }
 
-  // Enhanced error handling middleware
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('Error:', err);
+    const server = registerRoutes(app);
 
-    if (!res.headersSent) {
-      const statusCode = err.status || 500;
-      const errorMessage = process.env.NODE_ENV === 'production' 
-        ? 'Internal Server Error' 
-        : (err.message || 'Internal Server Error');
-
-      // Send detailed error response
-      res.status(statusCode).json({
-        error: errorMessage,
-        code: err.code || 'INTERNAL_ERROR',
-        ...(process.env.NODE_ENV !== 'production' && { 
-          stack: err.stack,
-          details: err.details || null
-        })
-      });
+    // Setup Vite first in development
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        await setupVite(app, server);
+        console.log('Vite middleware setup complete');
+      } catch (error) {
+        console.error('Failed to setup Vite middleware:', error);
+        process.exit(1);
+      }
     }
-  });
 
-  // Serve static files in production
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
+    // Enhanced error handling middleware
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      console.error('Error:', err);
+
+      if (!res.headersSent) {
+        const statusCode = err.status || 500;
+        const errorMessage = process.env.NODE_ENV === 'production' 
+          ? 'Internal Server Error' 
+          : (err.message || 'Internal Server Error');
+
+        // Send detailed error response
+        res.status(statusCode).json({
+          error: errorMessage,
+          code: err.code || 'INTERNAL_ERROR',
+          ...(process.env.NODE_ENV !== 'production' && { 
+            stack: err.stack,
+            details: err.details || null
+          })
+        });
+      }
+    });
+
+    // Serve static files in production
+    if (process.env.NODE_ENV === "production") {
+      serveStatic(app);
+    }
+
+    const port = Number(process.env.PORT) || 5000;
+    server.listen(port, '0.0.0.0', () => {
+      console.log(`Server running at http://0.0.0.0:${port}`);
+    });
+
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
   }
-
-  const port = Number(process.env.PORT) || 5000;
-  server.listen(port, '0.0.0.0', () => {
-    console.log(`Server running at http://0.0.0.0:${port}`);
-  });
-
 })().catch((error) => {
   console.error('Failed to start server:', error);
   process.exit(1);

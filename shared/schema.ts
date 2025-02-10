@@ -689,3 +689,98 @@ export type InsertAnalyticsData = typeof analyticsData.$inferInsert;
 
 // Create insert schema
 export const insertAnalyticsDataSchema = createInsertSchema(analyticsData);
+
+// Add after existing schemas
+export const RegulatoryUpdateType = z.enum([
+  "LEGISLATION",
+  "REGULATION",
+  "GUIDANCE",
+  "POLICY",
+  "ADVISORY"
+]);
+
+export const CaseLawCategory = z.enum([
+  "CONSTITUTIONAL",
+  "CRIMINAL",
+  "CIVIL",
+  "ADMINISTRATIVE",
+  "COMMERCIAL",
+  "ENVIRONMENTAL",
+  "LABOR",
+  "INTELLECTUAL_PROPERTY"
+]);
+
+// Table for storing regulatory updates
+export const regulatoryUpdates = pgTable("regulatory_updates", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  jurisdiction: text("jurisdiction").notNull(),
+  effectiveDate: timestamp("effective_date"),
+  source: text("source").notNull(),
+  sourceUrl: text("source_url"),
+  vectorId: text("vector_id"), // Reference to ChromaDB embedding
+  metadata: jsonb("metadata").$type<{
+    industry?: string[];
+    impactLevel?: "HIGH" | "MEDIUM" | "LOW";
+    sectors?: string[];
+    tags?: string[];
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Table for case law updates
+export const caseLawUpdates = pgTable("case_law_updates", {
+  id: serial("id").primaryKey(),
+  caseNumber: text("case_number").notNull(),
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  fullText: text("full_text").notNull(),
+  court: text("court").notNull(),
+  jurisdiction: text("jurisdiction").notNull(),
+  category: text("category").notNull(),
+  decisionDate: timestamp("decision_date").notNull(),
+  vectorId: text("vector_id"), // Reference to ChromaDB embedding
+  metadata: jsonb("metadata").$type<{
+    precedentValue?: "HIGH" | "MEDIUM" | "LOW";
+    overruledCases?: string[];
+    citedCases?: string[];
+    keywords?: string[];
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Table for tracking continuous learning updates
+export const continuousLearningUpdates = pgTable("continuous_learning_updates", {
+  id: serial("id").primaryKey(),
+  updateType: text("update_type").notNull(), // 'REGULATORY' or 'CASE_LAW'
+  updateId: integer("update_id").notNull(),
+  processingStatus: text("processing_status").notNull(),
+  vectorEmbeddingId: text("vector_embedding_id"),
+  contextParameters: jsonb("context_parameters").notNull(),
+  modelImpact: jsonb("model_impact").$type<{
+    affectedModels: string[];
+    parameterUpdates: Record<string, any>;
+    confidenceScores: Record<string, number>;
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  processedAt: timestamp("processed_at"),
+  nextUpdateDue: timestamp("next_update_due"),
+});
+
+// Create insert schemas
+export const insertRegulatoryUpdateSchema = createInsertSchema(regulatoryUpdates);
+export const insertCaseLawUpdateSchema = createInsertSchema(caseLawUpdates);
+export const insertContinuousLearningUpdateSchema = createInsertSchema(continuousLearningUpdates);
+
+// Export types
+export type RegulatoryUpdate = typeof regulatoryUpdates.$inferSelect;
+export type CaseLawUpdate = typeof caseLawUpdates.$inferSelect;
+export type ContinuousLearningUpdate = typeof continuousLearningUpdates.$inferSelect;
+
+export type InsertRegulatoryUpdate = z.infer<typeof insertRegulatoryUpdateSchema>;
+export type InsertCaseLawUpdate = z.infer<typeof insertCaseLawUpdateSchema>;
+export type InsertContinuousLearningUpdate = z.infer<typeof insertContinuousLearningUpdateSchema>;
