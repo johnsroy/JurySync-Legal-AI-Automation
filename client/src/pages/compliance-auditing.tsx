@@ -2,7 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, Shield, AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { Gavel, LogOut, Loader2, Shield, AlertTriangle, CheckCircle, Info, Download, FileText } from "lucide-react";
 import { useState } from "react";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { BarChart2, TrendingUp, ShieldAlert, Download } from "lucide-react";
+import { BarChart2, TrendingUp, ShieldAlert } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartTooltip, ResponsiveContainer } from 'recharts';
 import React from 'react';
@@ -244,6 +244,78 @@ export default function ComplianceAuditing() {
       });
     }
   };
+
+  // Add new mutation for PDF generation
+  const generatePDFMutation = useMutation({
+    mutationFn: async (auditId: string) => {
+      const response = await fetch('/api/reports/compliance/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          auditId,
+          config: {
+            branding: {
+              companyName: 'JurySync.io',
+              primaryColor: '#10b981'
+            }
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF report');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `compliance-audit-${auditId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Report Generated",
+        description: "Your compliance audit report has been downloaded.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Report Generation Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Add new Export button component
+  function ExportButton({ auditId }: { auditId: string }) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => generatePDFMutation.mutate(auditId)}
+        disabled={generatePDFMutation.isPending}
+        className="flex items-center gap-2"
+      >
+        {generatePDFMutation.isPending ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Generating...
+          </>
+        ) : (
+          <>
+            <FileText className="h-4 w-4" />
+            Export PDF Report
+          </>
+        )}
+      </Button>
+    );
+  }
+
 
   // Utility functions remain unchanged
   function getSeverityColor(severity: string) {
@@ -520,15 +592,18 @@ export default function ComplianceAuditing() {
                 <div className="flex items-center justify-between">
                   <CardTitle>Audit Results</CardTitle>
                   {complianceResults.length > 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleExportReport}
-                      className="flex items-center gap-2"
-                    >
-                      <Download className="h-4 w-4" />
-                      Export Report
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportReport}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Export Raw Data
+                      </Button>
+                      <ExportButton auditId={complianceResults[0].documentId} />
+                    </div>
                   )}
                 </div>
               </CardHeader>

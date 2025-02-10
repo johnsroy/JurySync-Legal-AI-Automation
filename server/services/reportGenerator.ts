@@ -2,17 +2,142 @@ import { db } from "../db";
 import { reports, analyticsData } from "@shared/schema/reports";
 import { eq } from "drizzle-orm";
 import { format } from "date-fns";
+import PDFDocument from 'pdfkit';
+import { ComplianceResult } from "../types/compliance";
 
 interface ReportConfig {
   filters?: Record<string, any>;
   sections?: string[];
   customFields?: Record<string, any>;
+  branding?: {
+    logo?: string;
+    primaryColor?: string;
+    companyName?: string;
+  };
 }
 
 interface ReportData {
   summary?: Record<string, any>;
   charts?: Record<string, any>[];
   tables?: Record<string, any>[];
+}
+
+export async function generateCompliancePDF(
+  result: ComplianceResult,
+  config: ReportConfig = {}
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: 'A4',
+        margin: 50,
+        info: {
+          Title: 'Compliance Audit Report',
+          Author: config.branding?.companyName || 'JurySync.io',
+          Subject: 'Legal Compliance Analysis',
+          Keywords: 'compliance, legal, audit, analysis',
+          CreationDate: new Date(),
+        },
+      });
+
+      const chunks: Buffer[] = [];
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Header
+      doc
+        .fontSize(24)
+        .text('Compliance Audit Report', { align: 'center' })
+        .moveDown()
+        .fontSize(12)
+        .text(`Generated on: ${format(new Date(), 'PPP')}`, { align: 'center' })
+        .moveDown(2);
+
+      // Executive Summary
+      doc
+        .fontSize(16)
+        .text('Executive Summary', { underline: true })
+        .moveDown()
+        .fontSize(12)
+        .text(result.summary)
+        .moveDown(2);
+
+      // Risk Analysis
+      doc
+        .fontSize(16)
+        .text('Risk Analysis', { underline: true })
+        .moveDown()
+        .fontSize(12)
+        .text(`Overall Risk Level: ${result.riskLevel}`)
+        .text(`Risk Score: ${result.score}/10`)
+        .moveDown();
+
+      // Risk Distribution
+      doc.text('Risk Distribution:', { continued: true })
+        .moveDown();
+      const risks = ['High', 'Medium', 'Low'];
+      risks.forEach(risk => {
+        const count = result.riskScores.distribution[risk.toLowerCase()];
+        const percentage = (count / (
+          result.riskScores.distribution.high +
+          result.riskScores.distribution.medium +
+          result.riskScores.distribution.low
+        ) * 100).toFixed(1);
+        doc.text(`${risk} Risk Issues: ${count} (${percentage}%)`);
+      });
+      doc.moveDown(2);
+
+      // Flagged Issues
+      doc
+        .fontSize(16)
+        .text('Flagged Issues', { underline: true })
+        .moveDown();
+
+      result.issues.forEach((issue, index) => {
+        doc
+          .fontSize(14)
+          .text(`Issue ${index + 1}: ${issue.clause}`)
+          .fontSize(12)
+          .text(`Severity: ${issue.severity}`)
+          .text(`Description: ${issue.description}`)
+          .text(`Recommendation: ${issue.recommendation}`)
+          .moveDown();
+      });
+
+      // Recommended Actions
+      doc
+        .fontSize(16)
+        .text('Recommended Actions', { underline: true })
+        .moveDown();
+
+      result.recommendedActions.forEach((action, index) => {
+        doc
+          .fontSize(12)
+          .text(`${index + 1}. ${action.action}`)
+          .text(`   Impact: ${action.impact}`)
+          .moveDown();
+      });
+
+      // Footer
+      const pageCount = doc.bufferedPageRange().count;
+      for (let i = 0; i < pageCount; i++) {
+        doc.switchToPage(i);
+        doc
+          .fontSize(10)
+          .text(
+            `Page ${i + 1} of ${pageCount}`,
+            doc.page.margins.left,
+            doc.page.height - doc.page.margins.bottom - 20,
+            { align: 'center' }
+          );
+      }
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 export async function generateReport(
@@ -22,6 +147,7 @@ export async function generateReport(
 ): Promise<void> {
   try {
     const data: ReportData = {};
+    let pdfBuffer: Buffer | null = null;
 
     // Generate different sections based on report type and config
     switch (type) {
@@ -45,6 +171,7 @@ export async function generateReport(
       .set({
         status: "COMPLETED" as const,
         data,
+        pdfUrl: pdfBuffer ? `/api/reports/${reportId}/pdf` : undefined,
         updatedAt: new Date(),
       })
       .where(eq(reports.id, reportId));
@@ -55,6 +182,7 @@ export async function generateReport(
       .update(reports)
       .set({
         status: "ERROR" as const,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
         updatedAt: new Date(),
       })
       .where(eq(reports.id, reportId));
