@@ -9,6 +9,9 @@ import legalResearchRouter from "./routes/legalResearch";
 import predictiveMonitoringRouter from "./routes/predictiveMonitoring";
 import orchestratorRouter from "./routes/orchestrator";
 import cors from 'cors';
+import { db } from './db';
+import { legalDocuments } from '@shared/schema';
+import { eq } from 'drizzle-orm';
 
 export function registerRoutes(app: Express): Server {
   // Enable CORS for all routes
@@ -27,6 +30,24 @@ export function registerRoutes(app: Express): Server {
 
   // Add orchestrator routes - update path to group all orchestrator endpoints
   app.use("/api/orchestrator", orchestratorRouter);
+
+  // Add specific route for legal research documents
+  app.get("/api/legal-research/documents", async (req, res) => {
+    try {
+      const documents = await db
+        .select()
+        .from(legalDocuments)
+        .orderBy('date');
+
+      res.json(documents);
+    } catch (error) {
+      console.error('Error fetching legal documents:', error);
+      res.status(500).json({
+        message: "Failed to fetch legal documents",
+        code: "FETCH_ERROR"
+      });
+    }
+  });
 
   // Add Stripe payment endpoints
   app.post("/api/checkout", async (req, res) => {
