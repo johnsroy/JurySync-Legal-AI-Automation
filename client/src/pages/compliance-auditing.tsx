@@ -14,7 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { useDropzone } from 'react-dropzone';
 
-// Basic type definitions
+// Define interfaces for the compliance audit data
 interface QuickStats {
   characterCount: number;
   wordCount: number;
@@ -38,6 +38,8 @@ interface AuditIssue {
   riskScore: number;
   recommendation: string;
   category: string;
+  regulatoryReference?: string;
+  severity: 'low' | 'medium' | 'high';
 }
 
 interface AuditResponse {
@@ -48,67 +50,43 @@ interface AuditResponse {
     issues?: AuditIssue[];
     riskTrend?: RiskTrend[];
     issueFrequency?: IssueFrequency[];
+    complianceScore?: number;
+    recommendations?: string[];
   };
   error?: string;
   progress?: number;
 }
 
-// QuickStats component
-const QuickStats: React.FC<{ stats: QuickStats }> = ({ stats }) => (
-  <Card className="bg-white/80 backdrop-blur-lg">
-    <CardHeader>
-      <CardTitle>Document Statistics</CardTitle>
-      <CardDescription>Quick analysis of document structure</CardDescription>
-    </CardHeader>
-    <CardContent>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-sm font-medium text-gray-500">Characters</p>
-          <p className="text-2xl font-bold">{stats.characterCount.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-sm font-medium text-gray-500">Words</p>
-          <p className="text-2xl font-bold">{stats.wordCount.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-sm font-medium text-gray-500">Lines</p>
-          <p className="text-2xl font-bold">{stats.lineCount.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-sm font-medium text-gray-500">Paragraphs</p>
-          <p className="text-2xl font-bold">{stats.paragraphCount.toLocaleString()}</p>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
-
-// File Upload Zone component
+// File upload component with improved file type support
 const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ onFileSelect }) => {
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, acceptedFiles } = useDropzone({
     accept: {
       'application/pdf': ['.pdf'],
       'application/msword': ['.doc'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt']
     },
-    onDrop: onFileSelect
+    onDrop: onFileSelect,
+    multiple: true
   });
 
   return (
     <div
       {...getRootProps()}
       className={`
-        border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-        ${isDragActive ? 'border-green-500 bg-green-50' : 'border-gray-300 hover:border-green-400'}
+        border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all
+        ${isDragActive 
+          ? 'border-green-500 bg-green-50' 
+          : 'border-gray-300 hover:border-green-400 hover:bg-gray-50'
+        }
       `}
     >
       <input {...getInputProps()} />
-      <Upload className="mx-auto h-12 w-12 text-gray-400" />
+      <Upload className={`mx-auto h-12 w-12 ${isDragActive ? 'text-green-500' : 'text-gray-400'}`} />
       <p className="mt-2 text-sm text-gray-600">
         {isDragActive
-          ? "Drop the files here..."
-          : "Drag 'n' drop files here, or click to select files"}
+          ? "Drop your documents here..."
+          : "Drag and drop your documents here, or click to select"}
       </p>
       <p className="text-xs text-gray-500 mt-1">
         Supports PDF, DOCX, DOC, and TXT files
@@ -117,8 +95,8 @@ const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ o
   );
 };
 
-// Performance Metrics component
-const PerformanceMetrics: React.FC = () => (
+// Performance metrics component
+const PerformanceMetrics: React.FC<{ data: AuditResponse['data'] }> = ({ data }) => (
   <Card className="bg-white/80 backdrop-blur-lg">
     <CardHeader>
       <CardTitle>Performance Metrics</CardTitle>
@@ -139,8 +117,10 @@ const PerformanceMetrics: React.FC = () => (
           <p className="text-sm text-gray-600">Labor Savings</p>
         </div>
         <div className="p-4 rounded-lg bg-yellow-50">
-          <p className="text-2xl font-bold text-yellow-600">60%</p>
-          <p className="text-sm text-gray-600">Error Reduction</p>
+          <p className="text-2xl font-bold text-yellow-600">
+            {data?.complianceScore || 60}%
+          </p>
+          <p className="text-sm text-gray-600">Compliance Score</p>
         </div>
       </div>
     </CardContent>
@@ -160,7 +140,6 @@ export const ComplianceAuditing: React.FC = () => {
       const formData = new FormData();
       uploadedFiles.forEach(file => formData.append('files', file));
       formData.append('text', documentText);
-      formData.append('metadata', JSON.stringify({ timestamp: new Date().toISOString() }));
 
       const response = await fetch('/api/compliance/audit', {
         method: 'POST',
@@ -169,7 +148,7 @@ export const ComplianceAuditing: React.FC = () => {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to submit document');
+        throw new Error(error.message || 'Failed to submit document');
       }
 
       return response.json();
@@ -204,7 +183,8 @@ export const ComplianceAuditing: React.FC = () => {
       return response.json();
     },
     enabled: !!taskId,
-    refetchInterval: taskId ? 2000 : false,
+    refetchInterval: (data) => 
+      data?.status === 'processing' ? 2000 : false,
     retry: 3
   });
 
@@ -336,14 +316,9 @@ export const ComplianceAuditing: React.FC = () => {
 
             {/* Results Display */}
             <div className="space-y-4">
-              {/* Quick Stats */}
-              {result?.data?.quickStats && (
-                <QuickStats stats={result.data.quickStats} />
-              )}
-
               {/* Performance Metrics */}
               {result?.status === 'completed' && (
-                <PerformanceMetrics />
+                <PerformanceMetrics data={result.data} />
               )}
 
               {/* Loading State */}
@@ -404,8 +379,19 @@ export const ComplianceAuditing: React.FC = () => {
                                       Risk Score: {issue.riskScore}
                                     </Badge>
                                     <Badge variant="outline">{issue.category}</Badge>
+                                    <Badge variant={
+                                      issue.severity === 'high' ? 'destructive' :
+                                      issue.severity === 'medium' ? 'default' : 'secondary'
+                                    }>
+                                      {issue.severity}
+                                    </Badge>
                                   </div>
                                   <p className="text-sm text-gray-600">{issue.description}</p>
+                                  {issue.regulatoryReference && (
+                                    <p className="text-sm text-gray-500 mt-1">
+                                      Reference: {issue.regulatoryReference}
+                                    </p>
+                                  )}
                                   <p className="text-sm font-medium mt-2">Recommendation:</p>
                                   <p className="text-sm text-gray-600">{issue.recommendation}</p>
                                 </div>

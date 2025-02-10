@@ -5,7 +5,7 @@ import { complianceAudits, documents } from '@shared/schema';
 import { chromaStore } from './chromaStore';
 import { Buffer } from 'buffer';
 
-const MAX_CHUNK_SIZE = 8000; // Safe token limit for analysis
+const MAX_CHUNK_SIZE = 8000;
 
 async function parseDocument(file: Express.Multer.File): Promise<string> {
   const buffer = file.buffer;
@@ -13,48 +13,73 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
 
   try {
     let text = '';
+    log('Starting document parsing', 'info', { mimeType });
 
     switch (mimeType) {
       case 'application/pdf':
-        const pdfjsLib = await import('pdf-parse');
-        const pdfData = await pdfjsLib.default(buffer);
-        text = pdfData.text;
+        try {
+          const pdfjsLib = await import('pdf-parse');
+          const pdfData = await pdfjsLib.default(buffer);
+          text = pdfData.text;
+          log('PDF parsing successful', 'debug');
+        } catch (err) {
+          throw new Error(`PDF parsing failed: ${err.message}`);
+        }
         break;
 
       case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
       case 'application/msword':
-        const mammoth = await import('mammoth');
-        const result = await mammoth.extractRawText({ buffer });
-        text = result.value;
+        try {
+          const mammoth = await import('mammoth');
+          const result = await mammoth.extractRawText({ buffer });
+          text = result.value;
+          log('Word document parsing successful', 'debug');
+        } catch (err) {
+          throw new Error(`Word document parsing failed: ${err.message}`);
+        }
         break;
 
       case 'text/plain':
         text = buffer.toString('utf-8');
+        log('Plain text parsing successful', 'debug');
         break;
 
       default:
         throw new Error(`Unsupported file type: ${mimeType}`);
     }
 
-    // Clean the text content
+    // Enhanced text cleaning
     text = text
+      // Remove all XML/HTML tags
+      .replace(/<[^>]*>/g, '')
       // Remove DOCTYPE declarations
       .replace(/<!DOCTYPE[^>]*>/gi, '')
       // Remove XML declarations
       .replace(/<\?xml[^>]*\?>/gi, '')
       // Remove HTML comments
       .replace(/<!--[\s\S]*?-->/g, '')
-      // Remove excessive whitespace
+      // Remove multiple spaces, newlines, and tabs
       .replace(/\s+/g, ' ')
+      // Clean unicode control characters
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
       .trim();
 
     if (!text) {
       throw new Error('No text content found in document');
     }
 
+    log('Document cleaning completed', 'info', {
+      originalLength: buffer.length,
+      cleanedLength: text.length
+    });
+
     return text;
   } catch (error: any) {
-    log('Document parsing failed', 'error', { error: error.message });
+    log('Document parsing failed', 'error', { 
+      error: error.message,
+      stack: error.stack,
+      mimeType 
+    });
     throw new Error(`Failed to parse document: ${error.message}`);
   }
 }
