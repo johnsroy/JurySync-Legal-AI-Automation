@@ -2,16 +2,50 @@ import OpenAI from "openai";
 import { db } from "../db";
 import { modelMetrics } from "@shared/schema/metrics";
 import { performance } from "perf_hooks";
+import Anthropic from "@anthropic-ai/sdk";
+import { eq } from 'drizzle-orm';
 
-// Initialize OpenAI client
+// Initialize API clients
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Model configurations
+// Model configurations with costs and capabilities
 const MODELS = {
-  GPT4O: "gpt-4o", // Latest model for general tasks
-  GPT4: "gpt-4", // For research and analytics
-  GPT3_16K: "gpt-3.5-turbo-16k", // For longer context
-  GPT3: "gpt-3.5-turbo", // For routine tasks
+  O3_HIGH: {
+    id: "claude-3-opus-20240229",
+    provider: "anthropic",
+    capabilities: {
+      complexCode: true,
+      math: true,
+      contextLength: 200000
+    }
+  },
+  GPT4O: {
+    id: "gpt-4o",
+    provider: "openai",
+    capabilities: {
+      research: true,
+      analysis: true,
+      contextLength: 128000
+    }
+  },
+  O3_MINI: {
+    id: "claude-3-sonnet-20240229",
+    provider: "anthropic",
+    capabilities: {
+      routineCode: true,
+      contextLength: 100000
+    }
+  },
+  O1: {
+    id: "claude-instant-1.2",
+    provider: "anthropic",
+    capabilities: {
+      basicMath: true,
+      simpleCode: true,
+      contextLength: 100000
+    }
+  }
 } as const;
 
 interface TaskAnalysis {
@@ -20,6 +54,7 @@ interface TaskAnalysis {
   requiresMath: boolean;
   contextLength: number;
   predictedTokens: number;
+  keywords: string[];
 }
 
 interface ModelRoutingResult {
@@ -28,17 +63,25 @@ interface ModelRoutingResult {
   qualityScore: number;
   output: string;
   metadata: Record<string, any>;
+  errorRate?: number;
 }
 
 export class ModelRouter {
   private async analyzeTask(text: string): Promise<TaskAnalysis> {
     try {
       const response = await openai.chat.completions.create({
-        model: MODELS.GPT3,
+        model: "gpt-4o",
         messages: [
           {
             role: "system",
-            content: "Analyze the following task and return a JSON object with these properties: complexity (0-1), requiresCode (boolean), requiresMath (boolean), contextLength (number), predictedTokens (number)."
+            content: `Analyze the following task and return a JSON object with these properties:
+              - complexity (0-1): How complex is the task?
+              - requiresCode (boolean): Does it need code generation?
+              - requiresMath (boolean): Does it need mathematical computation?
+              - contextLength (number): Estimated context length needed
+              - predictedTokens (number): Estimated tokens needed
+              - keywords (array): Important task-related keywords
+              Base the analysis on technical terms, mathematical symbols, and code-related content.`
           },
           {
             role: "user",
@@ -54,7 +97,8 @@ export class ModelRouter {
         requiresCode: analysis.requiresCode || false,
         requiresMath: analysis.requiresMath || false,
         contextLength: analysis.contextLength || 0,
-        predictedTokens: analysis.predictedTokens || 0
+        predictedTokens: analysis.predictedTokens || 0,
+        keywords: analysis.keywords || []
       };
     } catch (error) {
       console.error("Error analyzing task:", error);
@@ -63,14 +107,56 @@ export class ModelRouter {
   }
 
   private selectModel(analysis: TaskAnalysis): string {
+    // Complex code or math tasks -> O3_HIGH
     if (analysis.complexity > 0.7 && (analysis.requiresCode || analysis.requiresMath)) {
-      return MODELS.GPT4O;
-    } else if (analysis.complexity > 0.5) {
-      return MODELS.GPT4;
-    } else if (analysis.contextLength > 4000) {
-      return MODELS.GPT3_16K;
+      return MODELS.O3_HIGH.id;
+    }
+
+    // Research and analysis tasks -> GPT4O
+    if (analysis.complexity > 0.5 || analysis.keywords.some(k => 
+      ['research', 'analyze', 'summarize', 'compare'].includes(k.toLowerCase()))) {
+      return MODELS.GPT4O.id;
+    }
+
+    // Routine coding tasks -> O3_MINI
+    if (analysis.requiresCode && analysis.complexity <= 0.7) {
+      return MODELS.O3_MINI.id;
+    }
+
+    // Basic math and simple operations -> O1
+    return MODELS.O1.id;
+  }
+
+  private async processWithModel(
+    model: string,
+    content: string,
+    systemPrompt: string
+  ): Promise<string> {
+    const modelConfig = Object.values(MODELS).find(m => m.id === model);
+    if (!modelConfig) throw new Error("Invalid model selected");
+
+    if (modelConfig.provider === "anthropic") {
+      const response = await anthropic.messages.create({
+        model,
+        max_tokens: 4096,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: systemPrompt },
+            { type: "text", text: content }
+          ]
+        }]
+      });
+      return response.content[0].text;
     } else {
-      return MODELS.GPT3;
+      const response = await openai.chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content }
+        ]
+      });
+      return response.choices[0].message.content || "";
     }
   }
 
@@ -81,6 +167,7 @@ export class ModelRouter {
     processingTimeMs: number,
     tokenCount: number,
     qualityScore: number,
+    errorRate: number | null,
     metadata: Record<string, any>
   ) {
     try {
@@ -91,6 +178,7 @@ export class ModelRouter {
         processingTimeMs,
         tokenCount,
         qualityScore,
+        errorRate,
         metadata: JSON.stringify(metadata)
       });
     } catch (error) {
@@ -105,48 +193,37 @@ export class ModelRouter {
     systemPrompt: string
   ): Promise<ModelRoutingResult> {
     const startTime = performance.now();
-    
+
     try {
       // Analyze task complexity and requirements
       const analysis = await this.analyzeTask(content);
-      
+
       // Select appropriate model
       const selectedModel = this.selectModel(analysis);
-      
+
       // Process with selected model
-      const completion = await openai.chat.completions.create({
-        model: selectedModel,
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content
-          }
-        ],
-        temperature: 0.7,
-      });
+      const output = await this.processWithModel(selectedModel, content, systemPrompt);
 
       const processingTimeMs = Math.round(performance.now() - startTime);
-      const output = completion.choices[0].message.content || "";
-      
-      // Calculate quality score (simplified version)
-      const qualityScore = 0.8; // This should be replaced with actual quality assessment
-      
+
+      // Calculate quality score based on output consistency and task requirements
+      const qualityScore = await this.calculateQualityScore(output, analysis);
+
+      // Calculate error rate (if applicable)
+      const errorRate = await this.calculateErrorRate(output, analysis);
+
       // Log metrics
       await this.logMetrics(
         taskId,
         selectedModel,
         taskType,
         processingTimeMs,
-        completion.usage?.total_tokens || 0,
+        analysis.predictedTokens,
         qualityScore,
+        errorRate,
         {
           analysis,
-          completionId: completion.id,
-          temperature: 0.7
+          modelDetails: MODELS[selectedModel as keyof typeof MODELS]
         }
       );
 
@@ -155,15 +232,17 @@ export class ModelRouter {
         processingTimeMs,
         qualityScore,
         output,
+        errorRate,
         metadata: {
           analysis,
-          tokenUsage: completion.usage
+          tokenUsage: analysis.predictedTokens,
+          modelCapabilities: MODELS[selectedModel as keyof typeof MODELS].capabilities
         }
       };
     } catch (error) {
       const processingTimeMs = Math.round(performance.now() - startTime);
       console.error("Error processing task:", error);
-      
+
       // Log error metrics
       await this.logMetrics(
         taskId,
@@ -172,21 +251,55 @@ export class ModelRouter {
         processingTimeMs,
         0,
         0,
+        1,
         {
           error: error instanceof Error ? error.message : "Unknown error",
           analysis: null
         }
       );
-      
+
       throw error;
     }
+  }
+
+  private async calculateQualityScore(output: string, analysis: TaskAnalysis): Promise<number> {
+    // Implement quality scoring based on output characteristics
+    const hasExpectedLength = output.length > 100;
+    const hasStructuredFormat = output.includes("{") && output.includes("}");
+    const meetsComplexityRequirements = analysis.complexity > 0.5 ? 
+      output.length > 500 : output.length > 200;
+
+    let score = 0;
+    score += hasExpectedLength ? 0.3 : 0;
+    score += hasStructuredFormat ? 0.3 : 0;
+    score += meetsComplexityRequirements ? 0.4 : 0;
+
+    return score;
+  }
+
+  private async calculateErrorRate(output: string, analysis: TaskAnalysis): Promise<number | null> {
+    if (!analysis.requiresCode) return null;
+
+    // Basic error detection for code outputs
+    const errorIndicators = [
+      "error",
+      "exception",
+      "invalid",
+      "failed",
+      "undefined is not"
+    ];
+
+    const errorCount = errorIndicators.reduce((count, indicator) => 
+      count + (output.toLowerCase().includes(indicator) ? 1 : 0), 0);
+
+    return errorCount / errorIndicators.length;
   }
 
   public async getMetrics(taskId?: string) {
     try {
       const query = db.select().from(modelMetrics);
       if (taskId) {
-        query.where({ taskId });
+        query.where(eq(modelMetrics.taskId, taskId));
       }
       return await query.execute();
     } catch (error) {
