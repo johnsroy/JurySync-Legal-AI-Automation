@@ -137,40 +137,6 @@ export class LegalResearchService {
     }
   }
 
-  async searchSimilarCases(query: string): Promise<any[]> {
-    try {
-      console.log('Searching similar cases for query:', query);
-      const queryEmbedding = await this.generateEmbedding(query);
-
-      const results = await this.vectorStore.query({
-        queryEmbeddings: [queryEmbedding],
-        nResults: 5
-      });
-
-      if (!results.ids?.length) {
-        console.log('No similar cases found');
-        return [];
-      }
-
-      const documentIds = results.ids[0].map(id => parseInt(id));
-      const documents = await Promise.all(
-        documentIds.map(async (id) => {
-          const [doc] = await db
-            .select()
-            .from(legalDocuments)
-            .where(eq(legalDocuments.id, id));
-          return doc;
-        })
-      );
-
-      console.log('Found similar cases:', documents.length);
-      return documents.filter(Boolean);
-    } catch (error) {
-      console.error('Error searching similar cases:', error);
-      return [];
-    }
-  }
-
   async analyzeDocument(documentId: number): Promise<any> {
     try {
       console.log('Analyzing document:', documentId);
@@ -221,6 +187,7 @@ Provide your response in this JSON format:
       throw error;
     }
   }
+
   async analyzeQuery(query: string): Promise<any> {
     try {
       console.log('Analyzing legal research query:', query);
@@ -272,6 +239,40 @@ Structure your response as a JSON object with these fields:
     } catch (error) {
       console.error('Failed to analyze query:', error);
       throw error;
+    }
+  }
+
+  async searchSimilarCases(query: string): Promise<any[]> {
+    try {
+      console.log('Searching similar cases for query:', query);
+      const queryEmbedding = await this.generateEmbedding(query);
+
+      const results = await this.vectorStore.query({
+        queryEmbeddings: [queryEmbedding],
+        nResults: 5
+      });
+
+      if (!results.ids?.length) {
+        console.log('No similar cases found');
+        return [];
+      }
+
+      const documentIds = results.ids[0].map(id => parseInt(id));
+      const documents = await Promise.all(
+        documentIds.map(async (id) => {
+          const [doc] = await db
+            .select()
+            .from(legalDocuments)
+            .where(eq(legalDocuments.id, id));
+          return doc;
+        })
+      );
+
+      console.log('Found similar cases:', documents.length);
+      return documents.filter(Boolean);
+    } catch (error) {
+      console.error('Error searching similar cases:', error);
+      return [];
     }
   }
 }

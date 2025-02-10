@@ -3,10 +3,50 @@ import { Anthropic } from "@anthropic-ai/sdk";
 import { db } from '../db';
 import { complianceAudits, documents } from '@shared/schema';
 import { chromaStore } from './chromaStore';
+import { Buffer } from 'buffer';
 
 const MAX_CHUNK_SIZE = 8000; // Safe token limit for analysis
 
+async function parseDocument(file: Express.Multer.File): Promise<string> {
+  const buffer = file.buffer;
+  const mimeType = file.mimetype;
+
+  try {
+    switch (mimeType) {
+      case 'application/pdf':
+        // Import dynamically to avoid test file loading issue
+        const pdfjsLib = await import('pdf-parse');
+        const pdfData = await pdfjsLib.default(buffer, {
+          // Disable test file loading
+          disableCopyPaste: true,
+          throwOnDataLength: false
+        });
+        return pdfData.text;
+
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      case 'application/msword':
+        const mammoth = await import('mammoth');
+        const result = await mammoth.extractRawText({ buffer });
+        return result.value;
+
+      case 'text/plain':
+        return buffer.toString('utf-8');
+
+      default:
+        throw new Error(`Unsupported file type: ${mimeType}`);
+    }
+  } catch (error: any) {
+    log('Document parsing failed', 'error', { error: error.message });
+    throw new Error(`Failed to parse document: ${error.message}`);
+  }
+}
+
 function chunkDocument(text: string): string[] {
+  // Remove DOCTYPE and XML declarations that might cause issues
+  text = text.replace(/<!DOCTYPE[^>]*>/i, '')
+            .replace(/<\?xml[^>]*\?>/i, '')
+            .trim();
+
   const paragraphs = text.split(/\n\n+/);
   const chunks: string[] = [];
   let currentChunk = '';
