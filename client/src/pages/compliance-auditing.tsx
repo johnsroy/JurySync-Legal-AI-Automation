@@ -258,50 +258,89 @@ const ComplianceAuditing: FC = () => {
     const submitDocumentMutation = useMutation({
       mutationFn: async () => {
         setSubmissionError(null);
-        console.log('Submitting document for analysis...');
+        console.log('Submitting document for analysis...', {
+          documentLength: documentText.length,
+          timestamp: new Date().toISOString()
+        });
 
         try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
           const response = await fetch('/api/orchestrator/audit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
             body: JSON.stringify({
               documentText: documentText,
               metadata: {
                 documentType: 'contract',
-                priority: 'medium'
+                priority: 'medium',
+                timestamp: new Date().toISOString()
               }
-            })
+            }),
+            signal: controller.signal
           });
 
+          clearTimeout(timeout);
+
           if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Document submission error:', errorText);
-            throw new Error(errorText || 'Failed to analyze document');
+            const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+            console.error('Document submission failed:', {
+              status: response.status,
+              statusText: response.statusText,
+              error: errorData
+            });
+            throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
           }
 
           const result = await response.json();
-          console.log('Document submission result:', result);
+          console.log('Document submission successful:', {
+            taskId: result.taskId,
+            status: result.status,
+            timestamp: new Date().toISOString()
+          });
           return result;
         } catch (error: any) {
-          console.error('Document submission error:', error);
+          console.error('Document submission error:', {
+            error: error.message,
+            type: error.name,
+            stack: error.stack
+          });
+          if (error.name === 'AbortError') {
+            throw new Error('Request timed out. Please try again.');
+          }
           throw error;
         }
       },
       onSuccess: (data) => {
         setTaskId(data.taskId);
-        // Only clear document after successful submission
-        setDocumentText("");
         toast({
           title: "Document Submitted",
           description: "Starting compliance analysis...",
         });
+        // Only clear document after successful submission and user confirmation
+        if (data.status !== 'error') {
+          setDocumentText("");
+        }
       },
       onError: (error: Error) => {
         setSubmissionError(error.message);
         toast({
-          title: "Submission Failed",
-          description: error.message,
-          variant: "destructive"
+          title: "Analysis Request Failed",
+          description: "There was an error submitting your document. Please try again.",
+          variant: "destructive",
+          action: (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => submitDocumentMutation.mutate()}
+            >
+              Retry
+            </Button>
+          )
         });
       }
     });
@@ -396,7 +435,7 @@ const ComplianceAuditing: FC = () => {
       }
     };
 
-    // Document Input Component with error handling
+    // Update the DocumentInput component to handle error states better
     const DocumentInput = () => (
       <Card className="bg-white/80 backdrop-blur-lg">
         <CardHeader>
@@ -412,33 +451,43 @@ const ComplianceAuditing: FC = () => {
               className="min-h-[300px] resize-none"
               value={documentText}
               onChange={(e) => setDocumentText(e.target.value)}
+              disabled={submitDocumentMutation.isPending || isLoadingTask}
             />
             {submissionError && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error Submitting Document</AlertTitle>
-                <AlertDescription>
-                  {submissionError}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSubmissionError(null)}
-                    className="mt-2"
-                  >
-                    Dismiss
-                  </Button>
+                <AlertTitle>Error Analyzing Document</AlertTitle>
+                <AlertDescription className="space-y-2">
+                  <p>{submissionError}</p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => submitDocumentMutation.mutate()}
+                      disabled={submitDocumentMutation.isPending}
+                    >
+                      Retry Analysis
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSubmissionError(null)}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
                 </AlertDescription>
               </Alert>
             )}
             <Button
               className="w-full"
-              disabled={!documentText.trim() || submitDocumentMutation.isPending}
+              disabled={!documentText.trim() || submitDocumentMutation.isPending || isLoadingTask}
               onClick={() => submitDocumentMutation.mutate()}
             >
               {submitDocumentMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Analyzing...
+                  Submitting...
                 </>
               ) : (
                 <>
@@ -897,7 +946,7 @@ const ComplianceAuditing: FC = () => {
                 <div className="flex items-center justify-center h-96">
                   <div className="text-center space-y-4">
                     <p className="text-sm text-muted-foreground">
-                      Submit a document to see analysis results
+                      Submit a document                      to see analysis results
                     </p>
                   </div>
                 </div>
