@@ -2,39 +2,44 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
-import { analyzePDFContent } from "../services/fileAnalyzer";
 import { riskAssessmentService } from "../services/riskAssessment";
 import { monitorDocument } from "../services/complianceMonitor";
 import { eq } from "drizzle-orm";
-import { generateDashboardInsights } from "../services/dashboardAnalytics";
 import { modelRouter } from "../services/modelRouter";
 
 const router = Router();
 
 // Configure multer for memory storage
+const storage = multer.memoryStorage();
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (_req, file, cb) => {
+    // Check file type
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are supported'));
+    }
   }
 }).single('file');
 
 router.post('/upload', async (req, res) => {
-  // Ensure JSON responses
-  res.type('application/json');
-
   try {
-    // Handle file upload
-    const uploadResult = await new Promise((resolve, reject) => {
+    // Handle file upload with Promise wrapper
+    await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
-        if (err) {
-          if (err instanceof multer.MulterError) {
-            reject({ status: 400, message: `Upload error: ${err.message}` });
-          } else {
-            reject({ status: 500, message: `Unknown upload error: ${err.message}` });
-          }
-        }
-        resolve(req.file);
+        if (err) reject(err);
+        else resolve(true);
       });
     });
 
@@ -47,20 +52,6 @@ router.post('/upload', async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Validate file type
-    const allowedMimeTypes = [
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword',
-      'text/plain'
-    ];
-
-    if (!allowedMimeTypes.includes(req.file.mimetype)) {
-      return res.status(400).json({ 
-        error: 'Invalid file type. Only PDF, DOC, DOCX, and TXT files are supported' 
-      });
-    }
-
     // Create document record
     const [document] = await db
       .insert(complianceDocuments)
@@ -69,15 +60,35 @@ router.post('/upload', async (req, res) => {
         title: req.file.originalname,
         content: '',
         documentType: req.file.mimetype,
-        status: "PENDING"
+        status: "PENDING",
+        riskScore: 0,
+        metadata: '{}'
       })
       .returning();
 
     // Process document using ModelRouter
     const taskId = `compliance-${document.id}`;
-    const systemPrompt = "You are a legal compliance expert. Analyze the provided document for compliance issues and provide a structured analysis.";
+    const systemPrompt = `
+      You are a legal compliance expert. Analyze the provided document for compliance issues.
+      Provide a structured analysis with the following JSON format:
+      {
+        "compliance_score": number (0-100),
+        "identified_issues": [
+          {
+            "severity": "high" | "medium" | "low",
+            "description": string,
+            "recommendation": string
+          }
+        ],
+        "summary": string
+      }
+    `;
 
-    modelRouter.processTask(taskId, "compliance-analysis", req.file.buffer.toString(), systemPrompt)
+    // Convert buffer to text safely
+    const textContent = req.file.buffer.toString('utf-8');
+
+    // Process in background
+    modelRouter.processTask(taskId, "compliance-analysis", textContent, systemPrompt)
       .then(async (result) => {
         await db
           .update(complianceDocuments)
@@ -85,7 +96,6 @@ router.post('/upload', async (req, res) => {
             content: result.output,
             status: "MONITORING",
             lastScanned: new Date(),
-            // Add model metrics
             riskScore: result.qualityScore * 100,
             metadata: JSON.stringify({
               modelUsed: result.modelUsed,
@@ -101,7 +111,10 @@ router.post('/upload', async (req, res) => {
       .catch(error => {
         console.error(`Analysis failed for document ${document.id}:`, error);
         db.update(complianceDocuments)
-          .set({ status: "ERROR" })
+          .set({ 
+            status: "ERROR",
+            metadata: JSON.stringify({ error: error.message })
+          })
           .where(eq(complianceDocuments.id, document.id))
           .execute()
           .catch(err => console.error('Failed to update document status:', err));
