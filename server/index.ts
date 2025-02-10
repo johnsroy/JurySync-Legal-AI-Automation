@@ -25,13 +25,15 @@ app.use(cors({
   maxAge: 600 // Cache preflight requests for 10 minutes
 }));
 
-// Initialize session store
+// Initialize session store with retry logic
 const PostgresStore = connectPg(session);
 const sessionStore = new PostgresStore({
   conObject: {
     connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
   },
   createTableIfMissing: true,
+  pruneSessionInterval: 60
 });
 
 const sessionSecret = process.env.SESSION_SECRET || process.env.REPL_ID || 'your-session-secret';
