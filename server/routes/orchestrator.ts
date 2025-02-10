@@ -20,54 +20,115 @@ const auditRequestSchema = z.object({
   }).optional()
 });
 
-// Response validation schemas
-const visualizationDataSchema = z.object({
-  issueFrequency: z.array(z.number()),
-  riskTrend: z.array(z.number()),
-  complianceScores: z.object({
-    overall: z.number().min(0).max(100),
-    regulatory: z.number().min(0).max(100),
-    clarity: z.number().min(0).max(100),
-    risk: z.number().min(0).max(100)
-  })
+// Get task results with improved error handling and logging
+router.get('/audit/:taskId/result', async (req, res) => {
+  const requestTimeout = 60000; // Increased to 60 second timeout
+  let timeoutId: NodeJS.Timeout | undefined;
+
+  try {
+    const { taskId } = req.params;
+    log('Fetching audit results', 'info', { taskId });
+
+    // Set up timeout handler
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Request timeout exceeded'));
+      }, requestTimeout);
+    });
+
+    // Get result with timeout
+    const resultPromise = orchestratorService.getTaskResult(taskId);
+    const result = await Promise.race([resultPromise, timeoutPromise]);
+
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    if (!result) {
+      log('Audit results not found', 'error', { taskId });
+      return res.status(404).json({
+        error: 'Audit results not found',
+        code: 'NOT_FOUND'
+      });
+    }
+
+    log('Task result status', 'debug', { 
+      taskId, 
+      status: result.status,
+      resultKeys: result.data ? Object.keys(result.data) : null
+    });
+
+    if (result.status === 'processing') {
+      log('Task still processing', 'info', { taskId, progress: result.progress });
+      return res.status(202).json({
+        status: 'processing',
+        progress: result.progress
+      });
+    }
+
+    if (result.status === 'error') {
+      log('Task failed', 'error', { taskId, error: result.error });
+      return res.status(500).json({
+        status: 'error',
+        error: result.error || 'Unknown error occurred'
+      });
+    }
+
+    try {
+      log('Returning completed task result', 'info', { 
+        taskId,
+        hasAuditReport: !!result.data?.auditReport,
+        completedAt: result.completedAt
+      });
+
+      res.json({
+        status: 'completed',
+        ...result.data,
+        metadata: result.metadata,
+        completedAt: result.completedAt
+      });
+
+    } catch (validationError) {
+      log('Result validation failed', 'error', {
+        error: validationError instanceof Error ? validationError.message : 'Unknown validation error',
+        taskId
+      });
+
+      res.status(500).json({
+        error: 'Invalid result format',
+        details: validationError instanceof Error ? validationError.message : 'Unknown validation error',
+        code: 'INVALID_RESULT_FORMAT'
+      });
+    }
+
+  } catch (error: any) {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('Failed to fetch audit results', 'error', { error: errorMessage });
+
+    if (error.message === 'Request timeout exceeded') {
+      return res.status(504).json({
+        error: 'Request timed out',
+        details: 'The server took too long to process the request',
+        code: 'TIMEOUT_ERROR'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to fetch audit results',
+      details: errorMessage,
+      code: 'RESULT_ERROR'
+    });
+  }
 });
 
-const auditReportSchema = z.object({
-  auditReport: z.object({
-    summary: z.string(),
-    flaggedIssues: z.array(z.object({
-      issue: z.string(),
-      riskScore: z.number().min(1).max(10),
-      severity: z.enum(['low', 'medium', 'high']),
-      section: z.string(),
-      recommendation: z.string(),
-      regulatoryReference: z.string(),
-      impact: z.string()
-    })),
-    riskScores: z.object({
-      average: z.number().min(1).max(10),
-      max: z.number().min(1).max(10),
-      min: z.number().min(1).max(10),
-      distribution: z.object({
-        high: z.number(),
-        medium: z.number(),
-        low: z.number()
-      })
-    }),
-    recommendedActions: z.array(z.object({
-      action: z.string(),
-      priority: z.enum(['high', 'medium', 'low']),
-      timeline: z.enum(['immediate', 'short-term', 'long-term']),
-      impact: z.string()
-    })),
-    visualizationData: visualizationDataSchema
-  })
-});
-
-// Audit endpoint with timeout handling
+// Post new audit request with improved error handling
 router.post('/audit', async (req, res) => {
   const requestTimeout = 60000; // 60 second timeout
-  let timeoutId: NodeJS.Timeout;
+  let timeoutId: NodeJS.Timeout | undefined;
 
   try {
     log('Received audit request', 'info', { body: { ...req.body, documentText: '[REDACTED]' } });
@@ -92,13 +153,13 @@ router.post('/audit', async (req, res) => {
       }, requestTimeout);
     });
 
-    // Distribute task to orchestrator with timeout
+    // Distribute task with timeout
     const resultPromise = orchestratorService.distributeTask(task);
-
-    // Race between timeout and task distribution
     const result = await Promise.race([resultPromise, timeoutPromise]);
 
-    clearTimeout(timeoutId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
 
     log('Audit task created successfully', 'info', { taskId: result.taskId });
 
@@ -109,7 +170,9 @@ router.post('/audit', async (req, res) => {
     });
 
   } catch (error: any) {
-    if (timeoutId) clearTimeout(timeoutId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('Audit request failed', 'error', { error: errorMessage });
@@ -134,93 +197,6 @@ router.post('/audit', async (req, res) => {
       error: 'Failed to process audit request',
       details: errorMessage,
       code: 'AUDIT_ERROR'
-    });
-  }
-});
-
-// Get task results with timeout handling
-router.get('/audit/:taskId/result', async (req, res) => {
-  const requestTimeout = 30000; // 30 second timeout
-  let timeoutId: NodeJS.Timeout;
-
-  try {
-    const { taskId } = req.params;
-    log('Fetching audit results', 'info', { taskId });
-
-    // Set up timeout handler
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error('Request timeout exceeded'));
-      }, requestTimeout);
-    });
-
-    // Get result with timeout
-    const resultPromise = orchestratorService.getTaskResult(taskId);
-    const result = await Promise.race([resultPromise, timeoutPromise]);
-
-    clearTimeout(timeoutId);
-
-    if (!result) {
-      return res.status(404).json({
-        error: 'Audit results not found',
-        code: 'NOT_FOUND'
-      });
-    }
-
-    if (result.status === 'processing') {
-      return res.status(202).json({
-        status: 'processing',
-        progress: result.progress
-      });
-    }
-
-    try {
-      // Validate the audit report structure
-      const validatedResult = auditReportSchema.parse(result.data);
-
-      // Return the validated audit report
-      res.json({
-        status: 'completed',
-        ...validatedResult,
-        metadata: result.data.metadata,
-        completedAt: result.completedAt
-      });
-
-    } catch (validationError) {
-      log('Audit report validation failed', 'error', {
-        error: validationError instanceof z.ZodError ? validationError.errors : validationError,
-        taskId
-      });
-
-      res.status(500).json({
-        error: 'Invalid audit report format',
-        details: validationError instanceof z.ZodError ? 
-          validationError.errors.map(err => ({
-            path: err.path.join('.'),
-            message: err.message
-          })) : 'Unexpected validation error',
-        code: 'INVALID_REPORT_FORMAT'
-      });
-    }
-
-  } catch (error: any) {
-    if (timeoutId) clearTimeout(timeoutId);
-
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log('Failed to fetch audit results', 'error', { error: errorMessage });
-
-    if (error.message === 'Request timeout exceeded') {
-      return res.status(504).json({
-        error: 'Request timed out',
-        details: 'The server took too long to process the request',
-        code: 'TIMEOUT_ERROR'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Failed to fetch audit results',
-      details: errorMessage,
-      code: 'RESULT_ERROR'
     });
   }
 });

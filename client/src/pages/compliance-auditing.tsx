@@ -187,8 +187,9 @@ const ComplianceAuditing: FC = () => {
     const [documentText, setDocumentText] = useState("");
     const [taskId, setTaskId] = useState<string | null>(null);
     const [submissionError, setSubmissionError] = useState<string | null>(null);
+    const [taskPollingError, setTaskPollingError] = useState<string | null>(null);
 
-    // Task polling query with timeout
+    // Task polling query with enhanced error handling
     const { data: taskResult, isLoading: isLoadingTask, error: taskError } = useQuery({
       queryKey: ['task-result', taskId],
       queryFn: async () => {
@@ -205,23 +206,31 @@ const ComplianceAuditing: FC = () => {
           clearTimeout(timeout);
 
           if (!response.ok) {
-            throw new Error('Failed to fetch task result');
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to fetch task result');
           }
 
           const data = await response.json();
-          if (data.status === 'completed') {
-            // Clear task ID and stop polling
-            setTaskId(null);
-            return data;
-          }
+
           if (data.status === 'error') {
             throw new Error(data.error || 'Analysis failed');
           }
+
+          if (data.status === 'completed') {
+            // Clear task ID and stop polling
+            setTaskId(null);
+            // Clear any previous errors
+            setTaskPollingError(null);
+            return data;
+          }
+
           return null;
-        } catch (error) {
+        } catch (error: any) {
           if (error.name === 'AbortError') {
+            setTaskPollingError('Request timed out. The analysis is taking longer than expected.');
             throw new Error('Request timed out');
           }
+          setTaskPollingError(error.message);
           throw error;
         }
       },
@@ -404,6 +413,24 @@ const ComplianceAuditing: FC = () => {
 
     // Analysis Results Component with improved error handling
     const AnalysisResults = () => {
+      if (taskPollingError) {
+        return (
+          <Alert variant="destructive" className="mt-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error Analyzing Document</AlertTitle>
+            <AlertDescription>{taskPollingError}</AlertDescription>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setTaskId(null)} 
+              className="mt-2"
+            >
+              Dismiss
+            </Button>
+          </Alert>
+        );
+      }
+
       if (submissionError) {
         return (
           <Alert variant="destructive" className="mt-4">
@@ -513,7 +540,7 @@ const ComplianceAuditing: FC = () => {
                               }
                               className={`h-2 ${
                                 level === 'high' ? 'bg-red-200' :
-                                level === 'medium' ? 'bg-yellow-200' : 'bg-green-200'
+                                  level === 'medium' ? 'bg-yellow-200' : 'bg-green-200'
                               }`}
                             />
                           </div>
