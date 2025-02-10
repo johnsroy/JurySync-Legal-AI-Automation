@@ -219,10 +219,12 @@ const ComplianceAuditing: FC = () => {
 
           if (!response.ok) {
             const errorData = await response.json();
+            console.error('Task result error:', errorData);
             throw new Error(errorData.error || 'Failed to fetch task result');
           }
 
           const data = await response.json();
+          console.log('Task result data:', data);
 
           if (data.status === 'error') {
             throw new Error(data.error || 'Analysis failed');
@@ -233,11 +235,12 @@ const ComplianceAuditing: FC = () => {
             setTaskId(null);
             // Clear any previous errors
             setTaskPollingError(null);
-            return data;
+            return data.data;
           }
 
           return null;
         } catch (error: any) {
+          console.error('Task polling error:', error);
           if (error.name === 'AbortError') {
             setTaskPollingError('Request timed out. The analysis is taking longer than expected.');
             throw new Error('Request timed out');
@@ -255,25 +258,34 @@ const ComplianceAuditing: FC = () => {
     const submitDocumentMutation = useMutation({
       mutationFn: async () => {
         setSubmissionError(null);
-        const response = await fetch('/api/orchestrator/audit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            documentText: documentText,
-            metadata: {
-              documentType: 'contract',
-              priority: 'medium'
-            }
-          })
-        });
+        console.log('Submitting document for analysis...');
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || 'Failed to analyze document');
+        try {
+          const response = await fetch('/api/orchestrator/audit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              documentText: documentText,
+              metadata: {
+                documentType: 'contract',
+                priority: 'medium'
+              }
+            })
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Document submission error:', errorText);
+            throw new Error(errorText || 'Failed to analyze document');
+          }
+
+          const result = await response.json();
+          console.log('Document submission result:', result);
+          return result;
+        } catch (error: any) {
+          console.error('Document submission error:', error);
+          throw error;
         }
-
-        const result = await response.json();
-        return result;
       },
       onSuccess: (data) => {
         setTaskId(data.taskId);
@@ -384,7 +396,7 @@ const ComplianceAuditing: FC = () => {
       }
     };
 
-    // Document Input Component
+    // Document Input Component with error handling
     const DocumentInput = () => (
       <Card className="bg-white/80 backdrop-blur-lg">
         <CardHeader>
@@ -401,6 +413,23 @@ const ComplianceAuditing: FC = () => {
               value={documentText}
               onChange={(e) => setDocumentText(e.target.value)}
             />
+            {submissionError && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error Submitting Document</AlertTitle>
+                <AlertDescription>
+                  {submissionError}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSubmissionError(null)}
+                    className="mt-2"
+                  >
+                    Dismiss
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
             <Button
               className="w-full"
               disabled={!documentText.trim() || submitDocumentMutation.isPending}
@@ -843,8 +872,46 @@ const ComplianceAuditing: FC = () => {
             {/* Document Input and Analysis */}
             <div className="grid gap-6 md:grid-cols-2">
               <DocumentInput />
+              {taskPollingError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Error Analyzing Document</AlertTitle>
+                  <AlertDescription>
+                    {taskPollingError}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setTaskPollingError(null);
+                        setTaskId(null);
+                      }}
+                      className="mt-2"
+                    >
+                      Retry Analysis
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
               {taskResult && <AnalysisResults result={taskResult} />}
-              {!taskResult && <AnalysisResults result={{ auditReport: { summary: "", flaggedIssues: [], riskScores: { average: 0, max: 0, min: 0, distribution: { high: 0, medium: 0, low: 0 } }, visualizationData: { riskTrend: [], issueFrequency: [], complianceScores: { overall: 0, regulatory: 0, clarity: 0, risk: 0 } }, recommendedActions: [] } }} />}
+              {!taskResult && !taskPollingError && !isLoadingTask && (
+                <div className="flex items-center justify-center h-96">
+                  <div className="text-center space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Submit a document to see analysis results
+                    </p>
+                  </div>
+                </div>
+              )}
+              {isLoadingTask && (
+                <div className="flex items-center justify-center h-96">
+                  <div className="text-center space-y-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+                    <p className="text-sm text-muted-foreground">
+                      Analyzing document...
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </main>
