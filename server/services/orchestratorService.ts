@@ -84,10 +84,25 @@ class TaskManager {
 
   setTaskResult(taskId: string, result: any) {
     this.taskResults.set(taskId, result);
+    this.updateTask(taskId, {
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      progress: 100
+    });
   }
 
   getTaskResult(taskId: string) {
-    return this.taskResults.get(taskId);
+    const result = this.taskResults.get(taskId);
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+
+    return {
+      status: result ? 'completed' : task.status,
+      data: result,
+      progress: task.progress,
+      error: task.error,
+      completedAt: task.completedAt
+    };
   }
 
   getTask(taskId: string) {
@@ -282,8 +297,8 @@ export class OrchestratorService {
 
       // Process based on task type
       if (task.type === 'compliance') {
-        // Use the compliance audit service
-        result = await complianceAuditService.analyzeDocument(data.document);
+        // Pass taskId to complianceAuditService for proper state management
+        result = await complianceAuditService.analyzeDocument(data.document, taskId);
 
         // Validate the audit report structure
         try {

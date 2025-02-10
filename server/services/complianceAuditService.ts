@@ -22,6 +22,15 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
   console.log(`[${timestamp}] [ComplianceAudit] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
 }
 
+// Task storage for managing ongoing tasks
+const taskStorage = new Map<string, {
+  status: 'processing' | 'completed' | 'error';
+  data?: any;
+  error?: string;
+  progress?: number;
+  completedAt?: string;
+}>();
+
 // Retry logic for API calls
 async function retryOperation<T>(
   operation: () => Promise<T>,
@@ -135,7 +144,10 @@ export class ComplianceAuditService {
 
         // Race between timeout and API call
         const response = await Promise.race([analysisPromise, timeoutPromise]);
-        const result = JSON.parse(response.choices[0].message.content || "{}");
+        if (!response.choices?.[0]?.message?.content) {
+          throw new Error('Invalid response format from OpenAI');
+        }
+        const result = JSON.parse(response.choices[0].message.content);
         log('OpenAI analysis completed successfully', 'info', { responseStructure: Object.keys(result) });
         return result;
       } catch (error: any) {
@@ -154,13 +166,8 @@ export class ComplianceAuditService {
       try {
         log('Starting Anthropic analysis');
 
-        // Set a timeout promise
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Anthropic analysis timeout')), 30000);
-        });
-
         // the newest Anthropic model is "claude-3-5-sonnet-20241022"
-        const analysisPromise = anthropic.messages.create({
+        const response = await anthropic.messages.create({
           model: "claude-3-5-sonnet-20241022",
           max_tokens: 1500,
           messages: [{
@@ -217,8 +224,6 @@ export class ComplianceAuditService {
           }]
         });
 
-        // Race between timeout and API call
-        const response = await Promise.race([analysisPromise, timeoutPromise]);
         const content = response.content[0];
         if (content.type !== 'text') {
           throw new Error('Unexpected response format from Anthropic API');
@@ -238,9 +243,12 @@ export class ComplianceAuditService {
     });
   }
 
-  async analyzeDocument(documentText: string) {
+  async analyzeDocument(documentText: string, taskId: string) {
     try {
-      log('Starting combined compliance analysis');
+      log('Starting combined compliance analysis', 'info', { taskId });
+
+      // Store initial task state
+      taskStorage.set(taskId, { status: 'processing', progress: 0 });
 
       // Add detailed logging for API calls
       log('Verifying API configurations', 'debug', {
@@ -257,7 +265,8 @@ export class ComplianceAuditService {
       // Log analysis results
       log('Analysis results', 'debug', {
         openAIStatus: openAIAnalysis.status,
-        anthropicStatus: anthropicAnalysis.status
+        anthropicStatus: anthropicAnalysis.status,
+        taskId
       });
 
       // Check results and handle failures
@@ -268,8 +277,17 @@ export class ComplianceAuditService {
         const error = new Error('Both AI analyses failed');
         log('Complete analysis failure', 'error', {
           openAIError: openAIAnalysis.status === 'rejected' ? openAIAnalysis.reason : null,
-          anthropicError: anthropicAnalysis.status === 'rejected' ? anthropicAnalysis.reason : null
+          anthropicError: anthropicAnalysis.status === 'rejected' ? anthropicAnalysis.reason : null,
+          taskId
         });
+
+        // Update task storage with error
+        taskStorage.set(taskId, {
+          status: 'error',
+          error: error.message,
+          completedAt: new Date().toISOString()
+        });
+
         throw error;
       }
 
@@ -283,7 +301,7 @@ export class ComplianceAuditService {
           userId: 1, // TODO: Replace with actual user ID from context
         }).returning();
 
-        log('Document created in database', 'info', { documentId: document.id });
+        log('Document created in database', 'info', { documentId: document.id, taskId });
 
         // Skip ChromaDB for now as it's failing
         log('Skipping ChromaDB storage due to connection issues', 'info');
@@ -363,28 +381,65 @@ export class ComplianceAuditService {
           }
         }).returning();
 
+        // Update task storage with success
+        taskStorage.set(taskId, {
+          status: 'completed',
+          data: combinedReport,
+          completedAt: new Date().toISOString()
+        });
+
         log('Combined analysis completed', 'info', {
           auditId: auditRecord.id,
           documentId: document.id,
           issuesCount: combinedReport.auditReport.flaggedIssues.length,
-          completionTime: new Date().toISOString()
+          completionTime: new Date().toISOString(),
+          taskId
         });
 
         return combinedReport;
       } catch (dbError: any) {
         log('Database operation failed', 'error', {
           error: dbError.message,
-          stack: dbError.stack
+          stack: dbError.stack,
+          taskId
         });
+
+        // Update task storage with error
+        taskStorage.set(taskId, {
+          status: 'error',
+          error: dbError.message,
+          completedAt: new Date().toISOString()
+        });
+
         throw dbError;
       }
     } catch (error: any) {
       log('Combined analysis failed', 'error', {
         error: error.message,
-        stack: error.stack
+        stack: error.stack,
+        taskId
       });
+
+      // Update task storage with error if not already set
+      if (!taskStorage.get(taskId)?.error) {
+        taskStorage.set(taskId, {
+          status: 'error',
+          error: error.message,
+          completedAt: new Date().toISOString()
+        });
+      }
+
       throw error;
     }
+  }
+
+  // New method to get task result
+  async getTaskResult(taskId: string) {
+    const task = taskStorage.get(taskId);
+    if (!task) {
+      return null;
+    }
+    return task;
   }
 }
 
