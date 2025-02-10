@@ -21,13 +21,13 @@ const auditRequestSchema = z.object({
 });
 
 // Get task results with improved error handling and logging
-router.get('/audit/:taskId/result', async (req, res) => {
+router.get('/tasks/:taskId/result', async (req, res) => {
   const requestTimeout = 60000; // Increased to 60 second timeout
   let timeoutId: NodeJS.Timeout | undefined;
 
   try {
     const { taskId } = req.params;
-    log('Fetching audit results', 'info', { taskId });
+    log('Fetching task results', 'info', { taskId });
 
     // Set up timeout handler
     const timeoutPromise = new Promise((_, reject) => {
@@ -45,9 +45,9 @@ router.get('/audit/:taskId/result', async (req, res) => {
     }
 
     if (!result) {
-      log('Audit results not found', 'error', { taskId });
+      log('Task results not found', 'error', { taskId });
       return res.status(404).json({
-        error: 'Audit results not found',
+        error: 'Task results not found',
         code: 'NOT_FOUND'
       });
     }
@@ -74,32 +74,18 @@ router.get('/audit/:taskId/result', async (req, res) => {
       });
     }
 
-    try {
-      log('Returning completed task result', 'info', { 
-        taskId,
-        hasAuditReport: !!result.data?.auditReport,
-        completedAt: result.completedAt
-      });
+    log('Returning completed task result', 'info', { 
+      taskId,
+      hasAuditReport: !!result.data?.auditReport,
+      completedAt: result.completedAt
+    });
 
-      res.json({
-        status: 'completed',
-        ...result.data,
-        metadata: result.metadata,
-        completedAt: result.completedAt
-      });
-
-    } catch (validationError) {
-      log('Result validation failed', 'error', {
-        error: validationError instanceof Error ? validationError.message : 'Unknown validation error',
-        taskId
-      });
-
-      res.status(500).json({
-        error: 'Invalid result format',
-        details: validationError instanceof Error ? validationError.message : 'Unknown validation error',
-        code: 'INVALID_RESULT_FORMAT'
-      });
-    }
+    res.json({
+      status: 'completed',
+      data: result.data,
+      metadata: result.metadata,
+      completedAt: result.completedAt
+    });
 
   } catch (error: any) {
     if (timeoutId) {
@@ -107,7 +93,7 @@ router.get('/audit/:taskId/result', async (req, res) => {
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log('Failed to fetch audit results', 'error', { error: errorMessage });
+    log('Failed to fetch task results', 'error', { error: errorMessage });
 
     if (error.message === 'Request timeout exceeded') {
       return res.status(504).json({
@@ -118,27 +104,26 @@ router.get('/audit/:taskId/result', async (req, res) => {
     }
 
     res.status(500).json({
-      error: 'Failed to fetch audit results',
+      error: 'Failed to fetch task results',
       details: errorMessage,
       code: 'RESULT_ERROR'
     });
   }
 });
 
-// Post new audit request with improved error handling
-router.post('/audit', async (req, res) => {
+// Submit new document for processing
+router.post('/process', async (req, res) => {
   const requestTimeout = 60000; // 60 second timeout
   let timeoutId: NodeJS.Timeout | undefined;
 
   try {
-    log('Received audit request', 'info', { body: { ...req.body, documentText: '[REDACTED]' } });
+    log('Received document processing request', 'info', { body: { ...req.body, documentText: '[REDACTED]' } });
 
     // Validate request
     const validatedData = auditRequestSchema.parse(req.body);
 
-    // Create compliance audit task
+    // Create task for processing
     const task = {
-      type: 'compliance' as const,
       data: {
         document: validatedData.documentText,
         metadata: validatedData.metadata || {},
@@ -161,11 +146,13 @@ router.post('/audit', async (req, res) => {
       clearTimeout(timeoutId);
     }
 
-    log('Audit task created successfully', 'info', { taskId: result.taskId });
+    log('Document processing task created successfully', 'info', { taskId: result.taskId });
 
     res.json({
       taskId: result.taskId,
       status: 'processing',
+      type: result.type,
+      metadata: result.metadata,
       estimatedCompletionTime: new Date(Date.now() + 5 * 60 * 1000).toISOString() // Estimate 5 minutes
     });
 
@@ -175,7 +162,7 @@ router.post('/audit', async (req, res) => {
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log('Audit request failed', 'error', { error: errorMessage });
+    log('Document processing request failed', 'error', { error: errorMessage });
 
     if (error instanceof z.ZodError) {
       return res.status(400).json({
@@ -194,9 +181,9 @@ router.post('/audit', async (req, res) => {
     }
 
     res.status(500).json({
-      error: 'Failed to process audit request',
+      error: 'Failed to process document',
       details: errorMessage,
-      code: 'AUDIT_ERROR'
+      code: 'PROCESSING_ERROR'
     });
   }
 });
