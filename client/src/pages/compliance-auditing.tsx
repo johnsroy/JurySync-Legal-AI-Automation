@@ -260,7 +260,7 @@ const ComplianceAuditing: FC = () => {
 
         try {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 60000); // Increased timeout to 60 seconds
+          const timeout = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
           const response = await fetch('/api/orchestrator/audit', {
             method: 'POST',
@@ -269,7 +269,7 @@ const ComplianceAuditing: FC = () => {
               'Accept': 'application/json'
             },
             body: JSON.stringify({
-              document: documentText,
+              documentText: documentText, // Changed from document to documentText
               type: 'policy',
               metadata: {
                 documentType: 'policy',
@@ -322,7 +322,7 @@ const ComplianceAuditing: FC = () => {
         setSubmissionError(error.message);
         toast({
           title: "Analysis Request Failed",
-          description: "There was an error submitting your document. Please try again.",
+          description: error.message,
           variant: "destructive",
           action: (
             <Button 

@@ -365,13 +365,13 @@ export class OrchestratorService {
       if (task.type === 'policy' || task.type === 'compliance') {
         // Set a longer timeout for AI analysis
         const timeout = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Analysis timeout')), 120000); // 2 minute timeout
+          setTimeout(() => reject(new Error('Analysis timeout')), 180000); // 3 minute timeout
         });
 
         try {
           // Race between the analysis and timeout
           result = await Promise.race([
-            complianceAuditService.analyzeDocument(data.document, taskId),
+            complianceAuditService.analyzeDocument(data.documentText, taskId), // Changed from document to documentText
             timeout
           ]);
 
