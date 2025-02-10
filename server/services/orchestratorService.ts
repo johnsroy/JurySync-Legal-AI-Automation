@@ -369,11 +369,27 @@ export class OrchestratorService {
         });
 
         try {
+          // Validate document text before processing
+          if (!data.documentText || typeof data.documentText !== 'string') {
+            throw new Error('Invalid document text provided');
+          }
+
+          // Log the document length for debugging
+          log('Processing document', 'info', {
+            taskId,
+            documentLength: data.documentText.length,
+            type: task.type
+          });
+
           // Race between the analysis and timeout
           result = await Promise.race([
-            complianceAuditService.analyzeDocument(data.documentText, taskId), // Changed from document to documentText
+            complianceAuditService.analyzeDocument(data.documentText, taskId),
             timeout
           ]);
+
+          if (!result) {
+            throw new Error('Analysis produced no results');
+          }
 
           log('Compliance analysis completed', 'info', {
             taskId,
@@ -399,10 +415,22 @@ export class OrchestratorService {
           log(`Task ${taskId} completed successfully with validated audit report`);
 
         } catch (error: any) {
+          log('Analysis error:', 'error', {
+            taskId,
+            error: error.message,
+            stack: error.stack
+          });
+
           if (error.message === 'Analysis timeout') {
             throw new Error('Analysis took too long to complete. Please try again with a shorter document.');
           }
-          throw error;
+
+          // Provide more specific error messages
+          if (error.message.includes('split')) {
+            throw new Error('Error processing document format. Please ensure the document is properly formatted text.');
+          }
+
+          throw new Error(`Analysis failed: ${error.message}`);
         }
 
       } else {

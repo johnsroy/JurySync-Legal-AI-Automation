@@ -474,7 +474,18 @@ const ComplianceAuditing: FC = () => {
             <Button
               className="w-full"
               disabled={!documentText.trim() || submitDocumentMutation.isPending || isLoadingTask}
-              onClick={() => submitDocumentMutation.mutate()}
+              onClick={() => {
+                // Validate document text before submission
+                if (!documentText.trim()) {
+                  toast({
+                    title: "Validation Error",
+                    description: "Please enter document text before submitting",
+                    variant: "destructive"
+                  });
+                  return;
+                }
+                submitDocumentMutation.mutate();
+              }}
             >
               {submitDocumentMutation.isPending ? (
                 <>
