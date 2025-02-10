@@ -269,12 +269,14 @@ const ComplianceAuditing: FC = () => {
               'Accept': 'application/json'
             },
             body: JSON.stringify({
-              documentText: documentText, // Changed from document to documentText
-              type: 'policy',
-              metadata: {
-                documentType: 'policy',
-                priority: 'medium',
-                timestamp: new Date().toISOString()
+              type: 'compliance',
+              data: {
+                documentText: documentText.trim(),
+                metadata: {
+                  documentType: 'compliance',
+                  priority: 'medium',
+                  timestamp: new Date().toISOString()
+                }
               }
             }),
             signal: controller.signal
@@ -953,7 +955,7 @@ const ComplianceAuditing: FC = () => {
                 {isLoadingTask && (
                   <Alert>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <AlertTitle>Analyzing Document</AlertTitle>
+                    <AlertTitle>AnalyzingDocument</AlertTitle>
                     <AlertDescription>
                       Performing compliance analysis...
                     </AlertDescription>

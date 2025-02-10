@@ -292,15 +292,24 @@ export class OrchestratorService {
     log('Received audit request', 'info', { body: input });
 
     try {
+      // Validate input structure
+      if (!input.data?.documentText || typeof input.data.documentText !== 'string') {
+        throw new Error('Document text is required and must be a string');
+      }
+
       // If type is not explicitly provided, classify the document
-      if (!input.type && input.data.document) {
-        const classification = await this.classifyDocument(input.data.document);
+      if (!input.type && input.data.documentText) {
+        const classification = await this.classifyDocument(input.data.documentText);
         input.type = classification.type;
         input.data.classification = classification;
       }
 
       const task = this.taskManager.createTask(taskId, input.type, input.data);
-      log('Audit task created successfully', 'info', { taskId });
+      log('Audit task created successfully', 'info', { 
+        taskId,
+        documentLength: input.data.documentText.length,
+        type: input.type
+      });
 
       // Start processing in background
       this.processTask(taskId).catch(error => {
@@ -325,7 +334,7 @@ export class OrchestratorService {
         classification: input.data.classification,
         metadata: {
           createdAt: new Date().toISOString(),
-          documentLength: input.data.document?.length || 0
+          documentLength: input.data.documentText.length
         }
       };
 
