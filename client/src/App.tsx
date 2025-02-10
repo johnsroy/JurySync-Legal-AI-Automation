@@ -19,6 +19,7 @@ import { ProtectedRoute } from "./lib/protected-route";
 function Router() {
   return (
     <Switch>
+      {/* Public routes */}
       <Route path="/" component={LandingPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
@@ -65,9 +66,11 @@ function Router() {
   );
 }
 
-function App() {
+export default function App() {
   return (
+    // Wrap the entire app with QueryClientProvider first
     <QueryClientProvider client={queryClient}>
+      {/* Then wrap with AuthProvider */}
       <AuthProvider>
         <Router />
         <Toaster />
@@ -75,5 +78,3 @@ function App() {
     </QueryClientProvider>
   );
 }
-
-export default App;
