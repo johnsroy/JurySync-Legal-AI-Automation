@@ -16,16 +16,18 @@ if (!process.env.ANTHROPIC_API_KEY) {
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Enhanced logging function
+// Enhanced logging function with more context
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] [ComplianceAudit] [${type.toUpperCase()}] ${message}`, context ? context : '');
+  console.log(`[${timestamp}] [ComplianceAudit] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
 }
 
 export class ComplianceAuditService {
   private static instance: ComplianceAuditService;
 
-  private constructor() {}
+  private constructor() {
+    log('Initializing ComplianceAuditService', 'info');
+  }
 
   static getInstance(): ComplianceAuditService {
     if (!ComplianceAuditService.instance) {
@@ -102,10 +104,14 @@ export class ComplianceAuditService {
       });
 
       const result = JSON.parse(response.choices[0].message.content || "{}");
-      log('OpenAI analysis completed');
+      log('OpenAI analysis completed successfully', 'info', { responseStructure: Object.keys(result) });
       return result;
     } catch (error: any) {
-      log('OpenAI analysis failed', 'error', error);
+      log('OpenAI analysis failed', 'error', {
+        error: error.message,
+        stack: error.stack,
+        response: error.response?.data
+      });
       throw new Error(`OpenAI analysis failed: ${error.message}`);
     }
   }
@@ -177,10 +183,14 @@ export class ComplianceAuditService {
       }
 
       const result = JSON.parse(content.text);
-      log('Anthropic analysis completed');
+      log('Anthropic analysis completed successfully', 'info', { responseStructure: Object.keys(result) });
       return result;
     } catch (error: any) {
-      log('Anthropic analysis failed', 'error', error);
+      log('Anthropic analysis failed', 'error', {
+        error: error.message,
+        stack: error.stack,
+        response: error.response?.data
+      });
       throw new Error(`Anthropic analysis failed: ${error.message}`);
     }
   }
@@ -191,9 +201,19 @@ export class ComplianceAuditService {
 
       // Run both analyses in parallel
       const [openAIAnalysis, anthropicAnalysis] = await Promise.all([
-        this.analyzeWithOpenAI(documentText),
-        this.analyzeWithAnthropic(documentText)
+        this.analyzeWithOpenAI(documentText).catch(error => {
+          log('OpenAI analysis failed, continuing with Anthropic only', 'error', error);
+          return null;
+        }),
+        this.analyzeWithAnthropic(documentText).catch(error => {
+          log('Anthropic analysis failed, continuing with OpenAI only', 'error', error);
+          return null;
+        })
       ]);
+
+      if (!openAIAnalysis && !anthropicAnalysis) {
+        throw new Error('Both AI analyses failed');
+      }
 
       // Create document record
       const [document] = await db.insert(documents).values({
@@ -204,67 +224,74 @@ export class ComplianceAuditService {
         userId: 1, // TODO: Replace with actual user ID from context
       }).returning();
 
+      log('Document created in database', 'info', { documentId: document.id });
+
       // Try to store in vector database, but don't block if it fails
       try {
         await chromaStore.addDocument(document, documentText);
+        log('Document added to vector store', 'info', { documentId: document.id });
       } catch (error) {
         log('Vector storage failed but continuing with analysis', 'error', error);
       }
 
+      // Use the first successful analysis as primary and fall back as needed
+      const primaryAnalysis = openAIAnalysis || anthropicAnalysis;
+      const secondaryAnalysis = openAIAnalysis ? anthropicAnalysis : null;
+
       // Combine and aggregate results
       const combinedReport = {
         auditReport: {
-          summary: openAIAnalysis.auditReport.summary,
+          summary: primaryAnalysis.auditReport.summary,
           flaggedIssues: [
-            ...openAIAnalysis.auditReport.flaggedIssues.map((issue: any) => ({
+            ...(openAIAnalysis?.auditReport.flaggedIssues || []).map((issue: any) => ({
               ...issue,
               source: 'openai'
             })),
-            ...anthropicAnalysis.auditReport.flaggedIssues.map((issue: any) => ({
+            ...(anthropicAnalysis?.auditReport.flaggedIssues || []).map((issue: any) => ({
               ...issue,
               source: 'anthropic'
             }))
           ],
-          riskScores: {
-            average: (openAIAnalysis.auditReport.riskScores.average + 
-                     anthropicAnalysis.auditReport.riskScores.average) / 2,
-            max: Math.max(openAIAnalysis.auditReport.riskScores.max,
-                         anthropicAnalysis.auditReport.riskScores.max),
-            min: Math.min(openAIAnalysis.auditReport.riskScores.min,
-                         anthropicAnalysis.auditReport.riskScores.min),
+          riskScores: secondaryAnalysis ? {
+            average: (primaryAnalysis.auditReport.riskScores.average + 
+                     secondaryAnalysis.auditReport.riskScores.average) / 2,
+            max: Math.max(primaryAnalysis.auditReport.riskScores.max,
+                         secondaryAnalysis.auditReport.riskScores.max),
+            min: Math.min(primaryAnalysis.auditReport.riskScores.min,
+                         secondaryAnalysis.auditReport.riskScores.min),
             distribution: {
-              high: Math.round((openAIAnalysis.auditReport.riskScores.distribution.high +
-                              anthropicAnalysis.auditReport.riskScores.distribution.high) / 2),
-              medium: Math.round((openAIAnalysis.auditReport.riskScores.distribution.medium +
-                                anthropicAnalysis.auditReport.riskScores.distribution.medium) / 2),
-              low: Math.round((openAIAnalysis.auditReport.riskScores.distribution.low +
-                             anthropicAnalysis.auditReport.riskScores.distribution.low) / 2)
+              high: Math.round((primaryAnalysis.auditReport.riskScores.distribution.high +
+                             secondaryAnalysis.auditReport.riskScores.distribution.high) / 2),
+              medium: Math.round((primaryAnalysis.auditReport.riskScores.distribution.medium +
+                               secondaryAnalysis.auditReport.riskScores.distribution.medium) / 2),
+              low: Math.round((primaryAnalysis.auditReport.riskScores.distribution.low +
+                            secondaryAnalysis.auditReport.riskScores.distribution.low) / 2)
             }
-          },
+          } : primaryAnalysis.auditReport.riskScores,
           recommendedActions: [
-            ...openAIAnalysis.auditReport.recommendedActions.map((action: any) => ({
+            ...(openAIAnalysis?.auditReport.recommendedActions || []).map((action: any) => ({
               ...action,
               source: 'openai'
             })),
-            ...anthropicAnalysis.auditReport.recommendedActions.map((action: any) => ({
+            ...(anthropicAnalysis?.auditReport.recommendedActions || []).map((action: any) => ({
               ...action,
               source: 'anthropic'
             }))
           ],
-          visualizationData: {
-            issueFrequency: openAIAnalysis.auditReport.visualizationData.issueFrequency,
-            riskTrend: openAIAnalysis.auditReport.visualizationData.riskTrend,
+          visualizationData: secondaryAnalysis ? {
+            issueFrequency: primaryAnalysis.auditReport.visualizationData.issueFrequency,
+            riskTrend: primaryAnalysis.auditReport.visualizationData.riskTrend,
             complianceScores: {
-              overall: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.overall +
-                         anthropicAnalysis.auditReport.visualizationData.complianceScores.overall) / 2),
-              regulatory: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.regulatory +
-                           anthropicAnalysis.auditReport.visualizationData.complianceScores.regulatory) / 2),
-              clarity: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.clarity +
-                        anthropicAnalysis.auditReport.visualizationData.complianceScores.clarity) / 2),
-              risk: Math.round((openAIAnalysis.auditReport.visualizationData.complianceScores.risk +
-                     anthropicAnalysis.auditReport.visualizationData.complianceScores.risk) / 2)
+              overall: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.overall +
+                        secondaryAnalysis.auditReport.visualizationData.complianceScores.overall) / 2),
+              regulatory: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.regulatory +
+                          secondaryAnalysis.auditReport.visualizationData.complianceScores.regulatory) / 2),
+              clarity: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.clarity +
+                       secondaryAnalysis.auditReport.visualizationData.complianceScores.clarity) / 2),
+              risk: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.risk +
+                    secondaryAnalysis.auditReport.visualizationData.complianceScores.risk) / 2)
             }
-          }
+          } : primaryAnalysis.auditReport.visualizationData
         }
       };
 
@@ -282,10 +309,18 @@ export class ComplianceAuditService {
         }
       }).returning();
 
-      log('Combined analysis completed');
+      log('Combined analysis completed', 'info', {
+        auditId: auditRecord.id,
+        documentId: document.id,
+        issuesCount: combinedReport.auditReport.flaggedIssues.length
+      });
+
       return combinedReport;
     } catch (error: any) {
-      log('Combined analysis failed', 'error', error);
+      log('Combined analysis failed', 'error', {
+        error: error.message,
+        stack: error.stack
+      });
       throw error;
     }
   }
