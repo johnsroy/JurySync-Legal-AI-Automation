@@ -955,10 +955,9 @@ const ComplianceAuditing: FC = () => {
                 {isLoadingTask && (
                   <Alert>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <AlertTitle>AnalyzingDocument</AlertTitle>
+                    <AlertTitle>Analyzing Document</AlertTitle>
                     <AlertDescription>
-                      Performing compliance analysis...
-                    </AlertDescription>
+                      Performing compliance analysis...                    </AlertDescription>
                   </Alert>
                 )}
 

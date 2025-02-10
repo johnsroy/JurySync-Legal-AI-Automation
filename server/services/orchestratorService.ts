@@ -297,13 +297,11 @@ export class OrchestratorService {
         throw new Error('Document text is required and must be a string');
       }
 
-      // If type is not explicitly provided, classify the document
-      if (!input.type && input.data.documentText) {
-        const classification = await this.classifyDocument(input.data.documentText);
-        input.type = classification.type;
-        input.data.classification = classification;
+      if (!input.type || !['contract', 'compliance', 'research'].includes(input.type)) {
+        throw new Error('Invalid document type specified');
       }
 
+      // Create task
       const task = this.taskManager.createTask(taskId, input.type, input.data);
       log('Audit task created successfully', 'info', { 
         taskId,
