@@ -7,6 +7,11 @@ import { Buffer } from 'buffer';
 
 const MAX_CHUNK_SIZE = 8000;
 
+function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [ComplianceAudit] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
+}
+
 async function parseDocument(file: Express.Multer.File): Promise<string> {
   const buffer = file.buffer;
   const mimeType = file.mimetype;
@@ -23,7 +28,8 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
           text = pdfData.text;
           log('PDF parsing successful', 'debug');
         } catch (err) {
-          throw new Error(`PDF parsing failed: ${err.message}`);
+          log('PDF parsing error', 'error', { error: (err as Error).message });
+          throw new Error(`PDF parsing failed: ${(err as Error).message}`);
         }
         break;
 
@@ -35,7 +41,8 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
           text = result.value;
           log('Word document parsing successful', 'debug');
         } catch (err) {
-          throw new Error(`Word document parsing failed: ${err.message}`);
+          log('Word document parsing error', 'error', { error: (err as Error).message });
+          throw new Error(`Word document parsing failed: ${(err as Error).message}`);
         }
         break;
 
@@ -48,24 +55,31 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
         throw new Error(`Unsupported file type: ${mimeType}`);
     }
 
-    // Enhanced text cleaning
+    // Enhanced text cleaning with detailed logging
+    log('Starting text cleaning', 'debug', { originalLength: text.length });
+
+    // First pass: Remove any potential XML/HTML-like content
     text = text
-      // Remove all XML/HTML tags
-      .replace(/<[^>]*>/g, '')
-      // Remove DOCTYPE declarations
-      .replace(/<!DOCTYPE[^>]*>/gi, '')
-      // Remove XML declarations
-      .replace(/<\?xml[^>]*\?>/gi, '')
-      // Remove HTML comments
-      .replace(/<!--[\s\S]*?-->/g, '')
-      // Remove multiple spaces, newlines, and tabs
-      .replace(/\s+/g, ' ')
-      // Clean unicode control characters
-      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
-      .trim();
+      .replace(/<\!DOCTYPE[^>]*>/gi, '') // Remove DOCTYPE declarations
+      .replace(/<\?xml[^>]*\?>/gi, '')   // Remove XML declarations
+      .replace(/<!--[\s\S]*?-->/g, '')   // Remove HTML comments
+      .replace(/<[^>]+>/g, ' ')          // Remove any remaining HTML/XML tags
+      .replace(/&[a-z]+;/gi, ' ')        // Remove HTML entities
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
+      .replace(/\t/g, ' ');              // Replace tabs with spaces
+
+    // Second pass: Clean up whitespace
+    text = text
+      .split(/\r?\n/)                    // Split into lines
+      .map(line => line.trim())          // Trim each line
+      .filter(line => line.length > 0)   // Remove empty lines
+      .join('\n')                        // Rejoin with newlines
+      .replace(/\s+/g, ' ')              // Normalize spaces
+      .trim();                           // Final trim
 
     if (!text) {
-      throw new Error('No text content found in document');
+      log('Empty document after cleaning', 'error');
+      throw new Error('No text content found in document after cleaning');
     }
 
     log('Document cleaning completed', 'info', {
@@ -74,13 +88,14 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
     });
 
     return text;
+
   } catch (error: any) {
-    log('Document parsing failed', 'error', { 
+    log('Document parsing failed', 'error', {
       error: error.message,
       stack: error.stack,
-      mimeType 
+      mimeType
     });
-    throw new Error(`Failed to parse document: ${error.message}`);
+    throw error;
   }
 }
 
@@ -119,10 +134,6 @@ if (!process.env.ANTHROPIC_API_KEY) {
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] [ComplianceAudit] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
-}
 
 const taskStorage = new Map<string, {
   status: 'processing' | 'completed' | 'error';
