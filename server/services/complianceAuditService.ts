@@ -7,7 +7,16 @@ import { Buffer } from 'buffer';
 
 const MAX_CHUNK_SIZE = 8000;
 const HTML_TAG_REGEX = /<[^>]*>|<!DOCTYPE.*?>/i;
+const DOCTYPE_REGEX = /<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi;
 const INVALID_CHARACTERS_REGEX = /[\u0000-\u0008\u000B-\u000C\u000E-\u001F]/g;
+
+// Define interfaces for the compliance audit data
+interface QuickStats {
+  characterCount: number;
+  wordCount: number;
+  lineCount: number;
+  paragraphCount: number;
+}
 
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
   const timestamp = new Date().toISOString();
@@ -29,18 +38,52 @@ function normalizeText(text: string): string {
     .trim();
 }
 
+function cleanHTMLContent(text: string): string {
+  log('Starting HTML content cleaning', 'debug', { 
+    originalLength: text.length,
+    hasDOCTYPE: DOCTYPE_REGEX.test(text)
+  });
+
+  // First pass: Remove DOCTYPE declarations specifically
+  let cleaned = text.replace(DOCTYPE_REGEX, '');
+
+  // Second pass: Remove other HTML elements
+  cleaned = cleaned
+    .replace(/<\?xml\s+[^>]*\?>/gi, '')  // Remove XML declarations
+    .replace(/<!--[\s\S]*?-->/g, '')     // Remove HTML comments
+    .replace(/<[^>]+>/g, ' ')            // Remove any remaining HTML tags
+    .replace(/&[a-z]+;/gi, ' ');         // Remove HTML entities
+
+  // Third pass: Clean up whitespace
+  cleaned = cleaned
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .join('\n')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  log('HTML content cleaning completed', 'debug', {
+    finalLength: cleaned.length,
+    hasDOCTYPEAfterCleaning: DOCTYPE_REGEX.test(cleaned)
+  });
+
+  return cleaned;
+}
+
 async function parseDocument(file: Express.Multer.File): Promise<string> {
   const buffer = file.buffer;
   const mimeType = file.mimetype;
 
   try {
-    let text = '';
     log('Starting document parsing', 'info', { mimeType });
 
     // Validate file content before parsing
     if (!buffer || buffer.length === 0) {
       throw new Error('Empty file content');
     }
+
+    let text = '';
 
     // Parse based on mime type
     switch (mimeType) {
@@ -78,27 +121,38 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
         throw new Error(`Unsupported file type: ${mimeType}`);
     }
 
-    // Validate and clean text content
+    // Validate extracted text
     if (!text || text.trim().length === 0) {
       throw new Error('No text content found in document');
     }
 
-    // Check for HTML-like content
-    if (containsHTMLTags(text)) {
-      log('HTML tags detected in document', 'debug');
-      // Strip HTML tags and normalize
-      text = text
-        .replace(/<[^>]*>|<!DOCTYPE.*?>/gi, '') // Remove all HTML tags including DOCTYPE
-        .replace(/<!--[\s\S]*?-->/g, '')        // Remove HTML comments
-        .replace(/&[a-z]+;/gi, ' ');            // Remove HTML entities
-    }
+    log('Raw text extracted', 'debug', {
+      length: text.length,
+      containsHTML: containsHTMLTags(text),
+      hasDOCTYPE: DOCTYPE_REGEX.test(text),
+      sample: text.substring(0, 100)
+    });
 
-    // Normalize and clean text
+    // Clean HTML content first
+    text = cleanHTMLContent(text);
+
+    // Final normalization
     text = normalizeText(text);
 
-    log('Document cleaning completed', 'info', {
+    // Validate final text
+    if (DOCTYPE_REGEX.test(text)) {
+      log('Warning: DOCTYPE tags still present after cleaning', 'error', {
+        sample: text.substring(0, 200)
+      });
+      // One final attempt to remove any remaining DOCTYPE tags
+      text = text.replace(DOCTYPE_REGEX, '').trim();
+    }
+
+    log('Document processing completed', 'info', {
       originalLength: buffer.length,
-      cleanedLength: text.length
+      finalLength: text.length,
+      containsHTMLAfterCleaning: containsHTMLTags(text),
+      hasDOCTYPEAfterCleaning: DOCTYPE_REGEX.test(text)
     });
 
     return text;
@@ -441,7 +495,6 @@ export class ComplianceAuditService {
         }).returning();
 
         log('Document created in database', 'info', { documentId: document.id, taskId });
-
 
         const [auditRecord] = await db.insert(complianceAudits).values({
           documentText: documentText,
