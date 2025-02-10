@@ -242,121 +242,142 @@ export class ComplianceAuditService {
     try {
       log('Starting combined compliance analysis');
 
+      // Add detailed logging for API calls
+      log('Verifying API configurations', 'debug', {
+        openaiConfigured: !!process.env.OPENAI_API_KEY,
+        anthropicConfigured: !!process.env.ANTHROPIC_API_KEY
+      });
+
       // Run both analyses with individual timeouts and retries
       const [openAIAnalysis, anthropicAnalysis] = await Promise.allSettled([
         this.analyzeWithOpenAI(documentText),
         this.analyzeWithAnthropic(documentText)
       ]);
 
+      // Log analysis results
+      log('Analysis results', 'debug', {
+        openAIStatus: openAIAnalysis.status,
+        anthropicStatus: anthropicAnalysis.status
+      });
+
       // Check results and handle failures
       const openAIResult = openAIAnalysis.status === 'fulfilled' ? openAIAnalysis.value : null;
       const anthropicResult = anthropicAnalysis.status === 'fulfilled' ? anthropicAnalysis.value : null;
 
       if (!openAIResult && !anthropicResult) {
-        throw new Error('Both AI analyses failed');
+        const error = new Error('Both AI analyses failed');
+        log('Complete analysis failure', 'error', {
+          openAIError: openAIAnalysis.status === 'rejected' ? openAIAnalysis.reason : null,
+          anthropicError: anthropicAnalysis.status === 'rejected' ? anthropicAnalysis.reason : null
+        });
+        throw error;
       }
 
-      // Create document record
-      const [document] = await db.insert(documents).values({
-        title: `Compliance Audit - ${new Date().toISOString()}`,
-        content: documentText,
-        analysis: { openAIAnalysis: openAIResult, anthropicAnalysis: anthropicResult },
-        agentType: 'COMPLIANCE_AUDITING',
-        userId: 1, // TODO: Replace with actual user ID from context
-      }).returning();
-
-      log('Document created in database', 'info', { documentId: document.id });
-
-      // Try to store in vector database, but don't block if it fails
       try {
-        await chromaStore.addDocument(document, documentText);
-        log('Document added to vector store', 'info', { documentId: document.id });
-      } catch (error) {
-        log('Vector storage failed but continuing with analysis', 'error', error);
+        // Create document record
+        const [document] = await db.insert(documents).values({
+          title: `Compliance Audit - ${new Date().toISOString()}`,
+          content: documentText,
+          analysis: { openAIAnalysis: openAIResult, anthropicAnalysis: anthropicResult },
+          agentType: 'COMPLIANCE_AUDITING',
+          userId: 1, // TODO: Replace with actual user ID from context
+        }).returning();
+
+        log('Document created in database', 'info', { documentId: document.id });
+
+        // Skip ChromaDB for now as it's failing
+        log('Skipping ChromaDB storage due to connection issues', 'info');
+
+        // Use the first successful analysis as primary and fall back as needed
+        const primaryAnalysis = openAIResult || anthropicResult;
+        const secondaryAnalysis = openAIResult ? anthropicResult : null;
+
+        // Combine and aggregate results
+        const combinedReport = {
+          auditReport: {
+            summary: primaryAnalysis.auditReport.summary,
+            flaggedIssues: [
+              ...(openAIResult?.auditReport.flaggedIssues || []).map((issue: any) => ({
+                ...issue,
+                source: 'openai'
+              })),
+              ...(anthropicResult?.auditReport.flaggedIssues || []).map((issue: any) => ({
+                ...issue,
+                source: 'anthropic'
+              }))
+            ],
+            riskScores: secondaryAnalysis ? {
+              average: (primaryAnalysis.auditReport.riskScores.average + 
+                      secondaryAnalysis.auditReport.riskScores.average) / 2,
+              max: Math.max(primaryAnalysis.auditReport.riskScores.max,
+                          secondaryAnalysis.auditReport.riskScores.max),
+              min: Math.min(primaryAnalysis.auditReport.riskScores.min,
+                          secondaryAnalysis.auditReport.riskScores.min),
+              distribution: {
+                high: Math.round((primaryAnalysis.auditReport.riskScores.distribution.high +
+                              secondaryAnalysis.auditReport.riskScores.distribution.high) / 2),
+                medium: Math.round((primaryAnalysis.auditReport.riskScores.distribution.medium +
+                                secondaryAnalysis.auditReport.riskScores.distribution.medium) / 2),
+                low: Math.round((primaryAnalysis.auditReport.riskScores.distribution.low +
+                             secondaryAnalysis.auditReport.riskScores.distribution.low) / 2)
+              }
+            } : primaryAnalysis.auditReport.riskScores,
+            recommendedActions: [
+              ...(openAIResult?.auditReport.recommendedActions || []).map((action: any) => ({
+                ...action,
+                source: 'openai'
+              })),
+              ...(anthropicResult?.auditReport.recommendedActions || []).map((action: any) => ({
+                ...action,
+                source: 'anthropic'
+              }))
+            ],
+            visualizationData: secondaryAnalysis ? {
+              issueFrequency: primaryAnalysis.auditReport.visualizationData.issueFrequency,
+              riskTrend: primaryAnalysis.auditReport.visualizationData.riskTrend,
+              complianceScores: {
+                overall: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.overall +
+                          secondaryAnalysis.auditReport.visualizationData.complianceScores.overall) / 2),
+                regulatory: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.regulatory +
+                           secondaryAnalysis.auditReport.visualizationData.complianceScores.regulatory) / 2),
+                clarity: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.clarity +
+                        secondaryAnalysis.auditReport.visualizationData.complianceScores.clarity) / 2),
+                risk: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.risk +
+                     secondaryAnalysis.auditReport.visualizationData.complianceScores.risk) / 2)
+              }
+            } : primaryAnalysis.auditReport.visualizationData
+          }
+        };
+
+        // Log the audit with correct column names
+        const [auditRecord] = await db.insert(complianceAudits).values({
+          documentText: documentText,
+          openaiResponse: openAIResult,
+          anthropicResponse: anthropicResult,
+          combinedReport: combinedReport,
+          vectorId: document.id.toString(),
+          metadata: {
+            documentType: 'compliance_audit',
+            confidence: combinedReport.auditReport.visualizationData.complianceScores.overall / 100,
+            tags: combinedReport.auditReport.flaggedIssues.map(issue => issue.regulatoryReference).filter(Boolean)
+          }
+        }).returning();
+
+        log('Combined analysis completed', 'info', {
+          auditId: auditRecord.id,
+          documentId: document.id,
+          issuesCount: combinedReport.auditReport.flaggedIssues.length,
+          completionTime: new Date().toISOString()
+        });
+
+        return combinedReport;
+      } catch (dbError: any) {
+        log('Database operation failed', 'error', {
+          error: dbError.message,
+          stack: dbError.stack
+        });
+        throw dbError;
       }
-
-      // Use the first successful analysis as primary and fall back as needed
-      const primaryAnalysis = openAIResult || anthropicResult;
-      const secondaryAnalysis = openAIResult ? anthropicResult : null;
-
-      // Combine and aggregate results
-      const combinedReport = {
-        auditReport: {
-          summary: primaryAnalysis.auditReport.summary,
-          flaggedIssues: [
-            ...(openAIResult?.auditReport.flaggedIssues || []).map((issue: any) => ({
-              ...issue,
-              source: 'openai'
-            })),
-            ...(anthropicResult?.auditReport.flaggedIssues || []).map((issue: any) => ({
-              ...issue,
-              source: 'anthropic'
-            }))
-          ],
-          riskScores: secondaryAnalysis ? {
-            average: (primaryAnalysis.auditReport.riskScores.average + 
-                     secondaryAnalysis.auditReport.riskScores.average) / 2,
-            max: Math.max(primaryAnalysis.auditReport.riskScores.max,
-                         secondaryAnalysis.auditReport.riskScores.max),
-            min: Math.min(primaryAnalysis.auditReport.riskScores.min,
-                         secondaryAnalysis.auditReport.riskScores.min),
-            distribution: {
-              high: Math.round((primaryAnalysis.auditReport.riskScores.distribution.high +
-                             secondaryAnalysis.auditReport.riskScores.distribution.high) / 2),
-              medium: Math.round((primaryAnalysis.auditReport.riskScores.distribution.medium +
-                               secondaryAnalysis.auditReport.riskScores.distribution.medium) / 2),
-              low: Math.round((primaryAnalysis.auditReport.riskScores.distribution.low +
-                            secondaryAnalysis.auditReport.riskScores.distribution.low) / 2)
-            }
-          } : primaryAnalysis.auditReport.riskScores,
-          recommendedActions: [
-            ...(openAIResult?.auditReport.recommendedActions || []).map((action: any) => ({
-              ...action,
-              source: 'openai'
-            })),
-            ...(anthropicResult?.auditReport.recommendedActions || []).map((action: any) => ({
-              ...action,
-              source: 'anthropic'
-            }))
-          ],
-          visualizationData: secondaryAnalysis ? {
-            issueFrequency: primaryAnalysis.auditReport.visualizationData.issueFrequency,
-            riskTrend: primaryAnalysis.auditReport.visualizationData.riskTrend,
-            complianceScores: {
-              overall: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.overall +
-                        secondaryAnalysis.auditReport.visualizationData.complianceScores.overall) / 2),
-              regulatory: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.regulatory +
-                          secondaryAnalysis.auditReport.visualizationData.complianceScores.regulatory) / 2),
-              clarity: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.clarity +
-                       secondaryAnalysis.auditReport.visualizationData.complianceScores.clarity) / 2),
-              risk: Math.round((primaryAnalysis.auditReport.visualizationData.complianceScores.risk +
-                    secondaryAnalysis.auditReport.visualizationData.complianceScores.risk) / 2)
-            }
-          } : primaryAnalysis.auditReport.visualizationData
-        }
-      };
-
-      // Log the audit with correct column names
-      const [auditRecord] = await db.insert(complianceAudits).values({
-        documentText: documentText,
-        openaiResponse: openAIResult,
-        anthropicResponse: anthropicResult,
-        combinedReport: combinedReport,
-        vectorId: document.id.toString(),
-        metadata: {
-          documentType: 'compliance_audit',
-          confidence: combinedReport.auditReport.visualizationData.complianceScores.overall / 100,
-          tags: combinedReport.auditReport.flaggedIssues.map(issue => issue.regulatoryReference).filter(Boolean)
-        }
-      }).returning();
-
-      log('Combined analysis completed', 'info', {
-        auditId: auditRecord.id,
-        documentId: document.id,
-        issuesCount: combinedReport.auditReport.flaggedIssues.length
-      });
-
-      return combinedReport;
     } catch (error: any) {
       log('Combined analysis failed', 'error', {
         error: error.message,
