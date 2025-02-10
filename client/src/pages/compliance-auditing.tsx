@@ -16,6 +16,8 @@ import { BarChart2, TrendingUp, ShieldAlert } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartTooltip, ResponsiveContainer } from 'recharts';
 import { type FC } from 'react';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ErrorBoundary } from "react-error-boundary";
 
 // Type definitions
 interface DashboardInsight {
@@ -83,6 +85,28 @@ interface ComplianceResult {
 interface ExportButtonProps {
   auditId: string;
 }
+
+// Add error fallback component
+const ErrorFallback = ({ error }: { error: Error }) => (
+  <Alert variant="destructive">
+    <AlertTitle>Error Processing Document</AlertTitle>
+    <AlertDescription>
+      We encountered an issue processing your document. Please try again later.
+      {process.env.NODE_ENV !== 'production' && (
+        <pre className="mt-2 text-xs">{error.message}</pre>
+      )}
+    </AlertDescription>
+  </Alert>
+);
+
+// Add visualization wrapper component
+const VisualizationWrapper: FC<{ children: React.ReactNode }> = ({ children }) => (
+  <ErrorBoundary FallbackComponent={ErrorFallback}>
+    <div className="relative">
+      {children}
+    </div>
+  </ErrorBoundary>
+);
 
 // Component definitions
 const ExportButton: FC<ExportButtonProps> = ({ auditId }) => {
@@ -289,16 +313,6 @@ const ComplianceAuditing: FC = () => {
         title: "Submission Failed",
         description: error.message || "Failed to submit document. Please try again.",
         variant: "destructive",
-        action: (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => submitDocumentMutation.mutate()}
-            className="bg-white hover:bg-gray-100"
-          >
-            Retry
-          </Button>
-        ),
       });
     }
   });
@@ -370,7 +384,7 @@ const ComplianceAuditing: FC = () => {
   };
 
 
-  // Utility functions remain unchanged
+  // Utility functions
   function getSeverityColor(severity: string) {
     switch (severity.toUpperCase()) {
       case 'CRITICAL': return 'bg-red-500 text-white';
@@ -389,7 +403,7 @@ const ComplianceAuditing: FC = () => {
     }
   }
 
-  // Component for the document input section with error handling
+  // Document Input Component
   const DocumentInput = () => (
     <Card className="bg-white/80 backdrop-blur-lg">
       <CardHeader>
@@ -438,7 +452,6 @@ const ComplianceAuditing: FC = () => {
     </Card>
   );
 
-  // Keep the return JSX structure unchanged but with enhanced error handling
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
       {/* Header */}
@@ -713,20 +726,22 @@ const ComplianceAuditing: FC = () => {
                               <CardDescription>Risk scores across document sections</CardDescription>
                             </CardHeader>
                             <CardContent>
-                              <div className="h-[300px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <LineChart data={result.visualizationData.riskTrend.map((score, i) => ({
-                                    section: `Section ${i + 1}`,
-                                    score
-                                  }))}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="section" />
-                                    <YAxis domain={[0, 10]} />
-                                    <RechartTooltip />
-                                    <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2} />
-                                  </LineChart>
-                                </ResponsiveContainer>
-                              </div>
+                              <VisualizationWrapper>
+                                <div className="h-[300px]">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={result.visualizationData.riskTrend.map((score, i) => ({
+                                      section: `Section ${i + 1}`,
+                                      score
+                                    }))}>
+                                      <CartesianGrid strokeDasharray="3 3" />
+                                      <XAxis dataKey="section" />
+                                      <YAxis domain={[0, 10]} />
+                                      <RechartTooltip />
+                                      <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2} />
+                                    </LineChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              </VisualizationWrapper>
                             </CardContent>
                           </Card>
 
@@ -737,20 +752,22 @@ const ComplianceAuditing: FC = () => {
                               <CardDescription>Frequency of compliance issues</CardDescription>
                             </CardHeader>
                             <CardContent>
-                              <div className="h-[300px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <BarChart data={result.visualizationData.issueFrequency.map((count, i) => ({
-                                    category: `Category ${i + 1}`,
-                                    count
-                                  }))}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="category" />
-                                    <YAxis />
-                                    <RechartTooltip />
-                                    <Bar dataKey="count" fill="#10b981" />
-                                  </BarChart>
-                                </ResponsiveContainer>
-                              </div>
+                              <VisualizationWrapper>
+                                <div className="h-[300px]">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={result.visualizationData.issueFrequency.map((count, i) => ({
+                                      category: `Category ${i + 1}`,
+                                      count
+                                    }))}>
+                                      <CartesianGrid strokeDasharray="3 3" />
+                                      <XAxis dataKey="category" />
+                                      <YAxis />
+                                      <RechartTooltip />
+                                      <Bar dataKey="count" fill="#10b981" />
+                                    </BarChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              </VisualizationWrapper>
                             </CardContent>
                           </Card>
 
@@ -808,14 +825,47 @@ const ComplianceAuditing: FC = () => {
                       {/* Document Input Section */}
                       <div className="space-y-6">
                         {/* Document Input Section remains the same */}
+                        <DocumentInput/>
                       </div>
 
                       {/* Monitoring Dashboard */}
                       <Card className="bg-white/80 backdrop-blur-lg">
                         {/* Monitoring Dashboard Header remains the same */}
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <CardTitle>Audit Results</CardTitle>
+                            {complianceResults.length > 0 && (
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleExportReport}
+                                  className="flex items-center gap-2"
+                                >
+                                  <Download className="h-4 w-4" />
+                                  Export Raw Data
+                                </Button>
+                                <ExportButton auditId={complianceResults[0].documentId} />
+                              </div>
+                            )}
+                          </div>
+                        </CardHeader>
                         <CardContent>
                           {/* Loading and empty states remain the same */}
-                          {complianceResults.length > 0 && (
+                          {isLoadingResults ? (
+                            <div className="flex flex-col items-center justify-center p-8 space-y-4">
+                              <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+                              <p className="text-sm text-gray-500">Analyzing documents...</p>
+                            </div>
+                          ) : uploadedDocuments.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              Submit a document to begin analysis
+                            </div>
+                          ) : complianceResults.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              No monitoring results available yet
+                            </div>
+                          ) : (
                             <ScrollArea className="h-[600px] pr-4">
                               {complianceResults.map((result) => (
                                 <div
