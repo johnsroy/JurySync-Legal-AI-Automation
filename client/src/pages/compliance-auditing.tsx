@@ -14,7 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { BarChart2, TrendingUp, ShieldAlert, AlertCircle } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartTooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { type FC } from 'react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ErrorBoundary } from "react-error-boundary";
@@ -56,30 +56,42 @@ interface ComplianceIssue {
 }
 
 interface ComplianceResult {
-  documentId: string;
-  riskLevel: "HIGH" | "MEDIUM" | "LOW";
-  score: number;
-  issues: ComplianceIssue[];
-  summary: string;
-  lastChecked: string;
-  visualizationData: {
-    riskTrend: number[];
-    issueFrequency: number[];
-  };
-  riskScores: {
-    average: number;
-    max: number;
-    min: number;
-    distribution: {
-      high: number;
-      medium: number;
-      low: number;
+  auditReport: {
+    summary: string;
+    flaggedIssues: Array<{
+      issue: string;
+      severity: "high" | "medium" | "low";
+      impact: string;
+      recommendation: string;
+      regulatoryReference?: string;
+    }>;
+    riskScores: {
+      average: number;
+      max: number;
+      min: number;
+      distribution: {
+        high: number;
+        medium: number;
+        low: number;
+      };
     };
+    visualizationData: {
+      riskTrend: number[];
+      issueFrequency: number[];
+      complianceScores: {
+        overall: number;
+        regulatory: number;
+        clarity: number;
+        risk: number;
+      };
+    };
+    recommendedActions: Array<{
+      action: string;
+      priority: "high" | "medium" | "low";
+      timeline: string;
+      impact: string;
+    }>;
   };
-  recommendedActions: Array<{
-    action: string;
-    impact: string;
-  }>;
 }
 
 interface ExportButtonProps {
@@ -411,187 +423,257 @@ const ComplianceAuditing: FC = () => {
       </Card>
     );
 
-    // Analysis Results Component with improved error handling
-    const AnalysisResults = () => {
-      if (taskPollingError) {
-        return (
-          <Alert variant="destructive" className="mt-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error Analyzing Document</AlertTitle>
-            <AlertDescription>{taskPollingError}</AlertDescription>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => setTaskId(null)} 
-              className="mt-2"
-            >
-              Dismiss
-            </Button>
-          </Alert>
-        );
-      }
+    // Color constants for consistency
+    const COLORS = {
+      high: '#ef4444',
+      medium: '#f59e0b',
+      low: '#10b981',
+      primary: '#10b981',
+      secondary: '#6366f1'
+    };
 
-      if (submissionError) {
-        return (
-          <Alert variant="destructive" className="mt-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error Submitting Document</AlertTitle>
-            <AlertDescription>{submissionError}</AlertDescription>
-          </Alert>
-        );
-      }
-
-      if (taskError) {
-        return (
-          <Alert variant="destructive" className="mt-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error Analyzing Document</AlertTitle>
-            <AlertDescription>{taskError.message}</AlertDescription>
-          </Alert>
-        );
-      }
-
-      if (submitDocumentMutation.isPending || isLoadingTask) {
-        return (
-          <div className="flex items-center justify-center h-96">
-            <div className="text-center space-y-4">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-              <p className="text-sm text-muted-foreground">
-                {isLoadingTask ? "Analyzing document..." : "Submitting document..."}
-              </p>
-            </div>
+    // Stats display component
+    const StatsCard: FC<{ title: string; value: number; description: string; trend?: number }> = ({
+      title,
+      value,
+      description,
+      trend
+    }) => (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium text-gray-500">{title}</CardTitle>
+          <div className="flex items-center justify-between">
+            <div className="text-2xl font-bold">{value}</div>
+            {trend !== undefined && (
+              <div className={`flex items-center ${trend > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <TrendingUp className="h-4 w-4 mr-1" />
+                {Math.abs(trend)}%
+              </div>
+            )}
           </div>
-        );
-      }
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-600">{description}</p>
+        </CardContent>
+      </Card>
+    );
 
-      if (taskResult) {
-        const result = taskResult;
-        return (
-          <div className="space-y-8">
-            {/* Summary Card */}
+
+    // Analysis Results Component with improved visualization
+    const AnalysisResults: FC<{ result: ComplianceResult }> = ({ result }) => {
+      const { auditReport } = result;
+
+      // Prepare data for pie chart
+      const distributionData = [
+        { name: 'High Risk', value: auditReport.riskScores.distribution.high, color: COLORS.high },
+        { name: 'Medium Risk', value: auditReport.riskScores.distribution.medium, color: COLORS.medium },
+        { name: 'Low Risk', value: auditReport.riskScores.distribution.low, color: COLORS.low }
+      ];
+
+      return (
+        <div className="space-y-6">
+          {/* Summary Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Analysis Summary</CardTitle>
+              <CardDescription>{auditReport.summary}</CardDescription>
+            </CardHeader>
+          </Card>
+
+          {/* Compliance Scores Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatsCard
+              title="Overall Compliance"
+              value={auditReport.visualizationData.complianceScores.overall}
+              description="Percentage of compliance requirements met"
+            />
+            <StatsCard
+              title="Regulatory Alignment"
+              value={auditReport.visualizationData.complianceScores.regulatory}
+              description="Alignment with regulatory standards"
+            />
+            <StatsCard
+              title="Documentation Clarity"
+              value={auditReport.visualizationData.complianceScores.clarity}
+              description="Clarity and completeness of documentation"
+            />
+            <StatsCard
+              title="Risk Score"
+              value={10 - auditReport.visualizationData.complianceScores.risk}
+              description="Overall risk assessment score"
+            />
+          </div>
+
+          {/* Risk Distribution and Trend Analysis */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>Analysis Summary</CardTitle>
-                <CardDescription>{result.auditReport.summary}</CardDescription>
-              </CardHeader>
-            </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Risk Trend Analysis */}
-              <Card className="col-span-2">
-                <CardHeader>
-                  <CardTitle>Risk Trend Analysis</CardTitle>
-                  <CardDescription>Risk scores across document sections</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <VisualizationWrapper>
-                    <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={result.auditReport.visualizationData.riskTrend.map((score, i) => ({
-                          section: `Section ${i + 1}`,
-                          score
-                        }))}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="section" />
-                          <YAxis domain={[0, 10]} />
-                          <RechartTooltip />
-                          <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </VisualizationWrapper>
-                </CardContent>
-              </Card>
-
-              {/* Risk Score Summary */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Risk Score Summary</CardTitle>
-                  <CardDescription>Overall risk assessment</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">Average Risk Score:</span>
-                      <span className={`text-lg font-bold ${
-                        result.auditReport.riskScores.average > 7 ? 'text-red-600' :
-                          result.auditReport.riskScores.average > 4 ? 'text-yellow-600' : 'text-green-600'
-                      }`}>
-                        {result.auditReport.riskScores.average.toFixed(1)}
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span>Risk Distribution</span>
-                      </div>
-                      <div className="space-y-1">
-                        {['high', 'medium', 'low'].map((level) => (
-                          <div key={level} className="space-y-1">
-                            <div className="flex items-center justify-between text-sm">
-                              <span>{level.charAt(0).toUpperCase() + level.slice(1)} Risk Issues</span>
-                              <span>{result.auditReport.riskScores.distribution[level]}</span>
-                            </div>
-                            <Progress
-                              value={
-                                (result.auditReport.riskScores.distribution[level] /
-                                  (result.auditReport.riskScores.distribution.high +
-                                    result.auditReport.riskScores.distribution.medium +
-                                    result.auditReport.riskScores.distribution.low)) * 100
-                              }
-                              className={`h-2 ${
-                                level === 'high' ? 'bg-red-200' :
-                                  level === 'medium' ? 'bg-yellow-200' : 'bg-green-200'
-                              }`}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Flagged Issues */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Compliance Issues</CardTitle>
-                <CardDescription>Identified compliance concerns and recommendations</CardDescription>
+                <CardTitle>Risk Distribution</CardTitle>
+                <CardDescription>Distribution of identified risks by severity</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {result.auditReport.flaggedIssues.map((issue, index) => (
-                    <div
-                      key={index}
-                      className={`p-4 rounded-lg ${getRiskLevelColor(issue.severity)}`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <h4 className="font-medium">{issue.issue}</h4>
-                          <p className="text-sm text-gray-600">{issue.impact}</p>
-                        </div>
-                        <Badge variant={issue.severity === 'high' ? 'destructive' : 'secondary'}>
-                          {issue.severity.toUpperCase()}
-                        </Badge>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={distributionData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {distributionData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {distributionData.map((item, index) => (
+                    <div key={index} className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div
+                          className="w-3 h-3 rounded-full mr-2"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span className="text-sm">{item.name}</span>
                       </div>
-                      <div className="mt-2 text-sm">
-                        <p><strong>Recommendation:</strong> {issue.recommendation}</p>
-                        {issue.regulatoryReference && (
-                          <p className="mt-1"><strong>Reference:</strong> {issue.regulatoryReference}</p>
-                        )}
-                      </div>
+                      <span className="font-medium">{item.value}</span>
                     </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
-          </div>
-        );
-      }
 
-      return (
-        <div className="text-center py-8">
-          <p className="text-muted-foreground">Submit a document to see analysis results</p>
+            <Card>
+              <CardHeader>
+                <CardTitle>Risk Trend Analysis</CardTitle>
+                <CardDescription>Risk scores across document sections</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={auditReport.visualizationData.riskTrend.map((score, i) => ({
+                        section: `Section ${i + 1}`,
+                        score
+                      }))}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="section" />
+                      <YAxis domain={[0, 10]} />
+                      <RechartTooltip />
+                      <Line
+                        type="monotone"
+                        dataKey="score"
+                        stroke={COLORS.primary}
+                        strokeWidth={2}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Recommendations */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Key Recommendations</CardTitle>
+              <CardDescription>Prioritized actions to improve compliance</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {auditReport.recommendedActions.map((action, index) => (
+                  <div
+                    key={index}
+                    className={`p-4 rounded-lg border-l-4 ${
+                      action.priority === 'high'
+                        ? 'border-red-500 bg-red-50'
+                        : action.priority === 'medium'
+                        ? 'border-yellow-500 bg-yellow-50'
+                        : 'border-green-500 bg-green-50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <h4 className="font-medium">{action.action}</h4>
+                        <p className="text-sm text-gray-600">{action.impact}</p>
+                      </div>
+                      <Badge
+                        variant={
+                          action.priority === 'high'
+                            ? 'destructive'
+                            : action.priority === 'medium'
+                            ? 'warning'
+                            : 'secondary'
+                        }
+                      >
+                        {action.priority.toUpperCase()}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-500">Timeline: {action.timeline}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Detailed Issues */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Detailed Findings</CardTitle>
+              <CardDescription>Comprehensive list of identified compliance issues</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {auditReport.flaggedIssues.map((issue, index) => (
+                  <div
+                    key={index}
+                    className={`p-4 rounded-lg ${
+                      issue.severity === 'high'
+                        ? 'border-l-4 border-red-500 bg-red-50'
+                        : issue.severity === 'medium'
+                        ? 'border-l-4 border-yellow-500 bg-yellow-50'
+                        : 'border-l-4 border-green-500 bg-green-50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <h4 className="font-medium">{issue.issue}</h4>
+                        <p className="text-sm text-gray-600">{issue.impact}</p>
+                      </div>
+                      <Badge
+                        variant={
+                          issue.severity === 'high'
+                            ? 'destructive'
+                            : issue.severity === 'medium'
+                            ? 'warning'
+                            : 'secondary'
+                        }
+                      >
+                        {issue.severity.toUpperCase()}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 text-sm">
+                      <p>
+                        <strong>Recommendation:</strong> {issue.recommendation}
+                      </p>
+                      {issue.regulatoryReference && (
+                        <p className="mt-1">
+                          <strong>Reference:</strong> {issue.regulatoryReference}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       );
     };
@@ -761,7 +843,8 @@ const ComplianceAuditing: FC = () => {
             {/* Document Input and Analysis */}
             <div className="grid gap-6 md:grid-cols-2">
               <DocumentInput />
-              <AnalysisResults />
+              {taskResult && <AnalysisResults result={taskResult} />}
+              {!taskResult && <AnalysisResults result={{ auditReport: { summary: "", flaggedIssues: [], riskScores: { average: 0, max: 0, min: 0, distribution: { high: 0, medium: 0, low: 0 } }, visualizationData: { riskTrend: [], issueFrequency: [], complianceScores: { overall: 0, regulatory: 0, clarity: 0, risk: 0 } }, recommendedActions: [] } }} />}
             </div>
           </div>
         </main>
