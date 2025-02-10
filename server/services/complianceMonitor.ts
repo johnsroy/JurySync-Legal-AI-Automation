@@ -1,8 +1,8 @@
 import { OpenAI } from "openai";
 import { Anthropic } from "@anthropic-ai/sdk";
 import { db } from "../db";
-import { eq, and, lte } from "drizzle-orm";
-import { complianceDocuments, complianceIssues, analyticsData } from "@shared/schema";
+import { eq, and, lte, sql } from "drizzle-orm";
+import { complianceDocuments, complianceIssues, analyticsData, type ComplianceIssue, type RiskSeverity } from "@shared/schema";
 
 // Initialize AI clients
 const anthropic = new Anthropic({
@@ -13,8 +13,6 @@ const anthropic = new Anthropic({
 const MAX_CHUNK_SIZE = 12000; // Tokens per chunk
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000;
-const SCAN_INTERVAL = 5 * 60 * 1000; // 5 minutes
-const CHECK_BATCH_SIZE = 10;
 const WEEKLY_REPORT_INTERVAL = 7 * 24 * 60 * 60 * 1000; // 1 week
 
 // Enhanced logging function
@@ -57,12 +55,11 @@ async function generateWeeklyAnalytics(): Promise<WeeklyAnalytics> {
       .from(complianceDocuments)
       .where(
         and(
-          lte(complianceDocuments.createdAt, endDate),
-          lte(startDate, complianceDocuments.createdAt)
+          sql`${complianceDocuments.createdAt} <= ${sql.timestamp(endDate)}`,
+          sql`${complianceDocuments.createdAt} >= ${sql.timestamp(startDate)}`
         )
       );
 
-    // Calculate analytics
     const totalDocuments = audits.length;
     const riskScores = audits.map(a => a.riskScore || 0);
     const averageRiskScore = riskScores.reduce((a, b) => a + b, 0) / totalDocuments || 0;
@@ -80,8 +77,8 @@ async function generateWeeklyAnalytics(): Promise<WeeklyAnalytics> {
       .from(complianceIssues)
       .where(
         and(
-          lte(complianceIssues.detectedAt, endDate),
-          lte(startDate, complianceIssues.detectedAt)
+          sql`${complianceIssues.createdAt} <= ${sql.timestamp(endDate)}`,
+          sql`${complianceIssues.createdAt} >= ${sql.timestamp(startDate)}`
         )
       );
 
@@ -99,15 +96,15 @@ async function generateWeeklyAnalytics(): Promise<WeeklyAnalytics> {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    // Calculate trends (compare with previous week)
+    // Calculate trends
     const previousStartDate = new Date(startDate.getTime() - WEEKLY_REPORT_INTERVAL);
     const previousAudits = await db
       .select()
       .from(complianceDocuments)
       .where(
         and(
-          lte(complianceDocuments.createdAt, startDate),
-          lte(previousStartDate, complianceDocuments.createdAt)
+          sql`${complianceDocuments.createdAt} <= ${sql.timestamp(startDate)}`,
+          sql`${complianceDocuments.createdAt} >= ${sql.timestamp(previousStartDate)}`
         )
       );
 
@@ -132,12 +129,8 @@ async function generateWeeklyAnalytics(): Promise<WeeklyAnalytics> {
 
     // Store analytics data
     await db.insert(analyticsData).values({
-      metric: 'weekly_compliance_report',
-      value: analytics,
-      metadata: {
-        reportType: 'weekly',
-        generatedAt: new Date().toISOString()
-      }
+      period: 'weekly',
+      metrics: analytics
     });
 
     log('Weekly analytics report generated successfully');
@@ -148,112 +141,6 @@ async function generateWeeklyAnalytics(): Promise<WeeklyAnalytics> {
     throw error;
   }
 }
-
-// Simulate regulatory updates (in a real system, this would fetch from external APIs)
-async function checkForRegulatoryUpdates(): Promise<void> {
-  try {
-    log('Checking for regulatory updates');
-
-    // Simulate checking external sources
-    const simulatedUpdate = {
-      timestamp: new Date().toISOString(),
-      source: 'Regulatory API',
-      updates: [
-        {
-          regulation: 'Privacy Policy Requirements',
-          changeType: 'amendment',
-          description: 'Updated requirements for data processing disclosures',
-          effectiveDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-        }
-      ]
-    };
-
-    // Store update in analytics data
-    await db.insert(analyticsData).values({
-      metric: 'regulatory_update',
-      value: simulatedUpdate,
-      metadata: {
-        updateType: 'scheduled',
-        source: 'automated_check'
-      }
-    });
-
-    log('Regulatory updates processed successfully');
-  } catch (error) {
-    log('Failed to process regulatory updates', 'error', error);
-    throw error;
-  }
-}
-
-// Enhanced automated monitoring loop
-async function runAutomatedMonitoring(): Promise<void> {
-  try {
-    // Check for documents due for scanning
-    const documentsToCheck = await db
-      .select()
-      .from(complianceDocuments)
-      .where(
-        and(
-          eq(complianceDocuments.status, "MONITORING"),
-          lte(complianceDocuments.nextScanDue, new Date())
-        )
-      )
-      .limit(CHECK_BATCH_SIZE);
-
-    for (const document of documentsToCheck) {
-      try {
-        await monitorDocument(document.id);
-      } catch (error) {
-        log(`Failed to monitor document ${document.id}:`, 'error', error);
-        continue;
-      }
-    }
-
-    // Check for regulatory updates (weekly)
-    const lastUpdate = await db
-      .select()
-      .from(analyticsData)
-      .where(eq(analyticsData.metric, 'regulatory_update'))
-      .orderBy(analyticsData.timestamp as any, 'desc')
-      .limit(1);
-
-    if (!lastUpdate.length || 
-        new Date(lastUpdate[0].timestamp).getTime() < Date.now() - 7 * 24 * 60 * 60 * 1000) {
-      await checkForRegulatoryUpdates();
-    }
-
-    // Generate weekly analytics report
-    const lastAnalytics = await db
-      .select()
-      .from(analyticsData)
-      .where(eq(analyticsData.metric, 'weekly_compliance_report'))
-      .orderBy(analyticsData.timestamp as any, 'desc')
-      .limit(1);
-
-    if (!lastAnalytics.length || 
-        new Date(lastAnalytics[0].timestamp).getTime() < Date.now() - WEEKLY_REPORT_INTERVAL) {
-      await generateWeeklyAnalytics();
-    }
-
-  } catch (error) {
-    log('Automated monitoring cycle failed:', 'error', error);
-  } finally {
-    // Schedule next run
-    setTimeout(runAutomatedMonitoring, SCAN_INTERVAL);
-  }
-}
-
-// Start automated monitoring
-log('Starting automated compliance monitoring system...');
-runAutomatedMonitoring().catch(error => {
-  log('Failed to start automated monitoring:', 'error', error);
-});
-
-export {
-  generateWeeklyAnalytics,
-  checkForRegulatoryUpdates,
-  type WeeklyAnalytics
-};
 
 interface DocumentSection {
   title: string;
@@ -273,9 +160,8 @@ async function analyzeSection(section: DocumentSection, documentId: number): Pro
   while (retries < MAX_RETRIES) {
     try {
       const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-3-sonnet-20240229",
         max_tokens: 1000,
-        temperature: 0.2,
         messages: [{
           role: "user",
           content: [
@@ -284,26 +170,23 @@ async function analyzeSection(section: DocumentSection, documentId: number): Pro
               text: `Analyze this contract section titled "${section.title}" for compliance issues. Include regulatory references where applicable:\n\n${section.content}`
             }
           ]
-        }],
-        response_format: { type: "json_object" }
+        }]
       });
 
-      const content = response.content[0].text;
-      if (!content) {
-        throw new Error("Empty response from Anthropic API");
-      }
+      const analysis = JSON.parse(response.content[0].text);
 
-      const analysis = JSON.parse(content);
+      // Transform the analysis into ComplianceIssue format
       return analysis.issues.map((issue: any) => ({
         documentId,
+        riskAssessmentId: 0, // This will be set when risk assessment is created
         clause: issue.clause,
         description: issue.description,
         severity: issue.severity as RiskSeverity,
         recommendation: issue.recommendation,
         reference: issue.reference,
-        detectedAt: new Date().toISOString(),
-        status: "OPEN",
+        status: "OPEN"
       }));
+
     } catch (error) {
       retries++;
       if (retries === MAX_RETRIES) throw error;
@@ -357,15 +240,34 @@ function chunkDocument(content: string): DocumentSection[] {
   return sections;
 }
 
-async function performComplianceCheck(document: ComplianceDocument): Promise<ComplianceCheckResult> {
-  const sections = chunkDocument(document.content);
+function getIssueSeverityScore(severity: RiskSeverity): number {
+  const scores: Record<RiskSeverity, number> = {
+    CRITICAL: 10,
+    HIGH: 7,
+    MEDIUM: 4,
+    LOW: 2,
+    INFO: 1
+  };
+  return scores[severity];
+}
+
+function calculateOverallRiskScore(totalScore: number, criticalIssues: number, sectionCount: number): number {
+  let score = Math.round(totalScore / sectionCount);
+  if (criticalIssues > 0) {
+    score += Math.min(criticalIssues * 10, 30);
+  }
+  return Math.max(0, Math.min(100, score));
+}
+
+async function performComplianceCheck(documentId: number, content: string): Promise<ComplianceCheckResult> {
+  const sections = chunkDocument(content);
   let totalRiskScore = 0;
   let criticalIssues = 0;
   const allIssues: ComplianceIssue[] = [];
 
   // Analyze each section
   for (const section of sections) {
-    const issues = await analyzeSection(section, document.id);
+    const issues = await analyzeSection(section, documentId);
     allIssues.push(...issues);
 
     // Calculate risk score
@@ -395,26 +297,6 @@ async function performComplianceCheck(document: ComplianceDocument): Promise<Com
   };
 }
 
-function getIssueSeverityScore(severity: RiskSeverity): number {
-  const scores: Record<RiskSeverity, number> = {
-    CRITICAL: 10,
-    HIGH: 7,
-    MEDIUM: 4,
-    LOW: 2,
-    INFO: 1
-  };
-  return scores[severity];
-}
-
-function calculateOverallRiskScore(totalScore: number, criticalIssues: number, sectionCount: number): number {
-  let score = Math.round(totalScore / sectionCount);
-  if (criticalIssues > 0) {
-    score += Math.min(criticalIssues * 10, 30);
-  }
-  return Math.max(0, Math.min(100, score));
-}
-
-// Main monitoring function
 async function monitorDocument(documentId: number): Promise<void> {
   try {
     log(`Starting compliance check for document ${documentId}`);
@@ -436,10 +318,19 @@ async function monitorDocument(documentId: number): Promise<void> {
       .where(eq(complianceDocuments.id, documentId));
 
     // Perform compliance check
-    const result = await performComplianceCheck(document);
+    const result = await performComplianceCheck(documentId, document.content);
 
     // Store new issues
-    await db.insert(complianceIssues).values(result.issues);
+    const issueInserts = result.issues.map(issue => ({
+      ...issue,
+      documentId: document.id,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
+
+    if (issueInserts.length > 0) {
+      await db.insert(complianceIssues).values(issueInserts);
+    }
 
     // Update document status
     await db
@@ -467,5 +358,4 @@ async function monitorDocument(documentId: number): Promise<void> {
   }
 }
 
-
-import type { ComplianceDocument, ComplianceIssue, RiskSeverity } from "@shared/schema";
+export { generateWeeklyAnalytics, monitorDocument, type WeeklyAnalytics };

@@ -661,3 +661,31 @@ export type InsertCitation = typeof legalCitations.$inferInsert;
 export type InsertResearchQuery = typeof researchQueries.$inferInsert;
 
 import { boolean } from "drizzle-orm/pg-core";
+
+// Add after the legal research types
+// Analytics data schema for metrics collection
+export const analyticsDataSchema = z.object({
+  modelUsage: z.record(z.number()),
+  processingTimes: z.record(z.number()),
+  errorRates: z.record(z.number()),
+  costSavings: z.number(),
+  automationMetrics: z.object({
+    automationPercentage: z.string(),
+    processingTimeReduction: z.string(),
+    laborCostSavings: z.string(),
+    errorReduction: z.string()
+  })
+});
+
+export const analyticsData = pgTable('analytics_data', {
+  id: serial('id').primaryKey(),
+  timestamp: timestamp('timestamp').defaultNow(),
+  metrics: jsonb('metrics').$type<z.infer<typeof analyticsDataSchema>>(),
+  period: text('period').notNull(), // daily, weekly, monthly
+});
+
+export type AnalyticsData = typeof analyticsData.$inferSelect;
+export type InsertAnalyticsData = typeof analyticsData.$inferInsert;
+
+// Create insert schema
+export const insertAnalyticsDataSchema = createInsertSchema(analyticsData);
