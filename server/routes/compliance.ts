@@ -7,6 +7,7 @@ import { riskAssessmentService } from "../services/riskAssessment";
 import { monitorDocument } from "../services/complianceMonitor";
 import { eq } from "drizzle-orm";
 import { generateDashboardInsights } from "../services/dashboardAnalytics";
+import { modelRouter } from "../services/modelRouter";
 
 const router = Router();
 
@@ -72,19 +73,30 @@ router.post('/upload', async (req, res) => {
       })
       .returning();
 
-    // Process document in background
-    analyzePDFContent(req.file.buffer, document.id)
-      .then(async (content) => {
+    // Process document using ModelRouter
+    const taskId = `compliance-${document.id}`;
+    const systemPrompt = "You are a legal compliance expert. Analyze the provided document for compliance issues and provide a structured analysis.";
+
+    modelRouter.processTask(taskId, "compliance-analysis", req.file.buffer.toString(), systemPrompt)
+      .then(async (result) => {
         await db
           .update(complianceDocuments)
           .set({ 
-            content,
+            content: result.output,
             status: "MONITORING",
-            lastScanned: new Date()
+            lastScanned: new Date(),
+            // Add model metrics
+            riskScore: result.qualityScore * 100,
+            metadata: JSON.stringify({
+              modelUsed: result.modelUsed,
+              processingTimeMs: result.processingTimeMs,
+              qualityScore: result.qualityScore,
+              ...result.metadata
+            })
           })
           .where(eq(complianceDocuments.id, document.id));
 
-        await riskAssessmentService.assessDocument(document.id, content);
+        await riskAssessmentService.assessDocument(document.id, result.output);
       })
       .catch(error => {
         console.error(`Analysis failed for document ${document.id}:`, error);
@@ -107,6 +119,22 @@ router.post('/upload', async (req, res) => {
     const status = error.status || 500;
     const message = error.message || 'Upload failed';
     return res.status(status).json({ error: message });
+  }
+});
+
+// Add model metrics endpoint
+router.get('/metrics', async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const metrics = await modelRouter.getMetrics();
+    res.json(metrics);
+  } catch (error: any) {
+    console.error('Metrics fetch error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
