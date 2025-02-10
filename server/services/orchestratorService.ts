@@ -289,20 +289,46 @@ export class OrchestratorService {
     data: any
   }) {
     const taskId = `task_${Date.now()}`;
-    log('Received audit request', 'info', { body: input });
+
+    // Add detailed logging of input
+    log('Received audit request', 'info', { 
+      taskId,
+      inputType: input.type,
+      hasData: !!input.data,
+      dataKeys: input.data ? Object.keys(input.data) : [],
+      documentTextLength: input.data?.documentText?.length,
+      documentTextType: typeof input.data?.documentText,
+      rawInput: JSON.stringify(input)
+    });
 
     try {
-      // Validate input structure
-      if (!input.data?.documentText || typeof input.data.documentText !== 'string') {
-        throw new Error('Document text is required and must be a string');
+      // Enhanced input validation
+      if (!input?.data) {
+        throw new Error('Request data is required');
+      }
+
+      if (!input.data.documentText) {
+        throw new Error('Document text is missing from request');
+      }
+
+      if (typeof input.data.documentText !== 'string') {
+        throw new Error(`Invalid document text type: ${typeof input.data.documentText}`);
+      }
+
+      if (input.data.documentText.trim().length === 0) {
+        throw new Error('Document text cannot be empty');
       }
 
       if (!input.type || !['contract', 'compliance', 'research'].includes(input.type)) {
-        throw new Error('Invalid document type specified');
+        throw new Error(`Invalid document type: ${input.type}`);
       }
 
-      // Create task
-      const task = this.taskManager.createTask(taskId, input.type, input.data);
+      // Create task with validated data
+      const task = this.taskManager.createTask(taskId, input.type, {
+        ...input.data,
+        documentText: input.data.documentText.trim()
+      });
+
       log('Audit task created successfully', 'info', { 
         taskId,
         documentLength: input.data.documentText.length,
@@ -329,7 +355,6 @@ export class OrchestratorService {
         taskId,
         status: 'processing',
         type: input.type,
-        classification: input.data.classification,
         metadata: {
           createdAt: new Date().toISOString(),
           documentLength: input.data.documentText.length
@@ -338,8 +363,10 @@ export class OrchestratorService {
 
     } catch (error: any) {
       log('Task distribution error:', 'error', {
+        taskId,
         error: error.message,
-        stack: error.stack
+        stack: error.stack,
+        inputData: JSON.stringify(input)
       });
 
       this.taskManager.updateTask(taskId, {

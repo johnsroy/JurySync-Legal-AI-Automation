@@ -262,23 +262,29 @@ const ComplianceAuditing: FC = () => {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
+          // Create request payload
+          const payload = {
+            type: 'compliance',
+            data: {
+              documentText: documentText.trim(),
+              metadata: {
+                documentType: 'compliance',
+                priority: 'medium',
+                timestamp: new Date().toISOString()
+              }
+            }
+          };
+
+          // Log the request payload for debugging
+          console.log('Request payload:', JSON.stringify(payload));
+
           const response = await fetch('/api/orchestrator/audit', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
               'Accept': 'application/json'
             },
-            body: JSON.stringify({
-              type: 'compliance',
-              data: {
-                documentText: documentText.trim(),
-                metadata: {
-                  documentType: 'compliance',
-                  priority: 'medium',
-                  timestamp: new Date().toISOString()
-                }
-              }
-            }),
+            body: JSON.stringify(payload),
             signal: controller.signal
           });
 
@@ -954,7 +960,7 @@ const ComplianceAuditing: FC = () => {
 
                 {isLoadingTask && (
                   <Alert>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animatespin" />
                     <AlertTitle>Analyzing Document</AlertTitle>
                     <AlertDescription>
                       Performing compliance analysis...                    </AlertDescription>
