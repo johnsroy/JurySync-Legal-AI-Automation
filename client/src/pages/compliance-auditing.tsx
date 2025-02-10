@@ -411,7 +411,6 @@ const ComplianceAuditing: FC = () => {
       }
     });
 
-
     const handleExportReport = async () => {
       try {
         toast({
@@ -484,6 +483,20 @@ const ComplianceAuditing: FC = () => {
                   });
                   return;
                 }
+
+                // Trim and clean the document text
+                const cleanedText = documentText.trim();
+
+                // Additional validation
+                if (cleanedText.length < 10) {
+                  toast({
+                    title: "Validation Error",
+                    description: "Document text is too short. Please provide more content.",
+                    variant: "destructive"
+                  });
+                  return;
+                }
+
                 submitDocumentMutation.mutate();
               }}
             >
