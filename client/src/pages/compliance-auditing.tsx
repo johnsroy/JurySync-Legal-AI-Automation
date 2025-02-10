@@ -210,7 +210,7 @@ const ComplianceAuditing: FC = () => {
     refetchInterval: 300000 // Refresh every 5 minutes
   });
 
-  // Fetch uploaded documents with enhanced error handling
+  // Document analysis section
   const { data: uploadedDocuments = [], isLoading: isLoadingDocuments } = useQuery<UploadedDocument[]>({
     queryKey: ['uploaded-documents'],
     queryFn: async () => {
@@ -219,8 +219,7 @@ const ComplianceAuditing: FC = () => {
         if (!response.ok) {
           throw new Error('Failed to fetch documents');
         }
-        const data = await response.json();
-        return data;
+        return response.json();
       } catch (error) {
         console.error('Document fetch error:', error);
         toast({
@@ -233,23 +232,18 @@ const ComplianceAuditing: FC = () => {
     }
   });
 
-  // Enhanced compliance results fetch with structured error handling
+  // Enhanced compliance results fetch
   const { data: complianceResults = [], isLoading: isLoadingResults } = useQuery<ComplianceResult[]>({
     queryKey: ['compliance-results', selectedDocuments],
     queryFn: async () => {
-      const documentsToMonitor = selectedDocuments.length === 0 && uploadedDocuments.length > 0
-        ? [uploadedDocuments[0].id]
-        : selectedDocuments;
-
-      if (documentsToMonitor.length === 0) return [];
+      if (selectedDocuments.length === 0) return [];
 
       try {
-        const response = await fetch(`/api/compliance/results?documents=${documentsToMonitor.join(',')}`);
+        const response = await fetch(`/api/compliance/results?documents=${selectedDocuments.join(',')}`);
         if (!response.ok) {
           throw new Error('Failed to fetch compliance results');
         }
-        const data = await response.json();
-        return data;
+        return response.json();
       } catch (error) {
         console.error('Compliance results fetch error:', error);
         toast({
@@ -260,44 +254,28 @@ const ComplianceAuditing: FC = () => {
         return [];
       }
     },
-    enabled: uploadedDocuments.length > 0,
-    refetchInterval: 30000
+    enabled: selectedDocuments.length > 0
   });
 
-  // Enhanced submit document mutation with proper error handling
   const submitDocumentMutation = useMutation({
     mutationFn: async () => {
-      try {
-        console.log('Submitting document for analysis...');
-        const response = await fetch('/api/orchestrator/audit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            documentText: documentText,
-            metadata: {
-              documentType: 'contract',
-              priority: 'medium'
-            }
-          })
-        });
+      const response = await fetch('/api/orchestrator/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentText: documentText,
+          metadata: {
+            documentType: 'contract',
+            priority: 'medium'
+          }
+        })
+      });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Document submission failed:', {
-            status: response.status,
-            statusText: response.statusText,
-            errorText
-          });
-          throw new Error(errorText.startsWith('Error:') ? errorText.slice(6) : errorText);
-        }
-
-        const data = await response.json();
-        console.log('Document submission successful:', data);
-        return data;
-      } catch (error) {
-        console.error('Document submission error:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error('Failed to analyze document');
       }
+
+      return response.json();
     },
     onSuccess: () => {
       setDocumentText("");
@@ -308,16 +286,178 @@ const ComplianceAuditing: FC = () => {
       queryClient.invalidateQueries({ queryKey: ['compliance-results'] });
     },
     onError: (error: Error) => {
-      console.error('Document submission mutation error:', error);
       toast({
         title: "Submission Failed",
-        description: error.message || "Failed to submit document. Please try again.",
-        variant: "destructive",
+        description: error.message,
+        variant: "destructive"
       });
     }
   });
 
-  // Enhanced start monitoring mutation with proper error handling
+  // Document Input Component
+  const DocumentInput = () => (
+    <Card className="bg-white/80 backdrop-blur-lg">
+      <CardHeader>
+        <CardTitle>Document Input</CardTitle>
+        <CardDescription>
+          Paste your document text for compliance analysis
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <Textarea
+            placeholder="Paste your document text here..."
+            className="min-h-[300px] resize-none"
+            value={documentText}
+            onChange={(e) => setDocumentText(e.target.value)}
+          />
+          <Button
+            className="w-full"
+            disabled={!documentText.trim() || submitDocumentMutation.isPending}
+            onClick={() => submitDocumentMutation.mutate()}
+          >
+            {submitDocumentMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <Shield className="h-4 w-4 mr-2" />
+                Submit for Analysis
+              </>
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // Analysis Results Component
+  const AnalysisResults = () => {
+    if (isLoadingResults) {
+      return (
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      );
+    }
+
+    if (!complianceResults.length) {
+      return (
+        <div className="text-center py-8">
+          <p className="text-muted-foreground">No analysis results available</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-8">
+        {complianceResults.map((result) => (
+          <div key={result.documentId} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* Risk Trend Analysis */}
+              <Card className="col-span-2">
+                <CardHeader>
+                  <CardTitle>Risk Trend Analysis</CardTitle>
+                  <CardDescription>Risk scores across document sections</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <VisualizationWrapper>
+                    <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={result.visualizationData.riskTrend.map((score, i) => ({
+                          section: `Section ${i + 1}`,
+                          score
+                        }))}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="section" />
+                          <YAxis domain={[0, 10]} />
+                          <RechartTooltip />
+                          <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </VisualizationWrapper>
+                </CardContent>
+              </Card>
+
+              {/* Risk Score Summary */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Risk Score Summary</CardTitle>
+                  <CardDescription>Overall risk assessment</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Average Risk Score:</span>
+                      <span className={`text-lg font-bold ${
+                        result.riskScores.average > 7 ? 'text-red-600' :
+                          result.riskScores.average > 4 ? 'text-yellow-600' : 'text-green-600'
+                      }`}>
+                        {result.riskScores.average.toFixed(1)}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span>High Risk Issues</span>
+                        <span>{result.riskScores.distribution.high}</span>
+                      </div>
+                      <Progress
+                        value={
+                          (result.riskScores.distribution.high /
+                            (result.riskScores.distribution.high +
+                              result.riskScores.distribution.medium +
+                              result.riskScores.distribution.low)) * 100
+                        }
+                        className="h-2"
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Flagged Issues */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Compliance Issues</CardTitle>
+                <CardDescription>Identified compliance concerns and recommendations</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {result.issues.map((issue, index) => (
+                    <div
+                      key={index}
+                      className={`p-4 rounded-lg ${getRiskLevelColor(issue.severity)}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <h4 className="font-medium">{issue.clause}</h4>
+                          <p className="text-sm text-gray-600">{issue.description}</p>
+                        </div>
+                        <Badge variant={issue.severity === 'CRITICAL' ? 'destructive' : 'secondary'}>
+                          {issue.severity}
+                        </Badge>
+                      </div>
+                      <div className="mt-2 text-sm">
+                        <p><strong>Recommendation:</strong> {issue.recommendation}</p>
+                        {issue.reference && (
+                          <p className="mt-1"><strong>Reference:</strong> {issue.reference}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const startMonitoringMutation = useMutation({
     mutationFn: async (documentIds: string[]) => {
       const response = await fetch('/api/compliance/monitor', {
@@ -346,6 +486,7 @@ const ComplianceAuditing: FC = () => {
       });
     }
   });
+
 
   // Enhanced export functionality with proper error handling
   const handleExportReport = async () => {
@@ -383,7 +524,6 @@ const ComplianceAuditing: FC = () => {
     }
   };
 
-
   // Utility functions
   function getSeverityColor(severity: string) {
     switch (severity.toUpperCase()) {
@@ -402,55 +542,6 @@ const ComplianceAuditing: FC = () => {
       default: return 'border-l-4 border-gray-500 bg-gray-50';
     }
   }
-
-  // Document Input Component
-  const DocumentInput = () => (
-    <Card className="bg-white/80 backdrop-blur-lg">
-      <CardHeader>
-        <CardTitle>Document Input</CardTitle>
-        <CardDescription>
-          Paste your document text for compliance analysis
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <Textarea
-            placeholder="Paste your document text here..."
-            className="min-h-[300px] resize-none"
-            value={documentText}
-            onChange={(e) => setDocumentText(e.target.value)}
-          />
-          <Button
-            className="w-full"
-            disabled={!documentText.trim() || submitDocumentMutation.isPending}
-            onClick={() => submitDocumentMutation.mutate()}
-          >
-            {submitDocumentMutation.isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Analyzing...
-              </>
-            ) : submitDocumentMutation.isError ? (
-              <>
-                <AlertTriangle className="h-4 w-4 mr-2" />
-                Retry Analysis
-              </>
-            ) : (
-              <>
-                <Shield className="h-4 w-4 mr-2" />
-                Submit for Analysis
-              </>
-            )}
-          </Button>
-          {submitDocumentMutation.isError && (
-            <div className="text-sm text-red-600 mt-2">
-              {submitDocumentMutation.error.message}
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
@@ -589,357 +680,18 @@ const ComplianceAuditing: FC = () => {
       </div>
 
 
-      <main className="container mx-auto px-4 py-16">
-        <div className="max-w-6xl mx-auto">
+      <main className="container mx-auto px-4 py-8">
+        <div className="max-w-7xl mx-auto space-y-8">
           <div className="flex items-center gap-4 mb-8">
             <Shield className="h-8 w-8 text-green-600" />
             <h2 className="text-3xl font-bold">Compliance Auditing</h2>
           </div>
 
+          {/* Document Input and Analysis */}
           <div className="grid gap-6 md:grid-cols-2">
-            {/* Document Input Section */}
-            <div className="space-y-6">
-              <DocumentInput />
-            </div>
-
-            {/* Document Selection */}
-            <Card className="bg-white/80 backdrop-blur-lg">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Uploaded Documents</CardTitle>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <Info className="h-4 w-4 text-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="max-w-xs">
-                          Select documents to monitor for compliance.
-                          The system will continuously scan these documents
-                          for regulatory updates and compliance issues.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {isLoadingDocuments ? (
-                  <div className="flex items-center justify-center p-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-                  </div>
-                ) : uploadedDocuments.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">
-                    No documents uploaded yet
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    {uploadedDocuments.map((doc) => (
-                      <div key={doc.id} className="flex items-center space-x-3">
-                        <Checkbox
-                          checked={selectedDocuments.includes(doc.id)}
-                          onCheckedChange={(checked) => {
-                            setSelectedDocuments(prev =>
-                              checked
-                                ? [...prev, doc.id]
-                                : prev.filter(id => id !== doc.id)
-                            );
-                          }}
-                        />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{doc.name}</p>
-                          <p className="text-xs text-gray-500">
-                            Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <Badge
-                          variant={doc.status === "ERROR" ? "destructive" : "default"}
-                        >
-                          {doc.status}
-                        </Badge>
-                      </div>
-                    ))}
-                    <Button
-                      className="w-full mt-4"
-                      disabled={selectedDocuments.length === 0 || startMonitoringMutation.isPending}
-                      onClick={() => startMonitoringMutation.mutate(selectedDocuments)}
-                    >
-                      {startMonitoringMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <Shield className="h-4 w-4 mr-2" />
-                      )}
-                      Start Monitoring Selected
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <DocumentInput />
+            <AnalysisResults />
           </div>
-
-          {/* Monitoring Dashboard */}
-          <Card className="bg-white/80 backdrop-blur-lg">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Audit Results</CardTitle>
-                {complianceResults.length > 0 && (
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleExportReport}
-                      className="flex items-center gap-2"
-                    >
-                      <Download className="h-4 w-4" />
-                      Export Raw Data
-                    </Button>
-                    <ExportButton auditId={complianceResults[0].documentId} />
-                  </div>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isLoadingResults ? (
-                <div className="flex flex-col items-center justify-center p-8 space-y-4">
-                  <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-                  <p className="text-sm text-gray-500">Analyzing documents...</p>
-                </div>
-              ) : uploadedDocuments.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  Submit a document to begin analysis
-                </div>
-              ) : complianceResults.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  No monitoring results available yet
-                </div>
-              ) : (
-                <div className="container mx-auto px-4 py-8">
-                  <div className="max-w-7xl mx-auto space-y-6">
-                    {/* Risk Analytics Section */}
-                    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                      {complianceResults.map((result, idx) => (
-                        <React.Fragment key={result.documentId}>
-                          {/* Risk Trend Chart */}
-                          <Card className="bg-white/80 backdrop-blur-lg col-span-2">
-                            <CardHeader>
-                              <CardTitle>Risk Trend Analysis</CardTitle>
-                              <CardDescription>Risk scores across document sections</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                              <VisualizationWrapper>
-                                <div className="h-[300px]">
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={result.visualizationData.riskTrend.map((score, i) => ({
-                                      section: `Section ${i + 1}`,
-                                      score
-                                    }))}>
-                                      <CartesianGrid strokeDasharray="3 3" />
-                                      <XAxis dataKey="section" />
-                                      <YAxis domain={[0, 10]} />
-                                      <RechartTooltip />
-                                      <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2} />
-                                    </LineChart>
-                                  </ResponsiveContainer>
-                                </div>
-                              </VisualizationWrapper>
-                            </CardContent>
-                          </Card>
-
-                          {/* Issue Frequency Chart */}
-                          <Card className="bg-white/80 backdrop-blur-lg">
-                            <CardHeader>
-                              <CardTitle>Issue Distribution</CardTitle>
-                              <CardDescription>Frequency of compliance issues</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                              <VisualizationWrapper>
-                                <div className="h-[300px]">
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={result.visualizationData.issueFrequency.map((count, i) => ({
-                                      category: `Category ${i + 1}`,
-                                      count
-                                    }))}>
-                                      <CartesianGrid strokeDasharray="3 3" />
-                                      <XAxis dataKey="category" />
-                                      <YAxis />
-                                      <RechartTooltip />
-                                      <Bar dataKey="count" fill="#10b981" />
-                                    </BarChart>
-                                  </ResponsiveContainer>
-                                </div>
-                              </VisualizationWrapper>
-                            </CardContent>
-                          </Card>
-
-                          {/* Risk Score Summary */}
-                          <Card className="bg-white/80 backdrop-blur-lg">
-                            <CardHeader>
-                              <CardTitle>Risk Score Summary</CardTitle>
-                              <CardDescription>Key risk metrics from the analysis</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-medium">Average Risk Score:</span>
-                                  <span className={`text-lg font-bold ${
-                                    result.riskScores.average > 7 ? 'text-red-600' :
-                                      result.riskScores.average > 4 ? 'text-yellow-600' : 'text-green-600'
-                                  }`}>
-                                    {result.riskScores.average.toFixed(1)}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-medium">Maximum Risk:</span>
-                                  <span className="text-lg font-bold text-red-600">
-                                    {result.riskScores.max}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-medium">Minimum Risk:</span>
-                                  <span className="text-lg font-bold text-green-600">
-                                    {result.riskScores.min}
-                                  </span>
-                                </div>
-                                <div className="pt-4">
-                                  <div className="space-y-2">
-                                    <div className="flex items-center justify-between text-sm">
-                                      <span>High Risk Issues</span>
-                                      <span>{result.riskScores.distribution.high}</span>
-                                    </div>
-                                    <Progress value={
-                                      (result.riskScores.distribution.high /
-                                        (result.riskScores.distribution.high +
-                                          result.riskScores.distribution.medium +
-                                          result.riskScores.distribution.low)) * 100
-                                    } className="bg-red-200" indicatorClassName="bg-red-500" />
-                                  </div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </React.Fragment>
-                      ))}
-                    </div>
-
-                    <div className="grid gap-6 md:grid-cols-2">
-                      {/* Document Input Section */}
-                      <div className="space-y-6">
-                        {/* Document Input Section remains the same */}
-                        <DocumentInput/>
-                      </div>
-
-                      {/* Monitoring Dashboard */}
-                      <Card className="bg-white/80 backdrop-blur-lg">
-                        {/* Monitoring Dashboard Header remains the same */}
-                        <CardHeader>
-                          <div className="flex items-center justify-between">
-                            <CardTitle>Audit Results</CardTitle>
-                            {complianceResults.length > 0 && (
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={handleExportReport}
-                                  className="flex items-center gap-2"
-                                >
-                                  <Download className="h-4 w-4" />
-                                  Export Raw Data
-                                </Button>
-                                <ExportButton auditId={complianceResults[0].documentId} />
-                              </div>
-                            )}
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          {/* Loading and empty states remain the same */}
-                          {isLoadingResults ? (
-                            <div className="flex flex-col items-center justify-center p-8 space-y-4">
-                              <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-                              <p className="text-sm text-gray-500">Analyzing documents...</p>
-                            </div>
-                          ) : uploadedDocuments.length === 0 ? (
-                            <div className="text-center py-8 text-gray-500">
-                              Submit a document to begin analysis
-                            </div>
-                          ) : complianceResults.length === 0 ? (
-                            <div className="text-center py-8 text-gray-500">
-                              No monitoring results available yet
-                            </div>
-                          ) : (
-                            <ScrollArea className="h-[600px] pr-4">
-                              {complianceResults.map((result) => (
-                                <div
-                                  key={result.documentId}
-                                  className={`mb-6 p-4 rounded-lg ${getRiskLevelColor(result.riskLevel)}`}
-                                >
-                                  <div className="space-y-6">
-                                    {/* Flagged Issues */}
-                                    <div className="bg-white/80 rounded-lg p-4">
-                                      <h4 className="text-lg font-semibold mb-4">Flagged Issues</h4>
-                                      <div className="space-y-4">
-                                        {result.issues.map((issue, idx) => (
-                                          <div
-                                            key={idx}
-                                            className="border-l-4 border-yellow-500 bg-yellow-50 p-4 rounded"
-                                          >
-                                            <div className="flex items-start justify-between">
-                                              <div>
-                                                <h5 className="font-medium">{issue.clause}</h5>
-                                                <p className="text-sm text-gray-600 mt-1">
-                                                  {issue.description}
-                                                </p>
-                                              </div>
-                                              <Badge className={getSeverityColor(issue.severity)}>
-                                                {issue.severity}
-                                              </Badge>
-                                            </div>
-                                            <div className="mt-3 text-sm">
-                                              <p className="font-medium text-gray-700">Recommendation:</p>
-                                              <p className="text-gray-600">{issue.recommendation}</p>
-                                              {issue.reference && (
-                                                <p className="text-gray-500 mt-1">
-                                                  Reference: {issue.reference}
-                                                </p>
-                                              )}
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-
-                                    {/* Recommended Actions */}
-                                    <div className="bg-white/80 rounded-lg p-4">
-                                      <h4 className="text-lg font-semibold mb-4">Recommended Actions</h4>
-                                      <div className="space-y-3">
-                                        {result.recommendedActions.map((action, idx) => (
-                                          <div
-                                            key={idx}
-                                            className="flex items-start space-x-3 p-3 bg-green-50 rounded"
-                                          >
-                                            <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
-                                            <div>
-                                              <p className="font-medium">{action.action}</p>
-                                              <p className="text-sm text-gray-600 mt-1">
-                                                {action.impact}
-                                              </p>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </ScrollArea>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </main>
     </div>
