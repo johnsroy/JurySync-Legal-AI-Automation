@@ -6,10 +6,27 @@ import { chromaStore } from './chromaStore';
 import { Buffer } from 'buffer';
 
 const MAX_CHUNK_SIZE = 8000;
+const HTML_TAG_REGEX = /<[^>]*>|<!DOCTYPE.*?>/i;
+const INVALID_CHARACTERS_REGEX = /[\u0000-\u0008\u000B-\u000C\u000E-\u001F]/g;
 
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [ComplianceAudit] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
+}
+
+// Add validation utilities
+function containsHTMLTags(text: string): boolean {
+  return HTML_TAG_REGEX.test(text);
+}
+
+function normalizeText(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n') // Normalize Windows line endings
+    .replace(/\r/g, '\n')   // Normalize Mac line endings
+    .replace(/\n\n+/g, '\n\n') // Normalize multiple line breaks
+    .replace(/\t/g, '    ') // Convert tabs to spaces
+    .replace(INVALID_CHARACTERS_REGEX, '') // Remove control characters
+    .trim();
 }
 
 async function parseDocument(file: Express.Multer.File): Promise<string> {
@@ -20,6 +37,12 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
     let text = '';
     log('Starting document parsing', 'info', { mimeType });
 
+    // Validate file content before parsing
+    if (!buffer || buffer.length === 0) {
+      throw new Error('Empty file content');
+    }
+
+    // Parse based on mime type
     switch (mimeType) {
       case 'application/pdf':
         try {
@@ -55,32 +78,23 @@ async function parseDocument(file: Express.Multer.File): Promise<string> {
         throw new Error(`Unsupported file type: ${mimeType}`);
     }
 
-    // Enhanced text cleaning with detailed logging
-    log('Starting text cleaning', 'debug', { originalLength: text.length });
-
-    // First pass: Remove any potential XML/HTML-like content
-    text = text
-      .replace(/<\!DOCTYPE[^>]*>/gi, '') // Remove DOCTYPE declarations
-      .replace(/<\?xml[^>]*\?>/gi, '')   // Remove XML declarations
-      .replace(/<!--[\s\S]*?-->/g, '')   // Remove HTML comments
-      .replace(/<[^>]+>/g, ' ')          // Remove any remaining HTML/XML tags
-      .replace(/&[a-z]+;/gi, ' ')        // Remove HTML entities
-      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
-      .replace(/\t/g, ' ');              // Replace tabs with spaces
-
-    // Second pass: Clean up whitespace
-    text = text
-      .split(/\r?\n/)                    // Split into lines
-      .map(line => line.trim())          // Trim each line
-      .filter(line => line.length > 0)   // Remove empty lines
-      .join('\n')                        // Rejoin with newlines
-      .replace(/\s+/g, ' ')              // Normalize spaces
-      .trim();                           // Final trim
-
-    if (!text) {
-      log('Empty document after cleaning', 'error');
-      throw new Error('No text content found in document after cleaning');
+    // Validate and clean text content
+    if (!text || text.trim().length === 0) {
+      throw new Error('No text content found in document');
     }
+
+    // Check for HTML-like content
+    if (containsHTMLTags(text)) {
+      log('HTML tags detected in document', 'debug');
+      // Strip HTML tags and normalize
+      text = text
+        .replace(/<[^>]*>|<!DOCTYPE.*?>/gi, '') // Remove all HTML tags including DOCTYPE
+        .replace(/<!--[\s\S]*?-->/g, '')        // Remove HTML comments
+        .replace(/&[a-z]+;/gi, ' ');            // Remove HTML entities
+    }
+
+    // Normalize and clean text
+    text = normalizeText(text);
 
     log('Document cleaning completed', 'info', {
       originalLength: buffer.length,
