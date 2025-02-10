@@ -336,6 +336,11 @@ export class OrchestratorService {
 
       // Check for HTML tags
       if (containsHTMLTags(input.data.documentText)) {
+        log('Validation failed: HTML tags detected', 'error', {
+          taskId,
+          sampleText: input.data.documentText.substring(0, 100),
+          matches: input.data.documentText.match(HTML_TAG_REGEX)
+        });
         throw new Error('Document must be plain text without HTML formatting');
       }
 
@@ -400,7 +405,9 @@ export class OrchestratorService {
       const errorResponse = {
         error: 'Invalid request data',
         details: error.message,
-        code: 'VALIDATION_ERROR'
+        code: 'VALIDATION_ERROR',
+        requestId: taskId,
+        timestamp: new Date().toISOString()
       };
 
       this.taskManager.updateTask(taskId, {
