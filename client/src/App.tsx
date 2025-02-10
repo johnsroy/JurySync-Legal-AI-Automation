@@ -8,15 +8,13 @@ import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing-page";
 import LoginPage from "@/pages/login-page";
 import RegisterPage from "@/pages/register-page";
-import ProductsPage from "@/pages/products-page";
-import PricingPage from "@/pages/pricing-page";
 import Dashboard from "@/pages/dashboard";
-import ContractAutomation from "@/pages/contract-automation";
 import ComplianceAuditing from "@/pages/compliance-auditing";
-import LegalResearch from "@/pages/LegalResearch";
-import ReportsDashboard from "@/pages/reports-dashboard";
+import ContractAutomation from "@/pages/contract-automation";
+import LegalResearch from "@/pages/legal-research";
+import Reports from "@/pages/reports";
+import Settings from "@/pages/settings";
 import { ProtectedRoute } from "./lib/protected-route";
-import Orchestrator from "@/pages/Orchestrator";
 
 function Router() {
   return (
@@ -24,51 +22,42 @@ function Router() {
       <Route path="/" component={LandingPage} />
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
-      <Route path="/products" component={ProductsPage} />
-      <Route path="/pricing" component={PricingPage} />
 
       {/* Protected routes with Layout */}
       <Route path="/dashboard">
-        {() => (
-          <Layout>
-            <ProtectedRoute path="/dashboard" component={Dashboard} />
-          </Layout>
-        )}
+        <Layout>
+          <ProtectedRoute component={Dashboard} />
+        </Layout>
       </Route>
-      <Route path="/contract-automation">
-        {() => (
-          <Layout>
-            <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
-          </Layout>
-        )}
-      </Route>
+
       <Route path="/compliance-auditing">
-        {() => (
-          <Layout>
-            <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
-          </Layout>
-        )}
+        <Layout>
+          <ProtectedRoute component={ComplianceAuditing} />
+        </Layout>
       </Route>
+
+      <Route path="/contract-automation">
+        <Layout>
+          <ProtectedRoute component={ContractAutomation} />
+        </Layout>
+      </Route>
+
       <Route path="/legal-research">
-        {() => (
-          <Layout>
-            <ProtectedRoute path="/legal-research" component={LegalResearch} />
-          </Layout>
-        )}
+        <Layout>
+          <ProtectedRoute component={LegalResearch} />
+        </Layout>
       </Route>
+
       <Route path="/reports">
-        {() => (
-          <Layout>
-            <ProtectedRoute path="/reports" component={ReportsDashboard} />
-          </Layout>
-        )}
+        <Layout>
+          <ProtectedRoute component={Reports} />
+        </Layout>
       </Route>
-      <Route path="/orchestrator">
-        {() => (
-          <Layout>
-            <ProtectedRoute path="/orchestrator" component={Orchestrator} />
-          </Layout>
-        )}
+
+      <Route path="/settings">
+        <Layout>
+          <ProtectedRoute component={Settings} />
+        </Layout>
       </Route>
 
       <Route component={NotFound} />
