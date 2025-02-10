@@ -1,43 +1,51 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, GitCompare, Shield, Book, AlertTriangle } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
+import { Clock, FileCheck, Scale, TrendingUp, Users, GitMerge } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { AlertTriangle, Gavel, LogOut, Loader2 } from "lucide-react";
 
-const agentOptions = [
+
+const performanceData = [
+  { month: 'Jan', value: 65 },
+  { month: 'Feb', value: 72 },
+  { month: 'Mar', value: 78 },
+  { month: 'Apr', value: 82 },
+  { month: 'May', value: 85 },
+  { month: 'Jun', value: 88 }
+];
+
+const metrics = [
   {
-    id: "contract-automation",
-    title: "Contract Automation",
-    description: "Draft, review, and manage legal contracts with AI assistance",
-    icon: GitCompare,
-    path: "/contract-automation",
-    gradient: "from-yellow-50 to-green-100"
+    title: "Compliance Tasks Automated",
+    value: "80%",
+    description: "of routine tasks automated",
+    icon: GitMerge,
+    color: "text-green-600"
   },
   {
-    id: "compliance-auditing",
-    title: "Compliance Auditing",
-    description: "Scan and audit documents for regulatory compliance",
-    icon: Shield,
-    path: "/compliance-auditing",
-    gradient: "from-green-50 to-yellow-100"
+    title: "Processing Time Reduced",
+    value: "70%",
+    description: "average time savings",
+    icon: Clock,
+    color: "text-blue-600"
   },
   {
-    id: "legal-research",
-    title: "Legal Research",
-    description: "Analyze legal databases and summarize case law",
-    icon: Book,
-    path: "/legal-research",
-    gradient: "from-yellow-50 to-green-100"
+    title: "Documents Analyzed",
+    value: "2,450",
+    description: "this month",
+    icon: FileCheck,
+    color: "text-purple-600"
   },
   {
-    id: "orchestrator",
-    title: "Central Orchestrator",
-    description: "Monitor and manage AI agents and workflows",
-    icon: AlertTriangle,
-    path: "/orchestrator",
-    gradient: "from-blue-50 to-purple-100"
+    title: "Compliance Score",
+    value: "95%",
+    description: "across all audits",
+    icon: Scale,
+    color: "text-yellow-600"
   }
 ];
 
@@ -46,7 +54,7 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const handleAgentSelect = (option: typeof agentOptions[0]) => {
+  const handleAgentSelect = (option: any) => { //added any type for option
     if (!user) {
       toast({
         title: "Authentication Required",
@@ -72,7 +80,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50 animate-gradient-x">
+    <div className="p-8 space-y-8">
       <header className="bg-white/80 backdrop-blur-lg border-b border-green-100">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -105,37 +113,78 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-16">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-4">What would you like to do today?</h2>
-          <p className="text-gray-600 text-center mb-12">
-            Choose an AI agent to assist you with your legal tasks
-          </p>
+      <div>
+        <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome to JurySync.io</h2>
+        <p className="text-gray-600">Your legal compliance and automation dashboard</p>
+      </div>
 
-          <div className="grid gap-6">
-            {agentOptions.map((option) => (
-              <Card
-                key={option.id}
-                className={`bg-gradient-to-r ${option.gradient} hover:shadow-lg transition-all cursor-pointer group overflow-hidden relative`}
-                onClick={() => handleAgentSelect(option)}
-              >
-                <CardContent className="p-8">
-                  <div className="flex items-start gap-6">
-                    <div className="relative">
-                      <div className="absolute inset-0 bg-green-500/10 rounded-full scale-110 group-hover:scale-125 transition-transform"></div>
-                      <option.icon className="h-12 w-12 text-green-600 relative z-10" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="text-2xl font-semibold mb-2">{option.title}</h3>
-                      <p className="text-gray-600">{option.description}</p>
-                    </div>
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {metrics.map((metric, index) => (
+          <Card key={index} className="bg-white hover:shadow-lg transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">{metric.title}</p>
+                  <div className="flex items-baseline">
+                    <p className="text-2xl font-semibold">{metric.value}</p>
+                    <p className="ml-2 text-sm text-gray-600">{metric.description}</p>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </main>
+                </div>
+                <div className={`${metric.color} bg-opacity-10 p-3 rounded-full`}>
+                  <metric.icon className={`h-6 w-6 ${metric.color}`} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Automation Performance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={performanceData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#2563eb"
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Document Processing Statistics</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={performanceData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#2563eb" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
