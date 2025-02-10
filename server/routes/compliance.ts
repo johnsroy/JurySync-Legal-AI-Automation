@@ -17,18 +17,20 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (_req, file, cb) => {
-    // Check file type
+    // Check file type with more specific MIME types
     const allowedTypes = [
       'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',                     // .doc
+      'application/vnd.ms-word',                // .doc
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+      'application/vnd.wordprocessing-draft',   // Alternative DOCX
       'text/plain'
     ];
 
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, and TXT files are supported'));
+      cb(new Error(`Invalid file type. Received: ${file.mimetype}. Only PDF, DOC, DOCX, and TXT files are supported`));
     }
   }
 }).single('file');
@@ -52,17 +54,20 @@ router.post('/upload', async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Create document record
+    // Insert document record
     const [document] = await db
       .insert(complianceDocuments)
       .values({
         userId,
         title: req.file.originalname,
-        content: '',
+        content: req.file.buffer.toString('utf-8'),
         documentType: req.file.mimetype,
         status: "PENDING",
         riskScore: 0,
-        metadata: '{}'
+        lastScanned: null,
+        nextScanDue: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
       })
       .returning();
 
@@ -90,19 +95,13 @@ router.post('/upload', async (req, res) => {
     // Process in background
     modelRouter.processTask(taskId, "compliance-analysis", textContent, systemPrompt)
       .then(async (result) => {
+        // Update document with analysis results
         await db
           .update(complianceDocuments)
           .set({ 
-            content: result.output,
             status: "MONITORING",
             lastScanned: new Date(),
             riskScore: result.qualityScore * 100,
-            metadata: JSON.stringify({
-              modelUsed: result.modelUsed,
-              processingTimeMs: result.processingTimeMs,
-              qualityScore: result.qualityScore,
-              ...result.metadata
-            })
           })
           .where(eq(complianceDocuments.id, document.id));
 
@@ -113,7 +112,6 @@ router.post('/upload', async (req, res) => {
         db.update(complianceDocuments)
           .set({ 
             status: "ERROR",
-            metadata: JSON.stringify({ error: error.message })
           })
           .where(eq(complianceDocuments.id, document.id))
           .execute()
