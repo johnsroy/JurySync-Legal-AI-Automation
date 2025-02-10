@@ -71,14 +71,12 @@ export class ComplianceAuditService {
   private async analyzeWithOpenAI(documentText: string) {
     return retryOperation(async () => {
       try {
-        log('Starting OpenAI analysis');
+        log('Starting OpenAI analysis', 'info');
 
-        // Set a timeout promise
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => reject(new Error('OpenAI analysis timeout')), 30000);
         });
 
-        // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
         const analysisPromise = openai.chat.completions.create({
           model: "gpt-4o",
           messages: [
@@ -139,22 +137,37 @@ export class ComplianceAuditService {
               }`
             }
           ],
-          response_format: { type: "json_object" }
+          response_format: { type: "json_object" },
+          temperature: 0.2 // Lower temperature for more consistent formatting
         });
 
         // Race between timeout and API call
         const response = await Promise.race([analysisPromise, timeoutPromise]);
-        if (!response.choices?.[0]?.message?.content) {
+
+        log('OpenAI raw response received', 'debug', {
+          status: response?.choices?.[0]?.finish_reason,
+          contentLength: response?.choices?.[0]?.message?.content?.length
+        });
+
+        if (!response?.choices?.[0]?.message?.content) {
           throw new Error('Invalid response format from OpenAI');
         }
+
         const result = JSON.parse(response.choices[0].message.content);
-        log('OpenAI analysis completed successfully', 'info', { responseStructure: Object.keys(result) });
+
+        log('OpenAI analysis completed successfully', 'info', { 
+          responseStructure: Object.keys(result),
+          summary: result.auditReport?.summary?.substring(0, 100),
+          issuesCount: result.auditReport?.flaggedIssues?.length
+        });
+
         return result;
       } catch (error: any) {
         log('OpenAI analysis failed', 'error', {
           error: error.message,
           stack: error.stack,
-          response: error.response?.data
+          response: error.response?.data,
+          type: error.constructor.name
         });
         throw error;
       }
@@ -164,9 +177,8 @@ export class ComplianceAuditService {
   private async analyzeWithAnthropic(documentText: string) {
     return retryOperation(async () => {
       try {
-        log('Starting Anthropic analysis');
+        log('Starting Anthropic analysis', 'info');
 
-        // the newest Anthropic model is "claude-3-5-sonnet-20241022"
         const response = await anthropic.messages.create({
           model: "claude-3-5-sonnet-20241022",
           max_tokens: 1500,
@@ -224,19 +236,31 @@ export class ComplianceAuditService {
           }]
         });
 
+        log('Anthropic raw response received', 'debug', {
+          contentType: response.content[0]?.type,
+          contentLength: response.content[0]?.text?.length
+        });
+
         const content = response.content[0];
         if (content.type !== 'text') {
           throw new Error('Unexpected response format from Anthropic API');
         }
 
         const result = JSON.parse(content.text);
-        log('Anthropic analysis completed successfully', 'info', { responseStructure: Object.keys(result) });
+
+        log('Anthropic analysis completed successfully', 'info', {
+          responseStructure: Object.keys(result),
+          summary: result.auditReport?.summary?.substring(0, 100),
+          issuesCount: result.auditReport?.flaggedIssues?.length
+        });
+
         return result;
       } catch (error: any) {
         log('Anthropic analysis failed', 'error', {
           error: error.message,
           stack: error.stack,
-          response: error.response?.data
+          response: error.response?.data,
+          type: error.constructor.name
         });
         throw error;
       }
