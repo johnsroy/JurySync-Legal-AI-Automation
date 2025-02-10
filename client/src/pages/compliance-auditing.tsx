@@ -260,7 +260,7 @@ const ComplianceAuditing: FC = () => {
 
         try {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 30000);
+          const timeout = setTimeout(() => controller.abort(), 60000); // Increased timeout to 60 seconds
 
           const response = await fetch('/api/orchestrator/audit', {
             method: 'POST',
@@ -270,9 +270,9 @@ const ComplianceAuditing: FC = () => {
             },
             body: JSON.stringify({
               document: documentText,
-              type: 'compliance',
+              type: 'policy',
               metadata: {
-                documentType: 'compliance',
+                documentType: 'policy',
                 priority: 'medium',
                 timestamp: new Date().toISOString()
               }
@@ -943,8 +943,7 @@ const ComplianceAuditing: FC = () => {
                     <AlertDescription className="space-y-2">
                       <p>{taskPollingError}</p>
                       <Button
-                        variant="outline"
-                        size="sm"
+                        variant="outline"                        size="sm"
                         onClick={() => {
                           setTaskPollingError(null);
                           setTaskId(null);

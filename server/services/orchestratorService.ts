@@ -361,41 +361,49 @@ export class OrchestratorService {
 
       let result;
 
-      // Process based on task type
-      if (task.type === 'compliance') {
-        // Pass taskId to complianceAuditService for proper state management
-        result = await complianceAuditService.analyzeDocument(data.document, taskId);
-        log('Compliance analysis completed', 'info', {
-          taskId,
-          resultSummaryLength: result?.auditReport?.summary?.length
+      // Process based on task type with timeout handling
+      if (task.type === 'policy' || task.type === 'compliance') {
+        // Set a longer timeout for AI analysis
+        const timeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Analysis timeout')), 120000); // 2 minute timeout
         });
 
-        // Validate the audit report structure
         try {
-          validateAuditReport(result);
-        } catch (error: any) {
-          log('Invalid audit report structure:', 'error', {
-            error: error.message,
-            result: JSON.stringify(result, null, 2)
+          // Race between the analysis and timeout
+          result = await Promise.race([
+            complianceAuditService.analyzeDocument(data.document, taskId),
+            timeout
+          ]);
+
+          log('Compliance analysis completed', 'info', {
+            taskId,
+            resultSummaryLength: result?.auditReport?.summary?.length
           });
-          throw new Error(`Audit report validation failed: ${error.message}`);
+
+          // Validate the audit report structure
+          validateAuditReport(result);
+
+          this.taskManager.updateTask(taskId, {
+            status: 'completed',
+            progress: 100,
+            completedAt: new Date().toISOString()
+          });
+
+          // Store the validated result
+          this.taskManager.setTaskResult(taskId, {
+            status: 'completed',
+            data: result,
+            completedAt: new Date().toISOString()
+          });
+
+          log(`Task ${taskId} completed successfully with validated audit report`);
+
+        } catch (error: any) {
+          if (error.message === 'Analysis timeout') {
+            throw new Error('Analysis took too long to complete. Please try again with a shorter document.');
+          }
+          throw error;
         }
-
-        this.taskManager.updateTask(taskId, {
-          status: 'completed',
-          progress: 100,
-          completedAt: new Date().toISOString()
-        });
-
-        // Store the validated result
-        this.taskManager.setTaskResult(taskId, {
-          status: 'completed',
-          data: result,
-          completedAt: new Date().toISOString()
-        });
-
-        // Log successful completion
-        log(`Task ${taskId} completed successfully with validated audit report`);
 
       } else {
         throw new Error(`Unsupported task type: ${task.type}`);
