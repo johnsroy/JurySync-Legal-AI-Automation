@@ -40,7 +40,7 @@ import {
   Clock,
   TrendingUp,
   DollarSign,
-  InfoCircle as InfoIcon
+  Info
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -66,7 +66,7 @@ function ModelTooltip({ modelId }: { modelId: string }) {
     <TooltipProvider>
       <UITooltip>
         <TooltipTrigger>
-          <InfoIcon className="h-4 w-4 ml-1" />
+          <Info className="h-4 w-4 ml-1" />
         </TooltipTrigger>
         <TooltipContent>
           <p>{MODEL_DESCRIPTIONS[modelId] || 'AI Model'}</p>

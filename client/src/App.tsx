@@ -14,6 +14,7 @@ import ComplianceAuditing from "@/pages/compliance-auditing";
 import ContractAutomation from "@/pages/contract-automation";
 import LegalResearch from "@/pages/legal-research";
 import Reports from "@/pages/reports";
+import ReportsDashboard from "@/pages/reports-dashboard";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
 import WorkflowAutomation from "@/pages/workflow-automation";
@@ -68,6 +69,18 @@ function Router() {
       <Route path="/reports">
         <Layout>
           <ProtectedRoute component={Reports} path="/reports" />
+        </Layout>
+      </Route>
+
+      <Route path="/analytics">
+        <Layout>
+          <ProtectedRoute component={ReportsDashboard} path="/analytics" />
+        </Layout>
+      </Route>
+
+      <Route path="/documents">
+        <Layout>
+          <ProtectedRoute component={LegalResearch} path="/documents" />
         </Layout>
       </Route>
 
