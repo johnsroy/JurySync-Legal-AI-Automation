@@ -151,7 +151,13 @@ export class ModelRouter {
           ]
         }]
       });
-      return response.content[0].value;
+
+      // Fix the TextBlock type error by checking content type
+      const textContent = response.content[0];
+      if (textContent.type === 'text') {
+        return textContent.text;
+      }
+      throw new Error("Unexpected response format from Anthropic API");
     } else {
       const response = await openai.chat.completions.create({
         model,
@@ -305,7 +311,8 @@ export class ModelRouter {
       if (taskId) {
         query.where(eq(modelMetrics.taskId, taskId));
       }
-      return await query.execute();
+      const metrics = await query.execute();
+      return metrics;
     } catch (error) {
       console.error("Error fetching metrics:", error);
       throw new Error("Failed to fetch metrics");
@@ -318,7 +325,7 @@ export class ModelRouter {
 
       // Calculate automation rate
       const totalTasks = metrics.length;
-      const automatedTasks = metrics.filter(m => m.errorRate < 0.2).length;
+      const automatedTasks = metrics.filter(m => (m.errorRate ?? 1) < 0.2).length;
       const automationRate = (automatedTasks / totalTasks) * 100;
 
       // Calculate processing time reduction
@@ -327,7 +334,7 @@ export class ModelRouter {
       const processingTimeReduction = ((baselineProcessingTime - avgProcessingTime) / baselineProcessingTime) * 100;
 
       // Calculate error reduction
-      const avgErrorRate = metrics.reduce((sum, m) => sum + m.errorRate, 0) / totalTasks;
+      const avgErrorRate = metrics.reduce((sum, m) => sum + (m.errorRate ?? 1), 0) / totalTasks;
       const baselineErrorRate = 0.4; // 40% baseline error rate
       const errorReduction = ((baselineErrorRate - avgErrorRate) / baselineErrorRate) * 100;
 
