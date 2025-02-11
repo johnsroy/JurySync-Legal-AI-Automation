@@ -24,28 +24,16 @@ const searchSchema = z.object({
 
 type SearchForm = z.infer<typeof searchSchema>;
 
-const searchExamples = [
-  "What are the key provisions of the Civil Rights Act of 1964?",
-  "How has the Supreme Court's interpretation of the Fourth Amendment evolved in digital privacy cases?",
-  "Analyze recent circuit court decisions on employment discrimination under the ADA",
-  "Compare treatment of environmental regulations across different jurisdictions",
-  "Research precedents related to intellectual property rights in AI-generated content",
-  "What are the emerging trends in data privacy law across different states?"
-];
-
 export default function LegalResearch() {
   const [searchResults, setSearchResults] = useState<any>(null);
-  const [selectedExample, setSelectedExample] = useState<string>("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<number | null>(null);
   const [documentSummary, setDocumentSummary] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const { toast } = useToast();
   const [files, setFiles] = useState<any[]>([]);
-  const [uploadedDocResults, setUploadedDocResults] = useState<any>(null);
-  const [analysisProgress, setAnalysisProgress] = useState(0);
   const [uploadedDocId, setUploadedDocId] = useState<number | null>(null);
-  const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([]);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
 
   const form = useForm<SearchForm>({
     resolver: zodResolver(searchSchema),
@@ -105,6 +93,9 @@ export default function LegalResearch() {
       setSelectedDocument(documentId);
 
       const response = await apiRequest("POST", `/api/legal/documents/${documentId}/analyze`);
+      if (!response.ok) {
+        throw new Error('Analysis failed');
+      }
       const data = await response.json();
 
       toast({
@@ -130,6 +121,9 @@ export default function LegalResearch() {
     try {
       setIsSummarizing(true);
       const response = await apiRequest("POST", `/api/legal/documents/${documentId}/summary`);
+      if (!response.ok) {
+        throw new Error('Summary generation failed');
+      }
       const summary = await response.json();
       setDocumentSummary(summary);
       toast({
@@ -147,18 +141,8 @@ export default function LegalResearch() {
     }
   };
 
-  // Update the handleFilePondError function
-  const handleFilePondError = (error: any) => {
-    console.error('FilePond error:', error);
-    toast({
-      title: "Upload Error",
-      description: error.message || "Failed to upload document",
-      variant: "destructive",
-    });
-  };
-
-  // Add upload success handler
-  const handleUploadSuccess = (response: string) => {
+  // FilePond handlers
+  const handleUploadSuccess = (response: any): string => {
     try {
       const data = JSON.parse(response);
       if (data.status === 'success') {
@@ -167,18 +151,28 @@ export default function LegalResearch() {
           title: "Upload Success",
           description: "Document uploaded successfully",
         });
-
-        // Update documents list
         queryClient.invalidateQueries({ queryKey: ["/api/legal/documents"] });
-      } else {
-        throw new Error(data.error || 'Upload failed');
       }
+      return response;
     } catch (error: any) {
-      handleFilePondError(error);
+      console.error('Upload error:', error);
+      toast({
+        title: "Upload Error",
+        description: error.message || "Failed to process upload response",
+        variant: "destructive",
+      });
+      return '';
     }
   };
 
-  // FilePond server configuration
+  const handleUploadError = (error: any): void => {
+    console.error('FilePond error:', error);
+    toast({
+      title: "Upload Error",
+      description: error.message || "Failed to upload document",
+      variant: "destructive",
+    });
+  };
 
   return (
     <div className="container mx-auto py-8">
@@ -251,32 +245,74 @@ export default function LegalResearch() {
         </div>
       </Card>
 
+      {/* File Upload Section */}
+      <Card className="p-6">
+        <h2 className="text-xl font-semibold mb-4">Upload Legal Documents</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Upload your legal documents for instant AI-powered analysis.
+        </p>
+        <FilePond
+          files={files}
+          onupdatefiles={setFiles}
+          allowMultiple={false}
+          maxFiles={1}
+          server={{
+            process: {
+              url: "/api/legal/documents",
+              headers: {
+                'Accept': 'application/json'
+              },
+              onload: handleUploadSuccess,
+              onerror: handleUploadError
+            }
+          }}
+          acceptedFileTypes={[
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain'
+          ]}
+          labelIdle='Drag & Drop your legal document or <span class="filepond--label-action">Browse</span>'
+        />
+
+        {uploadedDocId && isAnalyzing && (
+          <div className="mt-4">
+            <Progress value={analysisProgress} />
+            <p className="text-sm text-center mt-2">Analyzing document... {analysisProgress}%</p>
+          </div>
+        )}
+      </Card>
+
+      {/* Document Summary Display */}
+      {documentSummary && (
+        <Card className="p-6 mt-8">
+          <h2 className="text-xl font-semibold mb-4">Document Summary</h2>
+          <div className="space-y-4">
+            {documentSummary.executiveSummary && (
+              <div>
+                <h3 className="font-semibold mb-2">Executive Summary</h3>
+                <p>{documentSummary.executiveSummary}</p>
+              </div>
+            )}
+            {documentSummary.keyPoints?.length > 0 && (
+              <div>
+                <h3 className="font-semibold mb-2">Key Points</h3>
+                <ul className="list-disc list-inside">
+                  {documentSummary.keyPoints.map((point: string, index: number) => (
+                    <li key={index}>{point}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
       {/* Search Section */}
       <Card className="p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4 flex items-center">
           <Search className="mr-2" />
           Search Legal Documents
         </h2>
-        <div className="mb-4">
-          <p className="text-sm text-gray-600 mb-2">Try these example searches:</p>
-          <div className="flex flex-wrap gap-2">
-            {searchExamples.map((example, index) => (
-              <Button
-                key={index}
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSelectedExample(example);
-                  form.setValue("query", example);
-                  form.handleSubmit((data) => searchMutation.mutate(data))();
-                }}
-                className="text-xs"
-              >
-                {example.slice(0, 50)}...
-              </Button>
-            ))}
-          </div>
-        </div>
         <form onSubmit={form.handleSubmit((data) => searchMutation.mutate(data))} className="space-y-4">
           <Textarea
             placeholder="Enter your legal research query..."
@@ -354,154 +390,6 @@ export default function LegalResearch() {
           </div>
         </Card>
       )}
-
-      {/* Document Summary */}
-      {documentSummary && (
-        <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Document Summary</h2>
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold mb-2">Executive Summary</h3>
-              <p>{documentSummary.executiveSummary}</p>
-            </div>
-            {documentSummary.keyPoints?.length > 0 && (
-              <div>
-                <h3 className="font-semibold mb-2">Key Points</h3>
-                <ul className="list-disc list-inside">
-                  {documentSummary.keyPoints.map((point: string, index: number) => (
-                    <li key={index}>{point}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {documentSummary.legalPrinciples?.length > 0 && (
-              <div>
-                <h3 className="font-semibold mb-2">Legal Principles</h3>
-                <ul className="list-disc list-inside">
-                  {documentSummary.legalPrinciples.map((principle: string, index: number) => (
-                    <li key={index}>{principle}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {/* File Upload Section */}
-      <Card className="p-6">
-        <h2 className="text-xl font-semibold mb-4">Upload and Research Legal Documents</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Upload your legal documents for instant AI-powered analysis and research insights.
-        </p>
-        <div className="space-y-4">
-          <FilePond
-            files={files}
-            onupdatefiles={setFiles}
-            allowMultiple={false}
-            maxFiles={1}
-            server={{
-              process: {
-                url: "/api/legal/documents",
-                headers: {
-                  'Accept': 'application/json'
-                },
-                onload: handleUploadSuccess,
-                onerror: handleFilePondError
-              }
-            }}
-            acceptedFileTypes={[
-              'application/pdf',
-              'application/msword',
-              'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-            ]}
-            labelIdle='Drag & Drop your legal document or <span class="filepond--label-action">Browse</span>'
-          />
-
-          {uploadedDocId && (
-            <div className="mt-4 space-y-4">
-              <Button
-                onClick={() => uploadedDocId && analyzeDocument(uploadedDocId)}
-                className="w-full"
-                disabled={!uploadedDocId || isAnalyzing}
-                variant="default"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Search className="w-4 h-4 mr-2" />
-                    Begin Research
-                  </>
-                )}
-              </Button>
-
-              {isAnalyzing && (
-                <div className="mt-4">
-                  <Progress value={analysisProgress} />
-                  <p className="text-sm text-center mt-2">Analyzing document... {analysisProgress}%</p>
-                </div>
-              )}
-            </div>
-          )}
-          {uploadedDocResults && !isAnalyzing && (
-            <div className="mt-8 space-y-6">
-              <h3 className="text-xl font-semibold">Document Analysis Results</h3>
-              <Card className="p-6">
-                <h4 className="font-medium mb-2">Summary</h4>
-                <p className="text-gray-700">{uploadedDocResults.summary}</p>
-              </Card>
-
-              {uploadedDocResults.keyPoints?.length > 0 && (
-                <Card className="p-6">
-                  <h4 className="font-medium mb-2">Key Points</h4>
-                  <ul className="list-disc list-inside space-y-2">
-                    {uploadedDocResults.keyPoints.map((point: string, index: number) => (
-                      <li key={index} className="text-gray-700">{point}</li>
-                    ))}
-                  </ul>
-                </Card>
-              )}
-
-              {uploadedDocResults.legalImplications?.length > 0 && (
-                <Card className="p-6">
-                  <h4 className="font-medium mb-2">Legal Implications</h4>
-                  <ul className="list-disc list-inside space-y-2">
-                    {uploadedDocResults.legalImplications.map((implication: string, index: number) => (
-                      <li key={index} className="text-gray-700">{implication}</li>
-                    ))}
-                  </ul>
-                </Card>
-              )}
-
-              {uploadedDocResults.recommendations?.length > 0 && (
-                <Card className="p-6">
-                  <h4 className="font-medium mb-2">Recommendations</h4>
-                  <ul className="list-disc list-inside space-y-2">
-                    {uploadedDocResults.recommendations.map((rec: string, index: number) => (
-                      <li key={index} className="text-gray-700">{rec}</li>
-                    ))}
-                  </ul>
-                </Card>
-              )}
-
-              {uploadedDocResults.riskAreas?.length > 0 && (
-                <Card className="p-6">
-                  <h4 className="font-medium mb-2 text-red-600">Risk Areas</h4>
-                  <ul className="list-disc list-inside space-y-2">
-                    {uploadedDocResults.riskAreas.map((risk: string, index: number) => (
-                      <li key={index} className="text-red-600">{risk}</li>
-                    ))}
-                  </ul>
-                </Card>
-              )}
-            </div>
-          )}
-        </div>
-      </Card>
     </div>
   );
 }

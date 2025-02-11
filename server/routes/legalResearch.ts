@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { legalResearchService } from '../services/legalResearchService';
 import { z } from 'zod';
 import { db } from '../db';
@@ -32,59 +32,27 @@ const upload = multer({
 
 const router = Router();
 
-// Error handler middleware
-const asyncHandler = (fn: any) => (req: any, res: any, next: any) => {
-  Promise.resolve(fn(req, res, next)).catch((error) => {
-    console.error('Route error:', error);
-    res.status(500).json({ 
-      error: error.message || 'Internal server error',
-      status: 'error'
+// Error handler middleware with proper typing
+const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) => 
+  (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch((error) => {
+      console.error('Route error:', error);
+      // Ensure we always return JSON, even for errors
+      res.status(500).json({ 
+        error: error.message || 'Internal server error',
+        status: 'error'
+      });
     });
-  });
-};
+  };
 
 // Query validation schema
 const querySchema = z.object({
   query: z.string().min(1, "Query is required")
 });
 
-// Perform legal research query
-router.post('/query', asyncHandler(async (req, res) => {
-  console.log('Received query request:', req.body);
-  const { query } = querySchema.parse(req.body);
-  const results = await legalResearchService.analyzeQuery(query);
-  console.log('Query analysis completed successfully');
-  res.json(results);
-}));
-
-// Get document summaries
-router.post('/documents/:id/summary', asyncHandler(async (req, res) => {
-  const documentId = parseInt(req.params.id);
-  if (isNaN(documentId)) {
-    return res.status(400).json({ error: 'Invalid document ID', status: 'error' });
-  }
-
-  console.log('Generating summary for document:', documentId);
-  const summary = await legalResearchService.generateSummary(documentId);
-  res.json(summary);
-}));
-
-// Get all documents
-router.get('/documents', asyncHandler(async (req, res) => {
-  // Ensure legal research service is initialized
-  await legalResearchService.initialize();
-
-  const documents = await db
-    .select()
-    .from(legalDocuments)
-    .orderBy(desc(legalDocuments.createdAt));
-
-  res.json(documents);
-}));
-
 // Upload document
-router.post('/documents', (req, res) => {
-  upload(req, res, async (err) => {
+router.post('/documents', (req: Request, res: Response) => {
+  upload(req, res, async (err: any) => {
     try {
       if (err) {
         console.error('File upload error:', err);
@@ -109,8 +77,6 @@ router.post('/documents', (req, res) => {
         const result = await mammoth.extractRawText({ buffer: req.file.buffer });
         content = result.value;
       } else {
-        // Handle PDF files
-        // Note: PDF extraction logic would go here
         content = req.file.buffer.toString('utf-8');
       }
 
@@ -155,32 +121,61 @@ router.post('/documents', (req, res) => {
   });
 });
 
-// Analyze document
-router.post('/documents/:id/analyze', asyncHandler(async (req, res) => {
-  const documentId = parseInt(req.params.id);
-  if (isNaN(documentId)) {
-    return res.status(400).json({ error: 'Invalid document ID', status: 'error' });
-  }
-
-  console.log('Analyzing document:', documentId);
-  const analysis = await legalResearchService.analyzeDocument(documentId);
-  res.json(analysis);
-}));
-
-// Get document versions
-router.get('/documents/:id/versions', asyncHandler(async (req, res) => {
-  const documentId = parseInt(req.params.id);
-  if (isNaN(documentId)) {
-    return res.status(400).json({ error: 'Invalid document ID', status: 'error' });
-  }
-
-  const versions = await db
+// Get all documents
+router.get('/documents', asyncHandler(async (req: Request, res: Response) => {
+  await legalResearchService.initialize();
+  const documents = await db
     .select()
     .from(legalDocuments)
-    .where(eq(legalDocuments.id, documentId))
     .orderBy(desc(legalDocuments.createdAt));
+  res.json({
+    documents,
+    status: 'success'
+  });
+}));
 
-  res.json(versions);
+// Analyze document
+router.post('/documents/:id/analyze', asyncHandler(async (req: Request, res: Response) => {
+  const documentId = parseInt(req.params.id);
+  if (isNaN(documentId)) {
+    return res.status(400).json({ 
+      error: 'Invalid document ID',
+      status: 'error'
+    });
+  }
+
+  const analysis = await legalResearchService.analyzeDocument(documentId);
+  res.json({
+    ...analysis,
+    status: 'success'
+  });
+}));
+
+// Get document summary
+router.post('/documents/:id/summary', asyncHandler(async (req: Request, res: Response) => {
+  const documentId = parseInt(req.params.id);
+  if (isNaN(documentId)) {
+    return res.status(400).json({ 
+      error: 'Invalid document ID',
+      status: 'error'
+    });
+  }
+
+  const summary = await legalResearchService.generateSummary(documentId);
+  res.json({
+    ...summary,
+    status: 'success'
+  });
+}));
+
+// Search documents
+router.post('/query', asyncHandler(async (req: Request, res: Response) => {
+  const { query } = querySchema.parse(req.body);
+  const results = await legalResearchService.analyzeQuery(query);
+  res.json({
+    ...results,
+    status: 'success'
+  });
 }));
 
 export default router;
