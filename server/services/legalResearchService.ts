@@ -60,10 +60,14 @@ class InMemoryVectorStore {
 export class LegalResearchService {
   private static instance: LegalResearchService;
   private vectorStore: InMemoryVectorStore;
+  private prePopulatedDocuments: LegalDocument[] = []; // Added to store pre-populated documents
 
   private constructor() {
     this.vectorStore = new InMemoryVectorStore();
     console.log('Initialized LegalResearchService with in-memory vector store');
+    //Load pre-populated documents (replace with your actual loading logic)
+    this.loadPrePopulatedDocuments();
+
   }
 
   static getInstance(): LegalResearchService {
@@ -192,80 +196,6 @@ Provide your response in this JSON format:
     }
   }
 
-  async analyzeQuery(query: string): Promise<any> {
-    try {
-      console.log('Analyzing legal research query:', query);
-      const similarCases = await this.searchSimilarCases(query);
-
-      const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 2000,
-        temperature: 0.2,
-        messages: [{
-          role: "user",
-          content: `Analyze this legal query using both retrieval-augmented generation and case-based reasoning. Consider:
-1. Pattern recognition across similar cases
-2. Common legal principles and their application
-3. Outcome comparison and prediction
-4. Timeline of legal developments
-5. Citation relationships and precedent strength
-
-Query: ${query}
-
-Similar Cases:
-${similarCases.map(doc => `
-Title: ${doc.title}
-Content: ${doc.content}
-Jurisdiction: ${doc.jurisdiction}
-Date: ${doc.date}
-`).join('\n')}
-
-Structure your response as a JSON object with these fields:
-{
-  "summary": "A detailed analysis of the query and relevant cases",
-  "patternAnalysis": {
-    "commonPrinciples": ["Array of recurring legal principles"],
-    "outcomePatterns": ["Array of similar outcomes and their conditions"],
-    "jurisdictionalTrends": ["Array of jurisdiction-specific patterns"]
-  },
-  "timeline": [{"date": "string", "event": "string", "significance": "string"}],
-  "citationMap": [{
-    "case": "string",
-    "citedBy": ["Array of cases citing this one"],
-    "significance": "string"
-  }],
-  "recommendations": ["Array of recommendations based on pattern analysis"],
-  "visualAids": {
-    "timelineData": [{"year": Number, "event": "string", "impact": Number}],
-    "citationNetwork": {
-      "nodes": ["Array of case names"],
-      "edges": [{"from": "string", "to": "string", "weight": Number}]
-    }
-  }
-}`
-        }]
-      });
-
-      const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response format from Anthropic API');
-      }
-
-      const analysis = JSON.parse(content.text);
-      analysis.relevantCases = similarCases.map((doc) => ({
-        document: doc,
-        patternMatch: analysis.patternAnalysis?.commonPrinciples?.includes(doc.title) || false,
-        significance: analysis.citationMap?.find((c: any) => c.case === doc.title)?.significance || "Related case"
-      }));
-
-      console.log('Query analysis completed successfully');
-      return analysis;
-    } catch (error) {
-      console.error('Failed to analyze query:', error);
-      throw error;
-    }
-  }
-
   async generateSummary(documentId: number): Promise<any> {
     try {
       console.log('Generating summary for document:', documentId);
@@ -354,6 +284,111 @@ Provide your response in this JSON format:
       console.error('Error searching similar cases:', error);
       return [];
     }
+  }
+
+  async analyzeQuery(query: string): Promise<any> {
+    try {
+      console.log('Analyzing legal research query:', query);
+      const similarCases = await this.searchSimilarCases(query);
+
+      const response = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 2000,
+        temperature: 0.2,
+        messages: [{
+          role: "user",
+          content: `Analyze this legal query using both retrieval-augmented generation and case-based reasoning. Consider:
+1. Pattern recognition across similar cases
+2. Common legal principles and their application
+3. Outcome comparison and prediction
+4. Timeline of legal developments
+5. Citation relationships and precedent strength
+
+Query: ${query}
+
+Similar Cases:
+${similarCases.map(doc => `
+Title: ${doc.title}
+Content: ${doc.content}
+Jurisdiction: ${doc.jurisdiction}
+Date: ${doc.date}
+`).join('\n')}
+
+Provide your response in this JSON format:
+{
+  "summary": "A detailed analysis of the query and relevant cases",
+  "patternAnalysis": {
+    "commonPrinciples": ["Array of recurring legal principles"],
+    "outcomePatterns": ["Array of similar outcomes and their conditions"],
+    "jurisdictionalTrends": ["Array of jurisdiction-specific patterns"]
+  },
+  "timeline": [{"date": "string", "event": "string", "significance": "string"}],
+  "citationMap": [{
+    "case": "string",
+    "citedBy": ["Array of cases citing this one"],
+    "significance": "string"
+  }],
+  "recommendations": ["Array of recommendations based on pattern analysis"],
+  "visualAids": {
+    "timelineData": [{"year": Number, "event": "string", "impact": Number}],
+    "citationNetwork": {
+      "nodes": ["Array of case names"],
+      "edges": [{"from": "string", "to": "string", "weight": Number}]
+    }
+  }
+}`
+        }]
+      });
+
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response format from Anthropic API');
+      }
+
+      const analysis = JSON.parse(content.text);
+      analysis.relevantCases = similarCases.map((doc) => ({
+        document: doc,
+        patternMatch: analysis.patternAnalysis?.commonPrinciples?.includes(doc.title) || false,
+        significance: analysis.citationMap?.find((c: any) => c.case === doc.title)?.significance || "Related case"
+      }));
+
+      console.log('Query analysis completed successfully');
+      return analysis;
+    } catch (error) {
+      console.error('Failed to analyze query:', error);
+      throw error;
+    }
+  }
+
+
+  getPrePopulatedDocuments(): LegalDocument[] {
+    return this.prePopulatedDocuments;
+  }
+
+  private loadPrePopulatedDocuments(): void {
+    // Replace this with your actual data loading mechanism
+    //  This is a placeholder.  You'll need to fetch from a database or other source.
+    this.prePopulatedDocuments = [
+      {
+        id: 1,
+        title: "Sample Contract",
+        content: "This is sample contract text...",
+        documentType: "contract",
+        date: new Date(),
+        jurisdiction: "CA"
+      },
+      {
+        id: 2,
+        title: "Sample NDA",
+        content: "This is sample NDA text...",
+        documentType: "nda",
+        date: new Date(),
+        jurisdiction: "NY"
+      }
+    ];
+
+     this.prePopulatedDocuments.forEach(doc => this.addDocument(doc).catch(console.error));
+
   }
 }
 

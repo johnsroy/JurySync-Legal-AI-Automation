@@ -213,39 +213,60 @@ export default function LegalResearch() {
     }
 
     return uploadedDocuments?.map((doc: any) => (
-      <div key={doc.id} className="flex flex-col p-4 border rounded-lg">
+      <Card key={doc.id} className="p-4">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h3 className="font-medium">{doc.title}</h3>
+            <h3 className="font-medium text-lg">{doc.title}</h3>
             <p className="text-sm text-gray-600">
               {new Date(doc.date).toLocaleDateString()} - {doc.documentType}
             </p>
+            <p className="text-sm text-gray-700 mt-1">Jurisdiction: {doc.jurisdiction}</p>
           </div>
-          <Button
-            onClick={() => analyzeDocument(doc.id)}
-            variant="outline"
-            size="sm"
-            disabled={isAnalyzing}
-          >
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <Search className="w-4 h-4 mr-2" />
-                Begin Research
-              </>
-            )}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => analyzeDocument(doc.id)}
+              variant="outline"
+              size="sm"
+              disabled={isAnalyzing}
+            >
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <Search className="w-4 h-4 mr-2" />
+                  Analyze
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={() => {
+                setSelectedDocument(doc.id);
+                generateSummary(doc.id);
+              }}
+              variant="outline"
+              size="sm"
+              disabled={isSummarizing && selectedDocument === doc.id}
+            >
+              {isSummarizing && selectedDocument === doc.id ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Summarizing...
+                </>
+              ) : (
+                "Generate Summary"
+              )}
+            </Button>
+          </div>
         </div>
         {doc.content && (
           <div className="mt-2 text-sm text-gray-700 max-h-32 overflow-y-auto">
             <p>{doc.content.substring(0, 200)}...</p>
           </div>
         )}
-      </div>
+      </Card>
     ));
   };
 
