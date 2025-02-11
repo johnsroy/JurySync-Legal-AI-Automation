@@ -2,15 +2,31 @@ import { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FileSignature, ClipboardCheck, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { 
+  FileSignature, 
+  ClipboardCheck, 
+  Clock, 
+  CheckCircle2, 
+  AlertCircle,
+  FileEdit 
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface Version {
   id: number;
-  timestamp: string;
+  versionNumber: number;
   status: "draft" | "review" | "approved" | "rejected";
-  author: string;
-  changes: string;
+  authorId: number;
+  content: string;
+  changes: {
+    description: string;
+    modifiedSections: Array<{
+      type: "ADDITION" | "DELETION" | "MODIFICATION";
+      content: string;
+      lineNumber?: number;
+    }>;
+  };
+  createdAt: string;
 }
 
 interface WorkflowIntegrationProps {
@@ -22,6 +38,8 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
   const { toast } = useToast();
   const [versions, setVersions] = useState<Version[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<Version | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
 
   // Fetch version history
   const fetchVersionHistory = async () => {
@@ -43,32 +61,24 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
     }
   };
 
-  // Fetch diagnostic data
-  const fetchDiagnostics = async () => {
-    try {
-      const response = await fetch(`/api/contract-analysis/${contractId}/diagnostic`);
-      const data = await response.json();
-
-      if (response.ok && data.success && data.report) {
-        // Display any critical diagnostic information
-        if (data.report.errors.length > 0) {
-          toast({
-            title: "Workflow Diagnostic",
-            description: `Found ${data.report.errors.length} issues that need attention`,
-            variant: "warning",
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Diagnostic fetch error:', error);
-    }
+  const handleEditVersion = async (version: Version) => {
+    setSelectedVersion(version);
+    setShowEditor(true);
   };
 
   const handleSignature = async () => {
     try {
       setIsLoading(true);
+      // Initialize Documenso signing process
       const response = await fetch(`/api/contract-analysis/${contractId}/signature`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          documentId: contractId,
+          versionId: selectedVersion?.id || versions[0]?.id
+        })
       });
 
       const data = await response.json();
@@ -124,6 +134,35 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
     }
   };
 
+  const handleDownload = async (version: Version) => {
+    try {
+      const response = await fetch(`/api/contract-analysis/${contractId}/download/${version.id}`, {
+        method: 'GET'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download document');
+      }
+
+      // Create a blob from the response and trigger download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contract_v${version.versionNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to download document",
+        variant: "destructive",
+      });
+    }
+  };
+
   const getStatusIcon = (status: Version['status']) => {
     switch (status) {
       case 'draft':
@@ -139,11 +178,10 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
     }
   };
 
-  // Fetch version history and diagnostics on mount and when contractId changes
+  // Fetch version history on mount and when contractId changes
   useEffect(() => {
     if (contractId) {
       fetchVersionHistory();
-      fetchDiagnostics();
     }
   }, [contractId]);
 
@@ -165,7 +203,7 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
             <Button 
               onClick={handleSignature}
               className="gap-2"
-              disabled={isLoading}
+              disabled={isLoading || !selectedVersion}
             >
               <FileSignature className="h-4 w-4" />
               Send for e-Signature
@@ -180,7 +218,7 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
             <div className="h-2 bg-gray-100 rounded">
               <div 
                 className="h-2 bg-blue-500 rounded" 
-                style={{ width: `${(currentVersion / 10) * 100}%` }}
+                style={{ width: `${(currentVersion / Math.max(...versions.map(v => v.versionNumber), 1)) * 100}%` }}
               />
             </div>
           </div>
@@ -199,13 +237,28 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
                     </div>
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">Version {version.id}</p>
-                        <time className="text-xs text-gray-500">
-                          {new Date(version.timestamp).toLocaleDateString()}
-                        </time>
+                        <p className="text-sm font-medium">Version {version.versionNumber}</p>
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditVersion(version)}
+                          >
+                            <FileEdit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDownload(version)}
+                          >
+                            Download
+                          </Button>
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-600">{version.changes}</p>
-                      <p className="text-xs text-gray-500">By {version.author}</p>
+                      <p className="text-sm text-gray-600">{version.changes.description}</p>
+                      <time className="text-xs text-gray-500">
+                        {new Date(version.createdAt).toLocaleDateString()}
+                      </time>
                     </div>
                   </div>
                 ))}

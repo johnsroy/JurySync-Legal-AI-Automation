@@ -1,4 +1,6 @@
 import { db } from "../db";
+import { documentVersions, documents, type DocumentVersion } from "@shared/schema";
+import { eq, desc } from 'drizzle-orm';
 import { z } from "zod";
 
 // Workflow stage types
@@ -20,26 +22,23 @@ interface WorkflowError {
   retryCount: number;
 }
 
-// Simulated e-signature service response
-interface SignatureResponse {
-  signatureId: string;
-  status: 'pending' | 'completed' | 'failed';
-  signers: Array<{
-    email: string;
-    status: 'pending' | 'signed';
-  }>;
-}
-
 // Version history schema
 const versionSchema = z.object({
   id: z.number(),
-  contractId: z.number(),
-  version: z.number(),
+  documentId: z.number(),
+  versionNumber: z.number(),
   content: z.string(),
   status: z.enum(['draft', 'review', 'approved', 'rejected']),
-  timestamp: z.date(),
-  author: z.string(),
-  changes: z.string(),
+  createdAt: z.date(),
+  authorId: z.number(),
+  changes: z.object({
+    description: z.string(),
+    modifiedSections: z.array(z.object({
+      type: z.enum(["ADDITION", "DELETION", "MODIFICATION"]),
+      content: z.string(),
+      lineNumber: z.number().optional(),
+    }))
+  })
 });
 
 export type Version = z.infer<typeof versionSchema>;
@@ -58,28 +57,18 @@ class WorkflowOrchestrator {
         timestamp: new Date()
       });
 
-      // Simulate e-signature API call
-      const signatureResponse: SignatureResponse = await this.retryOperation(
-        async () => ({
-          signatureId: `sig-${Date.now()}`,
-          status: 'pending',
-          signers: [
-            { email: 'signer1@example.com', status: 'pending' },
-            { email: 'signer2@example.com', status: 'pending' }
-          ]
-        }),
-        'E-signature API call'
-      );
-
-      // Log the signature request
-      await this.logWorkflowEvent(contractId, 'signature_initiated', {
-        signatureId: signatureResponse.signatureId,
-        signers: signatureResponse.signers
+      // TODO: Integrate with Documenso API here
+      // For now, create a new version with signature pending status
+      const newVersion = await this.createVersion(contractId, {
+        status: 'review',
+        author: 'System',
+        changes: 'Submitted for signature',
+        content: 'Pending signature'
       });
 
       return {
-        signatureId: signatureResponse.signatureId,
-        status: signatureResponse.status,
+        versionId: newVersion.id,
+        status: 'pending',
         message: 'E-signature process initiated successfully'
       };
     } catch (error) {
@@ -98,14 +87,13 @@ class WorkflowOrchestrator {
         timestamp: new Date()
       });
 
-      // Create a new version for review
       const newVersion = await this.createVersion(contractId, {
         status: 'review',
         author: 'System',
-        changes: 'Submitted for internal review'
+        changes: 'Submitted for internal review',
+        content: 'Under review'
       });
 
-      // Log the review initiation
       await this.logWorkflowEvent(contractId, 'review_initiated', {
         versionId: newVersion.id,
         timestamp: new Date()
@@ -127,12 +115,12 @@ class WorkflowOrchestrator {
     try {
       console.log(`Fetching version history for contract ${contractId}`);
 
-      const versions = await db.query(
-        'SELECT * FROM contract_versions WHERE contract_id = $1 ORDER BY version DESC',
-        [contractId]
-      );
+      const versions = await db.select()
+        .from(documentVersions)
+        .where(eq(documentVersions.documentId, contractId))
+        .orderBy(desc(documentVersions.versionNumber));
 
-      return versions.rows.map(row => versionSchema.parse(row));
+      return versions.map(version => versionSchema.parse(version));
     } catch (error) {
       const workflowError = this.handleError(error, 'version_history');
       await this.logWorkflowEvent(contractId, 'version_history_error', workflowError);
@@ -168,50 +156,77 @@ class WorkflowOrchestrator {
   private async createVersion(contractId: number, {
     status,
     author,
-    changes
+    changes,
+    content
   }: {
-    status: Version['status'],
+    status: 'draft' | 'review' | 'approved' | 'rejected',
     author: string,
-    changes: string
-  }): Promise<Version> {
+    changes: string,
+    content: string
+  }): Promise<DocumentVersion> {
     try {
       // Get the latest version number
-      const result = await db.query(
-        'SELECT MAX(version) as max_version FROM contract_versions WHERE contract_id = $1',
-        [contractId]
-      );
-      const nextVersion = (result.rows[0].max_version || 0) + 1;
+      const versions = await db.select()
+        .from(documentVersions)
+        .where(eq(documentVersions.documentId, contractId))
+        .orderBy(desc(documentVersions.versionNumber));
+
+      const nextVersion = versions.length > 0 ? versions[0].versionNumber + 1 : 1;
 
       // Insert new version
-      const [newVersion] = await db.query(
-        `INSERT INTO contract_versions 
-         (contract_id, version, status, author, changes, timestamp) 
-         VALUES ($1, $2, $3, $4, $5, NOW()) 
-         RETURNING *`,
-        [contractId, nextVersion, status, author, changes]
-      );
+      const [newVersion] = await db.insert(documentVersions)
+        .values({
+          documentId: contractId,
+          versionNumber: nextVersion,
+          status,
+          authorId: 1, // TODO: Get from current user
+          content,
+          changes: {
+            description: changes,
+            modifiedSections: []
+          }
+        })
+        .returning();
 
-      return versionSchema.parse(newVersion);
+      return newVersion;
     } catch (error) {
       console.error('Failed to create version:', error);
       throw new Error('Failed to create new version');
     }
   }
 
-  private async retryOperation<T>(
-    operation: () => Promise<T>,
-    operationName: string,
-    retryCount = 0
-  ): Promise<T> {
+  private async logWorkflowEvent(
+    contractId: number,
+    eventType: string,
+    details: Record<string, any>
+  ) {
     try {
-      return await operation();
-    } catch (error) {
-      if (retryCount < this.MAX_RETRIES) {
-        console.log(`Retrying ${operationName} (attempt ${retryCount + 1})`);
-        await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY));
-        return this.retryOperation(operation, operationName, retryCount + 1);
+      // Store workflow events in the document's analysis field
+      const [document] = await db.select()
+        .from(documents)
+        .where(eq(documents.id, contractId));
+
+      if (document) {
+        const analysis = document.analysis || {};
+        const events = analysis.workflowEvents || [];
+        events.push({
+          type: eventType,
+          details,
+          timestamp: new Date().toISOString()
+        });
+
+        await db.update(documents)
+          .set({
+            analysis: {
+              ...analysis,
+              workflowEvents: events
+            }
+          })
+          .where(eq(documents.id, contractId));
       }
-      throw error;
+    } catch (error) {
+      console.error('Failed to log workflow event:', error);
+      // Don't throw here to prevent workflow interruption
     }
   }
 
@@ -244,30 +259,27 @@ class WorkflowOrchestrator {
       retryCount: 0
     };
   }
-
-  private async logWorkflowEvent(
-    contractId: number,
-    eventType: string,
-    details: Record<string, any>
-  ) {
+  private retryOperation<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    retryCount = 0
+  ): Promise<T> {
     try {
-      await db.query(
-        `INSERT INTO workflow_events 
-         (contract_id, event_type, details, timestamp) 
-         VALUES ($1, $2, $3, NOW())`,
-        [contractId, eventType, JSON.stringify(details)]
-      );
+      return operation();
     } catch (error) {
-      console.error('Failed to log workflow event:', error);
-      // Don't throw here to prevent workflow interruption
+      if (retryCount < this.MAX_RETRIES) {
+        console.log(`Retrying ${operationName} (attempt ${retryCount + 1})`);
+        setTimeout(() => {}, this.RETRY_DELAY);
+        return this.retryOperation(operation, operationName, retryCount + 1);
+      }
+      throw error;
     }
   }
-
   private aggregateStageMetrics(events: any[]) {
     const stages = new Map<string, {
-      totalTime: number,
-      errorCount: number,
-      retryCount: number
+      totalTime: number;
+      errorCount: number;
+      retryCount: number;
     }>();
 
     events.forEach(event => {
