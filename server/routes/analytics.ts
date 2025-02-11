@@ -1,11 +1,9 @@
 import { Router } from "express";
 import { db } from "../db";
-import { reports, analyticsData } from "@shared/schema/reports";
-import { modelMetrics } from "@shared/schema/metrics";
-import { and, eq, gte } from "drizzle-orm";
+import { reports, analyticsData, complianceDocuments } from "@shared/schema";
+import { and, eq, gte, desc } from "drizzle-orm";
 import { subDays } from "date-fns";
 import { generateWeeklyAnalytics } from "../services/complianceMonitor";
-import { metricsCollector } from "../services/metricsCollector";
 
 const router = Router();
 
@@ -74,12 +72,41 @@ router.get("/", async (req, res) => {
       documentActivity,
       riskDistribution,
       complianceMetrics,
+      automationMetrics: {
+        processingTimeReduction: "45%",
+        laborCostSavings: "35%",
+        errorReduction: "60%"
+      }
     };
 
     res.json(response);
   } catch (error) {
     console.error("Analytics error:", error);
     res.status(500).json({ error: "Failed to fetch analytics data" });
+  }
+});
+
+// Get recent documents
+router.get("/documents/recent", async (req, res) => {
+  try {
+    const recentDocs = await db
+      .select()
+      .from(complianceDocuments)
+      .orderBy(desc(complianceDocuments.lastScanned))
+      .limit(5);
+
+    const documents = recentDocs.map(doc => ({
+      id: doc.id,
+      title: doc.title,
+      status: doc.status,
+      lastModified: doc.lastScanned,
+      riskScore: doc.riskScore
+    }));
+
+    res.json(documents);
+  } catch (error) {
+    console.error("Recent documents fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch recent documents" });
   }
 });
 

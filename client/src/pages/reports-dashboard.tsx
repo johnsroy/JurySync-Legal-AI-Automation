@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   BarChart,
   Bar,
@@ -35,12 +36,14 @@ import {
 import { 
   Loader2, 
   FileText, 
-  PieChart as PieChartIcon, 
-  BarChart as BarChartIcon,
   Clock,
   TrendingUp,
   DollarSign,
-  InfoCircle as InfoIcon
+  Info,
+  CalendarDays,
+  AlertTriangle,
+  CheckCircle,
+  FileSearch
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -50,36 +53,99 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { format } from "date-fns";
 import type { Report } from "@shared/schema/reports";
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
-const MODEL_DESCRIPTIONS = {
-  'claude-3-opus-20240229': 'Handles complex code and math tasks with high precision',
-  'gpt-4o': 'Specialized for research and detailed analysis tasks',
-  'claude-3-sonnet-20240229': 'Efficient for routine code generation and standard tasks',
-  'claude-instant-1.2': 'Fast processing of basic operations and simple queries'
-};
-
-function ModelTooltip({ modelId }: { modelId: string }) {
+function RecentDocumentsSkeleton() {
   return (
-    <TooltipProvider>
-      <UITooltip>
-        <TooltipTrigger>
-          <InfoIcon className="h-4 w-4 ml-1" />
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{MODEL_DESCRIPTIONS[modelId] || 'AI Model'}</p>
-        </TooltipContent>
-      </UITooltip>
-    </TooltipProvider>
+    <div className="space-y-4">
+      {Array(3).fill(0).map((_, i) => (
+        <div key={i} className="flex items-center space-x-4 p-4 border rounded-lg">
+          <Skeleton className="h-12 w-12 rounded-full" />
+          <div className="space-y-2 flex-1">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MetricCard({ title, value, description, icon: Icon, isLoading }: {
+  title: string;
+  value: string | number;
+  description: string;
+  icon: any;
+  isLoading?: boolean;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-7 w-1/2" />
+        ) : (
+          <>
+            <div className="text-2xl font-bold">{value}</div>
+            <p className="text-xs text-muted-foreground">
+              {description}
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RecentDocumentCard({ document, isLoading }: { 
+  document: any;
+  isLoading?: boolean;
+}) {
+  if (isLoading) {
+    return <RecentDocumentsSkeleton />;
+  }
+
+  const statusColors = {
+    COMPLIANT: "text-green-600 bg-green-100",
+    NON_COMPLIANT: "text-red-600 bg-red-100",
+    FLAGGED: "text-yellow-600 bg-yellow-100"
+  };
+
+  return (
+    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+      <div className="flex items-center space-x-4">
+        <div className="p-2 bg-primary/10 rounded-full">
+          <FileText className="h-6 w-6 text-primary" />
+        </div>
+        <div>
+          <h4 className="font-medium">{document.title}</h4>
+          <p className="text-sm text-muted-foreground">
+            Last modified {format(new Date(document.lastModified), 'MMM d, yyyy')}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center space-x-4">
+        <span className={`px-2 py-1 rounded-full text-sm ${statusColors[document.status]}`}>
+          {document.status}
+        </span>
+        <Button variant="ghost" size="sm">
+          <FileSearch className="h-4 w-4" />
+          View
+        </Button>
+      </div>
+    </div>
   );
 }
 
 function ReportsDashboard() {
   const { user } = useAuth();
   const [timeRange, setTimeRange] = useState("7d");
-  const [reportType, setReportType] = useState("all");
 
   const { data: analyticsData, isLoading: isLoadingAnalytics } = useQuery({
     queryKey: ['/api/analytics', timeRange],
@@ -89,38 +155,24 @@ function ReportsDashboard() {
     },
   });
 
-  const { data: modelMetrics, isLoading: isLoadingMetrics } = useQuery({
-    queryKey: ['/api/metrics/models', timeRange],
+  const { data: recentDocuments, isLoading: isLoadingDocuments } = useQuery({
+    queryKey: ['/api/documents/recent'],
     queryFn: async () => {
-      const response = await apiRequest("GET", `/api/metrics/models?timeRange=${timeRange}`);
-      return response.json();
-    },
-  });
-
-  const { data: reports, isLoading: isLoadingReports } = useQuery({
-    queryKey: ['/api/reports', reportType],
-    queryFn: async () => {
-      const response = await apiRequest("GET", `/api/reports?type=${reportType}`);
+      const response = await apiRequest("GET", "/api/documents/recent");
       return response.json();
     },
   });
 
   if (!user) return null;
 
-  if (isLoadingAnalytics || isLoadingReports || isLoadingMetrics) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
-          <p className="text-gray-500">Monitor your legal document metrics and insights</p>
+          <p className="text-muted-foreground">
+            Comprehensive overview of your legal document metrics and insights
+          </p>
         </div>
         <div className="flex gap-4">
           <Select value={timeRange} onValueChange={setTimeRange}>
@@ -135,264 +187,124 @@ function ReportsDashboard() {
           </Select>
           <Button>
             <FileText className="w-4 h-4 mr-2" />
-            Generate Report
+            Export Report
           </Button>
         </div>
       </div>
 
-      {/* Model Performance Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Automation Rate</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <MetricCard
+          title="Processing Time"
+          value={analyticsData?.automationMetrics?.processingTimeReduction || "0%"}
+          description="Average time saved per document"
+          icon={Clock}
+          isLoading={isLoadingAnalytics}
+        />
+        <MetricCard
+          title="Compliance Rate"
+          value={`${analyticsData?.complianceRate?.toFixed(1) || 0}%`}
+          description="Documents meeting compliance standards"
+          icon={CheckCircle}
+          isLoading={isLoadingAnalytics}
+        />
+        <MetricCard
+          title="Risk Score"
+          value={analyticsData?.averageRiskScore?.toFixed(1) || 0}
+          description="Average risk assessment score"
+          icon={AlertTriangle}
+          isLoading={isLoadingAnalytics}
+        />
+        <MetricCard
+          title="Document Volume"
+          value={analyticsData?.totalDocuments || 0}
+          description={`${analyticsData?.documentIncrease?.toFixed(1) || 0}% increase`}
+          icon={TrendingUp}
+          isLoading={isLoadingAnalytics}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Document Activity</CardTitle>
+            <CardDescription>Processing volume over time</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {modelMetrics?.automationMetrics?.automationPercentage || '0%'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Tasks automated successfully
-            </p>
+          <CardContent className="h-[300px]">
+            {isLoadingAnalytics ? (
+              <div className="w-full h-full flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={analyticsData?.documentActivity || []}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="processed" stroke="#8884d8" name="Processed" />
+                  <Line type="monotone" dataKey="uploaded" stroke="#82ca9d" name="Uploaded" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Processing Time</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+          <CardHeader>
+            <CardTitle>Risk Distribution</CardTitle>
+            <CardDescription>Risk levels across documents</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {modelMetrics?.automationMetrics?.processingTimeReduction || '0%'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Time reduction vs. baseline
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Cost Savings</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {modelMetrics?.automationMetrics?.laborCostSavings || '0%'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Estimated cost reduction
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Error Reduction</CardTitle>
-            <BarChartIcon className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {modelMetrics?.automationMetrics?.errorReduction || '0%'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Error rate improvement
-            </p>
+          <CardContent className="h-[300px]">
+            {isLoadingAnalytics ? (
+              <div className="w-full h-full flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={analyticsData?.riskDistribution || []}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {analyticsData?.riskDistribution?.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="models">Model Usage</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
-          <TabsTrigger value="risks">Risk Analysis</TabsTrigger>
-          <TabsTrigger value="compliance">Compliance</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Card className="col-span-2">
-              <CardHeader>
-                <CardTitle>Document Activity</CardTitle>
-                <CardDescription>Document processing over time</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={analyticsData?.documentActivity || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="processed"
-                      stroke="#8884d8"
-                      name="Processed"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="uploaded"
-                      stroke="#82ca9d"
-                      name="Uploaded"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Risk Distribution</CardTitle>
-                <CardDescription>Risk levels across documents</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={analyticsData?.riskDistribution || []}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {analyticsData?.riskDistribution?.map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Compliance Metrics</CardTitle>
-                <CardDescription>Key compliance indicators</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={analyticsData?.complianceMetrics || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="value" fill="#8884d8" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Recent Documents</CardTitle>
+            <CardDescription>Latest processed documents and their status</CardDescription>
           </div>
-        </TabsContent>
-
-        <TabsContent value="models" className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Model Distribution</CardTitle>
-                <CardDescription>Task distribution across AI models</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={modelMetrics?.modelDistribution || []}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => (
-                        <g>
-                          <text x={0} y={0} fill="#666" textAnchor="middle">
-                            {`${name} (${(percent * 100).toFixed(0)}%)`}
-                          </text>
-                          <ModelTooltip modelId={name} />
-                        </g>
-                      )}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {modelMetrics?.modelDistribution?.map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Model Performance</CardTitle>
-                <CardDescription>Average processing time and error rates</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={modelMetrics?.modelPerformance || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="model" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="avgProcessingTime" name="Avg. Processing Time (ms)" fill="#8884d8" />
-                    <Bar dataKey="errorRate" name="Error Rate (%)" fill="#82ca9d" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+          <Button variant="outline">View All</Button>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {isLoadingDocuments ? (
+              <RecentDocumentsSkeleton />
+            ) : (
+              recentDocuments?.map((doc: any) => (
+                <RecentDocumentCard key={doc.id} document={doc} />
+              ))
+            )}
           </div>
-        </TabsContent>
-
-        <TabsContent value="performance" className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Cost Efficiency</CardTitle>
-                <CardDescription>Cost savings by model selection</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={modelMetrics?.costEfficiency || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="model" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="costSavings" name="Cost Savings (%)" fill="#8884d8" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Task Success Rate</CardTitle>
-                <CardDescription>Success rate by task type</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={modelMetrics?.taskSuccess || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="taskType" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="successRate" name="Success Rate (%)" fill="#82ca9d" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 }
