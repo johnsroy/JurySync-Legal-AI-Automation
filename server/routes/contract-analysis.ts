@@ -115,4 +115,23 @@ router.get('/:contractId/versions', async (req, res) => {
   }
 });
 
+// Get diagnostic report
+router.get('/:contractId/diagnostic', async (req, res) => {
+  try {
+    const { contractId } = req.params;
+    const report = await workflowOrchestrator.getDiagnosticReport(parseInt(contractId));
+
+    return res.json({
+      success: true,
+      ...report
+    });
+  } catch (error) {
+    console.error('Diagnostic report error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to generate diagnostic report'
+    });
+  }
+});
+
 export default router;
