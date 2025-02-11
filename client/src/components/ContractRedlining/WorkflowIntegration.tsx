@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,66 +20,107 @@ interface WorkflowIntegrationProps {
 
 export function WorkflowIntegration({ contractId, currentVersion }: WorkflowIntegrationProps) {
   const { toast } = useToast();
-  const [versions] = useState<Version[]>([
-    {
-      id: 1,
-      timestamp: new Date().toISOString(),
-      status: "draft",
-      author: "John Doe",
-      changes: "Initial draft created"
-    },
-    {
-      id: 2,
-      timestamp: new Date().toISOString(),
-      status: "review",
-      author: "Jane Smith",
-      changes: "Updated payment terms"
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch version history
+  const fetchVersionHistory = async () => {
+    try {
+      const response = await fetch(`/api/contract-analysis/${contractId}/versions`);
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setVersions(data.versions);
+      } else {
+        throw new Error(data.error || 'Failed to fetch version history');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to fetch version history",
+        variant: "destructive",
+      });
     }
-  ]);
+  };
+
+  // Fetch diagnostic data
+  const fetchDiagnostics = async () => {
+    try {
+      const response = await fetch(`/api/contract-analysis/${contractId}/diagnostic`);
+      const data = await response.json();
+
+      if (response.ok && data.success && data.report) {
+        // Display any critical diagnostic information
+        if (data.report.errors.length > 0) {
+          toast({
+            title: "Workflow Diagnostic",
+            description: `Found ${data.report.errors.length} issues that need attention`,
+            variant: "warning",
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Diagnostic fetch error:', error);
+    }
+  };
 
   const handleSignature = async () => {
     try {
-      const response = await fetch(`/api/documents/${contractId}/signature`, {
+      setIsLoading(true);
+      const response = await fetch(`/api/contract-analysis/${contractId}/signature`, {
         method: 'POST'
       });
-      
+
+      const data = await response.json();
       if (!response.ok) {
-        throw new Error('Failed to initiate e-signature process');
+        throw new Error(data.error || 'Failed to initiate e-signature process');
       }
 
       toast({
         title: "Success",
         description: "E-signature process initiated",
       });
+
+      // Refresh version history after successful signature request
+      await fetchVersionHistory();
     } catch (error) {
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to start e-signature process",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleInternalReview = async () => {
     try {
-      const response = await fetch(`/api/documents/${contractId}/review`, {
+      setIsLoading(true);
+      const response = await fetch(`/api/contract-analysis/${contractId}/review`, {
         method: 'POST'
       });
-      
+
+      const data = await response.json();
       if (!response.ok) {
-        throw new Error('Failed to initiate internal review');
+        throw new Error(data.error || 'Failed to initiate internal review');
       }
 
       toast({
         title: "Success",
         description: "Internal review process initiated",
       });
+
+      // Refresh version history after successful review initiation
+      await fetchVersionHistory();
     } catch (error) {
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to start internal review",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -98,6 +139,14 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
     }
   };
 
+  // Fetch version history and diagnostics on mount and when contractId changes
+  useEffect(() => {
+    if (contractId) {
+      fetchVersionHistory();
+      fetchDiagnostics();
+    }
+  }, [contractId]);
+
   return (
     <Card>
       <CardHeader>
@@ -108,6 +157,7 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
               variant="outline" 
               onClick={handleInternalReview}
               className="gap-2"
+              disabled={isLoading}
             >
               <ClipboardCheck className="h-4 w-4" />
               Internal Review
@@ -115,6 +165,7 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
             <Button 
               onClick={handleSignature}
               className="gap-2"
+              disabled={isLoading}
             >
               <FileSignature className="h-4 w-4" />
               Send for e-Signature
@@ -133,7 +184,7 @@ export function WorkflowIntegration({ contractId, currentVersion }: WorkflowInte
               />
             </div>
           </div>
-          
+
           <div>
             <h3 className="text-sm font-medium mb-2">Version History</h3>
             <ScrollArea className="h-[200px] w-full rounded-md border p-4">

@@ -1,10 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-// import { apiRequest } from "@/lib/queryClient"; //removed as fetch is used instead
-
 
 interface ClauseAnalysis {
   clauseId: string;
@@ -17,10 +15,13 @@ interface ClauseAnalysis {
   category: string;
   impact: string;
   confidence: number;
+  startIndex?: number; //added
+  endIndex?: number; //added
 }
 
 interface ContractRedliningProps {
   initialContent: string;
+  onUpdate?: (content: string) => void;
 }
 
 interface ApiResponse<T> {
@@ -29,11 +30,12 @@ interface ApiResponse<T> {
   error?: string;
 }
 
-export function ContractRedlining({ initialContent }: ContractRedliningProps) {
+export function ContractRedlining({ initialContent, onUpdate }: ContractRedliningProps) {
   const [clauses, setClauses] = useState<ClauseAnalysis[]>([]);
   const [selectedClause, setSelectedClause] = useState<ClauseAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [currentContent, setCurrentContent] = useState(initialContent);
   const { toast } = useToast();
 
   const analyzeContract = async () => {
@@ -42,7 +44,7 @@ export function ContractRedlining({ initialContent }: ContractRedliningProps) {
       const response = await fetch('/api/contract-analysis/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: initialContent }),
+        body: JSON.stringify({ content: currentContent }),
       });
 
       const data = await response.json();
@@ -72,6 +74,7 @@ export function ContractRedlining({ initialContent }: ContractRedliningProps) {
 
       const data = await response.json();
       if (response.ok && data.success && data.analysis) {
+        // Update clauses state
         setClauses((prev) =>
           prev.map((clause) =>
             clause.clauseId === clauseId
@@ -79,6 +82,12 @@ export function ContractRedlining({ initialContent }: ContractRedliningProps) {
               : clause
           )
         );
+
+        // Update the entire contract content with the new clause
+        const updatedContent = replaceClauseInContent(currentContent, clauseId, newContent);
+        setCurrentContent(updatedContent);
+        onUpdate?.(updatedContent);
+
         toast({
           title: "Success",
           description: "Clause updated successfully",
@@ -95,11 +104,28 @@ export function ContractRedlining({ initialContent }: ContractRedliningProps) {
     }
   };
 
+  // Helper function to replace a specific clause in the full contract content
+  const replaceClauseInContent = (content: string, clauseId: string, newClauseText: string): string => {
+    const clause = clauses.find(c => c.clauseId === clauseId);
+    if (!clause || !clause.startIndex || !clause.endIndex) return content;
+
+    const before = content.substring(0, clause.startIndex);
+    const after = content.substring(clause.endIndex);
+    return before + newClauseText + after;
+  };
+
   const getRiskColor = (score: number) => {
     if (score >= 8) return "text-red-500 bg-red-100";
     if (score >= 5) return "text-yellow-500 bg-yellow-100";
     return "text-green-500 bg-green-100";
   };
+
+  // Run initial analysis when content changes
+  useEffect(() => {
+    if (currentContent && !clauses.length) {
+      analyzeContract();
+    }
+  }, [currentContent]);
 
   return (
     <div className="container mx-auto p-4">
