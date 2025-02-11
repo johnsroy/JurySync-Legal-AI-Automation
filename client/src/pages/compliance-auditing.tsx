@@ -281,38 +281,50 @@ function ProcessingStage({ stage, isActive }: { stage: string; isActive: boolean
   );
 }
 
-function DocumentProcessingStatus({ progress }: { progress: number }) {
+// Add improved processing status UI component
+function DocumentProcessingStatus({ progress, status }: { progress: number; status: string }) {
   const stages = [
-    'Document Analysis',
-    'Risk Assessment',
-    'Compliance Check',
-    'Report Generation'
+    { name: 'Document Analysis', icon: FileText },
+    { name: 'Risk Assessment', icon: AlertTriangle },
+    { name: 'Compliance Check', icon: Shield },
+    { name: 'Report Generation', icon: FileText }
   ];
 
   const currentStage = Math.floor((progress / 100) * stages.length);
 
   return (
     <div className="space-y-4">
-      <Progress value={progress} className="h-2">
-        <div
-          className="h-full bg-primary transition-all duration-500"
-          style={{ width: `${progress}%` }}
-        />
-      </Progress>
+      <Progress value={progress} className="h-2" />
       <div className="grid grid-cols-2 gap-4">
         {stages.map((stage, index) => (
-          <ProcessingStage
-            key={stage}
-            stage={stage}
-            isActive={index === currentStage}
-          />
+          <div
+            key={stage.name}
+            className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
+              index === currentStage
+                ? 'bg-primary/10 text-primary'
+                : index < currentStage
+                ? 'text-muted-foreground'
+                : 'text-muted-foreground/50'
+            }`}
+          >
+            <stage.icon className={`h-4 w-4 ${
+              index === currentStage ? 'animate-pulse' : ''
+            }`} />
+            <span className="text-sm">{stage.name}</span>
+            {index === currentStage && (
+              <Loader2 className="h-3 w-3 animate-spin ml-auto" />
+            )}
+          </div>
         ))}
       </div>
+      <p className="text-sm text-muted-foreground text-center">
+        {status === 'processing' ? 'Processing your document...' : status}
+      </p>
     </div>
   );
 }
 
-// Update the main component's results display section
+
 export const ComplianceAuditing: React.FC = () => {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
@@ -320,19 +332,15 @@ export const ComplianceAuditing: React.FC = () => {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
-  // Document submission mutation with enhanced error handling
+  // Move submitDocument mutation inside component
   const submitDocument = useMutation({
     mutationFn: async () => {
       try {
         const formData = new FormData();
-
-        // Clean text input if present
         if (documentText) {
           const cleanedText = cleanDocumentText(documentText);
           formData.append('text', cleanedText);
         }
-
-        // Add files
         uploadedFiles.forEach(file => formData.append('files', file));
 
         const response = await fetch('/api/compliance/audit', {
@@ -367,7 +375,7 @@ export const ComplianceAuditing: React.FC = () => {
     }
   });
 
-  // Results polling query with better error handling
+  // Move results polling query inside component
   const { data: result, isLoading } = useQuery<AuditResponse>({
     queryKey: ['audit-result', taskId],
     queryFn: async () => {
@@ -379,7 +387,12 @@ export const ComplianceAuditing: React.FC = () => {
           throw new Error('Failed to fetch results');
         }
 
-        return response.json();
+        const data = await response.json();
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid response format');
+        }
+
+        return data;
       } catch (error: any) {
         console.error('Error fetching audit results:', error);
         throw new Error('Failed to fetch audit results');
@@ -391,7 +404,6 @@ export const ComplianceAuditing: React.FC = () => {
     retry: 3
   });
 
-  // Enhanced file selection handler with validation
   const handleFileSelect = (files: File[]) => {
     if (files.length > 5) {
       toast({
@@ -403,7 +415,7 @@ export const ComplianceAuditing: React.FC = () => {
     }
 
     const totalSize = files.reduce((sum, file) => sum + file.size, 0);
-    if (totalSize > 10 * 1024 * 1024) { // 10MB limit
+    if (totalSize > 10 * 1024 * 1024) {
       toast({
         title: "Files Too Large",
         description: "Total file size should not exceed 10MB",
@@ -556,22 +568,10 @@ export const ComplianceAuditing: React.FC = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <DocumentProcessingStatus progress={result?.progress || 30} />
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="p-4 bg-primary/5 rounded-lg animate-pulse">
-                        <div className="h-6 w-24 bg-primary/10 rounded mb-2" />
-                        <div className="h-4 w-16 bg-primary/10 rounded" />
-                      </div>
-                      <div className="p-4 bg-primary/5 rounded-lg animate-pulse delay-150">
-                        <div className="h-6 w-24 bg-primary/10 rounded mb-2" />
-                        <div className="h-4 w-16 bg-primary/10 rounded" />
-                      </div>
-                      <div className="p-4 bg-primary/5 rounded-lg animate-pulse delay-300">
-                        <div className="h-6 w-24 bg-primary/10 rounded mb-2" />
-                        <div className="h-4 w-16 bg-primary/10 rounded" />
-                      </div>
-                    </div>
+                    <DocumentProcessingStatus
+                      progress={result?.progress || 0}
+                      status={result?.status || 'Initializing analysis...'}
+                    />
                   </CardContent>
                 </Card>
               )}

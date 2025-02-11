@@ -54,26 +54,26 @@ export class ComplianceAuditService {
         messages: [
           {
             role: "system",
-            content: `You are a legal compliance expert. Analyze the provided document for compliance issues and provide a detailed response in the following JSON structure:
-              {
-                "analysis": {
-                  "summary": "Brief overview of the document",
-                  "issues": [
-                    {
-                      "severity": "high|medium|low",
-                      "description": "Detailed description of the issue",
-                      "recommendation": "Specific recommendation to address the issue"
-                    }
-                  ],
-                  "riskScore": "number between 0 and 100",
-                  "complianceStatus": "COMPLIANT|NON_COMPLIANT|FLAGGED",
-                  "recommendedActions": ["List of recommended actions"]
-                }
-              }`
+            content: `You are a legal compliance expert. Analyze the provided document and respond with a JSON object in the following format:
+{
+  "analysis": {
+    "summary": "A concise summary of the document content",
+    "issues": [
+      {
+        "severity": "high|medium|low",
+        "description": "Description of the compliance issue",
+        "recommendation": "Specific recommendation to address the issue"
+      }
+    ],
+    "riskScore": 75,
+    "complianceStatus": "COMPLIANT|NON_COMPLIANT|FLAGGED",
+    "recommendedActions": ["Action 1", "Action 2"]
+  }
+}`
           },
           {
             role: "user",
-            content: `Analyze this document for compliance issues:\n\n${content}`
+            content: content
           }
         ],
         temperature: 0.3,
@@ -84,7 +84,17 @@ export class ComplianceAuditService {
         throw new Error("No content in OpenAI response");
       }
 
-      const analysis = JSON.parse(response.choices[0].message.content) as AnalysisResult;
+      let analysisResult: AnalysisResult;
+      try {
+        analysisResult = JSON.parse(response.choices[0].message.content);
+        log('Successfully parsed OpenAI response', 'debug', { analysisResult });
+      } catch (parseError) {
+        log('Failed to parse OpenAI response', 'error', { 
+          response: response.choices[0].message.content,
+          error: parseError 
+        });
+        throw new Error("Failed to parse analysis results");
+      }
 
       // Store results in database
       await db.transaction(async (tx) => {
@@ -92,21 +102,23 @@ export class ComplianceAuditService {
         await tx
           .update(complianceDocuments)
           .set({
-            status: analysis.analysis.complianceStatus,
-            riskScore: analysis.analysis.riskScore,
+            status: analysisResult.analysis.complianceStatus,
+            riskScore: analysisResult.analysis.riskScore,
             lastScanned: new Date(),
             content: content,
-            auditSummary: analysis.analysis.summary
+            auditSummary: analysisResult.analysis.summary
           })
           .where(eq(complianceDocuments.id, documentId));
 
         // Store compliance issues
-        const issueInserts = analysis.analysis.issues.map(issue => ({
+        const issueInserts = analysisResult.analysis.issues.map(issue => ({
           documentId,
           severity: issue.severity.toUpperCase() as "HIGH" | "MEDIUM" | "LOW",
           description: issue.description,
           recommendation: issue.recommendation,
           status: "OPEN",
+          clause: 'General', // Default value for clause field
+          riskAssessmentId: 0, // Default value for risk assessment
           createdAt: new Date(),
           updatedAt: new Date()
         }));
