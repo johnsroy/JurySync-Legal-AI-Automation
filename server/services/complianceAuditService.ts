@@ -1,4 +1,4 @@
-import { openai } from './openai';
+import OpenAI from "openai";
 import { db } from "../db";
 import { complianceDocuments, complianceIssues } from '@shared/schema';
 import { eq } from 'drizzle-orm';
@@ -8,6 +8,9 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [ComplianceAudit] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
 }
+
+// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 interface AnalysisResult {
   analysis: {
@@ -48,7 +51,6 @@ export class ComplianceAuditService {
         .where(eq(complianceDocuments.id, documentId));
 
       // Perform the analysis using OpenAI
-      // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
@@ -65,7 +67,7 @@ export class ComplianceAuditService {
         "recommendation": "Specific recommendation to address the issue"
       }
     ],
-    "riskScore": 75,
+    "riskScore": <number between 0 and 100>,
     "complianceStatus": "COMPLIANT|NON_COMPLIANT|FLAGGED",
     "recommendedActions": ["Action 1", "Action 2"]
   }

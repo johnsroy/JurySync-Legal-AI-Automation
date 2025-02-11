@@ -270,14 +270,14 @@ export class OrchestratorService {
 
     const documentData = {
       content: task.data.document,
-      date: new Date(),
       title: task.data.filename || 'Untitled Document',
       documentType: 'contract',
       jurisdiction: 'Unknown',
       status: 'active',
       metadata: { processedAt: new Date() },
       citations: [],
-      vectorId: null
+      vectorId: null,
+      date: new Date()
     };
 
     // Store document in database
@@ -363,6 +363,29 @@ export class OrchestratorService {
     return Buffer.from(reportContent);
   }
 
+  async getTaskResult(taskId: string) {
+    log('Fetching task results', 'info', { taskId });
+    const result = this.taskManager.getTaskResult(taskId);
+
+    log('Task result status', 'debug', {
+      taskId,
+      status: result.status,
+      resultKeys: result.data ? Object.keys(result.data) : null
+    });
+
+    return result;
+  }
+
+  async monitorTask(taskId: string) {
+    const task = this.taskManager.getTask(taskId);
+    if (!task) throw new Error('Task not found');
+
+    return {
+      ...task,
+      history: this.taskManager.getTaskHistory(taskId)
+    };
+  }
+
   private async cleanAndValidateDocument(text: string): Promise<string> {
     if (!text || typeof text !== 'string') {
       throw new Error('Invalid document text');
@@ -397,51 +420,7 @@ export class OrchestratorService {
 
     return cleaned;
   }
-  async getTaskResult(taskId: string) {
-    log('Fetching audit results', 'info', { taskId });
-    const result = this.taskManager.getTaskResult(taskId);
 
-    log('Task result status', 'debug', {
-      taskId,
-      status: result.status,
-      resultKeys: result.data ? Object.keys(result.data) : null
-    });
-
-    if (result.status === 'processing') {
-      log('Task still processing', 'info', {
-        taskId,
-        progress: result.progress
-      });
-    } else if (result.status === 'completed') {
-      log('Returning completed task result', 'info', {
-        taskId,
-        hasAuditReport: !!result.data?.auditReport,
-        completedAt: result.completedAt
-      });
-    } else if (result.status === 'error') {
-      log('Returning error task result', 'error', {
-        taskId,
-        error: result.error,
-        details: result.details
-      });
-    }
-
-    return result;
-  }
-
-  async monitorTask(taskId: string) {
-    const task = this.taskManager.getTask(taskId);
-    if (!task) throw new Error('Task not found');
-
-    return {
-      ...task,
-      history: this.taskManager.getTaskHistory(taskId)
-    };
-  }
-
-  async getAllTasks() {
-    return this.taskManager.getAllTasks();
-  }
   async distributeTask(input: {
     type?: 'contract' | 'compliance' | 'research',
     data: any
@@ -480,19 +459,8 @@ export class OrchestratorService {
         }
       });
 
-      // Start processing in background
-      this.processTask(task).catch(error => {
-        log('Document processing error', 'error', {
-          taskId,
-          error: error.message
-        });
-
-        this.taskManager.updateTask(taskId, {
-          status: 'error',
-          error: error.message,
-          progress: 0
-        });
-      });
+      // Process document based on classification
+      await this.processClassifiedDocument(taskId, cleanedText, classification);
 
       return {
         taskId,
@@ -571,6 +539,7 @@ Provide response as JSON:
       }
 
       const result = JSON.parse(content.text);
+      const keywords = [...new Set([...result.keywords, ...matchedKeywords])];
 
       log('Enhanced document classification completed', 'info', {
         classification: result,
@@ -579,7 +548,7 @@ Provide response as JSON:
 
       return {
         ...result,
-        keywords: [...new Set([...result.keywords, ...matchedKeywords])]
+        keywords
       };
 
     } catch (error: any) {
@@ -588,49 +557,13 @@ Provide response as JSON:
     }
   }
 
-  private cleanAndValidateDocument(text: string): string {
-    if (!text || typeof text !== 'string') {
-      throw new Error('Invalid document text');
-    }
-
-    log('Starting document cleaning', 'debug', {
-      originalLength: text.length,
-      hasDOCTYPE: DOCTYPE_REGEX.test(text)
-    });
-
-    // Remove DOCTYPE and HTML
-    let cleaned = text
-      .replace(DOCTYPE_REGEX, '')
-      .replace(/<\?xml\s+[^>]*\?>/gi, '')
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&[a-z]+;/gi, ' ');
-
-    // Normalize whitespace
-    cleaned = cleaned
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (cleaned.length === 0) {
-      throw new Error('Document text cannot be empty after cleaning');
-    }
-
-    log('Document cleaning completed', 'debug', {
-      finalLength: cleaned.length,
-      hasDOCTYPEAfterCleaning: DOCTYPE_REGEX.test(cleaned)
-    });
-
-    return cleaned;
-  }
-
-  private async processDocument(taskId: string, classification: any) {
+  private async processClassifiedDocument(taskId: string, documentText: string, classification: any) {
     const task = this.taskManager.getTask(taskId);
     if (!task) throw new Error('Task not found');
 
-    const { documentText } = task.data;
-    const results: any = {};
-
     try {
+      const results: any = {};
+
       // Process for each relevant module based on classification
       if (classification.crossModuleRelevance.compliance) {
         results.compliance = await complianceAuditService.analyzeDocument(documentText, taskId);
@@ -643,14 +576,17 @@ Provide response as JSON:
       // Get latest continuous learning updates
       const learningContext = await continuousLearningService.getLatestUpdates();
 
-      // Store results in database
+      // Store document in database
       const [document] = await db
         .insert(legalDocuments)
         .values({
           title: task.data.title || 'Untitled Document',
           content: documentText,
           documentType: classification.type,
-          analysis: results,
+          jurisdiction: 'Unknown',
+          status: 'ACTIVE',
+          date: new Date(),
+          citations: [],
           metadata: {
             classification,
             processingDetails: {

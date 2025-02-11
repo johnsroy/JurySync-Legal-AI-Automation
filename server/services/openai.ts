@@ -1,9 +1,9 @@
 import OpenAI from "openai";
+import { z } from "zod";
+import { getTemplate, type Template } from "./templateStore";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-export { openai };
 
 export interface ContractRequirement {
   description: string;
@@ -236,10 +236,6 @@ export async function getCustomInstructionSuggestions(
   }
 }
 
-import {getTemplate, type Template} from "./templateStore";
-import {z} from "zod";
-
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 
 const DocumentAnalysisSchema = z.object({
   summary: z.string(),
@@ -260,6 +256,15 @@ const DocumentAnalysisSchema = z.object({
   }).optional(),
 });
 
+async function summarizeArticle(text: string): Promise<string> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "user", content: `Please summarize the following text:\n\n${text}` }],
+  });
+
+  return response.choices[0].message.content || '';
+}
+
 export async function analyzeDocument(content: string) {
   try {
     console.log('Starting document analysis...');
@@ -279,32 +284,14 @@ export async function analyzeDocument(content: string) {
       model: "gpt-4o",
       messages: [
         {
+          role: "system",
+          content: "You are a legal document analyzer. Analyze documents and output JSON format results."
+        },
+        {
           role: "user",
-          content: `Analyze this legal document and provide a comprehensive analysis in the following JSON format:
-{
-  "summary": "Brief overview of the document",
-  "keyPoints": ["Array of key points"],
-  "suggestions": ["Array of suggestions for improvement"],
-  "riskScore": <number between 0 and 10>,
-  "contractDetails": {
-    "parties": ["Array of involved parties"],
-    "effectiveDate": "Document effective date",
-    "termLength": "Contract duration",
-    "paymentTerms": "Payment terms summary",
-    "governingLaw": "Applicable law",
-    "keyObligations": ["Array of key obligations"],
-    "terminationClauses": ["Array of termination conditions"],
-    "missingClauses": ["Array of recommended missing clauses"],
-    "suggestedClauses": ["Array of suggested improvements"],
-    "riskFactors": ["Array of identified risk factors"]
-  }
-}
-
-Document to analyze:
-${cleanContent.substring(0, 8000)}`
+          content: `Analyze this legal document and provide a comprehensive analysis:\n\n${cleanContent.substring(0, 8000)}`
         }
       ],
-      temperature: 0.3,
       response_format: { type: "json_object" }
     });
 
@@ -332,5 +319,32 @@ ${cleanContent.substring(0, 8000)}`
   } catch (error: any) {
     console.error("Document analysis error:", error);
     throw new Error(`Failed to analyze document: ${error.message}`);
+  }
+}
+
+export async function generateReport(documentAnalysis: any, format: 'detailed' | 'summary' = 'detailed') {
+  try {
+    const prompt = format === 'detailed' 
+      ? `Generate a detailed analysis report based on this document analysis data. Include all sections and provide actionable insights.`
+      : `Generate a concise summary report highlighting the key findings and critical action items.`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert legal document analyzer. Generate professional, well-structured reports."
+        },
+        {
+          role: "user", 
+          content: `${prompt}\n\nAnalysis data:\n${JSON.stringify(documentAnalysis, null, 2)}`
+        }
+      ]
+    });
+
+    return response.choices[0].message.content || '';
+  } catch (error: any) {
+    console.error("Report generation error:", error);
+    throw new Error(`Failed to generate report: ${error.message}`);
   }
 }

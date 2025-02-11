@@ -1,11 +1,11 @@
-import { openai } from './openai';
+import OpenAI from "openai";
 import { db } from '../db';
 import { 
   regulatoryUpdates, 
   caseLawUpdates, 
   continuousLearningUpdates,
   type RegulatoryUpdate,
-  type CaseLawUpdate as CaseLawUpdateWithFullText // Assuming full_text is added here
+  type CaseLawUpdate as CaseLawUpdateWithFullText
 } from '@shared/schema';
 import { eq, and, lte, sql } from 'drizzle-orm';
 import { chromaStore } from './chromaStore';
@@ -14,6 +14,9 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [ContinuousLearning] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
 }
+
+// the newest OpenAI model is "gpt-4o" which was released May 13, 2024
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export class ContinuousLearningService {
   private static instance: ContinuousLearningService;
