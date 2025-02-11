@@ -12,8 +12,9 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
   console.log(`[${timestamp}] [FileAnalyzer] [${type.toUpperCase()}] ${message}`, context ? context : '');
 }
 
-// Helper function to clean text content
+// Enhanced text cleaning function with more thorough cleaning
 function cleanTextContent(text: string): string {
+  if (!text) return '';
   return text
     .replace(/\u0000/g, '') // Remove null characters
     .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
@@ -21,7 +22,12 @@ function cleanTextContent(text: string): string {
     .replace(/\s+/g, ' ') // Normalize whitespace
     .replace(/<!DOCTYPE[^>]*>/gi, '') // Remove DOCTYPE declarations
     .replace(/<\/?[^>]+(>|$)/g, '') // Remove any HTML tags
+    .replace(/<!--[\s\S]*?-->/g, '') // Remove HTML comments
     .replace(/&[a-z]+;/gi, ' ') // Remove HTML entities
+    .replace(/<xml[^>]*>[\s\S]*?<\/xml>/gi, '') // Remove XML declarations
+    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '') // Remove CDATA sections
+    .replace(/\{[^}]*\}/g, '') // Remove potential JSON/object literals
+    .replace(/\[[^\]]*\]/g, '') // Remove potential array literals
     .trim();
 }
 

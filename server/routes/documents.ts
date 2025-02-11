@@ -5,11 +5,7 @@ import { documents } from "@shared/schema";
 import { eq } from 'drizzle-orm';
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
-import { generateContract, suggestRequirements, getAutocomplete, getCustomInstructionSuggestions } from "../services/openai";
-import { getAllTemplates, getTemplate } from "../services/templateStore";
-import { Document, Packer, Paragraph, TextRun } from "docx";
 import PDFDocument from "pdfkit";
-import { chromaStore } from '../services/chromaStore';
 
 const router = Router();
 
@@ -42,7 +38,7 @@ const upload = multer({
 });
 
 // Update the document upload endpoint
-router.post("/api/legal/documents", upload.single('file'), async (req, res) => {
+router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -91,9 +87,6 @@ router.post("/api/legal/documents", upload.single('file'), async (req, res) => {
         })
         .returning();
 
-      // Store in ChromaDB
-      await chromaStore.addDocument(document, content);
-
       console.log("Document uploaded successfully:", {
         id: document.id,
         title: document.title,
@@ -103,7 +96,7 @@ router.post("/api/legal/documents", upload.single('file'), async (req, res) => {
       return res.json({
         documentId: document.id,
         title: document.title,
-        content: content,
+        text: content,
         status: "COMPLETED"
       });
 

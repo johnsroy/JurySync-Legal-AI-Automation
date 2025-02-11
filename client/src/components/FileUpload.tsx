@@ -42,11 +42,35 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
       setUploadProgress(100);
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to process file');
       }
 
       const result = await response.json();
-      onFileProcessed(result);
+
+      // Validate the response format
+      if (!result.text || typeof result.text !== 'string') {
+        throw new Error('Invalid response format: missing or invalid text content');
+      }
+
+      if (!result.documentId) {
+        throw new Error('Invalid response format: missing document ID');
+      }
+
+      // Clean the text before passing it back
+      const cleanedText = result.text
+        .replace(/\u0000/g, '') // Remove null bytes
+        .replace(/\s+/g, ' ')   // Normalize whitespace
+        .trim();
+
+      if (!cleanedText) {
+        throw new Error('No valid text content could be extracted from the document');
+      }
+
+      onFileProcessed({
+        text: cleanedText,
+        documentId: result.documentId
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to process file";
       setError(errorMessage);
