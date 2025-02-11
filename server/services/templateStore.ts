@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { TemplateCategory } from "@shared/schema";
-import { Anthropic } from '@anthropic-ai/sdk';
+import Anthropic from '@anthropic-ai/sdk';
 
 // Initialize Anthropic client
+// the newest Anthropic model is "claude-3-5-sonnet-20241022" which was released October 22, 2024
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Schema for approval analysis
 export const templateSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -27,7 +29,7 @@ export const templateSchema = z.object({
 
 export type Template = z.infer<typeof templateSchema>;
 
-// Expanded template store with more diverse templates
+// All template definitions remain unchanged
 const templates: Record<string, Template> = {
   "employment-standard": {
     id: "employment-standard",
@@ -477,23 +479,23 @@ export async function suggestRequirements(templateId: string, currentDescription
     const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
+      system: `You are a legal document assistant. Generate specific, practical requirements for contract templates.
+      Always return a JSON array of exactly 5 suggestions.
+      Each suggestion must follow this format exactly:
+      {
+        "id": "<unique_string>",
+        "text": "<clear, specific requirement>",
+        "category": "<relevant_category>"
+      }`,
       messages: [{
         role: "user",
-        content: `Generate 5 specific requirement suggestions for this contract template.
-        Each suggestion should be relevant to the template type and help complete the contract.
+        content: `Generate 5 specific requirement suggestions for this contract template:
 
-        Template Name: ${template.name}
-        Template Description: ${template.description}
-        Current Description: ${currentDescription || 'Not provided'}
+Template: ${template.name}
+Description: ${template.description}
+Current Description: ${currentDescription || 'Not provided'}
 
-        Format each suggestion as a JSON object with:
-        {
-          "id": "unique_string",
-          "text": "detailed requirement text",
-          "category": "relevant category"
-        }
-
-        Return an array of these objects.`
+Return ONLY a JSON array of 5 suggestion objects.`
       }]
     });
 
@@ -526,19 +528,21 @@ export async function getAutocomplete(templateId: string, partialText: string): 
     const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 500,
+      system: `You are a legal document assistant. Generate relevant completions for contract text.
+      Always return a JSON array of 3-5 suggestions.
+      Each suggestion must follow this format exactly:
+      {
+        "text": "<completion_text>",
+        "description": "<brief_explanation>"
+      }`,
       messages: [{
         role: "user",
-        content: `Given this partial text in a ${template.name}, suggest 3-5 relevant completions.
-        Each suggestion should be formatted as a JSON object with:
-        {
-          "text": "completion text",
-          "description": "brief explanation"
-        }
+        content: `Given this partial text in a ${template.name}, suggest 3-5 relevant completions:
 
-        Partial text: "${partialText}"
-        Template context: ${template.description}
+Partial text: "${partialText}"
+Template context: ${template.description}
 
-        Return an array of these objects.`
+Return ONLY a JSON array of suggestion objects.`
       }]
     });
 
@@ -551,7 +555,7 @@ export async function getAutocomplete(templateId: string, partialText: string): 
     return { suggestions };
   } catch (error) {
     console.error('[TemplateStore] Error generating autocomplete:', error);
-    throw new Error('Failed to generate autocomplete suggestions');
+    throw new Error('Failed to generate autocomplete suggestions: ' + (error instanceof Error ? error.message : String(error)));
   }
 }
 
@@ -570,22 +574,22 @@ export async function getCustomInstructionSuggestions(
     const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
+      system: `You are a legal document assistant. Generate specific instructions for customizing contract templates.
+      Always return a JSON array of exactly 3 suggestions.
+      Each suggestion must follow this format exactly:
+      {
+        "instruction": "<specific_instruction_text>",
+        "explanation": "<clear_explanation_of_benefit>"
+      }`,
       messages: [{
         role: "user",
-        content: `Generate 3-5 custom instruction suggestions for this contract template.
-        Consider the template type and current requirements when making suggestions.
+        content: `Generate 3 custom instruction suggestions for this contract template:
 
-        Template: ${template.name}
-        Template Description: ${template.description}
-        Current Requirements: ${JSON.stringify(currentRequirements)}
+Template: ${template.name}
+Description: ${template.description}
+Current Requirements: ${JSON.stringify(currentRequirements)}
 
-        Format each suggestion as a JSON object with:
-        {
-          "instruction": "specific instruction text",
-          "explanation": "why this instruction is helpful"
-        }
-
-        Return an array of these objects.`
+Return ONLY a JSON array of instruction objects.`
       }]
     });
 
