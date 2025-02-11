@@ -23,6 +23,25 @@ export async function apiRequest(
   return res;
 }
 
+// Define the task data interface
+export interface TaskData {
+  taskId: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  type: string;
+  progress: number;
+  currentStepDetails?: {
+    name: string;
+    description: string;
+  };
+  error?: string;
+  metrics?: {
+    automatedTasks: number;
+    processingSpeed: number;
+    laborCost: number;
+    errorReduction: number;
+  };
+}
+
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
@@ -49,7 +68,7 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: 5 * 60 * 1000, // Data stays fresh for 5 minutes
-      cacheTime: 30 * 60 * 1000, // Cache persists for 30 minutes
+      gcTime: 30 * 60 * 1000, // Cache persists for 30 minutes (renamed from cacheTime)
       retry: 2, // Retry failed requests twice
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     },
