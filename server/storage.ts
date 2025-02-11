@@ -8,6 +8,17 @@ import { pool } from "./db";
 
 const PostgresSessionStore = connectPg(session);
 
+interface DocumentMetadata {
+  id: string;
+  userId?: number;
+  filename: string;
+  fileType: string;
+  pageCount?: number;
+  wordCount: number;
+  status: 'parsed' | 'error';
+  createdAt: Date;
+}
+
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -15,6 +26,11 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<User>): Promise<User>;
   sessionStore: session.Store;
+
+  // Document operations
+  saveDocument(document: DocumentMetadata): Promise<DocumentMetadata>;
+  getDocument(id: string): Promise<DocumentMetadata | undefined>;
+  getUserDocuments(userId: number): Promise<DocumentMetadata[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -104,6 +120,23 @@ export class DatabaseStorage implements IStorage {
       console.error('Error updating user:', error);
       throw error;
     }
+  }
+
+  // Document-related methods
+  private documents: Map<string, DocumentMetadata> = new Map();
+
+  async saveDocument(document: DocumentMetadata): Promise<DocumentMetadata> {
+    this.documents.set(document.id, document);
+    return document;
+  }
+
+  async getDocument(id: string): Promise<DocumentMetadata | undefined> {
+    return this.documents.get(id);
+  }
+
+  async getUserDocuments(userId: number): Promise<DocumentMetadata[]> {
+    return Array.from(this.documents.values())
+      .filter(doc => doc.userId === userId);
   }
 }
 
