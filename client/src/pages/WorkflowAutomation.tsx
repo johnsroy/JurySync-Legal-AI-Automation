@@ -15,7 +15,10 @@ import {
   Upload,
   RefreshCcw,
   Download,
-  AlertCircle
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  ArrowRight
 } from "lucide-react";
 import { useState } from "react";
 
@@ -60,12 +63,23 @@ export default function WorkflowAutomation() {
     }
   });
 
-  const modules = [
-    { name: 'Compliance Audit', icon: Scale, href: '/compliance-audit' },
-    { name: 'Contract Automation', icon: FileText, href: '/contract-automation' },
-    { name: 'Legal Research', icon: BookCheck, href: '/legal-research' },
-    { name: 'History & Reports', icon: History, href: '/reports' }
+  // Define workflow stages
+  const stages = [
+    { id: 'upload', name: 'Document Upload', icon: Upload },
+    { id: 'analysis', name: 'Initial Analysis', icon: FileText },
+    { id: 'compliance', name: 'Compliance Check', icon: Scale },
+    { id: 'research', name: 'Legal Research', icon: BookCheck },
+    { id: 'report', name: 'Report Generation', icon: BarChart2 }
   ];
+
+  // Calculate current stage based on progress
+  const getCurrentStage = (progress: number) => {
+    if (progress <= 20) return 0;
+    if (progress <= 40) return 1;
+    if (progress <= 60) return 2;
+    if (progress <= 80) return 3;
+    return 4;
+  };
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -81,21 +95,6 @@ export default function WorkflowAutomation() {
           <p className="text-gray-400 text-lg mb-8">
             From Draft to Execution – Automating 80% of Legal Compliance Tasks
           </p>
-
-          {/* Navigation Bar */}
-          <nav className="flex space-x-4">
-            {modules.map((module) => {
-              const Icon = module.icon;
-              return (
-                <Link key={module.name} href={module.href}>
-                  <a className="group flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors">
-                    <Icon className="h-5 w-5 text-gray-400 group-hover:text-blue-500" />
-                    <span className="text-sm font-medium">{module.name}</span>
-                  </a>
-                </Link>
-              );
-            })}
-          </nav>
         </div>
       </header>
 
@@ -122,11 +121,49 @@ export default function WorkflowAutomation() {
         {/* Workflow Progress */}
         {activeTaskId && taskData && (
           <Card className="p-12 mb-12 bg-gray-900 border-gray-800">
+            {/* Stage Timeline */}
+            <div className="relative mb-12">
+              <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-gray-800 -translate-y-1/2" />
+              <div className="relative flex justify-between">
+                {stages.map((stage, index) => {
+                  const currentStage = getCurrentStage(taskData.progress);
+                  const Icon = stage.icon;
+                  const isCompleted = index < currentStage;
+                  const isCurrent = index === currentStage;
+
+                  return (
+                    <div key={stage.id} className="flex flex-col items-center">
+                      <div 
+                        className={`w-10 h-10 rounded-full flex items-center justify-center relative z-10
+                          ${isCompleted ? 'bg-blue-500' : isCurrent ? 'bg-blue-500/20 border-2 border-blue-500' : 'bg-gray-800'}`}
+                      >
+                        <Icon className={`h-5 w-5 ${isCompleted || isCurrent ? 'text-white' : 'text-gray-500'}`} />
+                      </div>
+                      <div className="mt-2 text-sm font-medium text-center">
+                        <span className={isCompleted || isCurrent ? 'text-white' : 'text-gray-500'}>
+                          {stage.name}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Status and Actions */}
             <div className="flex justify-between items-center mb-8">
               <div>
-                <h3 className="text-2xl font-semibold mb-2">Document Processing</h3>
-                <p className="text-gray-400">Automating compliance and legal analysis</p>
+                <div className="flex items-center space-x-2 mb-2">
+                  {taskData.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                  {taskData.status === 'processing' && <Clock className="h-5 w-5 text-blue-500 animate-spin" />}
+                  {taskData.status === 'failed' && <AlertCircle className="h-5 w-5 text-red-500" />}
+                  <h3 className="text-2xl font-semibold">Document Processing</h3>
+                </div>
+                <p className="text-gray-400">
+                  {taskData.currentStepDetails?.description || 'Automating compliance and legal analysis'}
+                </p>
               </div>
+
               <div className="flex items-center space-x-4">
                 {taskData.status === 'failed' && (
                   <Button
@@ -156,15 +193,6 @@ export default function WorkflowAutomation() {
               className="h-2 mb-6 bg-gray-800" 
             />
 
-            {/* Current Step */}
-            {taskData.currentStepDetails && (
-              <div className="flex items-center space-x-2 text-sm text-gray-400 mb-8">
-                <span className="font-medium">{taskData.currentStepDetails.name}</span>
-                <span>•</span>
-                <span>{taskData.currentStepDetails.description}</span>
-              </div>
-            )}
-
             {/* Error Display */}
             {taskData.error && (
               <div className="mb-8 p-4 bg-red-500/10 rounded-lg border border-red-500/20 flex items-start space-x-3">
@@ -178,7 +206,7 @@ export default function WorkflowAutomation() {
 
             {/* Metrics */}
             {taskData.metrics && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-8">
                 <Card className="p-6 bg-gray-800 border-none">
                   <h4 className="text-sm font-medium text-gray-400 mb-3">
                     Automated Tasks
