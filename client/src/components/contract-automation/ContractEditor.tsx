@@ -7,6 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { motion, AnimatePresence } from "framer-motion";
+import { SuggestionSkeleton } from "@/components/SuggestionSkeleton";
 import {
   Tooltip,
   TooltipContent,
@@ -31,6 +33,7 @@ import {
   AlertTriangle,
   ThumbsUp,
   ThumbsDown,
+  Info,
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -114,6 +117,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   const [showSideBySide, setShowSideBySide] = useState(false);
   const [selectedEdit, setSelectedEdit] = useState<SuggestedEdit | null>(null);
   const [selectedSuggestion, setSelectedSuggestion] = useState<AISuggestion | null>(null);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
   const standardRequirements = [
     "Include non-disclosure agreement",
@@ -448,10 +452,14 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     { id: "editor", label: "Document", icon: FileText },
     ...(generatedDraft ? [{ id: "draft", label: "Generated Draft", icon: Sparkles }] : []),
     { id: "redline", label: "Version History", icon: History },
-    { id: "approvals", label: "Approval Pending", icon: UserCheck },
-    { id: "workflow", label: "Workflow", icon: History },
     { id: "redline-compare", label: "Redline View", icon: Edit },
   ];
+
+  const cardVariants = {
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -20 }
+  };
 
   return (
     <Card className="mt-6">
@@ -459,10 +467,16 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         <div className="border-b px-4">
           <TabsList className="h-12">
             {tabs.map(tab => (
-              <TabsTrigger key={tab.id} value={tab.id} className="px-4">
-                <tab.icon className="w-4 h-4 mr-2" />
-                <span>{tab.label}</span>
-              </TabsTrigger>
+              <motion.div
+                key={tab.id}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <TabsTrigger value={tab.id} className="px-4">
+                  <tab.icon className="w-4 h-4 mr-2" />
+                  <span>{tab.label}</span>
+                </TabsTrigger>
+              </motion.div>
             ))}
           </TabsList>
         </div>
@@ -470,25 +484,165 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
         <TabsContent value="requirements" className="p-6">
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Contract Requirements</h3>
-              <Button
-                onClick={handleGenerateDraft}
-                disabled={isGenerating || requirements.length === 0}
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Requirements</h3>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button className="inline-flex items-center justify-center rounded-full w-5 h-5 bg-muted">
+                        <Info className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>AI analyzes the document and suggests relevant requirements
+                        based on industry standards and best practices.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
               >
-                {isGenerating ? (
-                  <>
-                    <LegalLoadingAnimation />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Generate Draft
-                  </>
-                )}
-              </Button>
+                <Button
+                  onClick={handleGenerateDraft}
+                  disabled={isGenerating || requirements.length === 0}
+                >
+                  {isGenerating ? (
+                    <>
+                      <LegalLoadingAnimation />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Generate Draft
+                    </>
+                  )}
+                </Button>
+              </motion.div>
             </div>
 
+            <AnimatePresence>
+              {isLoadingSuggestions ? (
+                <motion.div
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  variants={cardVariants}
+                >
+                  <SuggestionSkeleton />
+                </motion.div>
+              ) : (
+                <motion.div
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  variants={cardVariants}
+                  className="space-y-4"
+                >
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <Label>Requirement Type</Label>
+                      <Select
+                        value={requirementType}
+                        onValueChange={(value: "STANDARD" | "CUSTOM") => setRequirementType(value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="STANDARD">Standard Clause</SelectItem>
+                          <SelectItem value="CUSTOM">Custom Requirement</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1">
+                      <Label>Importance</Label>
+                      <Select
+                        value={requirementImportance}
+                        onValueChange={(value: "HIGH" | "MEDIUM" | "LOW") => setRequirementImportance(value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select importance" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="HIGH">High Priority</SelectItem>
+                          <SelectItem value="MEDIUM">Medium Priority</SelectItem>
+                          <SelectItem value="LOW">Low Priority</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Input
+                      value={newRequirement}
+                      onChange={(e) => setNewRequirement(e.target.value)}
+                      placeholder="Enter requirement or select from standard clauses"
+                      className="flex-1"
+                    />
+                    <Button onClick={handleAddRequirement}>Add</Button>
+                  </div>
+
+                  {requirementType === "STANDARD" && (
+                    <div className="grid grid-cols-2 gap-2 mt-4">
+                      {standardRequirements.map((req) => (
+                        <Button
+                          key={req}
+                          variant="outline"
+                          className="justify-start"
+                          onClick={() => setNewRequirement(req)}
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          {req}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+
+                  {requirements.map((req, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      transition={{ delay: index * 0.1 }}
+                      className="flex items-center justify-between p-3 rounded-lg border"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`px-2 py-1 rounded text-xs ${
+                          req.importance === "HIGH"
+                            ? "bg-red-100 text-red-800"
+                            : req.importance === "MEDIUM"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-green-100 text-green-800"
+                        }`}>
+                          {req.importance}
+                        </div>
+                        <span>{req.description}</span>
+                      </div>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => setRequirements(requirements.filter((_, i) => i !== index))}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <X className="h-4 w-4" />
+                      </motion.button>
+                    </motion.div>
+                  ))}
+                  {isGenerating && (
+                    <div className="w-full space-y-2">
+                      <Progress value={progress} className="w-full" />
+                      <p className="text-sm text-gray-500 text-center">
+                        Generating contract draft... {progress}%
+                      </p>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div className="mb-6">
               <h4 className="text-sm font-medium mb-2">Upload Existing Contract</h4>
               <FilePond
@@ -506,106 +660,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                 onerror={handleFilePondError}
               />
             </div>
-
-            <div className="space-y-4">
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <Label>Requirement Type</Label>
-                  <Select
-                    value={requirementType}
-                    onValueChange={(value: "STANDARD" | "CUSTOM") => setRequirementType(value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="STANDARD">Standard Clause</SelectItem>
-                      <SelectItem value="CUSTOM">Custom Requirement</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex-1">
-                  <Label>Importance</Label>
-                  <Select
-                    value={requirementImportance}
-                    onValueChange={(value: "HIGH" | "MEDIUM" | "LOW") => setRequirementImportance(value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select importance" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="HIGH">High Priority</SelectItem>
-                      <SelectItem value="MEDIUM">Medium Priority</SelectItem>
-                      <SelectItem value="LOW">Low Priority</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <Input
-                  value={newRequirement}
-                  onChange={(e) => setNewRequirement(e.target.value)}
-                  placeholder="Enter requirement or select from standard clauses"
-                  className="flex-1"
-                />
-                <Button onClick={handleAddRequirement}>Add</Button>
-              </div>
-
-              {requirementType === "STANDARD" && (
-                <div className="grid grid-cols-2 gap-2 mt-4">
-                  {standardRequirements.map((req) => (
-                    <Button
-                      key={req}
-                      variant="outline"
-                      className="justify-start"
-                      onClick={() => setNewRequirement(req)}
-                    >
-                      <FileText className="w-4 h-4 mr-2" />
-                      {req}
-                    </Button>
-                  ))}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {requirements.map((req, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 rounded-lg border"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className={`px-2 py-1 rounded text-xs ${
-                        req.importance === "HIGH"
-                          ? "bg-red-100 text-red-800"
-                          : req.importance === "MEDIUM"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : "bg-green-100 text-green-800"
-                      }`}>
-                        {req.importance}
-                      </div>
-                      <span>{req.description}</span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setRequirements(requirements.filter((_, i) => i !== index))}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {isGenerating && (
-              <div className="w-full space-y-2">
-                <Progress value={progress} className="w-full" />
-                <p className="text-sm text-gray-500 text-center">
-                  Generating contract draft... {progress}%
-                </p>
-              </div>
-            )}
           </div>
         </TabsContent>
 
@@ -688,141 +742,6 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="approvals" className="p-6">
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Pending Approvals</h3>
-            </div>
-            {!pendingApprovals || pendingApprovals.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No reviews are pending for your approval.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {pendingApprovals.map((approval: any) => (
-                  <div key={approval.id} className="p-4 border rounded-lg">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h4 className="font-medium">{approval.document.title}</h4>
-                        <p className="text-sm text-gray-500">
-                          Requested by {approval.requester.username} on{" "}
-                          {format(new Date(approval.createdAt), "PPpp")}
-                        </p>
-                        {approval.comments && (
-                          <p className="mt-2 text-sm">{approval.comments}</p>
-                        )}
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setEditableDraft(approval.document.content);
-                            setActiveTab("draft");
-                          }}
-                        >
-                          <FileText className="w-4 h-4 mr-2" />
-                          View Document
-                        </Button>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => handleWorkflowAction("approve")}
-                        >
-                          <Check className="w-4 h-4 mr-2" />
-                          Approve
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="workflow" className="p-6">
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Workflow Status</h3>
-              <div className="flex items-center space-x-4">
-                <Button
-                  variant="outline"
-                  onClick={handleRequestReview}
-                  disabled={isApproved}
-                >
-                  <Send className="w-4 h-4 mr-2" />
-                  Send for Review
-                </Button>
-                <Button
-                  variant={isApproved ? "default" : "outline"}
-                  onClick={() => handleWorkflowAction("approve")}
-                  disabled={isApproved}
-                >
-                  <Check className="w-4 h-4 mr-2" />
-                  {isApproved ? "Approved" : "Approve"}
-                </Button>
-                {isApproved && (
-                  <Button
-                    variant="default"
-                    onClick={() => handleWorkflowAction("sign")}
-                  >
-                    <PenTool className="w-4 h-4 mr-2" />
-                    Send for Signature
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <span className="font-medium">Current Status:</span>
-                <span className={`px-2 py-1 rounded-full text-sm ${
-                  isApproved
-                    ? "bg-green-100 text-green-800"
-                    : analysis.contractDetails?.workflowState?.status === "REVIEW"
-                      ? "bg-yellow-100 text-yellow-800"
-                      : "bg-blue-100 text-blue-800"
-                }`}>
-                  {isApproved
-                    ? "Approved"
-                    : analysis.contractDetails?.workflowState?.status === "REVIEW"
-                      ? "Waiting on Review"
-                      : "Draft"}
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Select Approver</Label>
-                <Select
-                  value={selectedApprover}
-                  onValueChange={setSelectedApprover}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a user for review" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {users?.map((user: any) => (
-                      <SelectItem key={user.id} value={user.id.toString()}>
-                        {user.username}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Review Comments</Label>
-                <Textarea
-                  value={reviewComment}
-                  onChange={(e) => setReviewComment(e.target.value)}
-                  placeholder="Add any comments for the reviewer..."
-                  className="min-h-[100px]"
-                />
-              </div>
             </div>
           </div>
         </TabsContent>
@@ -921,10 +840,11 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              suggestion.category === 'RISK'                                ? 'bg-red-500/10 text-red-400'
+                              suggestion.category === 'RISK'
+                                ? 'bg-red-500/10 text-red-400'
                                 : suggestion.category === 'COMPLIANCE'
-                                ? 'bg-yellow-500/10 text-yellow-400'
-                                : 'bg-blue-500/10 text-blue-400'
+                                  ? 'bg-yellow-500/10 text-yellow-400'
+                                  : 'bg-blue-500/10 text-blue-400'
                             }`}>
                               {suggestion.category}
                             </span>
