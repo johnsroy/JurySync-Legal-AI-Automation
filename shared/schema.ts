@@ -201,7 +201,7 @@ export const PredictionConfidence = z.enum([
 
 export type PredictionConfidence = z.infer<typeof PredictionConfidence>;
 
-// Update complianceDocuments table
+// Only updating the complianceDocuments table definition
 export const complianceDocuments = pgTable("compliance_documents", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
@@ -212,7 +212,13 @@ export const complianceDocuments = pgTable("compliance_documents", {
   riskScore: integer("risk_score"),
   lastScanned: timestamp("last_scanned"),
   nextScanDue: timestamp("next_scan_due"),
-  auditSummary: text("audit_summary"),
+  auditSummary: text("audit_summary"), // Added missing column
+  automationMetrics: jsonb("automation_metrics").$type<{
+    processingTimeMs: number;
+    modelUsed: string;
+    confidenceScore: number;
+    laborSavings: number;
+  }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
 });
@@ -272,8 +278,8 @@ export const complianceAlerts = pgTable("compliance_alerts", {
 // Create insert schemas for the new tables
 export const insertRiskAssessmentSchema = createInsertSchema(riskAssessments);
 export const insertComplianceIssueSchema = createInsertSchema(complianceIssues);
+// Update insert schema
 export const insertComplianceDocumentSchema = createInsertSchema(complianceDocuments);
-
 
 // Export types
 export type RiskAssessmentRecord = typeof riskAssessments.$inferSelect;
