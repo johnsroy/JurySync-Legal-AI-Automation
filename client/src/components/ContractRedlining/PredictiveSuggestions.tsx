@@ -34,35 +34,61 @@ export function PredictiveSuggestions({ selectedText, onSuggestionSelect }: Pred
     return <AlertTriangle className="h-4 w-4 text-red-500" />;
   };
 
+  // Mock suggestions for development
+  const getMockSuggestions = (text: string): Suggestion[] => {
+    return [
+      {
+        id: "1",
+        text: "Standard confidentiality clause with strict NDA terms",
+        riskScore: 0.2,
+        category: "Confidentiality",
+        alternatives: [
+          "Both parties agree to maintain strict confidentiality of all shared information",
+          "Confidential information shall be protected using industry standard measures"
+        ]
+      },
+      {
+        id: "2",
+        text: "Liability limitation with reasonable caps",
+        riskScore: 0.5,
+        category: "Liability",
+        alternatives: [
+          "Liability shall be limited to the total contract value",
+          "Each party's liability shall not exceed direct damages"
+        ]
+      }
+    ];
+  };
+
   // Fetch suggestions whenever selectedText changes
   ReactuseEffect(() => {
     async function fetchSuggestions() {
-      if (!selectedText.trim()) return;
+      if (!selectedText.trim()) {
+        setSuggestions([]);
+        return;
+      }
 
       setLoading(true);
       try {
-        const response = await fetch("/api/suggestions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: selectedText }),
-        });
-
-        if (!response.ok) throw new Error("Failed to fetch suggestions");
-
-        const data = await response.json();
-        setSuggestions(data);
+        // Use mock suggestions for development
+        const mockSuggestions = getMockSuggestions(selectedText);
+        setSuggestions(mockSuggestions);
       } catch (error) {
+        console.error('Error fetching suggestions:', error);
         toast({
           title: "Error",
           description: "Failed to load suggestions. Please try again.",
           variant: "destructive",
         });
+        setSuggestions([]); // Reset suggestions on error
       } finally {
         setLoading(false);
       }
     }
 
-    fetchSuggestions();
+    // Add a small delay to prevent rapid API calls during text selection
+    const timeoutId = setTimeout(fetchSuggestions, 500);
+    return () => clearTimeout(timeoutId);
   }, [selectedText, toast]);
 
   return (
