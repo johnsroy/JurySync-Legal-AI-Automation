@@ -700,7 +700,7 @@ export type InsertCitation = typeof legalCitations.$inferInsert;
 export type InsertResearchQuery = typeof researchQueries.$inferInsert;
 
 
-// Add this after the legal research types
+// Add this after legal research types
 // Analytics data schema for metrics collection
 export const analyticsDataSchema = z.object({
   modelUsage: z.record(z.number()),
@@ -841,6 +841,7 @@ export const contractVersions = pgTable('contract_versions', {
   id: serial('id').primaryKey(),
   contractId: integer('contract_id').notNull(),
   version: integer('version').notNull(),
+  content: text('content').notNull(),
   status: text('status').notNull(),
   author: text('author').notNull(),
   changes: jsonb('changes').$type<{

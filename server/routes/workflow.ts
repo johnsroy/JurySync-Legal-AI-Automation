@@ -8,24 +8,36 @@ const router = Router();
 const documentSchema = z.object({
   text: z.string().min(1, "Document text is required"),
   metadata: z.object({
-    type: z.string().optional(),
+    type: z.string(),
+    fileName: z.string(),
     priority: z.string().optional(),
-  }).optional(),
+  }),
 });
 
 // Workflow stage handlers
 router.post('/draft', async (req, res) => {
   try {
     const { text, metadata } = documentSchema.parse(req.body);
-    
+
+    // Create initial version
+    const [version] = await db.insert(contractVersions).values({
+      contractId: 1, // In production, this would be generated
+      version: 1,
+      content: text,
+      status: 'DRAFT',
+      author: 'system',
+      changes: [{ type: 'ADDITION', content: text }],
+    }).returning();
+
     // Log workflow event
     await db.insert(workflowEvents).values({
-      contractId: 1, // TODO: Replace with actual contract ID
+      contractId: 1,
       eventType: 'draft_generation',
       details: {
         status: 'completed',
         text_length: text.length,
-        metadata
+        metadata,
+        versionId: version.id
       },
       timestamp: new Date()
     });
@@ -33,7 +45,11 @@ router.post('/draft', async (req, res) => {
     res.json({
       status: 'success',
       stage: 'draft',
-      message: 'Draft generation completed'
+      message: 'Draft generation completed',
+      data: {
+        versionId: version.id,
+        content: text
+      }
     });
   } catch (error) {
     console.error('Draft generation error:', error);
@@ -46,16 +62,15 @@ router.post('/draft', async (req, res) => {
 
 router.post('/compliance', async (req, res) => {
   try {
-    const { documentId } = z.object({
-      documentId: z.string()
-    }).parse(req.body);
+    const { text, metadata } = documentSchema.parse(req.body);
 
     await db.insert(workflowEvents).values({
       contractId: 1,
       eventType: 'compliance_check',
       details: {
         status: 'completed',
-        documentId
+        text_length: text.length,
+        metadata
       },
       timestamp: new Date()
     });
@@ -76,16 +91,15 @@ router.post('/compliance', async (req, res) => {
 
 router.post('/collaborate', async (req, res) => {
   try {
-    const { documentId } = z.object({
-      documentId: z.string()
-    }).parse(req.body);
+    const { text, metadata } = documentSchema.parse(req.body);
 
     await db.insert(workflowEvents).values({
       contractId: 1,
       eventType: 'collaboration',
       details: {
         status: 'completed',
-        documentId
+        text_length: text.length,
+        metadata
       },
       timestamp: new Date()
     });
@@ -106,16 +120,24 @@ router.post('/collaborate', async (req, res) => {
 
 router.post('/version', async (req, res) => {
   try {
-    const { documentId } = z.object({
-      documentId: z.string()
-    }).parse(req.body);
+    const { text, metadata } = documentSchema.parse(req.body);
+
+    const [version] = await db.insert(contractVersions).values({
+      contractId: 1,
+      version: 1,
+      content: text,
+      status: 'REVIEW',
+      author: 'system',
+      changes: [{ type: 'MODIFICATION', content: text }],
+    }).returning();
 
     await db.insert(workflowEvents).values({
       contractId: 1,
       eventType: 'version_control',
       details: {
         status: 'completed',
-        documentId
+        versionId: version.id,
+        metadata
       },
       timestamp: new Date()
     });
@@ -136,16 +158,15 @@ router.post('/version', async (req, res) => {
 
 router.post('/risk', async (req, res) => {
   try {
-    const { documentId } = z.object({
-      documentId: z.string()
-    }).parse(req.body);
+    const { text, metadata } = documentSchema.parse(req.body);
 
     await db.insert(workflowEvents).values({
       contractId: 1,
       eventType: 'risk_analysis',
       details: {
         status: 'completed',
-        documentId
+        text_length: text.length,
+        metadata
       },
       timestamp: new Date()
     });
