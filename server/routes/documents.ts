@@ -6,6 +6,8 @@ import { eq } from 'drizzle-orm';
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
 import PDFDocument from "pdfkit";
+//import { Document, Packer, Paragraph, TextRun } from 'docx';
+
 
 const router = Router();
 
@@ -248,24 +250,27 @@ router.get("/api/documents/:id/download/docx", async (req, res) => {
       return res.status(404).json({ error: "Document not found" });
     }
 
-    const docx = new Document({
-      sections: [{
-        properties: {},
-        children: [
-          new Paragraph({
-            children: [
-              new TextRun(doc.content)
-            ],
-          }),
-        ],
-      }],
-    });
+    //const docx = new Document({
+    //  sections: [{
+    //    properties: {},
+    //    children: [
+    //      new Paragraph({
+    //        children: [
+    //          new TextRun(doc.content)
+    //        ],
+    //      }),
+    //    ],
+    //  }],
+    //});
+    //const buffer = await Packer.toBuffer(docx);
 
-    const buffer = await Packer.toBuffer(docx);
+    //res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    //res.setHeader('Content-Disposition', `attachment; filename=${doc.title.replace(/\s+/g, '_')}.docx`);
+    //res.send(buffer);
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename=${doc.title.replace(/\s+/g, '_')}.docx`);
-    res.send(buffer);
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename=${doc.title.replace(/\s+/g, '_')}.txt`);
+    res.send(doc.content);
 
   } catch (error) {
     console.error("Error generating DOCX:", error);
@@ -349,6 +354,80 @@ router.get("/api/templates/:id/autocomplete", async (req, res) => {
       error: "Failed to get autocomplete suggestions",
       code: "AUTOCOMPLETE_ERROR",
       details: error.message 
+    });
+  }
+});
+
+// Add these routes after existing routes in documents.ts
+
+// Approval Analysis endpoint
+router.post("/api/workflow/approval-analysis", async (req, res) => {
+  try {
+    const { documentContent } = req.body;
+
+    if (!documentContent) {
+      return res.status(400).json({
+        error: "Missing document content",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    const result = await approvalAuditService.performApprovalAnalysis(documentContent);
+    return res.json(result);
+  } catch (error: any) {
+    console.error("[Approval Analysis] Error:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to perform approval analysis",
+      code: "ANALYSIS_ERROR"
+    });
+  }
+});
+
+// Final Audit endpoint
+router.post("/api/workflow/final-audit", async (req, res) => {
+  try {
+    const { documentContent, workflowHistory } = req.body;
+
+    if (!documentContent) {
+      return res.status(400).json({
+        error: "Missing document content",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    const result = await approvalAuditService.generateFinalAudit(
+      documentContent,
+      workflowHistory
+    );
+    return res.json(result);
+  } catch (error: any) {
+    console.error("[Final Audit] Error:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to generate final audit",
+      code: "AUDIT_ERROR"
+    });
+  }
+});
+
+// Risk Scorecard endpoint
+router.post("/api/workflow/risk-scorecard", async (req, res) => {
+  try {
+    const { documentContent } = req.body;
+
+    if (!documentContent) {
+      return res.status(400).json({
+        error: "Missing document content",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    const result = await approvalAuditService.getRiskScorecard(documentContent);
+    return res.json(result);
+  } catch (error: any) {
+    console.error("[Risk Scorecard] Error:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to generate risk scorecard",
+      code: "SCORECARD_ERROR"
     });
   }
 });
