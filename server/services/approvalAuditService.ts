@@ -55,62 +55,127 @@ export type AuditReport = z.infer<typeof auditReportSchema>;
 export class ApprovalAuditService {
   async performApprovalAnalysis(documentContent: string): Promise<ApprovalAnalysis> {
     try {
+      console.log('Starting approval analysis...');
+
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 1500,
+        system: `You are a legal document analyzer. Analyze legal documents and provide detailed analysis in a strictly formatted JSON output.
+
+Format your response as a JSON object with these exact fields:
+{
+  "riskScore": <number between 0-100>,
+  "approvalRecommendation": "<clear guidance on whether to approve>",
+  "keyFindings": [
+    {
+      "category": "<area of concern>",
+      "finding": "<detailed observation>",
+      "severity": "<LOW|MEDIUM|HIGH>"
+    }
+  ],
+  "legalCompliance": [
+    {
+      "requirement": "<specific legal requirement>",
+      "status": "<COMPLIANT|NON_COMPLIANT|NEEDS_REVIEW>",
+      "details": "<explanation of compliance status>"
+    }
+  ]
+}`,
         messages: [{ 
           role: "user", 
-          content: `Analyze this legal document for approval. Provide a detailed analysis in JSON format with:
-          - Risk score (0-100)
-          - Approval recommendation
-          - Key findings (with categories and severity)
-          - Legal compliance status
+          content: `Analyze this legal document and provide a comprehensive analysis in the specified JSON format:
 
-          Document content: ${documentContent}`
+Document content: ${documentContent}`
         }]
       });
 
-      const analysisText = response.content[0].text;
-      if (!analysisText) {
-        throw new Error('No analysis content received from AI');
+      console.log('Received response from Anthropic');
+
+      // Get the first content block's text
+      const content = response.content[0];
+      if (!content || !('text' in content)) {
+        throw new Error('Invalid response format from AI');
       }
 
-      const analysis = JSON.parse(analysisText);
-      return approvalAnalysisSchema.parse(analysis);
+      const analysisText = content.text;
+      console.log('Parsing analysis text...');
+
+      try {
+        const analysis = JSON.parse(analysisText);
+        console.log('Successfully parsed JSON response');
+
+        // Validate with Zod schema
+        return approvalAnalysisSchema.parse(analysis);
+      } catch (parseError) {
+        console.error('Error parsing approval analysis:', parseError);
+        throw new Error('Failed to parse AI response: ' + (parseError instanceof Error ? parseError.message : String(parseError)));
+      }
     } catch (error) {
       console.error('Approval analysis error:', error);
-      throw new Error('Failed to perform approval analysis');
+      throw new Error('Failed to perform approval analysis: ' + (error instanceof Error ? error.message : String(error)));
     }
   }
 
   async generateFinalAudit(documentContent: string, approvalHistory: any[]): Promise<AuditReport> {
     try {
+      console.log('Starting final audit generation...');
+
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 2000,
         messages: [{ 
           role: "user", 
-          content: `Generate a comprehensive final audit report in JSON format for this legal document with:
-          - Document integrity (score and issues)
-          - Compliance verification (regulations and status)
-          - Risk assessment (overall risk and categories)
-          - Audit trail
+          content: `Generate a comprehensive final audit report in JSON format for this legal document with the following structure:
+{
+  "documentIntegrity": {
+    "score": <number 0-100>,
+    "issues": [<string>]
+  },
+  "complianceVerification": [{
+    "regulation": "<string>",
+    "status": "<string>",
+    "recommendations": ["<string>"]
+  }],
+  "riskAssessment": {
+    "overallRisk": "<LOW|MEDIUM|HIGH>",
+    "categories": [{
+      "name": "<string>",
+      "riskLevel": "<LOW|MEDIUM|HIGH>",
+      "details": "<string>"
+    }]
+  },
+  "auditTrail": [{
+    "timestamp": "<ISO string>",
+    "action": "<string>",
+    "details": "<string>"
+  }]
+}
 
-          Document content: ${documentContent}
-          Approval history: ${JSON.stringify(approvalHistory)}`
+Document content: ${documentContent}
+Approval history: ${JSON.stringify(approvalHistory)}`
         }]
       });
 
-      const reportText = response.content[0].text;
-      if (!reportText) {
-        throw new Error('No report content received from AI');
+      const content = response.content[0];
+      if (!content || !('text' in content)) {
+        throw new Error('Invalid response format from AI');
       }
 
-      const report = JSON.parse(reportText);
-      return auditReportSchema.parse(report);
+      const reportText = content.text;
+      console.log('Parsing audit report...');
+
+      try {
+        const report = JSON.parse(reportText);
+        console.log('Successfully parsed JSON response');
+
+        return auditReportSchema.parse(report);
+      } catch (parseError) {
+        console.error('Error parsing audit report:', parseError);
+        throw new Error('Failed to parse AI response: ' + (parseError instanceof Error ? parseError.message : String(parseError)));
+      }
     } catch (error) {
       console.error('Final audit error:', error);
-      throw new Error('Failed to generate final audit report');
+      throw new Error('Failed to generate final audit report: ' + (error instanceof Error ? error.message : String(error)));
     }
   }
 
@@ -119,28 +184,44 @@ export class ApprovalAuditService {
     breakdown: Array<{ category: string; score: number; findings: string[] }>;
   }> {
     try {
+      console.log('Starting risk scorecard generation...');
+
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 1000,
         messages: [{ 
           role: "user", 
-          content: `Generate a risk scorecard for this legal document in JSON format with:
-          - Overall score (0-100)
-          - Breakdown by category
+          content: `Generate a risk scorecard in JSON format with this structure:
+{
+  "score": <number 0-100>,
+  "breakdown": [{
+    "category": "<string>",
+    "score": <number 0-100>,
+    "findings": ["<string>"]
+  }]
+}
 
-          Document content: ${documentContent}`
+Document content: ${documentContent}`
         }]
       });
 
-      const scorecardText = response.content[0].text;
-      if (!scorecardText) {
-        throw new Error('No scorecard content received from AI');
+      const content = response.content[0];
+      if (!content || !('text' in content)) {
+        throw new Error('Invalid response format from AI');
       }
 
-      return JSON.parse(scorecardText);
+      const scorecardText = content.text;
+      console.log('Parsing risk scorecard...');
+
+      try {
+        return JSON.parse(scorecardText);
+      } catch (parseError) {
+        console.error('Error parsing risk scorecard:', parseError);
+        throw new Error('Failed to parse AI response: ' + (parseError instanceof Error ? parseError.message : String(parseError)));
+      }
     } catch (error) {
       console.error('Risk scorecard error:', error);
-      throw new Error('Failed to generate risk scorecard');
+      throw new Error('Failed to generate risk scorecard: ' + (error instanceof Error ? error.message : String(error)));
     }
   }
 }
