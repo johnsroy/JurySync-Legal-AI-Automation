@@ -449,45 +449,55 @@ export const insertDocumentSchema = createInsertSchema(documents)
 
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 
-// Add after existing document schemas
-export const DocumentVersionStatus = z.enum([
-  "DRAFT",
-  "REVIEW",
+// Document version control schema
+export const DocumentVersionSchema = z.object({
+  version: z.string(),
+  content: z.string(),
+  timestamp: z.string(),
+  author: z.object({
+    id: z.number(),
+    username: z.string(),
+  }),
+  changes: z.array(z.object({
+    type: z.enum(["ADDITION", "DELETION", "MODIFICATION"]),
+    content: z.string(),
+    lineNumber: z.number().optional(),
+  })),
+});
+
+export type DocumentVersionType = z.infer<typeof DocumentVersionSchema>;
+
+// Document versions table definition
+export const documentVersions = pgTable("document_versions", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  version: text("version").notNull(),
+  content: text("content").notNull(),
+  changes: jsonb("changes").notNull(),
+  authorId: integer("author_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DocumentVersion = typeof documentVersions.$inferSelect;
+export type InsertDocumentVersion = typeof documentVersions.$inferInsert;
+
+// Define approval status
+export const ApprovalStatus = z.enum([
+  "PENDING",
   "APPROVED",
   "REJECTED"
 ]);
 
-export type DocumentVersionStatus = z.infer<typeof DocumentVersionStatus>;
+export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
 
-// Document version control
-export const documentVersions = pgTable("document_versions", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id").notNull().references(() => documents.id),
-  versionNumber: integer("version_number").notNull(),
-  content: text("content").notNull(),
-  status: text("status").notNull().default("DRAFT"),
-  authorId: integer("author_id").notNull().references(() => users.id),
-  changes: jsonb("changes").$type<{
-    description: string;
-    modifiedSections: Array<{
-      type: "ADDITION" | "DELETION" | "MODIFICATION";
-      content: string;
-      lineNumber?: number;
-    }>;
-  }>(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
+// Define signature status
+export const SignatureStatus = z.enum([
+  "PENDING",
+  "COMPLETED",
+  "EXPIRED"
+]);
 
-// Add version schema and types
-export const insertDocumentVersionSchema = createInsertSchema(documentVersions)
-  .extend({
-    status: DocumentVersionStatus,
-  });
-
-export type DocumentVersion = typeof documentVersions.$inferSelect;
-export type InsertDocumentVersion = z.infer<typeof insertDocumentVersionSchema>;
-
+export type SignatureStatus = z.infer<typeof SignatureStatus>;
 
 // Add these types after the existing imports
 export const ComplianceFileStatus = z.enum([
@@ -764,7 +774,7 @@ export const caseLawUpdates = pgTable("case_law_updates", {
   caseNumber: text("case_number").notNull(),
   title: text("title").notNull(),
   summary: text("summary").notNull(),
-  full_text: text("full_text").notNull(),
+  full_text: text("full_text").notNull(), 
   court: text("court").notNull(),
   jurisdiction: text("jurisdiction").notNull(),
   category: text("category").notNull(),
@@ -816,21 +826,3 @@ export type InsertContinuousLearningUpdate = z.infer<typeof insertContinuousLear
 export interface CaseLawUpdateWithFullText extends CaseLawUpdate {
   full_text: string;
 }
-
-// Add at the end of your file
-import { relations } from 'drizzle-orm';
-
-export const documentRelations = relations(documents, ({ many }) => ({
-  versions: many(documentVersions),
-}));
-
-export const versionRelations = relations(documentVersions, ({ one }) => ({
-  document: one(documents, {
-    fields: [documentVersions.documentId],
-    references: [documents.id],
-  }),
-  author: one(users, {
-    fields: [documentVersions.authorId],
-    references: [users.id],
-  }),
-}));
