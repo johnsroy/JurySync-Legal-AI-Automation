@@ -1,9 +1,8 @@
 import { Anthropic } from '@anthropic-ai/sdk';
-import { ChromaClient, Collection } from 'chromadb';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
-import { legalDocuments, legalCitations } from '@shared/schema';
-import type { LegalDocument, Citation } from '@shared/schema';
+import { legalDocuments } from '@shared/schema';
+import type { LegalDocument } from '@shared/schema';
 
 // Initialize Anthropic client
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -14,36 +13,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Pre-populated legal documents
-const prePopulatedDocuments = [
-  {
-    title: "Brown v. Board of Education",
-    content: "This landmark case established that separate educational facilities are inherently unequal...",
-    documentType: "SUPREME_COURT_DECISION",
-    date: new Date("1954-05-17"),
-    jurisdiction: "United States Supreme Court",
-    citations: ["347 U.S. 483", "74 S. Ct. 686", "98 L. Ed. 873"]
-  },
-  {
-    title: "Miranda v. Arizona",
-    content: "This case established the requirement for law enforcement to inform arrestees of their rights...",
-    documentType: "SUPREME_COURT_DECISION",
-    date: new Date("1966-06-13"),
-    jurisdiction: "United States Supreme Court",
-    citations: ["384 U.S. 436", "86 S. Ct. 1602", "16 L. Ed. 2d 694"]
-  },
-  // Add more landmark cases
-  {
-    title: "Roe v. Wade",
-    content: "This decision of the U.S. Supreme Court established a woman's legal right to abortion...",
-    documentType: "SUPREME_COURT_DECISION",
-    date: new Date("1973-01-22"),
-    jurisdiction: "United States Supreme Court",
-    citations: ["410 U.S. 113", "93 S. Ct. 705", "35 L. Ed. 2d 147"]
-  }
-];
-
-// In-memory fallback storage
+// In-memory vector store for search functionality
 class InMemoryVectorStore {
   private documents: Map<string, { embedding: number[], metadata: any }> = new Map();
 
@@ -92,46 +62,8 @@ export class LegalResearchService {
   private vectorStore: InMemoryVectorStore;
 
   private constructor() {
-    // Initialize with in-memory store by default
     this.vectorStore = new InMemoryVectorStore();
-    this.initializePrePopulatedDocuments();
     console.log('Initialized LegalResearchService with in-memory vector store');
-  }
-
-  private async initializePrePopulatedDocuments() {
-    for (const doc of prePopulatedDocuments) {
-      try {
-        const [existingDoc] = await db
-          .select()
-          .from(legalDocuments)
-          .where(eq(legalDocuments.title, doc.title));
-
-        if (!existingDoc) {
-          const [newDoc] = await db.insert(legalDocuments).values({
-            title: doc.title,
-            content: doc.content,
-            documentType: doc.documentType,
-            date: doc.date,
-            jurisdiction: doc.jurisdiction
-          }).returning();
-
-          // Add citations
-          for (const citation of doc.citations) {
-            await db.insert(legalCitations).values({
-              documentId: newDoc.id,
-              citation: citation
-            });
-          }
-
-          console.log(`Document created: ${doc.title}`);
-          await this.addDocument(newDoc);
-        } else {
-          console.log(`Document already exists: ${doc.title}`);
-        }
-      } catch (error) {
-        console.error(`Failed to initialize document ${doc.title}:`, error);
-      }
-    }
   }
 
   static getInstance(): LegalResearchService {
@@ -147,7 +79,6 @@ export class LegalResearchService {
 
       const embedding = await this.generateEmbedding(document.content);
 
-      // Store in vector database
       await this.vectorStore.add({
         ids: [document.id.toString()],
         embeddings: [embedding],
@@ -182,7 +113,7 @@ export class LegalResearchService {
 4. Citations and references
 5. Jurisdictional context
 
-Return only the numerical vector values as a JSON array:\n\n${text}`
+Return only the numerical vector values as a JSON array with a single key "embedding":\n\n${text}`
         }]
       });
 
@@ -217,6 +148,8 @@ Return only the numerical vector values as a JSON array:\n\n${text}`
         throw new Error('Document not found');
       }
 
+      console.log('Analyzing document:', { id: documentId, title: document.title });
+
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 2000,
@@ -234,11 +167,11 @@ Content: ${document.content}
 
 Provide your response in this JSON format:
 {
-  "summary": "Brief overview of the document",
-  "keyPoints": ["Array of main legal points"],
+  "summary": "A concise summary of the document",
+  "keyPoints": ["Array of main points"],
   "legalImplications": ["Array of legal implications"],
-  "recommendations": ["Array of recommendations"],
-  "precedentialValue": ["Array of precedential impacts"]
+  "recommendations": ["Array of recommendations or next steps"],
+  "riskAreas": ["Array of potential risk areas identified"]
 }`
         }]
       });
@@ -248,9 +181,11 @@ Provide your response in this JSON format:
         throw new Error('Unexpected response format from Anthropic API');
       }
 
+      console.log('Received Anthropic response');
       const analysis = JSON.parse(content.text);
-      console.log('Document analysis completed successfully');
+      console.log('Analysis completed successfully');
       return analysis;
+
     } catch (error) {
       console.error('Error analyzing document:', error);
       throw error;
@@ -317,10 +252,10 @@ Structure your response as a JSON object with these fields:
       }
 
       const analysis = JSON.parse(content.text);
-      analysis.relevantCases = similarCases.map((doc, index) => ({
+      analysis.relevantCases = similarCases.map((doc) => ({
         document: doc,
         patternMatch: analysis.patternAnalysis?.commonPrinciples?.includes(doc.title) || false,
-        significance: analysis.citationMap?.find(c => c.case === doc.title)?.significance || "Related case"
+        significance: analysis.citationMap?.find((c: any) => c.case === doc.title)?.significance || "Related case"
       }));
 
       console.log('Query analysis completed successfully');
