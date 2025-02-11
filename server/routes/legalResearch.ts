@@ -123,7 +123,7 @@ router.post('/documents', async (req, res) => {
     // For FilePond, we need to send a simple response for the initial upload
     if (!req.body.title) {
       console.log('Initial upload successful, awaiting metadata');
-      return res.json({ 
+      return res.json({
         success: true,
         message: 'File uploaded successfully'
       });
@@ -182,7 +182,7 @@ router.post('/documents', async (req, res) => {
 
   } catch (error: any) {
     console.error('Document upload error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message,
       details: error.toString()
     });
@@ -253,10 +253,25 @@ Structure your response as a JSON object with these fields:
 
   } catch (error: any) {
     console.error('Document analysis error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message,
       details: error.toString()
     });
+  }
+});
+
+// Add new summary endpoint to existing routes
+router.post('/documents/:id/summary', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    console.log('Generating summary for document:', documentId);
+
+    const summary = await legalResearchService.generateSummary(documentId);
+    res.json(summary);
+
+  } catch (error: any) {
+    console.error('Summary generation error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

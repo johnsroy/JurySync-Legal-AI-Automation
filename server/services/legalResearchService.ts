@@ -268,12 +268,12 @@ Provide your response in this JSON format:
         temperature: 0.2,
         messages: [{
           role: "user",
-          content: `Analyze this legal query comprehensively. Consider:
-1. Relevant case law and precedents
-2. Legal principles and doctrines
-3. Jurisdictional considerations
-4. Historical development
-5. Current trends and future implications
+          content: `Analyze this legal query using both retrieval-augmented generation and case-based reasoning. Consider:
+1. Pattern recognition across similar cases
+2. Common legal principles and their application
+3. Outcome comparison and prediction
+4. Timeline of legal developments
+5. Citation relationships and precedent strength
 
 Query: ${query}
 
@@ -288,11 +288,25 @@ Date: ${doc.date}
 Structure your response as a JSON object with these fields:
 {
   "summary": "A detailed analysis of the query and relevant cases",
-  "relevantCases": [{"document": "CaseDocument", "relevance": "string", "keyHoldings": ["array of key holdings"]}],
+  "patternAnalysis": {
+    "commonPrinciples": ["Array of recurring legal principles"],
+    "outcomePatterns": ["Array of similar outcomes and their conditions"],
+    "jurisdictionalTrends": ["Array of jurisdiction-specific patterns"]
+  },
   "timeline": [{"date": "string", "event": "string", "significance": "string"}],
-  "recommendations": ["Array of recommendations based on the analysis"],
-  "relatedPrinciples": ["Array of related legal principles and doctrines"],
-  "riskFactors": ["Array of potential risks or challenges"]
+  "citationMap": [{
+    "case": "string",
+    "citedBy": ["Array of cases citing this one"],
+    "significance": "string"
+  }],
+  "recommendations": ["Array of recommendations based on pattern analysis"],
+  "visualAids": {
+    "timelineData": [{"year": Number, "event": "string", "impact": Number}],
+    "citationNetwork": {
+      "nodes": ["Array of case names"],
+      "edges": [{"from": "string", "to": "string", "weight": Number}]
+    }
+  }
 }`
         }]
       });
@@ -305,14 +319,70 @@ Structure your response as a JSON object with these fields:
       const analysis = JSON.parse(content.text);
       analysis.relevantCases = similarCases.map((doc, index) => ({
         document: doc,
-        relevance: analysis.relevantCases?.[index]?.relevance || "Related case",
-        keyHoldings: analysis.relevantCases?.[index]?.keyHoldings || []
+        patternMatch: analysis.patternAnalysis?.commonPrinciples?.includes(doc.title) || false,
+        significance: analysis.citationMap?.find(c => c.case === doc.title)?.significance || "Related case"
       }));
 
       console.log('Query analysis completed successfully');
       return analysis;
     } catch (error) {
       console.error('Failed to analyze query:', error);
+      throw error;
+    }
+  }
+
+  async generateSummary(documentId: number): Promise<any> {
+    try {
+      console.log('Generating summary for document:', documentId);
+      const [document] = await db
+        .select()
+        .from(legalDocuments)
+        .where(eq(legalDocuments.id, documentId));
+
+      if (!document) {
+        throw new Error('Document not found');
+      }
+
+      const response = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 2000,
+        messages: [{
+          role: "user",
+          content: `Generate a concise yet comprehensive summary of this legal document. Include:
+1. Key legal principles and holdings
+2. Main arguments and reasoning
+3. Significant citations and precedents
+4. Visual representation suggestions
+5. Timeline of events
+
+Document Title: ${document.title}
+Content: ${document.content}
+
+Provide your response in this JSON format:
+{
+  "executiveSummary": "Brief overview",
+  "keyPoints": ["Array of main points"],
+  "legalPrinciples": ["Array of principles"],
+  "timeline": [{"date": "string", "event": "string"}],
+  "visualSuggestions": {
+    "timelineData": [{"year": Number, "event": "string"}],
+    "argumentMap": ["Array of key arguments and their relationships"],
+    "citationNetwork": ["Array of important citations and their connections"]
+  }
+}`
+        }]
+      });
+
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        throw new Error('Unexpected response format from Anthropic API');
+      }
+
+      const summary = JSON.parse(content.text);
+      console.log('Summary generated successfully');
+      return summary;
+    } catch (error) {
+      console.error('Error generating summary:', error);
       throw error;
     }
   }

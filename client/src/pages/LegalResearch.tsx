@@ -25,10 +25,11 @@ type SearchForm = z.infer<typeof searchSchema>;
 
 const searchExamples = [
   "What are the key provisions of the Civil Rights Act of 1964?",
-  "How does the Americans with Disabilities Act protect against discrimination?",
-  "Analyze the impact of the Voting Rights Act of 1965 on electoral participation",
-  "Compare the civil rights protections in recent legislation with historical precedents",
-  "Research legal precedents related to disability discrimination in employment"
+  "How has the Supreme Court's interpretation of the Fourth Amendment evolved in digital privacy cases?",
+  "Analyze recent circuit court decisions on employment discrimination under the ADA",
+  "Compare treatment of environmental regulations across different jurisdictions",
+  "Research precedents related to intellectual property rights in AI-generated content",
+  "What are the emerging trends in data privacy law across different states?"
 ];
 
 export default function LegalResearch() {
@@ -40,6 +41,10 @@ export default function LegalResearch() {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [uploadedDocId, setUploadedDocId] = useState<number | null>(null);
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<'search' | 'summary'>('search');
+  const [selectedDocument, setSelectedDocument] = useState<number | null>(null);
+  const [documentSummary, setDocumentSummary] = useState<any>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
 
   const form = useForm<SearchForm>({
     resolver: zodResolver(searchSchema),
@@ -244,60 +249,239 @@ export default function LegalResearch() {
     ));
   };
 
+  const generateSummary = async (documentId: number) => {
+    try {
+      setIsSummarizing(true);
+      const response = await apiRequest("POST", `/api/legal/documents/${documentId}/summary`);
+      const summary = await response.json();
+      setDocumentSummary(summary);
+    } catch (error: any) {
+      toast({
+        title: "Summary Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
+
   return (
     <div className="container mx-auto py-8">
       <h1 className="text-3xl font-bold mb-8">Legal Research Assistant</h1>
 
-      <div className="grid gap-8">
-        <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Search Legal Documents</h2>
-          <div className="mb-4">
-            <p className="text-sm text-gray-600 mb-2">Try these example searches:</p>
-            <div className="flex flex-wrap gap-2">
-              {searchExamples.map((example, index) => (
-                <Button
-                  key={index}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedExample(example)}
-                  className="text-xs"
-                >
-                  {example.slice(0, 50)}...
-                </Button>
-              ))}
-            </div>
-          </div>
-          <form onSubmit={form.handleSubmit(handleSearch)} className="space-y-4">
-            <div>
-              <Textarea
-                placeholder="Enter your legal research query..."
-                {...form.register("query")}
-                className="min-h-[100px]"
-              />
-              {form.formState.errors.query && (
-                <p className="text-red-500 text-sm mt-1">{form.formState.errors.query.message}</p>
-              )}
-            </div>
-            <Button
-              type="submit"
-              disabled={searchMutation.isPending}
-              className="w-full"
-            >
-              {searchMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Searching...
-                </>
-              ) : (
-                <>
-                  <Search className="mr-2 h-4 w-4" />
-                  Begin Research
-                </>
-              )}
-            </Button>
-          </form>
-        </Card>
+      <div className="flex space-x-4 mb-6">
+        <Button
+          variant={activeTab === 'search' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('search')}
+        >
+          Search & Analysis
+        </Button>
+        <Button
+          variant={activeTab === 'summary' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('summary')}
+        >
+          Document Summary
+        </Button>
+      </div>
 
+      <div className="grid gap-8">
+        {activeTab === 'search' ? (
+          <>
+            <Card className="p-6">
+              <h2 className="text-xl font-semibold mb-4">Search Legal Documents</h2>
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2">Try these example searches:</p>
+                <div className="flex flex-wrap gap-2">
+                  {searchExamples.map((example, index) => (
+                    <Button
+                      key={index}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedExample(example);
+                        form.setValue("query", example);
+                      }}
+                      className="text-xs"
+                    >
+                      {example.slice(0, 50)}...
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <form onSubmit={form.handleSubmit(handleSearch)} className="space-y-4">
+                <div>
+                  <Textarea
+                    placeholder="Enter your legal research query..."
+                    {...form.register("query")}
+                    className="min-h-[100px]"
+                  />
+                  {form.formState.errors.query && (
+                    <p className="text-red-500 text-sm mt-1">{form.formState.errors.query.message}</p>
+                  )}
+                </div>
+                <Button
+                  type="submit"
+                  disabled={searchMutation.isPending}
+                  className="w-full"
+                >
+                  {searchMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Searching...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="mr-2 h-4 w-4" />
+                      Begin Research
+                    </>
+                  )}
+                </Button>
+              </form>
+            </Card>
+
+            {searchResults && (
+              <div className="space-y-4">
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-2">Summary</h3>
+                  <p>{searchResults.summary}</p>
+                </Card>
+
+                {searchResults.relevantCases?.length > 0 && (
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Relevant Cases</h3>
+                    <div className="space-y-4">
+                      {searchResults.relevantCases.map((result: any, index: number) => (
+                        <div key={index} className="border-b last:border-0 pb-4">
+                          <h4 className="font-medium">{result.document.title}</h4>
+                          <p className="text-sm text-gray-600 mt-1">
+                            Jurisdiction: {result.document.jurisdiction} |
+                            Relevance: {result.relevance}
+                          </p>
+                          <p className="mt-2 text-gray-700">{result.document.content.substring(0, 200)}...</p>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+                {searchResults.visualAids?.citationNetwork && (
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Citation Network</h3>
+                    <div className="h-64 bg-gray-50 rounded-lg p-4">
+                      {/* Placeholder for citation network visualization */}
+                      <p className="text-gray-500 text-center">Citation network visualization would be rendered here</p>
+                    </div>
+                  </Card>
+                )}
+
+                {searchResults.timeline && (
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Legal Timeline</h3>
+                    <div className="space-y-2">
+                      {searchResults.timeline.map((event: any, index: number) => (
+                        <div key={index} className="flex gap-4 items-start">
+                          <span className="font-medium text-gray-600 min-w-[100px]">{event.date}</span>
+                          <div>
+                            <span className="text-gray-700">{event.event}</span>
+                            <p className="text-sm text-gray-500">{event.significance}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+                {searchResults.recommendations?.length > 0 && (
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Recommendations</h3>
+                    <ul className="list-disc list-inside space-y-2">
+                      {searchResults.recommendations.map((rec: string, index: number) => (
+                        <li key={index} className="text-gray-700">{rec}</li>
+                      ))}
+                    </ul>
+                  </Card>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold mb-4">Generate Document Summary</h2>
+            <div className="space-y-4">
+              {uploadedDocuments?.map((doc: any) => (
+                <div key={doc.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <h3 className="font-medium">{doc.title}</h3>
+                    <p className="text-sm text-gray-600">
+                      {new Date(doc.date).toLocaleDateString()} - {doc.documentType}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setSelectedDocument(doc.id);
+                      generateSummary(doc.id);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    disabled={isSummarizing && selectedDocument === doc.id}
+                  >
+                    {isSummarizing && selectedDocument === doc.id ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Summarizing...
+                      </>
+                    ) : (
+                      "Generate Summary"
+                    )}
+                  </Button>
+                </div>
+              ))}
+
+              {documentSummary && (
+                <div className="mt-8 space-y-6">
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Executive Summary</h3>
+                    <p className="text-gray-700">{documentSummary.executiveSummary}</p>
+                  </Card>
+
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Key Points</h3>
+                    <ul className="list-disc list-inside space-y-2">
+                      {documentSummary.keyPoints?.map((point: string, index: number) => (
+                        <li key={index} className="text-gray-700">{point}</li>
+                      ))}
+                    </ul>
+                  </Card>
+
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Legal Principles</h3>
+                    <ul className="list-disc list-inside space-y-2">
+                      {documentSummary.legalPrinciples?.map((principle: string, index: number) => (
+                        <li key={index} className="text-gray-700">{principle}</li>
+                      ))}
+                    </ul>
+                  </Card>
+
+                  {documentSummary.timeline && (
+                    <Card className="p-6">
+                      <h3 className="text-lg font-semibold mb-4">Timeline</h3>
+                      <div className="space-y-2">
+                        {documentSummary.timeline.map((event: any, index: number) => (
+                          <div key={index} className="flex gap-4 items-start">
+                            <span className="font-medium text-gray-600 min-w-[100px]">{event.date}</span>
+                            <span className="text-gray-700">{event.event}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Upload and Research Legal Documents</h2>
           <p className="text-sm text-gray-600 mb-4">
@@ -418,7 +602,6 @@ export default function LegalResearch() {
             )}
           </div>
         </Card>
-
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Documents Available for Research</h2>
           <p className="text-sm text-gray-600 mb-4">
@@ -428,7 +611,6 @@ export default function LegalResearch() {
             {renderDocumentsList()}
           </div>
         </Card>
-
         {searchMutation.isPending ? (
           <div className="flex justify-center items-center p-8">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -436,53 +618,7 @@ export default function LegalResearch() {
         ) : (
           searchResults && (
             <div className="space-y-4">
-              <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-2">Summary</h3>
-                <p>{searchResults.summary}</p>
-              </Card>
 
-              {searchResults.relevantCases?.length > 0 && (
-                <Card className="p-6">
-                  <h3 className="text-lg font-semibold mb-4">Relevant Cases</h3>
-                  <div className="space-y-4">
-                    {searchResults.relevantCases.map((result: any, index: number) => (
-                      <div key={index} className="border-b last:border-0 pb-4">
-                        <h4 className="font-medium">{result.document.title}</h4>
-                        <p className="text-sm text-gray-600 mt-1">
-                          Jurisdiction: {result.document.jurisdiction} |
-                          Relevance: {result.relevance}
-                        </p>
-                        <p className="mt-2 text-gray-700">{result.document.content.substring(0, 200)}...</p>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {searchResults.timeline && (
-                <Card className="p-6">
-                  <h3 className="text-lg font-semibold mb-4">Timeline</h3>
-                  <div className="space-y-2">
-                    {searchResults.timeline.map((event: any, index: number) => (
-                      <div key={index} className="flex gap-4 items-start">
-                        <span className="font-medium text-gray-600 min-w-[100px]">{event.date}</span>
-                        <span className="text-gray-700">{event.event}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
-              {searchResults.recommendations?.length > 0 && (
-                <Card className="p-6">
-                  <h3 className="text-lg font-semibold mb-4">Recommendations</h3>
-                  <ul className="list-disc list-inside space-y-2">
-                    {searchResults.recommendations.map((rec: string, index: number) => (
-                      <li key={index} className="text-gray-700">{rec}</li>
-                    ))}
-                  </ul>
-                </Card>
-              )}
             </div>
           )
         )}
