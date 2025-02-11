@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { TemplateCategory } from "@shared/schema";
+import { Anthropic } from '@anthropic-ai/sdk';
+
+// Initialize Anthropic client
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 export const templateSchema = z.object({
   id: z.string(),
@@ -468,10 +474,6 @@ export async function suggestRequirements(templateId: string, currentDescription
       throw new Error('Template not found');
     }
 
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-
     const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
@@ -506,7 +508,7 @@ export async function suggestRequirements(templateId: string, currentDescription
     return suggestions;
   } catch (error) {
     console.error('[TemplateStore] Error generating suggestions:', error);
-    throw new Error('Failed to generate suggestions');
+    throw new Error('Failed to generate suggestions: ' + (error instanceof Error ? error.message : String(error)));
   }
 }
 
@@ -520,10 +522,6 @@ export async function getAutocomplete(templateId: string, partialText: string): 
     if (!template) {
       throw new Error('Template not found');
     }
-
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
 
     const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
@@ -569,10 +567,6 @@ export async function getCustomInstructionSuggestions(
       throw new Error('Template not found');
     }
 
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-
     const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
@@ -606,6 +600,6 @@ export async function getCustomInstructionSuggestions(
     return suggestions;
   } catch (error) {
     console.error('[TemplateStore] Error generating custom instructions:', error);
-    throw new Error('Failed to generate custom instruction suggestions');
+    throw new Error('Failed to generate custom instruction suggestions: ' + (error instanceof Error ? error.message : String(error)));
   }
 }
