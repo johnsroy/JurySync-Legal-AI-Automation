@@ -18,6 +18,7 @@ import AnalyticsOverview from "@/pages/analytics-overview";
 import RecentDocuments from "@/pages/recent-documents";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
+import WorkflowAutomation from "@/pages/WorkflowAutomation";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
@@ -57,6 +58,12 @@ function Router() {
       <Route path="/workflow">
         <Layout>
           <ProtectedRoute component={WorkflowPage} path="/workflow" />
+        </Layout>
+      </Route>
+
+      <Route path="/workflow-automation">
+        <Layout>
+          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
         </Layout>
       </Route>
 

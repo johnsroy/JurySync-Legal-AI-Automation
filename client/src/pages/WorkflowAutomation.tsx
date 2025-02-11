@@ -28,7 +28,7 @@ import {
   ChevronDown,
   FileDown
 } from "lucide-react";
-import { 
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -322,7 +322,7 @@ export default function WorkflowAutomation() {
                 {taskData.status === 'failed' && (
                   <Button
                     variant="outline"
-                    onClick={() => retryMutation.mutate()}
+                    onClick={() => retryMutation.mutate(undefined)}
                     disabled={retryMutation.isPending}
                     className="border-slate-600 hover:bg-slate-700"
                   >
