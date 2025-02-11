@@ -13,12 +13,10 @@ import Dashboard from "@/pages/dashboard";
 import ComplianceAuditing from "@/pages/compliance-auditing";
 import ContractAutomation from "@/pages/contract-automation";
 import LegalResearch from "@/pages/legal-research";
-import Reports from "@/pages/reports-dashboard";
-import AnalyticsOverview from "@/pages/analytics-overview";
-import RecentDocuments from "@/pages/recent-documents";
+import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
-import WorkflowAutomation from "@/pages/WorkflowAutomation";
+import WorkflowAutomation from "@/pages/workflow-automation";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
@@ -34,24 +32,6 @@ function Router() {
       <Route path="/dashboard">
         <Layout>
           <ProtectedRoute component={Dashboard} path="/dashboard" />
-        </Layout>
-      </Route>
-
-      <Route path="/reports">
-        <Layout>
-          <ProtectedRoute component={Reports} path="/reports" />
-        </Layout>
-      </Route>
-
-      <Route path="/reports/analytics">
-        <Layout>
-          <ProtectedRoute component={AnalyticsOverview} path="/reports/analytics" />
-        </Layout>
-      </Route>
-
-      <Route path="/reports/documents">
-        <Layout>
-          <ProtectedRoute component={RecentDocuments} path="/reports/documents" />
         </Layout>
       </Route>
 
@@ -82,6 +62,12 @@ function Router() {
       <Route path="/legal-research">
         <Layout>
           <ProtectedRoute component={LegalResearch} path="/legal-research" />
+        </Layout>
+      </Route>
+
+      <Route path="/reports">
+        <Layout>
+          <ProtectedRoute component={Reports} path="/reports" />
         </Layout>
       </Route>
 
