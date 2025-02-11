@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -124,7 +124,6 @@ export const RiskSeverity = z.enum([
 
 export type RiskSeverity = z.infer<typeof RiskSeverity>;
 
-// Add these new types after the RiskSeverity definition
 export const RiskTrendIndicator = z.enum([
   "INCREASING",
   "STABLE",
@@ -365,7 +364,33 @@ export const contractDetailsSchema = z.object({
   riskFactors: z.array(z.string()).optional()
 });
 
-// Document analysis schema with agent-specific fields
+// Move ClauseRiskLevel definition up
+export const ClauseRiskLevel = z.enum([
+  "HIGH",
+  "MEDIUM",
+  "LOW"
+]);
+
+export type ClauseRiskLevel = z.infer<typeof ClauseRiskLevel>;
+
+// Move ClauseAnalysis definition before documentAnalysisSchema
+export const ClauseAnalysis = z.object({
+  id: z.string(),
+  originalText: z.string(),
+  startIndex: z.number(),
+  endIndex: z.number(),
+  riskLevel: ClauseRiskLevel,
+  riskScore: z.number().min(0).max(1),
+  suggestedText: z.string(),
+  explanation: z.string(),
+  category: z.enum(["LEGAL", "COMPLIANCE", "COMMERCIAL", "TECHNICAL"]),
+  impact: z.string(),
+  confidence: z.number().min(0).max(1)
+});
+
+export type ClauseAnalysis = z.infer<typeof ClauseAnalysis>;
+
+// Now define documentAnalysisSchema using the already defined ClauseAnalysis
 export const documentAnalysisSchema = z.object({
   summary: z.string().min(1, "Summary is required"),
   keyPoints: z.array(z.string()).min(1, "At least one key point is required"),
@@ -391,8 +416,11 @@ export const documentAnalysisSchema = z.object({
     timelineSummary: z.string(),
     argumentAnalysis: z.array(z.string()),
     citationNetwork: z.array(z.string())
-  }).optional()
+  }).optional(),
+  clauseAnalysis: z.array(ClauseAnalysis).optional(),
 });
+
+export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
 
 export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
@@ -407,7 +435,6 @@ export const documents = pgTable("documents", {
 });
 
 // Export types
-export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
 export type Document = typeof documents.$inferSelect;
 
 export const insertDocumentSchema = createInsertSchema(documents)
@@ -799,5 +826,3 @@ export type InsertContinuousLearningUpdate = z.infer<typeof insertContinuousLear
 export interface CaseLawUpdateWithFullText extends CaseLawUpdate {
   full_text: string;
 }
-
-import { boolean } from "drizzle-orm/pg-core";

@@ -10,6 +10,7 @@ import { createCheckoutSession, createPortalSession } from './stripe';
 import legalResearchRouter from "./routes/legalResearch";
 import predictiveMonitoringRouter from "./routes/predictiveMonitoring";
 import orchestratorRouter from "./routes/orchestrator";
+import contractAnalysisRouter from "./routes/contract-analysis";
 import cors from 'cors';
 
 export function registerRoutes(app: Express): Server {
@@ -35,6 +36,9 @@ export function registerRoutes(app: Express): Server {
 
   // Add orchestrator routes
   app.use("/api/orchestrator", orchestratorRouter);
+
+  // Add contract analysis routes
+  app.use("/api/contract-analysis", contractAnalysisRouter);
 
   // Add Stripe payment endpoints
   app.post("/api/checkout", async (req, res) => {

@@ -69,6 +69,11 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
 
+  // Add request logging for API routes
+  if (req.path.startsWith('/api/')) {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  }
+
   // Add better error handling middleware
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
@@ -102,22 +107,12 @@ setupAuth(app);
       // Continue app startup even if continuous learning fails
     }
 
+    // Register API routes first
     const server = registerRoutes(app);
 
-    // Setup Vite first in development
-    if (process.env.NODE_ENV !== "production") {
-      try {
-        await setupVite(app, server);
-        console.log('Vite middleware setup complete');
-      } catch (error) {
-        console.error('Failed to setup Vite middleware:', error);
-        process.exit(1);
-      }
-    }
-
-    // Enhanced error handling middleware
-    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-      console.error('Error:', err);
+    // Enhanced error handling middleware for API routes
+    app.use('/api', (err: any, req: Request, res: Response, next: NextFunction) => {
+      console.error(`API Error [${req.method} ${req.path}]:`, err);
 
       if (!res.headersSent) {
         const statusCode = err.status || 500;
@@ -136,6 +131,17 @@ setupAuth(app);
         });
       }
     });
+
+    // Setup Vite after API routes in development
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        await setupVite(app, server);
+        console.log('Vite middleware setup complete');
+      } catch (error) {
+        console.error('Failed to setup Vite middleware:', error);
+        process.exit(1);
+      }
+    }
 
     // Serve static files in production
     if (process.env.NODE_ENV === "production") {

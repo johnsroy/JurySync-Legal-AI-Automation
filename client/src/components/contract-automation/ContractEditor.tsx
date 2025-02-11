@@ -30,7 +30,7 @@ import {
   X,
   AlertTriangle,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -59,6 +59,17 @@ interface SuggestedEdit {
   endIndex: number;
 }
 
+interface AISuggestion {
+  id: string;
+  category: 'CLARITY' | 'RISK' | 'COMPLIANCE';
+  description: string;
+  confidence: number;
+  suggestedText: string;
+  originalText: string;
+  improvement: string;
+  impact: string;
+}
+
 interface ContractEditorProps {
   documentId: string;
   content: string;
@@ -68,6 +79,8 @@ interface ContractEditorProps {
   suggestedEdits?: SuggestedEdit[];
   onAcceptEdit?: (editId: string) => void;
   onRejectEdit?: (editId: string) => void;
+  aiSuggestions?: AISuggestion[];
+  onApplySuggestion?: (suggestion: AISuggestion) => void;
 }
 
 export const ContractEditor: React.FC<ContractEditorProps> = ({
@@ -79,6 +92,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   suggestedEdits = [],
   onAcceptEdit,
   onRejectEdit,
+  aiSuggestions = [],
+  onApplySuggestion,
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -98,7 +113,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   const [files, setFiles] = useState<any[]>([]);
   const [showSideBySide, setShowSideBySide] = useState(false);
   const [selectedEdit, setSelectedEdit] = useState<SuggestedEdit | null>(null);
-
+  const [selectedSuggestion, setSelectedSuggestion] = useState<AISuggestion | null>(null);
 
   const standardRequirements = [
     "Include non-disclosure agreement",
@@ -816,68 +831,141 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Contract Redline View</h3>
-              <Button
-                variant="outline"
-                onClick={() => setShowSideBySide(!showSideBySide)}
-              >
-                <Edit className="h-4 w-4 mr-2" />
-                {showSideBySide ? "Single View" : "Side by Side"}
-              </Button>
+              <div className="flex gap-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowSideBySide(!showSideBySide)}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  {showSideBySide ? "Single View" : "Side by Side"}
+                </Button>
+              </div>
             </div>
 
-            <div className={`${showSideBySide ? 'grid grid-cols-2 gap-6' : 'space-y-6'}`}>
-              <div className="space-y-2">
-                {!showSideBySide && <Label>Current Version with Suggestions</Label>}
-                <ScrollArea className="h-[500px] w-full border rounded-md p-4">
-                  <div className="prose max-w-none dark:prose-invert">
-                    {renderHighlightedText(content, suggestedEdits)}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <div className={`${showSideBySide ? 'grid grid-cols-2 gap-6' : 'space-y-6'}`}>
+                  <div className="space-y-2">
+                    {!showSideBySide && <Label>Current Version with Suggestions</Label>}
+                    <ScrollArea className="h-[500px] w-full border rounded-md p-4">
+                      <div className="prose max-w-none dark:prose-invert">
+                        {renderHighlightedText(content, suggestedEdits)}
+                      </div>
+                    </ScrollArea>
+                  </div>
+
+                  {showSideBySide && (
+                    <div className="space-y-2">
+                      <Label>Selected Change Preview</Label>
+                      <ScrollArea className="h-[500px] w-full border rounded-md p-4">
+                        <div className="prose max-w-none dark:prose-invert">
+                          {selectedEdit ? (
+                            <div className="space-y-4">
+                              <div className="p-4 rounded bg-red-500/10 border border-red-500/20">
+                                <h4 className="text-red-400 mb-2">Original Text</h4>
+                                <p>{selectedEdit.originalText}</p>
+                              </div>
+                              <div className="p-4 rounded bg-green-500/10 border border-green-500/20">
+                                <h4 className="text-green-400 mb-2">Suggested Text</h4>
+                                <p>{selectedEdit.suggestedText}</p>
+                              </div>
+                              <div className="flex justify-end gap-4 mt-4">
+                                <Button
+                                  variant="outline"
+                                  onClick={() => onAcceptEdit?.(selectedEdit.id)}
+                                  className="text-green-400 hover:text-green-300"
+                                >
+                                  <Check className="h-4 w-4 mr-2" />
+                                  Accept Change
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => onRejectEdit?.(selectedEdit.id)}
+                                  className="text-red-400 hover:text-red-300"
+                                >
+                                  <X className="h-4 w-4 mr-2" />
+                                  Reject Change
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-slate-400">
+                              <p>Select a highlighted section to view suggested changes</p>
+                            </div>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold">AI-Powered Suggestions</h4>
+                  <span className="text-sm text-muted-foreground">
+                    {aiSuggestions.length} suggestions
+                  </span>
+                </div>
+
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-4 pr-4">
+                    {aiSuggestions.map((suggestion) => (
+                      <Card
+                        key={suggestion.id}
+                        className={`p-4 transition-colors cursor-pointer hover:bg-muted/50 ${
+                          selectedSuggestion?.id === suggestion.id ? 'border-primary' : ''
+                        }`}
+                        onClick={() => setSelectedSuggestion(suggestion)}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              suggestion.category === 'RISK'                                ? 'bg-red-500/10 text-red-400'
+                                : suggestion.category === 'COMPLIANCE'
+                                ? 'bg-yellow-500/10 text-yellow-400'
+                                : 'bg-blue-500/10 text-blue-400'
+                            }`}>
+                              {suggestion.category}
+                            </span>
+                            <span className="text-sm text-muted-foreground">
+                              {Math.round(suggestion.confidence * 100)}% confidence
+                            </span>
+                          </div>
+
+                          <p className="text-sm font-medium">{suggestion.description}</p>
+
+                          <div className="text-sm space-y-1 text-muted-foreground">
+                            <p><strong>Improvement:</strong> {suggestion.improvement}</p>
+                            <p><strong>Impact:</strong> {suggestion.impact}</p>
+                          </div>
+
+                          <div className="flex justify-end gap-2 mt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onApplySuggestion?.(suggestion)}
+                            >
+                              <Check className="h-4 w-4 mr-2" />
+                              Apply Suggestion
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+
+                    {aiSuggestions.length === 0 && (
+                      <div className="flex flex-col items-center justify-center text-center p-8 text-muted-foreground">
+                        <Sparkles className="h-12 w-12 mb-4 text-primary/20" />
+                        <p className="font-medium">No AI Suggestions</p>
+                        <p className="text-sm">
+                          The AI has not identified any suggestions for improvement at this time.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </ScrollArea>
               </div>
-
-              {showSideBySide && (
-                <div className="space-y-2">
-                  <Label>Selected Change Preview</Label>
-                  <ScrollArea className="h-[500px] w-full border rounded-md p-4">
-                    <div className="prose max-w-none dark:prose-invert">
-                      {selectedEdit ? (
-                        <div className="space-y-4">
-                          <div className="p-4 rounded bg-red-500/10 border border-red-500/20">
-                            <h4 className="text-red-400 mb-2">Original Text</h4>
-                            <p>{selectedEdit.originalText}</p>
-                          </div>
-                          <div className="p-4 rounded bg-green-500/10 border border-green-500/20">
-                            <h4 className="text-green-400 mb-2">Suggested Text</h4>
-                            <p>{selectedEdit.suggestedText}</p>
-                          </div>
-                          <div className="flex justify-end gap-4 mt-4">
-                            <Button
-                              variant="outline"
-                              onClick={() => onAcceptEdit?.(selectedEdit.id)}
-                              className="text-green-400 hover:text-green-300"
-                            >
-                              <Check className="h-4 w-4 mr-2" />
-                              Accept Change
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => onRejectEdit?.(selectedEdit.id)}
-                              className="text-red-400 hover:text-red-300"
-                            >
-                              <X className="h-4 w-4 mr-2" />
-                              Reject Change
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-slate-400">
-                          <p>Select a highlighted section to view suggested changes</p>
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                </div>
-              )}
             </div>
 
             {suggestedEdits.length > 0 && (
