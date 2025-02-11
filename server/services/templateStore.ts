@@ -467,9 +467,9 @@ interface Suggestion {
   category?: string;
 }
 
-export async function suggestRequirements(templateId: string, currentDescription?: string): Promise<Suggestion[]> {
+export async function suggestRequirements(templateId: string, currentDescription?: string): Promise<Array<{ id: string; text: string; category: string }>> {
   try {
-    console.log(`[TemplateStore] Generating requirements suggestions for template: ${templateId}`);
+    console.log(`[TemplateStore] Generating suggestions for template: ${templateId}`);
 
     const template = getTemplate(templateId);
     if (!template) {
@@ -480,22 +480,21 @@ export async function suggestRequirements(templateId: string, currentDescription
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
       system: `You are a legal document assistant. Generate specific, practical requirements for contract templates.
-      Always return a JSON array of exactly 5 suggestions.
-      Each suggestion must follow this format exactly:
+      Return exactly 5 suggestions in JSON array format.
+      Each suggestion must have:
       {
         "id": "<unique_string>",
-        "text": "<clear, specific requirement>",
-        "category": "<relevant_category>"
+        "text": "<requirement_description>",
+        "category": "<requirement_category>"
       }`,
       messages: [{
         role: "user",
-        content: `Generate 5 specific requirement suggestions for this contract template:
-
+        content: `Generate 5 specific requirements for this contract template:
 Template: ${template.name}
 Description: ${template.description}
 Current Description: ${currentDescription || 'Not provided'}
 
-Return ONLY a JSON array of 5 suggestion objects.`
+Return ONLY a JSON array of suggestion objects.`
       }]
     });
 
@@ -504,6 +503,7 @@ Return ONLY a JSON array of 5 suggestion objects.`
       throw new Error('Invalid response format from AI');
     }
 
+    console.log('[TemplateStore] Raw AI response:', content.text);
     const suggestions = JSON.parse(content.text);
     console.log(`[TemplateStore] Generated ${suggestions.length} suggestions`);
 
@@ -575,11 +575,11 @@ export async function getCustomInstructionSuggestions(
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
       system: `You are a legal document assistant. Generate specific instructions for customizing contract templates.
-      Always return a JSON array of exactly 3 suggestions.
-      Each suggestion must follow this format exactly:
+      Return exactly 3 suggestions in JSON array format.
+      Each suggestion must have:
       {
-        "instruction": "<specific_instruction_text>",
-        "explanation": "<clear_explanation_of_benefit>"
+        "instruction": "<specific_instruction>",
+        "explanation": "<explanation_of_benefit>"
       }`,
       messages: [{
         role: "user",
@@ -589,7 +589,7 @@ Template: ${template.name}
 Description: ${template.description}
 Current Requirements: ${JSON.stringify(currentRequirements)}
 
-Return ONLY a JSON array of instruction objects.`
+Return ONLY a JSON array of suggestion objects.`
       }]
     });
 
@@ -598,6 +598,7 @@ Return ONLY a JSON array of instruction objects.`
       throw new Error('Invalid response format from AI');
     }
 
+    console.log('[TemplateStore] Raw AI response:', content.text);
     const suggestions = JSON.parse(content.text);
     console.log(`[TemplateStore] Generated ${suggestions.length} custom instruction suggestions`);
 
@@ -605,5 +606,64 @@ Return ONLY a JSON array of instruction objects.`
   } catch (error) {
     console.error('[TemplateStore] Error generating custom instructions:', error);
     throw new Error('Failed to generate custom instruction suggestions: ' + (error instanceof Error ? error.message : String(error)));
+  }
+}
+
+export async function generateContract(
+  templateId: string,
+  requirements: Array<{ description: string; importance: "HIGH" | "MEDIUM" | "LOW" }>,
+  customInstructions?: string
+): Promise<string> {
+  try {
+    console.log(`[TemplateStore] Generating contract for template: ${templateId}`);
+
+    const template = getTemplate(templateId);
+    if (!template) {
+      throw new Error('Template not found');
+    }
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 2500,
+      system: `You are an expert legal contract generator.
+      Task: Enhance the provided contract template based on specific requirements while maintaining legal validity and clarity.
+
+      Instructions:
+      1. Use the base template as your foundation
+      2. Incorporate all requirements based on their priority level
+      3. Maintain professional legal language and formatting
+      4. Ensure all critical template variables are properly addressed
+      5. Add any necessary clauses based on the requirements
+      6. If custom instructions are provided, adapt the contract accordingly while maintaining legal validity
+      7. Return only the complete contract text`,
+      messages: [{
+        role: "user",
+        content: `Generate a contract based on this template and requirements:
+
+Template: ${template.name}
+Base Content: ${template.baseContent}
+
+Requirements (in order of importance):
+${requirements.map(req => `[${req.importance}] ${req.description}`).join('\n')}
+
+${customInstructions ? `\nCustom Instructions:\n${customInstructions}` : ''}
+
+Required Variables:
+${template.variables.filter(v => v.required).map(v => `- ${v.name}: ${v.description}`).join('\n')}
+
+Return ONLY the generated contract text.`
+      }]
+    });
+
+    const content = response.content[0];
+    if (!content || !('text' in content)) {
+      throw new Error('Invalid response format from AI');
+    }
+
+    console.log('[TemplateStore] Successfully generated contract');
+    return content.text.trim();
+  } catch (error) {
+    console.error('[TemplateStore] Contract generation error:', error);
+    throw new Error('Failed to generate contract: ' + (error instanceof Error ? error.message : String(error)));
   }
 }

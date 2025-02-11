@@ -7,7 +7,15 @@ import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
 import PDFDocument from "pdfkit";
 import { approvalAuditService } from "../services/approvalAuditService";
-import { getAllTemplates, getTemplate, getTemplatesByCategory } from "../services/templateStore";
+import { 
+  getAllTemplates, 
+  getTemplate, 
+  getTemplatesByCategory,
+  suggestRequirements,
+  getAutocomplete,
+  getCustomInstructionSuggestions,
+  generateContract 
+} from "../services/templateStore";
 
 const router = Router();
 

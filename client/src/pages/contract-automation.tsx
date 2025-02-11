@@ -73,20 +73,27 @@ function RequirementSuggestions({
         },
         body: JSON.stringify({ currentDescription }),
       });
-      if (!response.ok) throw new Error('Failed to fetch suggestions');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch suggestions');
+      }
       return response.json();
     },
     enabled: !!templateId
   });
 
   if (isLoading) return <div className="text-sm text-gray-500">Loading suggestions...</div>;
-  if (error) return null;
+  if (error) {
+    console.error('Suggestion error:', error);
+    return <div className="text-sm text-red-500">Failed to load suggestions</div>;
+  }
+  if (!suggestions?.length) return null;
 
   return (
     <div className="space-y-2">
       <h4 className="text-sm font-medium">Suggested Requirements:</h4>
       <ScrollArea className="h-40">
-        {suggestions?.map((suggestion: RequirementSuggestion, index: number) => (
+        {suggestions.map((suggestion: RequirementSuggestion, index: number) => (
           <div
             key={index}
             className="p-2 hover:bg-gray-100 rounded cursor-pointer"
@@ -113,37 +120,42 @@ function CustomInstructionsSuggestions({
   currentRequirements: any[];
   onSelect: (suggestion: string) => void;
 }) {
-  const { data: suggestions, isLoading } = useQuery({
-    queryKey: ['customInstructions', templateId, currentRequirements],
+  const { data: suggestions, isLoading, error } = useQuery({
+    queryKey: ['customInstructions', templateId, JSON.stringify(currentRequirements)],
     queryFn: async () => {
       const response = await fetch(`/api/templates/${templateId}/custom-instruction-suggestions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentRequirements }),
       });
-      if (!response.ok) throw new Error('Failed to fetch suggestions');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch custom instructions');
+      }
       return response.json();
     },
     enabled: !!templateId && currentRequirements.length > 0
   });
 
   if (isLoading) return <div className="text-sm text-gray-500">Loading suggestions...</div>;
+  if (error) {
+    console.error('Custom instructions error:', error);
+    return <div className="text-sm text-red-500">Failed to load custom instructions</div>;
+  }
+  if (!suggestions?.length) return null;
 
   return (
     <div className="space-y-2">
       <h4 className="text-sm font-medium">Suggested Custom Instructions:</h4>
       <ScrollArea className="h-40">
-        {suggestions?.map((suggestion: any, index: number) => (
+        {suggestions.map((suggestion: any, index: number) => (
           <div
             key={index}
             className="p-3 hover:bg-gray-100 rounded cursor-pointer border-l-4 border-blue-500 mb-2"
-            onClick={() => onSelect(suggestion.suggestion)}
+            onClick={() => onSelect(suggestion.instruction)}
           >
-            <div className="font-medium text-sm">{suggestion.suggestion}</div>
+            <div className="font-medium text-sm">{suggestion.instruction}</div>
             <p className="text-xs text-gray-600 mt-1">{suggestion.explanation}</p>
-            <div className="text-xs text-blue-600 mt-1">
-              Impact: {suggestion.impact}
-            </div>
           </div>
         ))}
       </ScrollArea>
@@ -239,7 +251,6 @@ function ContractGenerationLoadingIcon() {
     </div>
   );
 }
-
 
 // Add MetricsWidget component
 function MetricsWidget({ title, value, icon: Icon, description }: {
