@@ -27,6 +27,7 @@ import { PredictiveSuggestions } from "@/components/ContractRedlining/Predictive
 import { DocumentPreview } from "@/components/DocumentPreview";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import { FileUpload } from "@/components/FileUpload";
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -387,6 +388,22 @@ export const WorkflowAutomation: React.FC = () => {
     }
   };
 
+  const handleFileProcessed = useCallback(({ text, documentId }: { text: string; documentId: string }) => {
+    setDocumentText(text);
+    toast({
+      title: "Document Processed",
+      description: "The document has been successfully parsed and loaded.",
+    });
+  }, [toast]);
+
+  const handleFileError = useCallback((error: string) => {
+    toast({
+      title: "Upload Failed",
+      description: error,
+      variant: "destructive"
+    });
+  }, [toast]);
+
   const workflowStages = [
     {
       title: "Draft Generation",
@@ -462,6 +479,22 @@ export const WorkflowAutomation: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Document Editor Section */}
             <div className="lg:col-span-2 space-y-6">
+              {/* Add FileUpload component */}
+              <Card className="bg-white/80 backdrop-blur-lg">
+                <CardHeader>
+                  <CardTitle>Document Upload</CardTitle>
+                  <CardDescription>
+                    Upload your document or enter text manually below
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FileUpload
+                    onFileProcessed={handleFileProcessed}
+                    onError={handleFileError}
+                  />
+                </CardContent>
+              </Card>
+
               <Card className="bg-white/80 backdrop-blur-lg">
                 <CardHeader>
                   <CardTitle>Document Editor</CardTitle>
