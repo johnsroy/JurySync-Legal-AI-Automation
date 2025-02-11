@@ -18,7 +18,7 @@ import {
   Clock,
   BarChart3
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useDropzone } from 'react-dropzone';
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -148,38 +148,47 @@ export const WorkflowAutomation: React.FC = () => {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [documentText, setDocumentText] = useState("");
+  const [selectedText, setSelectedText] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [workflowProgress, setWorkflowProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState<number>(0);
-  const [selectedText, setSelectedText] = useState("");
   const [stageStates, setStageStates] = useState<Record<number, WorkflowStageState>>({});
 
-  // Enhanced text selection handler
-  const handleTextSelect = () => {
+  // Enhanced text selection handler with debounce
+  const handleTextSelect = useCallback(() => {
     const selection = window.getSelection();
     if (selection && selection.toString().trim()) {
       const selectedContent = selection.toString().trim();
       setSelectedText(selectedContent);
-      // Trigger suggestions loading when text is selected
       toast({
         title: "Text Selected",
         description: "Loading relevant suggestions...",
       });
     }
-  };
+  }, [toast]);
 
-  const handleSuggestionSelect = (suggestionText: string) => {
-    setDocumentText((prevText) => {
-      if (!selectedText) return prevText;
-      return prevText.replace(selectedText, suggestionText);
-    });
+  const handleSuggestionSelect = useCallback((suggestionText: string) => {
+    if (!selectedText) return;
+
+    const textArea = document.querySelector('textarea');
+    if (!textArea) return;
+
+    const start = textArea.selectionStart;
+    const end = textArea.selectionEnd;
+
+    setDocumentText(prev =>
+      prev.substring(0, start) +
+      suggestionText +
+      prev.substring(end)
+    );
+
     toast({
       title: "Suggestion Applied",
       description: "The selected clause has been updated.",
     });
-  };
+  }, [selectedText, toast]);
 
-  const addStageOutput = (stageIndex: number, output: StageOutput) => {
+  const addStageOutput = useCallback((stageIndex: number, output: StageOutput) => {
     setStageStates(prev => ({
       ...prev,
       [stageIndex]: {
@@ -187,9 +196,9 @@ export const WorkflowAutomation: React.FC = () => {
         outputs: [...(prev[stageIndex]?.outputs || []), output]
       }
     }));
-  };
+  }, []);
 
-  const updateStageStatus = (stageIndex: number, status: WorkflowStageState['status']) => {
+  const updateStageStatus = useCallback((stageIndex: number, status: WorkflowStageState['status']) => {
     setStageStates(prev => ({
       ...prev,
       [stageIndex]: {
@@ -198,7 +207,7 @@ export const WorkflowAutomation: React.FC = () => {
         outputs: prev[stageIndex]?.outputs || []
       }
     }));
-  };
+  }, []);
 
   const handleSubmit = async () => {
     if (!documentText.trim() && uploadedFiles.length === 0) {
@@ -215,64 +224,80 @@ export const WorkflowAutomation: React.FC = () => {
     setWorkflowProgress(0);
     setStageStates({});
 
-    // Simulate workflow stages with detailed outputs
-    for (let i = 0; i <= 4; i++) {
+    // Process each stage
+    const stages = [
+      { name: "Draft Generation", handler: async () => {
+        addStageOutput(0, {
+          message: "Analyzing document structure",
+          details: "Processing document formatting and structure",
+          timestamp: new Date().toISOString(),
+          status: 'info'
+        });
+        await new Promise(r => setTimeout(r, 1000));
+      }},
+      { name: "Compliance Check", handler: async () => {
+        addStageOutput(1, {
+          message: "Running compliance checks",
+          details: "Verifying regulatory requirements",
+          timestamp: new Date().toISOString(),
+          status: 'info'
+        });
+        await new Promise(r => setTimeout(r, 1000));
+      }},
+      { name: "Legal Research", handler: async () => {
+        addStageOutput(2, {
+          message: "Analyzing legal precedents",
+          details: "Searching relevant case law",
+          timestamp: new Date().toISOString(),
+          status: 'info'
+        });
+        await new Promise(r => setTimeout(r, 1000));
+      }},
+      { name: "Approval Process", handler: async () => {
+        addStageOutput(3, {
+          message: "Processing approvals",
+          details: "Routing for necessary sign-offs",
+          timestamp: new Date().toISOString(),
+          status: 'info'
+        });
+        await new Promise(r => setTimeout(r, 1000));
+      }},
+      { name: "Final Audit", handler: async () => {
+        addStageOutput(4, {
+          message: "Conducting final audit",
+          details: "Performing comprehensive review",
+          timestamp: new Date().toISOString(),
+          status: 'info'
+        });
+        await new Promise(r => setTimeout(r, 1000));
+      }}
+    ];
+
+    for (let i = 0; i < stages.length; i++) {
       setCurrentStage(i);
       updateStageStatus(i, 'processing');
 
-      // Simulate stage processing with outputs
-      for (let progress = 0; progress <= 100; progress += 20) {
-        setWorkflowProgress(progress);
+      try {
+        await stages[i].handler();
+        updateStageStatus(i, 'completed');
+        setWorkflowProgress((i + 1) * (100 / stages.length));
 
-        // Add stage-specific outputs
-        const timestamp = new Date().toISOString();
-        switch (i) {
-          case 0:
-            addStageOutput(i, {
-              message: "Analyzing document structure",
-              details: `Processing ${progress}% complete`,
-              timestamp,
-              status: 'info'
-            });
-            break;
-          case 1:
-            addStageOutput(i, {
-              message: "Running compliance checks",
-              details: `Verified ${progress}% of regulatory requirements`,
-              timestamp,
-              status: 'info'
-            });
-            break;
-          case 2:
-            addStageOutput(i, {
-              message: "Conducting legal research",
-              details: `Analyzed ${progress}% of relevant case law`,
-              timestamp,
-              status: 'info'
-            });
-            break;
-          case 3:
-            addStageOutput(i, {
-              message: "Processing approvals",
-              details: `Workflow approval progress: ${progress}%`,
-              timestamp,
-              status: 'info'
-            });
-            break;
-          case 4:
-            addStageOutput(i, {
-              message: "Performing periodic audit",
-              details: `Audit completion: ${progress}%`,
-              timestamp,
-              status: 'info'
-            });
-            break;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 200));
+        addStageOutput(i, {
+          message: `${stages[i].name} completed`,
+          details: "Successfully processed",
+          timestamp: new Date().toISOString(),
+          status: 'success'
+        });
+      } catch (error) {
+        updateStageStatus(i, 'error');
+        addStageOutput(i, {
+          message: `Error in ${stages[i].name}`,
+          details: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+          status: 'error'
+        });
+        break;
       }
-
-      updateStageStatus(i, 'completed');
     }
   };
 
@@ -402,47 +427,27 @@ export const WorkflowAutomation: React.FC = () => {
             <div className="lg:col-span-2 space-y-6">
               <Card className="bg-white/80 backdrop-blur-lg">
                 <CardHeader>
-                  <CardTitle>Document Upload</CardTitle>
+                  <CardTitle>Document Editor</CardTitle>
                   <CardDescription>
-                    Upload your legal documents or paste content directly
+                    Edit your document and select text for suggestions
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <FileUploadZone onFileSelect={handleFileSelect} />
-
-                  {uploadedFiles.length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="text-sm font-medium mb-2">Selected Files:</h4>
-                      <ul className="space-y-2">
-                        {uploadedFiles.map((file, index) => (
-                          <li key={index} className="flex items-center gap-2 text-sm">
-                            <FileText className="h-4 w-4" />
-                            {file.name}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  <div className="relative">
-                    <Textarea
-                      placeholder="Or paste your document text here..."
-                      className="min-h-[200px] resize-none"
-                      value={documentText}
-                      onChange={(e) => setDocumentText(e.target.value)}
-                      onMouseUp={handleTextSelect}
-                      onKeyUp={handleTextSelect}
-                      onSelect={handleTextSelect}
-                    />
-                  </div>
-
+                  <Textarea
+                    placeholder="Enter or paste your document text here..."
+                    className="min-h-[200px] resize-none"
+                    value={documentText}
+                    onChange={(e) => setDocumentText(e.target.value)}
+                    onSelect={handleTextSelect}
+                    onMouseUp={handleTextSelect}
+                    onKeyUp={handleTextSelect}
+                  />
                   <Button
                     className="w-full"
                     onClick={handleSubmit}
-                    disabled={!documentText.trim() && uploadedFiles.length === 0}
+                    disabled={!documentText.trim()}
                   >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Submit for Automation
+                    Process Document
                   </Button>
                 </CardContent>
               </Card>
@@ -452,7 +457,15 @@ export const WorkflowAutomation: React.FC = () => {
                 <Card key={stageIndex} className="bg-white/80 backdrop-blur-lg">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      {workflowStages[Number(stageIndex)].icon}
+                      <div className="h-5 w-5">
+                        {workflowStages[Number(stageIndex)].icon({
+                          className:
+                            state.status === 'completed' ? 'text-green-500' :
+                              state.status === 'processing' ? 'text-blue-500' :
+                                state.status === 'error' ? 'text-red-500' :
+                                  'text-gray-500'
+                        })}
+                      </div>
                       {workflowStages[Number(stageIndex)].title}
                     </CardTitle>
                   </CardHeader>
@@ -493,25 +506,20 @@ export const WorkflowAutomation: React.FC = () => {
                 <CardHeader>
                   <CardTitle>Workflow Progress</CardTitle>
                   <CardDescription>
-                    Track the progress of your document through each stage
+                    Track document processing progress
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <Progress value={workflowProgress} className="h-2" />
-
                   <div className="space-y-6">
                     {workflowStages.map((stage, index) => (
-                      <div key={index} className="relative">
-                        <WorkflowStage
-                          icon={stage.icon}
-                          title={stage.title}
-                          description={stage.description}
-                          status={stageStates[index]?.status || 'pending'}
-                        />
-                        {index < workflowStages.length - 1 && (
-                          <div className="absolute left-5 top-14 bottom-0 w-px bg-gray-200" />
-                        )}
-                      </div>
+                      <WorkflowStage
+                        key={index}
+                        icon={stage.icon}
+                        title={stage.title}
+                        description={stage.description}
+                        status={stageStates[index]?.status || 'pending'}
+                      />
                     ))}
                   </div>
                 </CardContent>

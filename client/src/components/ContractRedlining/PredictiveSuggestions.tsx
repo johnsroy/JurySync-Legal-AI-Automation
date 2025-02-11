@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect as ReactuseEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Check, AlertCircle, ChevronRight } from "lucide-react";
@@ -34,29 +34,36 @@ export function PredictiveSuggestions({ selectedText, onSuggestionSelect }: Pred
     return <AlertTriangle className="h-4 w-4 text-red-500" />;
   };
 
-  const fetchSuggestions = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch("/api/suggestions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: selectedText }),
-      });
-      
-      if (!response.ok) throw new Error("Failed to fetch suggestions");
-      
-      const data = await response.json();
-      setSuggestions(data);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load suggestions. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+  // Fetch suggestions whenever selectedText changes
+  ReactuseEffect(() => {
+    async function fetchSuggestions() {
+      if (!selectedText.trim()) return;
+
+      setLoading(true);
+      try {
+        const response = await fetch("/api/suggestions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: selectedText }),
+        });
+
+        if (!response.ok) throw new Error("Failed to fetch suggestions");
+
+        const data = await response.json();
+        setSuggestions(data);
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to load suggestions. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
     }
-  };
+
+    fetchSuggestions();
+  }, [selectedText, toast]);
 
   return (
     <Card className="w-full bg-card">
