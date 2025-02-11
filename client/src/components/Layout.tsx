@@ -10,9 +10,7 @@ import {
 } from "@/components/ui/sidebar";
 import { 
   LayoutDashboard, 
-  Scale, 
   FileText, 
-  BookOpen, 
   History, 
   Settings,
   Shield,
@@ -68,38 +66,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={location === "/compliance-auditing"}
-                  tooltip="Compliance Audit"
-                >
-                  <Link href="/compliance-auditing" className="flex items-center">
-                    <Scale className="mr-2" />
-                    Compliance Audit
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
                   isActive={location === "/contract-automation"}
                   tooltip="Contract Automation"
                 >
                   <Link href="/contract-automation" className="flex items-center">
                     <FileText className="mr-2" />
                     Contract Automation
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location === "/legal-research"}
-                  tooltip="Legal Research"
-                >
-                  <Link href="/legal-research" className="flex items-center">
-                    <BookOpen className="mr-2" />
-                    Legal Research
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

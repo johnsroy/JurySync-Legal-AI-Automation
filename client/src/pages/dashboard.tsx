@@ -66,32 +66,6 @@ const modules = [
       accuracy: "98%",
       timeReduced: "70%"
     }
-  },
-  {
-    id: "compliance-auditing",
-    title: "Compliance Auditing",
-    description: "Automated compliance checks and risk assessment",
-    icon: Shield,
-    path: "/compliance-auditing",
-    gradient: "from-green-50 to-blue-100",
-    metrics: {
-      audited: 850,
-      compliance: "95%",
-      risks: 12
-    }
-  },
-  {
-    id: "legal-research",
-    title: "Legal Research",
-    description: "Advanced legal research and case analysis",
-    icon: Book,
-    path: "/legal-research",
-    gradient: "from-blue-50 to-purple-100",
-    metrics: {
-      researched: 1150,
-      accuracy: "96%",
-      citations: 2450
-    }
   }
 ];
 
