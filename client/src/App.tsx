@@ -15,7 +15,7 @@ import ContractAutomation from "@/pages/contract-automation";
 import LegalResearch from "@/pages/legal-research";
 import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
-import WorkflowAutomation from "@/pages/WorkflowAutomation";
+import WorkflowPage from "@/pages/workflow-page";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
@@ -34,9 +34,9 @@ function Router() {
         </Layout>
       </Route>
 
-      <Route path="/workflow-automation">
+      <Route path="/workflow">
         <Layout>
-          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
+          <ProtectedRoute component={WorkflowPage} path="/workflow" />
         </Layout>
       </Route>
 
