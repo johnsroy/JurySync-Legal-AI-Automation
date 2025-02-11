@@ -12,12 +12,106 @@ import predictiveMonitoringRouter from "./routes/predictiveMonitoring";
 import orchestratorRouter from "./routes/orchestrator";
 import contractAnalysisRouter from "./routes/contract-analysis";
 import cors from 'cors';
+import { workflowOrchestrator } from "./services/workflowOrchestrator";
 
 export function registerRoutes(app: Express): Server {
   // Enable CORS for all routes
   app.use(cors());
 
   const server = createServer(app);
+
+  // Add workflow automation routes
+  app.post("/api/workflow/draft", async (req, res) => {
+    try {
+      const { text } = req.body;
+      if (!text) {
+        return res.status(400).json({ error: "Document text is required" });
+      }
+
+      // Initialize review process
+      const result = await workflowOrchestrator.initiateReview(1); // TODO: Get actual contract ID
+      res.json(result);
+    } catch (error) {
+      console.error("Error in draft workflow:", error);
+      res.status(500).json({ error: "Failed to process draft" });
+    }
+  });
+
+  app.post("/api/workflow/compliance", async (req, res) => {
+    try {
+      const { documentId } = req.body;
+      if (!documentId) {
+        return res.status(400).json({ error: "Document ID is required" });
+      }
+
+      // Get compliance report
+      const report = await workflowOrchestrator.getDiagnosticReport(parseInt(documentId));
+      res.json(report);
+    } catch (error) {
+      console.error("Error in compliance workflow:", error);
+      res.status(500).json({ error: "Failed to process compliance check" });
+    }
+  });
+
+  app.post("/api/workflow/collaborate", async (req, res) => {
+    try {
+      const { documentId } = req.body;
+      if (!documentId) {
+        return res.status(400).json({ error: "Document ID is required" });
+      }
+
+      const result = await workflowOrchestrator.initiateReview(parseInt(documentId));
+      res.json(result);
+    } catch (error) {
+      console.error("Error in collaboration workflow:", error);
+      res.status(500).json({ error: "Failed to process collaboration" });
+    }
+  });
+
+  app.post("/api/workflow/version", async (req, res) => {
+    try {
+      const { documentId } = req.body;
+      if (!documentId) {
+        return res.status(400).json({ error: "Document ID is required" });
+      }
+
+      const versions = await workflowOrchestrator.getVersionHistory(parseInt(documentId));
+      res.json(versions);
+    } catch (error) {
+      console.error("Error in version workflow:", error);
+      res.status(500).json({ error: "Failed to fetch version history" });
+    }
+  });
+
+  app.post("/api/workflow/risk", async (req, res) => {
+    try {
+      const { documentId } = req.body;
+      if (!documentId) {
+        return res.status(400).json({ error: "Document ID is required" });
+      }
+
+      const report = await workflowOrchestrator.getDiagnosticReport(parseInt(documentId));
+      res.json(report);
+    } catch (error) {
+      console.error("Error in risk workflow:", error);
+      res.status(500).json({ error: "Failed to process risk analysis" });
+    }
+  });
+
+  app.post("/api/workflow/signature", async (req, res) => {
+    try {
+      const { documentId } = req.body;
+      if (!documentId) {
+        return res.status(400).json({ error: "Document ID is required" });
+      }
+
+      const result = await workflowOrchestrator.initiateSignature(parseInt(documentId));
+      res.json(result);
+    } catch (error) {
+      console.error("Error in signature workflow:", error);
+      res.status(500).json({ error: "Failed to process signature request" });
+    }
+  });
 
   // Add the legal research router
   app.use("/api/legal", legalResearchRouter);
