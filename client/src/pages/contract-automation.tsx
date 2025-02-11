@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, FileText, Gavel, Scale, Check, Clock, ShieldCheck } from "lucide-react";
+import { Loader2, FileText, Gavel, Scale, Check, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -16,9 +16,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
 import { ContractRedlining } from "@/components/ContractRedlining/ContractRedlining";
-import { WorkflowIntegration } from "@/components/ContractRedlining/WorkflowIntegration";
 
-// Define the template interface
+// Keep only necessary interfaces and schemas
 interface Template {
   id: string;
   name: string;
@@ -54,11 +53,7 @@ const formSchema = z.object({
   customInstructions: z.string().optional()
 });
 
-function RequirementSuggestions({
-  templateId,
-  currentDescription,
-  onSelect
-}: {
+function RequirementSuggestions({ templateId, currentDescription, onSelect }: {
   templateId: string;
   currentDescription?: string;
   onSelect: (suggestion: RequirementSuggestion) => void;
@@ -111,11 +106,7 @@ function RequirementSuggestions({
   );
 }
 
-function CustomInstructionsSuggestions({
-  templateId,
-  currentRequirements,
-  onSelect
-}: {
+function CustomInstructionsSuggestions({ templateId, currentRequirements, onSelect }: {
   templateId: string;
   currentRequirements: any[];
   onSelect: (suggestion: string) => void;
@@ -231,7 +222,6 @@ function RequirementField({
   );
 }
 
-// Add new loading animation component
 function ContractGenerationLoadingIcon() {
   const [iconIndex, setIconIndex] = useState(0);
   const icons = [Gavel, Scale, FileText];
@@ -252,7 +242,6 @@ function ContractGenerationLoadingIcon() {
   );
 }
 
-// Add MetricsWidget component
 function MetricsWidget({ title, value, icon: Icon, description }: {
   title: string;
   value: string;
@@ -283,7 +272,6 @@ function MetricsWidget({ title, value, icon: Icon, description }: {
   );
 }
 
-// Add DiffViewer component for redline comparison
 function DiffViewer({ original, modified }: { original: string; modified: string }) {
   return (
     <div className="grid grid-cols-2 gap-4">
@@ -404,7 +392,6 @@ export default function ContractAutomation() {
 
   const handleSuggestionSelect = (suggestion: RequirementSuggestion) => {
     const requirements = form.getValues("requirements");
-    // Replace the first requirement with the suggested one
     requirements[0] = {
       description: suggestion.description,
       importance: suggestion.importance
@@ -520,7 +507,6 @@ export default function ContractAutomation() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Add metrics section at the top */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <MetricsWidget
           title="Time Saved"
@@ -531,7 +517,7 @@ export default function ContractAutomation() {
         <MetricsWidget
           title="Error Reduction"
           value={metrics.errorReduction}
-          icon={ShieldCheck}
+          icon={Scale}
           description="Reduction in contract errors"
         />
         <MetricsWidget
@@ -597,7 +583,6 @@ export default function ContractAutomation() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left column: Customization form */}
             <Card className="lg:col-span-1">
               <CardHeader>
                 <CardTitle>{selectedTemplate?.name}</CardTitle>
@@ -717,7 +702,6 @@ export default function ContractAutomation() {
               </CardContent>
             </Card>
 
-            {/* Right column: Preview and redline */}
             <div className="lg:col-span-1 space-y-6">
               {generatedContract && (
                 <>
@@ -732,11 +716,6 @@ export default function ContractAutomation() {
                       <ContractRedlining initialContent={generatedContract.content} />
                     </CardContent>
                   </Card>
-
-                  <WorkflowIntegration
-                    contractId={generatedContract.id}
-                    currentVersion={1}
-                  />
 
                   <Card>
                     <CardHeader>
