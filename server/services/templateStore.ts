@@ -452,3 +452,160 @@ export function getTemplatesByCategory(category: Template["category"]): Template
   console.log(`[TemplateStore] Found ${filtered.length} templates for category ${category}`);
   return filtered;
 }
+
+interface Suggestion {
+  id: string;
+  text: string;
+  category?: string;
+}
+
+export async function suggestRequirements(templateId: string, currentDescription?: string): Promise<Suggestion[]> {
+  try {
+    console.log(`[TemplateStore] Generating requirements suggestions for template: ${templateId}`);
+
+    const template = getTemplate(templateId);
+    if (!template) {
+      throw new Error('Template not found');
+    }
+
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1000,
+      messages: [{
+        role: "user",
+        content: `Generate 5 specific requirement suggestions for this contract template.
+        Each suggestion should be relevant to the template type and help complete the contract.
+
+        Template Name: ${template.name}
+        Template Description: ${template.description}
+        Current Description: ${currentDescription || 'Not provided'}
+
+        Format each suggestion as a JSON object with:
+        {
+          "id": "unique_string",
+          "text": "detailed requirement text",
+          "category": "relevant category"
+        }
+
+        Return an array of these objects.`
+      }]
+    });
+
+    const content = response.content[0];
+    if (!content || !('text' in content)) {
+      throw new Error('Invalid response format from AI');
+    }
+
+    const suggestions = JSON.parse(content.text);
+    console.log(`[TemplateStore] Generated ${suggestions.length} suggestions`);
+
+    return suggestions;
+  } catch (error) {
+    console.error('[TemplateStore] Error generating suggestions:', error);
+    throw new Error('Failed to generate suggestions');
+  }
+}
+
+export async function getAutocomplete(templateId: string, partialText: string): Promise<{
+  suggestions: Array<{ text: string; description?: string }>;
+}> {
+  try {
+    console.log(`[TemplateStore] Generating autocomplete suggestions for: ${partialText}`);
+
+    const template = getTemplate(templateId);
+    if (!template) {
+      throw new Error('Template not found');
+    }
+
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 500,
+      messages: [{
+        role: "user",
+        content: `Given this partial text in a ${template.name}, suggest 3-5 relevant completions.
+        Each suggestion should be formatted as a JSON object with:
+        {
+          "text": "completion text",
+          "description": "brief explanation"
+        }
+
+        Partial text: "${partialText}"
+        Template context: ${template.description}
+
+        Return an array of these objects.`
+      }]
+    });
+
+    const content = response.content[0];
+    if (!content || !('text' in content)) {
+      throw new Error('Invalid response format from AI');
+    }
+
+    const suggestions = JSON.parse(content.text);
+    return { suggestions };
+  } catch (error) {
+    console.error('[TemplateStore] Error generating autocomplete:', error);
+    throw new Error('Failed to generate autocomplete suggestions');
+  }
+}
+
+export async function getCustomInstructionSuggestions(
+  templateId: string,
+  currentRequirements: string[]
+): Promise<Array<{ instruction: string; explanation: string }>> {
+  try {
+    console.log(`[TemplateStore] Generating custom instruction suggestions for template: ${templateId}`);
+
+    const template = getTemplate(templateId);
+    if (!template) {
+      throw new Error('Template not found');
+    }
+
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1000,
+      messages: [{
+        role: "user",
+        content: `Generate 3-5 custom instruction suggestions for this contract template.
+        Consider the template type and current requirements when making suggestions.
+
+        Template: ${template.name}
+        Template Description: ${template.description}
+        Current Requirements: ${JSON.stringify(currentRequirements)}
+
+        Format each suggestion as a JSON object with:
+        {
+          "instruction": "specific instruction text",
+          "explanation": "why this instruction is helpful"
+        }
+
+        Return an array of these objects.`
+      }]
+    });
+
+    const content = response.content[0];
+    if (!content || !('text' in content)) {
+      throw new Error('Invalid response format from AI');
+    }
+
+    const suggestions = JSON.parse(content.text);
+    console.log(`[TemplateStore] Generated ${suggestions.length} custom instruction suggestions`);
+
+    return suggestions;
+  } catch (error) {
+    console.error('[TemplateStore] Error generating custom instructions:', error);
+    throw new Error('Failed to generate custom instruction suggestions');
+  }
+}
