@@ -144,7 +144,10 @@ export default function LegalResearch() {
   // FilePond handlers
   const handleUploadSuccess = (response: any): string => {
     try {
-      const data = JSON.parse(response);
+      // Ensure response is a string before parsing
+      const responseStr = typeof response === 'string' ? response : JSON.stringify(response);
+      const data = JSON.parse(responseStr);
+
       if (data.status === 'success') {
         setUploadedDocId(data.documentId);
         toast({
@@ -152,8 +155,10 @@ export default function LegalResearch() {
           description: "Document uploaded successfully",
         });
         queryClient.invalidateQueries({ queryKey: ["/api/legal/documents"] });
+        return responseStr;
+      } else {
+        throw new Error(data.error || 'Upload failed');
       }
-      return response;
     } catch (error: any) {
       console.error('Upload error:', error);
       toast({
@@ -259,6 +264,7 @@ export default function LegalResearch() {
           server={{
             process: {
               url: "/api/legal/documents",
+              method: 'POST',
               headers: {
                 'Accept': 'application/json'
               },

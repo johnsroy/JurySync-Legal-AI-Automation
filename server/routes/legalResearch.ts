@@ -37,7 +37,7 @@ const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => P
   (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch((error) => {
       console.error('Route error:', error);
-      // Ensure we always return JSON, even for errors
+      res.setHeader('Content-Type', 'application/json');
       res.status(500).json({ 
         error: error.message || 'Internal server error',
         status: 'error'
@@ -52,6 +52,9 @@ const querySchema = z.object({
 
 // Upload document
 router.post('/documents', (req: Request, res: Response) => {
+  // Set JSON content type header early
+  res.setHeader('Content-Type', 'application/json');
+
   upload(req, res, async (err: any) => {
     try {
       if (err) {
@@ -104,7 +107,7 @@ router.post('/documents', (req: Request, res: Response) => {
 
       await legalResearchService.addDocument(insertedDoc);
 
-      res.json({
+      return res.status(200).json({
         documentId: insertedDoc.id,
         title: insertedDoc.title,
         content: insertedDoc.content,
@@ -113,7 +116,7 @@ router.post('/documents', (req: Request, res: Response) => {
 
     } catch (error: any) {
       console.error('Document upload error:', error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         error: error.message || 'Failed to process document',
         status: 'error'
       });
@@ -123,12 +126,13 @@ router.post('/documents', (req: Request, res: Response) => {
 
 // Get all documents
 router.get('/documents', asyncHandler(async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
   await legalResearchService.initialize();
   const documents = await db
     .select()
     .from(legalDocuments)
     .orderBy(desc(legalDocuments.createdAt));
-  res.json({
+  return res.json({
     documents,
     status: 'success'
   });
@@ -136,6 +140,7 @@ router.get('/documents', asyncHandler(async (req: Request, res: Response) => {
 
 // Analyze document
 router.post('/documents/:id/analyze', asyncHandler(async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
   const documentId = parseInt(req.params.id);
   if (isNaN(documentId)) {
     return res.status(400).json({ 
@@ -145,7 +150,7 @@ router.post('/documents/:id/analyze', asyncHandler(async (req: Request, res: Res
   }
 
   const analysis = await legalResearchService.analyzeDocument(documentId);
-  res.json({
+  return res.json({
     ...analysis,
     status: 'success'
   });
@@ -153,6 +158,7 @@ router.post('/documents/:id/analyze', asyncHandler(async (req: Request, res: Res
 
 // Get document summary
 router.post('/documents/:id/summary', asyncHandler(async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
   const documentId = parseInt(req.params.id);
   if (isNaN(documentId)) {
     return res.status(400).json({ 
@@ -162,7 +168,7 @@ router.post('/documents/:id/summary', asyncHandler(async (req: Request, res: Res
   }
 
   const summary = await legalResearchService.generateSummary(documentId);
-  res.json({
+  return res.json({
     ...summary,
     status: 'success'
   });
@@ -170,9 +176,10 @@ router.post('/documents/:id/summary', asyncHandler(async (req: Request, res: Res
 
 // Search documents
 router.post('/query', asyncHandler(async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
   const { query } = querySchema.parse(req.body);
   const results = await legalResearchService.analyzeQuery(query);
-  res.json({
+  return res.json({
     ...results,
     status: 'success'
   });

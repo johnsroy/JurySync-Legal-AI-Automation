@@ -1,0 +1,43 @@
+Please design a modern, responsive UI for the 'End‑to‑End Workflow for Full Lifecycle Automation' page within the LexAutomation dashboard. The UI should be tailored for legal professionals and include the following components and design elements:
+
+Header Section:
+
+A prominent header with the title 'Full Lifecycle Automation Workflow'.
+Include a brief tagline (e.g., 'From Draft to Execution – Automating 80% of Legal Compliance Tasks') in a smaller font beneath the title.
+A navigation bar with icons for other key modules (e.g., Compliance Audit, Contract Automation, Legal Research, History & Reports).
+Document Upload and Initiation Panel:
+
+A large, visually striking drag‑and‑drop area for uploading legal documents.
+Also, include a text input area for pasting document content.
+Display icons representing supported file types (PDF, DOCX, TXT).
+A clearly labeled 'Submit for Automation' button that triggers the orchestration process.
+Workflow Progress Tracker:
+
+Create a horizontal progress bar or step‑tracker that visually represents each stage of the workflow:
+a. Draft Generation
+b. Compliance Auditing
+c. Legal Research & Summarization
+d. Approval & Execution
+e. Periodic Audit
+Each stage should include a small status indicator (e.g., a checkmark for completed, a spinner for in‑progress, and a warning icon for errors).
+Dynamic Results and Visualization Area:
+
+Once processing begins, display an animated pop‑up message such as 'Document Submitted – Starting Automation...' that transitions into detailed results when available.
+Below the progress tracker, include a dashboard section that shows:
+A summary card with key metrics (e.g., '80% of routine tasks automated', '70% faster processing', '30–50% labor cost savings', '60% error reduction').
+Interactive charts (e.g., line charts, bar graphs) displaying risk trends, issue frequency, and processing time breakdowns.
+A scrollable list or table showing detailed outputs from each workflow stage (e.g., draft content, flagged compliance issues with risk scores, legal research summaries with citation references).
+Error Handling and Retry Options:
+
+If any stage fails, display an inline error message next to the corresponding progress step with a 'Retry' button.
+Include a dedicated error log section (collapsible) that shows detailed error messages and timestamps for troubleshooting.
+Report Download Section:
+
+At the bottom of the page, provide a 'Download Full Report' button that allows users to export the entire workflow results and metrics in PDF and CSV formats.
+The report should include all generated outputs and visualizations.
+Design and Aesthetic Considerations:
+
+Use a clean, modern design with a professional color scheme (e.g., cool blues, deep grays, and subtle accent colors) that appeal to legal professionals.
+Ensure that the typography is clear and legible, with ample white space and smooth animations/transitions for a futuristic feel.
+The UI must be fully responsive for desktop, tablet, and mobile devices.
+Overall, the UI should provide a clear, step‑by‑step visual guide of the entire automation process, ensuring users understand how their document moves through drafting, compliance review, legal research, and periodic audits. It should emphasize efficiency, transparency, and innovation while allowing for error recovery and report generation.
