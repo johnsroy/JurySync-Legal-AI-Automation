@@ -61,11 +61,11 @@ export class LegalResearchService {
   private static instance: LegalResearchService;
   private vectorStore: InMemoryVectorStore;
   private prePopulatedDocuments: LegalDocument[] = [];
+  private initialized: boolean = false;
 
   private constructor() {
     this.vectorStore = new InMemoryVectorStore();
     console.log('Initialized LegalResearchService with in-memory vector store');
-    this.loadPrePopulatedDocuments();
   }
 
   static getInstance(): LegalResearchService {
@@ -75,10 +75,35 @@ export class LegalResearchService {
     return LegalResearchService.instance;
   }
 
+  async initialize() {
+    if (!this.initialized) {
+      try {
+        await this.loadPrePopulatedDocuments();
+        this.initialized = true;
+        console.log('Legal research service initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize legal research service:', error);
+        throw error;
+      }
+    }
+  }
+
   async addDocument(document: LegalDocument): Promise<void> {
     try {
       console.log('Adding document:', { title: document.title, id: document.id });
 
+      // First, save to database
+      const [existingDoc] = await db
+        .select()
+        .from(legalDocuments)
+        .where(eq(legalDocuments.id, document.id))
+        .limit(1);
+
+      if (!existingDoc) {
+        await db.insert(legalDocuments).values(document);
+      }
+
+      // Then generate embedding and add to vector store
       const embedding = await this.generateEmbedding(document.content);
 
       await this.vectorStore.add({
@@ -92,9 +117,9 @@ export class LegalResearchService {
         }]
       });
 
-      console.log('Document added successfully to vector store:', { id: document.id });
+      console.log('Document added successfully:', { id: document.id });
     } catch (error) {
-      console.error('Failed to add document to vector store:', error);
+      console.error('Failed to add document:', error);
       throw error;
     }
   }
@@ -108,14 +133,12 @@ export class LegalResearchService {
         max_tokens: 1000,
         messages: [{
           role: "user",
-          content: `Generate a dense vector embedding for this legal text that captures its key legal concepts, principles, and arguments. Consider:
-1. Legal principles and doctrines mentioned
-2. Key facts and precedents
-3. Legal reasoning and analysis
-4. Citations and references
-5. Jurisdictional context
+          content: `Please analyze this legal text and generate a numerical embedding vector that captures its semantic meaning. The vector should have 1024 dimensions.
 
-Return only the numerical vector values as a JSON array with a single key "embedding":\n\n${text}`
+Return ONLY a JSON object with a single "embedding" key containing the array of 1024 numbers between -1 and 1. For example: {"embedding": [-0.1, 0.2, ...]}
+
+Text to analyze:
+${text}`
         }]
       });
 
@@ -124,17 +147,108 @@ Return only the numerical vector values as a JSON array with a single key "embed
         throw new Error('Unexpected response format from Anthropic API');
       }
 
-      const result = JSON.parse(content.text);
-      console.log('Successfully generated embedding');
-      return result.embedding;
+      try {
+        const result = JSON.parse(content.text);
+        if (!Array.isArray(result.embedding) || result.embedding.length !== 1024) {
+          throw new Error('Invalid embedding format returned from API');
+        }
+        console.log('Successfully generated embedding');
+        return result.embedding;
+      } catch (parseError) {
+        console.error('Error parsing embedding JSON:', parseError);
+        // Return a fallback embedding based on character codes
+        const vector = new Array(1024).fill(0);
+        for (let i = 0; i < Math.min(text.length, 1024); i++) {
+          vector[i] = text.charCodeAt(i) / 255;
+        }
+        return vector;
+      }
     } catch (error) {
       console.error('Error generating embedding:', error);
-      // Return a simple fallback embedding
+      // Return a fallback embedding based on character codes
       const vector = new Array(1024).fill(0);
       for (let i = 0; i < Math.min(text.length, 1024); i++) {
         vector[i] = text.charCodeAt(i) / 255;
       }
       return vector;
+    }
+  }
+
+  private async loadPrePopulatedDocuments(): Promise<void> {
+    try {
+      console.log('Starting legal database seeding...');
+
+      const landmarkCases: LegalDocument[] = [
+        {
+          id: 1,
+          title: "Brown v. Board of Education",
+          content: `347 U.S. 483 (1954). This landmark case overturned Plessy v. Ferguson and declared state laws establishing separate public schools for black and white students to be unconstitutional. The Supreme Court's unanimous decision stated that "separate educational facilities are inherently unequal."`,
+          documentType: "CASE_LAW",
+          jurisdiction: "United States",
+          date: new Date("1954-05-17"),
+          status: "ACTIVE",
+          metadata: {
+            court: "Supreme Court",
+            citation: "347 U.S. 483"
+          },
+          citations: [],
+          vectorId: null,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        },
+        {
+          id: 2,
+          title: "Miranda v. Arizona",
+          content: `384 U.S. 436 (1966). This decision established that prior to police interrogation, criminal suspects must be informed of their constitutional right to an attorney and against self-incrimination. The Supreme Court held that the Fifth Amendment requires law enforcement officials to advise suspects of their right to remain silent and to obtain an attorney during interrogation while in police custody.`,
+          documentType: "CASE_LAW",
+          jurisdiction: "United States",
+          date: new Date("1966-06-13"),
+          status: "ACTIVE",
+          metadata: {
+            court: "Supreme Court",
+            citation: "384 U.S. 436"
+          },
+          citations: [],
+          vectorId: null,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        },
+        {
+          id: 3,
+          title: "Roe v. Wade",
+          content: `410 U.S. 113 (1973). The Court ruled that the Constitution protects a pregnant woman's liberty to choose to have an abortion without excessive government restriction. It struck down many federal and state abortion laws.`,
+          documentType: "CASE_LAW",
+          jurisdiction: "United States",
+          date: new Date("1973-01-22"),
+          status: "ACTIVE",
+          metadata: {
+            court: "Supreme Court",
+            citation: "410 U.S. 113"
+          },
+          citations: [],
+          vectorId: null,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      ];
+
+      this.prePopulatedDocuments = landmarkCases;
+
+      // Add documents to vector store and database
+      for (const doc of this.prePopulatedDocuments) {
+        try {
+          console.log('Adding document:', { title: doc.title, id: doc.id });
+          await this.addDocument(doc);
+          console.log(`Successfully added document to vector store: ${doc.title}`);
+        } catch (error) {
+          console.error(`Error adding document ${doc.title} to vector store:`, error);
+        }
+      }
+
+      console.log('Legal database seeding completed');
+    } catch (error) {
+      console.error('Error in loadPrePopulatedDocuments:', error);
+      throw error;
     }
   }
 
@@ -289,14 +403,7 @@ Provide your response in this JSON format:
     "citedBy": ["Array of cases citing this one"],
     "significance": "string"
   }],
-  "recommendations": ["Array of recommendations based on pattern analysis"],
-  "visualAids": {
-    "timelineData": [{"year": Number, "event": "string", "impact": Number}],
-    "citationNetwork": {
-      "nodes": ["Array of case names"],
-      "edges": [{"from": "string", "to": "string", "weight": Number}]
-    }
-  }
+  "recommendations": ["Array of recommendations based on pattern analysis"]
 }`
         }]
       });
@@ -307,12 +414,6 @@ Provide your response in this JSON format:
       }
 
       const analysis = JSON.parse(content.text);
-      analysis.relevantCases = similarCases.map((doc) => ({
-        document: doc,
-        patternMatch: analysis.patternAnalysis?.commonPrinciples?.includes(doc.title) || false,
-        significance: analysis.citationMap?.find((c: any) => c.case === doc.title)?.significance || "Related case"
-      }));
-
       console.log('Query analysis completed successfully');
       return analysis;
     } catch (error) {
@@ -358,75 +459,9 @@ Provide your response in this JSON format:
   getPrePopulatedDocuments(): LegalDocument[] {
     return this.prePopulatedDocuments;
   }
-
-  private async loadPrePopulatedDocuments(): Promise<void> {
-    const landmarkCases: LegalDocument[] = [
-      {
-        id: 1,
-        title: "Brown v. Board of Education",
-        content: `347 U.S. 483 (1954). This landmark case overturned Plessy v. Ferguson and declared state laws establishing separate public schools for black and white students to be unconstitutional. The Supreme Court's unanimous decision stated that "separate educational facilities are inherently unequal."`,
-        documentType: "CASE_LAW",
-        jurisdiction: "United States",
-        date: new Date("1954-05-17"),
-        status: "ACTIVE",
-        metadata: {
-          court: "Supreme Court",
-          citation: "347 U.S. 483"
-        },
-        citations: [],
-        vectorId: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        id: 2,
-        title: "Miranda v. Arizona",
-        content: `384 U.S. 436 (1966). This decision established that prior to police interrogation, criminal suspects must be informed of their constitutional right to an attorney and against self-incrimination. The Supreme Court held that the Fifth Amendment requires law enforcement officials to advise suspects of their right to remain silent and to obtain an attorney during interrogation while in police custody.`,
-        documentType: "CASE_LAW",
-        jurisdiction: "United States",
-        date: new Date("1966-06-13"),
-        status: "ACTIVE",
-        metadata: {
-          court: "Supreme Court",
-          citation: "384 U.S. 436"
-        },
-        citations: [],
-        vectorId: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        id: 3,
-        title: "Roe v. Wade",
-        content: `410 U.S. 113 (1973). The Court ruled that the Constitution protects a pregnant woman's liberty to choose to have an abortion without excessive government restriction. It struck down many federal and state abortion laws.`,
-        documentType: "CASE_LAW",
-        jurisdiction: "United States",
-        date: new Date("1973-01-22"),
-        status: "ACTIVE",
-        metadata: {
-          court: "Supreme Court",
-          citation: "410 U.S. 113"
-        },
-        citations: [],
-        vectorId: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-    ];
-
-    this.prePopulatedDocuments = landmarkCases;
-
-    // Add documents to vector store
-    for (const doc of this.prePopulatedDocuments) {
-      try {
-        console.log('Adding document:', { title: doc.title, id: doc.id });
-        await this.addDocument(doc);
-        console.log(`Successfully added document to vector store: ${doc.title}`);
-      } catch (error) {
-        console.error(`Error adding document ${doc.title} to vector store:`, error);
-      }
-    }
-  }
 }
 
 export const legalResearchService = LegalResearchService.getInstance();
+
+// Initialize the service
+legalResearchService.initialize().catch(console.error);

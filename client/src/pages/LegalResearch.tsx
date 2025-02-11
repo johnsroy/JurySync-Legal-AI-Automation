@@ -58,8 +58,21 @@ export default function LegalResearch() {
   const { data: legalDocuments, isLoading: isLoadingDocuments } = useQuery({
     queryKey: ["/api/legal/documents"],
     queryFn: async () => {
-      const response = await apiRequest("GET", "/api/legal/documents");
-      return response.json();
+      try {
+        const response = await apiRequest("GET", "/api/legal/documents");
+        if (!response.ok) {
+          throw new Error('Failed to fetch legal documents');
+        }
+        return response.json();
+      } catch (error: any) {
+        console.error('Error fetching documents:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load legal documents. Please try again later.",
+          variant: "destructive",
+        });
+        return [];
+      }
     },
   });
 
@@ -67,6 +80,9 @@ export default function LegalResearch() {
   const searchMutation = useMutation({
     mutationFn: async (data: SearchForm) => {
       const response = await apiRequest("POST", "/api/legal/query", data);
+      if (!response.ok) {
+        throw new Error('Search failed');
+      }
       return response.json();
     },
     onSuccess: (data) => {
@@ -131,7 +147,7 @@ export default function LegalResearch() {
     }
   };
 
-  // Handle FilePond errors
+  // Update the handleFilePondError function
   const handleFilePondError = (error: any) => {
     console.error('FilePond error:', error);
     toast({
@@ -141,50 +157,28 @@ export default function LegalResearch() {
     });
   };
 
-  // FilePond server configuration
-  const serverConfig = {
-    process: "/api/legal/documents",
-    headers: {
-      'Accept': 'application/json'
-    },
-    load: async (source: string, load: Function, error: Function) => {
-      try {
-        const data = JSON.parse(source);
-        if (data.documentId && data.content) {
-          setUploadedDocId(data.documentId);
-
-          queryClient.setQueryData(["/api/legal/documents"], (oldData: any) => {
-            const existing = oldData || [];
-            const newDoc = {
-              id: data.documentId,
-              title: data.title,
-              content: data.content,
-              status: "COMPLETED",
-              date: new Date().toISOString()
-            };
-            return [newDoc, ...existing];
-          });
-
-          toast({
-            title: "Document Uploaded",
-            description: "Your document has been uploaded successfully and is ready for analysis.",
-          });
-
-          load(source);
-        } else {
-          error('Invalid upload response');
-        }
-      } catch (err: any) {
-        console.error('Error processing upload response:', err);
+  // Add upload success handler
+  const handleUploadSuccess = (response: string) => {
+    try {
+      const data = JSON.parse(response);
+      if (data.status === 'success') {
+        setUploadedDocId(data.documentId);
         toast({
-          title: "Upload Error",
-          description: err.message || "Failed to process document",
-          variant: "destructive",
+          title: "Upload Success",
+          description: "Document uploaded successfully",
         });
-        error('Upload processing failed');
+
+        // Update documents list
+        queryClient.invalidateQueries({ queryKey: ["/api/legal/documents"] });
+      } else {
+        throw new Error(data.error || 'Upload failed');
       }
+    } catch (error: any) {
+      handleFilePondError(error);
     }
   };
+
+  // FilePond server configuration
 
   return (
     <div className="container mx-auto py-8">
@@ -406,14 +400,22 @@ export default function LegalResearch() {
             onupdatefiles={setFiles}
             allowMultiple={false}
             maxFiles={1}
-            server={serverConfig}
+            server={{
+              process: {
+                url: "/api/legal/documents",
+                headers: {
+                  'Accept': 'application/json'
+                },
+                onload: handleUploadSuccess,
+                onerror: handleFilePondError
+              }
+            }}
             acceptedFileTypes={[
               'application/pdf',
               'application/msword',
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
             ]}
             labelIdle='Drag & Drop your legal document or <span class="filepond--label-action">Browse</span>'
-            onerror={handleFilePondError}
           />
 
           {uploadedDocId && (
