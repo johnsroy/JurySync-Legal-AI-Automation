@@ -6,8 +6,7 @@ import { eq } from 'drizzle-orm';
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
 import PDFDocument from "pdfkit";
-//import { Document, Packer, Paragraph, TextRun } from 'docx';
-
+import { approvalAuditService } from "../services/approvalAuditService";
 
 const router = Router();
 
@@ -250,24 +249,6 @@ router.get("/api/documents/:id/download/docx", async (req, res) => {
       return res.status(404).json({ error: "Document not found" });
     }
 
-    //const docx = new Document({
-    //  sections: [{
-    //    properties: {},
-    //    children: [
-    //      new Paragraph({
-    //        children: [
-    //          new TextRun(doc.content)
-    //        ],
-    //      }),
-    //    ],
-    //  }],
-    //});
-    //const buffer = await Packer.toBuffer(docx);
-
-    //res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    //res.setHeader('Content-Disposition', `attachment; filename=${doc.title.replace(/\s+/g, '_')}.docx`);
-    //res.send(buffer);
-
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Content-Disposition', `attachment; filename=${doc.title.replace(/\s+/g, '_')}.txt`);
     res.send(doc.content);
@@ -357,8 +338,6 @@ router.get("/api/templates/:id/autocomplete", async (req, res) => {
     });
   }
 });
-
-// Add these routes after existing routes in documents.ts
 
 // Approval Analysis endpoint
 router.post("/api/workflow/approval-analysis", async (req, res) => {

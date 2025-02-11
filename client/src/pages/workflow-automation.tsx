@@ -29,6 +29,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { FileUpload } from "@/components/FileUpload";
 import { approvalAuditService } from "@/lib/approval-audit";
+import { ApprovalForm } from "@/components/ApprovalForm";
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -154,6 +155,8 @@ interface WorkflowStageState {
   status: 'pending' | 'processing' | 'completed' | 'error';
   outputs: StageOutput[];
   result?: StageResult;
+  approvers?: Approver[];
+  isApproved?: boolean;
 }
 
 interface KeyFinding {
@@ -168,6 +171,11 @@ interface ComplianceStatus {
   details: string;
 }
 
+interface Approver {
+  id: number;
+  name: string;
+  role: string;
+}
 
 export const WorkflowAutomation: React.FC = () => {
   const { user, logoutMutation } = useAuth();
@@ -346,59 +354,69 @@ export const WorkflowAutomation: React.FC = () => {
       {
         name: "Approval Process",
         handler: async () => {
-          // Perform approval analysis
-          const approvalAnalysis = await approvalAuditService.performApprovalAnalysis(documentText);
+          try {
+            // Perform approval analysis
+            const approvalAnalysis = await approvalAuditService.performApprovalAnalysis(documentText);
 
-          const approvalContent = `
-            <h2>Document Approval Analysis</h2>
-            <div class="mb-4">
-              <h3 class="text-lg font-semibold">Risk Assessment</h3>
-              <p class="text-xl font-bold ${
-                approvalAnalysis.riskScore < 30 ? 'text-green-600' :
-                approvalAnalysis.riskScore < 70 ? 'text-yellow-600' : 'text-red-600'
-              }">Risk Score: ${approvalAnalysis.riskScore}/100</p>
-              <p class="mt-2"><strong>Recommendation:</strong> ${approvalAnalysis.approvalRecommendation}</p>
-            </div>
-
-            <div class="mb-4">
-              <h3 class="text-lg font-semibold">Key Findings</h3>
-              <ul class="list-disc pl-5">
-                ${approvalAnalysis.keyFindings.map((finding: KeyFinding) => `
-                  <li class="mb-2">
-                    <span class="font-medium">${finding.category}:</span>
-                    <span class="ml-2">${finding.finding}</span>
-                    <span class="ml-2 px-2 py-1 text-sm rounded ${
-                      finding.severity === 'LOW' ? 'bg-green-100 text-green-800' :
-                      finding.severity === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }">${finding.severity}</span>
-                  </li>
-                `).join('')}
-              </ul>
-            </div>
-
-            <div>
-              <h3 class="text-lg font-semibold">Compliance Status</h3>
-              <div class="grid gap-4">
-                ${approvalAnalysis.legalCompliance.map((item: ComplianceStatus) => `
-                  <div class="p-4 rounded border">
-                    <p class="font-medium">${item.requirement}</p>
-                    <p class="mt-1 ${
-                      item.status === 'COMPLIANT' ? 'text-green-600' :
-                      item.status === 'NON_COMPLIANT' ? 'text-red-600' :
-                      'text-yellow-600'
-                    }">${item.status}</p>
-                    <p class="mt-1 text-sm text-gray-600">${item.details}</p>
-                  </div>
-                `).join('')}
+            const approvalContent = `
+              <h2>Document Approval Analysis</h2>
+              <div class="mb-4">
+                <h3 class="text-lg font-semibold">Risk Assessment</h3>
+                <p class="text-xl font-bold ${
+                  approvalAnalysis.riskScore < 30 ? 'text-green-600' :
+                  approvalAnalysis.riskScore < 70 ? 'text-yellow-600' : 'text-red-600'
+                }">Risk Score: ${approvalAnalysis.riskScore}/100</p>
+                <p class="mt-2"><strong>Recommendation:</strong> ${approvalAnalysis.approvalRecommendation}</p>
               </div>
-            </div>
-          `;
 
-          return {
-            content: approvalContent,
-            title: "Approval Analysis Report"
-          };
+              <div class="mb-4">
+                <h3 class="text-lg font-semibold">Key Findings</h3>
+                <ul class="list-disc pl-5">
+                  ${approvalAnalysis.keyFindings.map((finding: KeyFinding) => `
+                    <li class="mb-2">
+                      <span class="font-medium">${finding.category}:</span>
+                      <span class="ml-2">${finding.finding}</span>
+                      <span class="ml-2 px-2 py-1 text-sm rounded ${
+                        finding.severity === 'LOW' ? 'bg-green-100 text-green-800' :
+                        finding.severity === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }">${finding.severity}</span>
+                    </li>
+                  `).join('')}
+                </ul>
+              </div>
+
+              <div>
+                <h3 class="text-lg font-semibold">Compliance Status</h3>
+                <div class="grid gap-4">
+                  ${approvalAnalysis.legalCompliance.map((item: ComplianceStatus) => `
+                    <div class="p-4 rounded border">
+                      <p class="font-medium">${item.requirement}</p>
+                      <p class="mt-1 ${
+                        item.status === 'COMPLIANT' ? 'text-green-600' :
+                        item.status === 'NON_COMPLIANT' ? 'text-red-600' :
+                        'text-yellow-600'
+                      }">${item.status}</p>
+                      <p class="mt-1 text-sm text-gray-600">${item.details}</p>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+
+              <div class="mt-6">
+                <div id="approvalFormContainer"></div>
+              </div>
+            `;
+
+            // Return the content and wait for approval
+            return {
+              content: approvalContent,
+              title: "Approval Analysis Report"
+            };
+          } catch (error) {
+            console.error("Approval process error:", error);
+            throw error;
+          }
         }
       },
       {
@@ -736,7 +754,46 @@ export const WorkflowAutomation: React.FC = () => {
                         content={state.result.content}
                         title={state.result.title}
                         onDownload={() => generatePDF(state.result!.content, state.result!.title)}
-                      />
+                      >
+                        {currentStage === 3 && !state.isApproved && (
+                          <div className="mt-4">
+                            <ApprovalForm
+                              onApprove={async (approvers) => {
+                                try {
+                                  setStageStates(prev => ({
+                                    ...prev,
+                                    [currentStage]: {
+                                      ...prev[currentStage],
+                                      approvers,
+                                      isApproved: true,
+                                      status: 'completed'
+                                    }
+                                  }));
+
+                                  // Move to the next stage
+                                  setCurrentStage(prev => prev + 1);
+                                  setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
+
+                                  addStageOutput(currentStage, {
+                                    message: "Document approved",
+                                    details: `Approved by ${approvers.length} reviewer(s)`,
+                                    timestamp: new Date().toISOString(),
+                                    status: 'success'
+                                  });
+                                } catch (error) {
+                                  console.error("Approval error:", error);
+                                  toast({
+                                    title: "Approval Failed",
+                                    description: error instanceof Error ? error.message : "Failed to process approval",
+                                    variant: "destructive"
+                                  });
+                                }
+                              }}
+                              isLoading={state.status === 'processing'}
+                            />
+                          </div>
+                        )}
+                      </DocumentPreview>
                     )}
                   </CardContent>
                 </Card>
