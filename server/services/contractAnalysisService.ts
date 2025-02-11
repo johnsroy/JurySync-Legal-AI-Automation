@@ -171,6 +171,28 @@ Clause to analyze: ${sanitizedText}`;
       throw error;
     }
   }
+
+  // Add new method to handle clause updates
+  async updateClause(
+    clause: { text: string; startIndex: number; endIndex: number },
+    clauseId: string
+  ): Promise<ClauseAnalysisResult> {
+    try {
+      console.log(`Updating clause ${clauseId}...`);
+
+      // Extract index from clauseId (format: clause-N)
+      const index = parseInt(clauseId.split('-')[1]) - 1;
+
+      // Analyze the updated clause
+      const analysis = await this.analyzeClause(clause, index);
+
+      console.log(`Successfully updated clause ${clauseId}`);
+      return analysis;
+    } catch (error) {
+      console.error(`Error updating clause ${clauseId}:`, error);
+      throw new Error('Failed to update clause: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  }
 }
 
 export const contractAnalysisService = new ContractAnalysisService();
