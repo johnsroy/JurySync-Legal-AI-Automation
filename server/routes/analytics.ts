@@ -4,6 +4,7 @@ import { reports, analyticsData, complianceDocuments } from "@shared/schema";
 import { and, eq, gte, desc } from "drizzle-orm";
 import { subDays } from "date-fns";
 import { generateWeeklyAnalytics } from "../services/complianceMonitor";
+import { generateCompliancePDF } from "../services/reportGenerator";
 
 const router = Router();
 
@@ -17,59 +18,37 @@ router.get("/", async (req, res) => {
     // Generate fresh weekly analytics
     const weeklyAnalytics = await generateWeeklyAnalytics();
 
-    // Fetch historical analytics data
-    const [documentsData, analyticsMetrics] = await Promise.all([
-      db.select().from(analyticsData).where(
-        and(
-          eq(analyticsData.metric, "document_activity"),
-          gte(analyticsData.timestamp, startDate)
-        )
-      ),
-      db.select().from(analyticsData).where(
-        and(
-          eq(analyticsData.metric, "weekly_compliance_report"),
-          gte(analyticsData.timestamp, startDate)
-        )
-      ),
-    ]);
-
     // Process document activity data
-    const documentActivity = documentsData.map(d => ({
-      date: d.timestamp,
-      processed: (d.value as any).processed || 0,
-      uploaded: (d.value as any).uploaded || 0,
-    }));
-
-    // Calculate metrics from weekly analytics
-    const latestMetrics = weeklyAnalytics;
-    const previousMetrics = analyticsMetrics[0]?.value as any || {};
-
-    const calculateChange = (current: number, previous: number) => 
-      previous ? ((current - previous) / previous) * 100 : 0;
+    const documentActivity = await db
+      .select()
+      .from(complianceDocuments)
+      .where(gte(complianceDocuments.createdAt, startDate))
+      .orderBy(desc(complianceDocuments.createdAt));
 
     // Convert risk distribution to chart format
-    const riskDistribution = Object.entries(latestMetrics.riskDistribution).map(([name, value]) => ({
+    const riskDistribution = Object.entries(weeklyAnalytics.riskDistribution).map(([name, value]) => ({
       name: name.charAt(0).toUpperCase() + name.slice(1),
       value
     }));
 
     // Create compliance metrics from common issues
-    const complianceMetrics = latestMetrics.commonIssues.map(issue => ({
+    const complianceMetrics = weeklyAnalytics.commonIssues.map(issue => ({
       name: issue.type,
       value: issue.count
     }));
 
     const response = {
-      totalDocuments: latestMetrics.totalDocuments,
-      documentIncrease: calculateChange(
-        latestMetrics.totalDocuments,
-        previousMetrics.totalDocuments || 0
-      ),
-      averageRiskScore: latestMetrics.averageRiskScore,
-      riskScoreChange: latestMetrics.trends.riskScoreTrend,
-      complianceRate: 100 - (latestMetrics.riskDistribution.high / latestMetrics.totalDocuments * 100),
-      complianceChange: latestMetrics.trends.complianceRateTrend,
-      documentActivity,
+      totalDocuments: weeklyAnalytics.totalDocuments,
+      documentIncrease: weeklyAnalytics.trends.complianceRateTrend,
+      averageRiskScore: weeklyAnalytics.averageRiskScore,
+      riskScoreChange: weeklyAnalytics.trends.riskScoreTrend,
+      complianceRate: 100 - (weeklyAnalytics.riskDistribution.high / weeklyAnalytics.totalDocuments * 100),
+      complianceChange: weeklyAnalytics.trends.complianceRateTrend,
+      documentActivity: documentActivity.map(doc => ({
+        date: doc.createdAt,
+        processed: 1,
+        uploaded: 1
+      })),
       riskDistribution,
       complianceMetrics,
       automationMetrics: {
@@ -107,6 +86,46 @@ router.get("/documents/recent", async (req, res) => {
   } catch (error) {
     console.error("Recent documents fetch error:", error);
     res.status(500).json({ error: "Failed to fetch recent documents" });
+  }
+});
+
+// Export analytics and documents report
+router.post("/reports/export", async (req, res) => {
+  try {
+    const weeklyAnalytics = await generateWeeklyAnalytics();
+    const recentDocs = await db
+      .select()
+      .from(complianceDocuments)
+      .orderBy(desc(complianceDocuments.lastScanned))
+      .limit(10);
+
+    const result = {
+      summary: "Legal Analytics and Document Report",
+      riskLevel: weeklyAnalytics.averageRiskScore > 70 ? "HIGH" : weeklyAnalytics.averageRiskScore > 30 ? "MEDIUM" : "LOW",
+      score: weeklyAnalytics.averageRiskScore,
+      riskScores: {
+        distribution: weeklyAnalytics.riskDistribution
+      },
+      issues: weeklyAnalytics.commonIssues.map(issue => ({
+        clause: issue.type,
+        severity: issue.severity,
+        description: `Frequent issue type: ${issue.type}`,
+        recommendation: "Review and update compliance policies"
+      })),
+      recommendedActions: weeklyAnalytics.commonIssues.map(issue => ({
+        action: `Address ${issue.type} compliance issues`,
+        impact: "Improve overall compliance score"
+      }))
+    };
+
+    const pdfBuffer = await generateCompliancePDF(result);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=legal-analytics-report-${new Date().toISOString().split('T')[0]}.pdf`);
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error("Export error:", error);
+    res.status(500).json({ error: "Failed to generate export" });
   }
 });
 
