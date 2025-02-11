@@ -42,6 +42,19 @@ const metrics = [
 
 const modules = [
   {
+    id: "workflow-automation",
+    title: "Workflow Automation",
+    description: "End-to-end automation of legal workflows",
+    icon: GitMerge,
+    path: "/workflow-automation",
+    gradient: "from-purple-50 to-blue-100",
+    metrics: {
+      processed: 320,
+      efficiency: "85%",
+      automated: "75%"
+    }
+  },
+  {
     id: "contract-automation",
     title: "Contract Automation",
     description: "AI-powered contract drafting and review",
