@@ -53,7 +53,7 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     if (fileType === 'pdf') {
       log('Starting PDF parsing');
       try {
-        const pdfParse = (await import('pdf-parse')).default;
+        const pdfParse = require('pdf-parse');
 
         // Add PDF specific validation
         const pdfHeader = buffer.slice(0, 5).toString();
@@ -61,11 +61,7 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
           throw new Error('Invalid PDF format: Missing PDF header');
         }
 
-        const data = await pdfParse(buffer, {
-          max: 0, // No page limit
-          version: 'v2.0.550'
-        });
-
+        const data = await pdfParse(buffer);
         textContent = data.text;
         log('PDF parsing completed successfully', 'info', { contentLength: textContent.length });
       } catch (error) {
