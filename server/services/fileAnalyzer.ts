@@ -3,8 +3,10 @@ import mammoth from 'mammoth';
 import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { PDFExtract } from 'pdf.js-extract';
 
 const MAX_CONTENT_LENGTH = 32000;
+const pdfExtract = new PDFExtract();
 
 // Enhanced logging function
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
@@ -16,7 +18,7 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
 function cleanTextContent(text: string): string {
   if (!text) return '';
   return text
-    .replace(/\u0000/g, '') // Remove null characters
+    .replace(/\u0000/g, '') // Remove null bytes
     .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
     .replace(/[\u0000-\u001F]/g, ' ') // Replace control characters with spaces
     .replace(/\s+/g, ' ') // Normalize whitespace
@@ -53,16 +55,21 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     if (fileType === 'pdf') {
       log('Starting PDF parsing');
       try {
-        const pdfParse = require('pdf-parse');
+        // Extract text from PDF using pdf.js-extract
+        const data = await pdfExtract.extractBuffer(buffer);
 
-        // Add PDF specific validation
-        const pdfHeader = buffer.slice(0, 5).toString();
-        if (!pdfHeader.startsWith('%PDF-')) {
-          throw new Error('Invalid PDF format: Missing PDF header');
+        if (!data || !data.pages || data.pages.length === 0) {
+          throw new Error('No content found in PDF');
         }
 
-        const data = await pdfParse(buffer);
-        textContent = data.text;
+        // Combine text from all pages
+        textContent = data.pages
+          .map(page => page.content
+            .map(item => item.str)
+            .join(' '))
+          .join('\n')
+          .trim();
+
         log('PDF parsing completed successfully', 'info', { contentLength: textContent.length });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
