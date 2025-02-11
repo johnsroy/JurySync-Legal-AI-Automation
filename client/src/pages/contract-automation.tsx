@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
 import { ContractRedlining } from "@/components/ContractRedlining/ContractRedlining";
+import { WorkflowIntegration } from "@/components/ContractRedlining/WorkflowIntegration";
 
 // Define the template interface
 interface Template {
@@ -720,6 +721,11 @@ export default function ContractAutomation() {
                       <ContractRedlining initialContent={generatedContract.content} />
                     </CardContent>
                   </Card>
+
+                  <WorkflowIntegration
+                    contractId={generatedContract.id}
+                    currentVersion={1}
+                  />
 
                   <Card>
                     <CardHeader>
