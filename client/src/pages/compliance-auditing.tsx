@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, Shield, AlertTriangle, FileText, Upload, File, BarChart2, RefreshCcw, CircleDot } from "lucide-react";
+import { Gavel, LogOut, Loader2, Shield, AlertTriangle, FileText, Upload, File, BarChart2, RefreshCcw, CircleDot, Book, Link as LinkIcon, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -14,12 +14,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { useDropzone } from 'react-dropzone';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { DocumentPreview } from "@/components/DocumentPreview";
+import jsPDF from 'jspdf';
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
   if (!text) return '';
-
-  // Remove DOCTYPE and HTML tags
   return text
     .replace(/<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi, '')
     .replace(/<\?xml\s+[^>]*\?>/gi, '')
@@ -30,7 +30,6 @@ const cleanDocumentText = (text: string): string => {
     .trim();
 };
 
-// Define interfaces for the compliance audit data
 interface QuickStats {
   characterCount: number;
   wordCount: number;
@@ -58,6 +57,13 @@ interface AuditIssue {
   severity: 'low' | 'medium' | 'high';
 }
 
+interface LegalReference {
+  title: string;
+  url: string;
+  relevance: number;
+  description: string;
+}
+
 interface AuditResponse {
   taskId: string;
   status: 'processing' | 'completed' | 'error';
@@ -73,8 +79,23 @@ interface AuditResponse {
   progress?: number;
 }
 
-// Enhanced FileUploadZone with preprocessing
-const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ onFileSelect }) => {
+interface ComplianceAnalysisResult extends AuditResponse {
+  legalResearch?: {
+    references: LegalReference[];
+    summary: string;
+    recommendations: string[];
+  };
+  documentPreview?: {
+    content: string;
+    title: string;
+  };
+}
+
+interface FileUploadZoneProps {
+  onFileSelect: (files: File[]) => void;
+}
+
+const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onFileSelect }) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
       'application/pdf': ['.pdf'],
@@ -83,12 +104,10 @@ const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ o
       'text/plain': ['.txt']
     },
     onDrop: async (acceptedFiles) => {
-      // Process each file to extract and clean text content
       const processedFiles = acceptedFiles.map(async (file) => {
         if (file.type === 'text/plain') {
           const text = await file.text();
           const cleanedText = cleanDocumentText(text);
-          // Create a new file with cleaned content
           return new File(
             [cleanedText],
             file.name,
@@ -129,8 +148,11 @@ const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ o
   );
 };
 
-// Performance metrics component
-const PerformanceMetrics: React.FC<{ data: AuditResponse['data'] }> = ({ data }) => (
+interface PerformanceMetricsProps {
+  data: AuditResponse['data'];
+}
+
+const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({ data }) => (
   <Card className="bg-white/80 backdrop-blur-lg">
     <CardHeader>
       <CardTitle>Performance Metrics</CardTitle>
@@ -161,8 +183,13 @@ const PerformanceMetrics: React.FC<{ data: AuditResponse['data'] }> = ({ data })
   </Card>
 );
 
-// Add new components for better visualization
-function AnalyticsSummary({ data }: { data: AuditResponse['data'] }) {
+interface AnalyticsSummaryProps {
+  data: AuditResponse['data'];
+}
+
+const AnalyticsSummary: React.FC<AnalyticsSummaryProps> = ({ data }) => {
+  if (!data?.quickStats) return null;
+
   return (
     <Card className="bg-white/80 backdrop-blur-lg">
       <CardHeader>
@@ -171,36 +198,35 @@ function AnalyticsSummary({ data }: { data: AuditResponse['data'] }) {
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {data?.quickStats && (
-            <>
-              <div className="p-4 rounded-lg bg-blue-50">
-                <p className="text-lg font-semibold text-blue-600">
-                  {data.quickStats.wordCount.toLocaleString()}
-                </p>
-                <p className="text-sm text-gray-600">Words Analyzed</p>
-              </div>
-              <div className="p-4 rounded-lg bg-green-50">
-                <p className="text-lg font-semibold text-green-600">
-                  {data.quickStats.paragraphCount.toLocaleString()}
-                </p>
-                <p className="text-sm text-gray-600">Paragraphs</p>
-              </div>
-              <div className="p-4 rounded-lg bg-purple-50">
-                <p className="text-lg font-semibold text-purple-600">
-                  {Math.round((data.quickStats.characterCount / data.quickStats.wordCount) * 10) / 10}
-                </p>
-                <p className="text-sm text-gray-600">Avg Word Length</p>
-              </div>
-            </>
-          )}
+          <div className="p-4 rounded-lg bg-blue-50">
+            <p className="text-lg font-semibold text-blue-600">
+              {data.quickStats.wordCount.toLocaleString()}
+            </p>
+            <p className="text-sm text-gray-600">Words Analyzed</p>
+          </div>
+          <div className="p-4 rounded-lg bg-green-50">
+            <p className="text-lg font-semibold text-green-600">
+              {data.quickStats.paragraphCount.toLocaleString()}
+            </p>
+            <p className="text-sm text-gray-600">Paragraphs</p>
+          </div>
+          <div className="p-4 rounded-lg bg-purple-50">
+            <p className="text-lg font-semibold text-purple-600">
+              {Math.round((data.quickStats.characterCount / data.quickStats.wordCount) * 10) / 10}
+            </p>
+            <p className="text-sm text-gray-600">Avg Word Length</p>
+          </div>
         </div>
       </CardContent>
     </Card>
   );
+};
+
+interface TrendsVisualizationProps {
+  data: AuditResponse['data'];
 }
 
-// Add trends visualization
-function TrendsVisualization({ data }: { data: AuditResponse['data'] }) {
+const TrendsVisualization: React.FC<TrendsVisualizationProps> = ({ data }) => {
   if (!data?.riskTrend?.length) return null;
 
   return (
@@ -229,10 +255,13 @@ function TrendsVisualization({ data }: { data: AuditResponse['data'] }) {
       </CardContent>
     </Card>
   );
+};
+
+interface IssueDistributionProps {
+  data: AuditResponse['data'];
 }
 
-// Add issue distribution chart
-function IssueDistribution({ data }: { data: AuditResponse['data'] }) {
+const IssueDistribution: React.FC<IssueDistributionProps> = ({ data }) => {
   if (!data?.issueFrequency?.length) return null;
 
   return (
@@ -256,19 +285,24 @@ function IssueDistribution({ data }: { data: AuditResponse['data'] }) {
       </CardContent>
     </Card>
   );
-}
+};
 
+interface LoadingSpinnerProps {}
 
-// Add loading animation components
-function LoadingSpinner() {
+const LoadingSpinner: React.FC<LoadingSpinnerProps> = () => {
   return (
     <div className="flex items-center justify-center">
       <Loader2 className="h-6 w-6 animate-spin text-primary" />
     </div>
   );
+};
+
+interface ProcessingStageProps {
+  stage: string;
+  isActive: boolean;
 }
 
-function ProcessingStage({ stage, isActive }: { stage: string; isActive: boolean }) {
+const ProcessingStage: React.FC<ProcessingStageProps> = ({ stage, isActive }) => {
   return (
     <div className={`flex items-center gap-2 ${isActive ? 'text-primary' : 'text-muted-foreground'}`}>
       {isActive ? (
@@ -279,10 +313,14 @@ function ProcessingStage({ stage, isActive }: { stage: string; isActive: boolean
       <span className="text-sm">{stage}</span>
     </div>
   );
+};
+
+interface DocumentProcessingStatusProps {
+  progress: number;
+  status: string;
 }
 
-// Add improved processing status UI component
-function DocumentProcessingStatus({ progress, status }: { progress: number; status: string }) {
+const DocumentProcessingStatus: React.FC<DocumentProcessingStatusProps> = ({ progress, status }) => {
   const stages = [
     { name: 'Document Analysis', icon: FileText },
     { name: 'Risk Assessment', icon: AlertTriangle },
@@ -322,8 +360,7 @@ function DocumentProcessingStatus({ progress, status }: { progress: number; stat
       </p>
     </div>
   );
-}
-
+};
 
 export const ComplianceAuditing: React.FC = () => {
   const { user, logoutMutation } = useAuth();
@@ -331,10 +368,13 @@ export const ComplianceAuditing: React.FC = () => {
   const [documentText, setDocumentText] = useState("");
   const [taskId, setTaskId] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [analysisResult, setAnalysisResult] = useState<ComplianceAnalysisResult | null>(null);
+  const [documentContent, setDocumentContent] = useState<string>("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  // Move submitDocument mutation inside component
   const submitDocument = useMutation({
     mutationFn: async () => {
+      setIsAnalyzing(true);
       try {
         const formData = new FormData();
         if (documentText) {
@@ -357,13 +397,16 @@ export const ComplianceAuditing: React.FC = () => {
       } catch (error: any) {
         console.error('Document submission error:', error);
         throw new Error(error.message || 'An error occurred while submitting the document');
+      } finally {
+        setIsAnalyzing(false);
       }
     },
-    onSuccess: (data: AuditResponse) => {
+    onSuccess: (data: ComplianceAnalysisResult) => {
       setTaskId(data.taskId);
+      setAnalysisResult(data);
       toast({
-        title: "Document Submitted",
-        description: "Starting compliance analysis...",
+        title: "Analysis Started",
+        description: "Starting comprehensive compliance analysis...",
       });
     },
     onError: (error: Error) => {
@@ -375,7 +418,6 @@ export const ComplianceAuditing: React.FC = () => {
     }
   });
 
-  // Move results polling query inside component
   const { data: result, isLoading } = useQuery<AuditResponse>({
     queryKey: ['audit-result', taskId],
     queryFn: async () => {
@@ -404,7 +446,7 @@ export const ComplianceAuditing: React.FC = () => {
     retry: 3
   });
 
-  const handleFileSelect = (files: File[]) => {
+  const handleFileSelect = async (files: File[]) => {
     if (files.length > 5) {
       toast({
         title: "Too Many Files",
@@ -424,27 +466,42 @@ export const ComplianceAuditing: React.FC = () => {
       return;
     }
 
-    setUploadedFiles(files);
-    toast({
-      title: "Files Added",
-      description: `${files.length} file(s) ready for upload`,
-    });
+    try {
+      const file = files[0];
+      const text = await file.text();
+      setDocumentContent(cleanDocumentText(text));
+      setUploadedFiles(files);
+
+      toast({
+        title: "Files Added",
+        description: `${files.length} file(s) ready for processing`,
+      });
+    } catch (error) {
+      console.error('Error reading file:', error);
+      toast({
+        title: "Error",
+        description: "Failed to read file content",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleClearForm = () => {
     setDocumentText("");
     setUploadedFiles([]);
     setTaskId(null);
+    setAnalysisResult(null);
+    setDocumentContent("");
   };
 
   const handleRetry = () => {
     setTaskId(null);
+    setAnalysisResult(null);
     submitDocument.mutate();
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
-      {/* Header */}
       <header className="bg-white/80 backdrop-blur-lg border-b border-green-100">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -473,7 +530,6 @@ export const ComplianceAuditing: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex items-center gap-4 mb-8">
@@ -482,7 +538,6 @@ export const ComplianceAuditing: React.FC = () => {
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Document Input */}
             <Card className="bg-white/80 backdrop-blur-lg">
               <CardHeader>
                 <CardTitle>Document Input</CardTitle>
@@ -508,23 +563,35 @@ export const ComplianceAuditing: React.FC = () => {
                     </div>
                   )}
 
+                  {documentContent && (
+                    <DocumentPreview
+                      content={documentContent}
+                      title="Document Preview"
+                      onDownload={() => {
+                        const doc = new jsPDF();
+                        doc.text(documentContent, 10, 10);
+                        doc.save('document-preview.pdf');
+                      }}
+                    />
+                  )}
+
                   <div className="relative">
                     <Textarea
                       placeholder="Or paste your document text here..."
                       className="min-h-[200px] resize-none"
                       value={documentText}
                       onChange={(e) => setDocumentText(e.target.value)}
-                      disabled={submitDocument.isPending || isLoading}
+                      disabled={submitDocument.isPending || isLoading || isAnalyzing}
                     />
                   </div>
 
                   <div className="flex gap-2">
                     <Button
                       className="flex-1"
-                      disabled={(!documentText.trim() && uploadedFiles.length === 0) || submitDocument.isPending || isLoading}
+                      disabled={(!documentText.trim() && uploadedFiles.length === 0) || submitDocument.isPending || isLoading || isAnalyzing}
                       onClick={() => submitDocument.mutate()}
                     >
-                      {submitDocument.isPending ? (
+                      {submitDocument.isPending || isAnalyzing ? (
                         <div className="flex items-center gap-2">
                           <Loader2 className="h-4 w-4 animate-spin" />
                           <span className="animate-pulse">Analyzing Document...</span>
@@ -539,7 +606,7 @@ export const ComplianceAuditing: React.FC = () => {
                     <Button
                       variant="outline"
                       onClick={handleClearForm}
-                      disabled={submitDocument.isPending || isLoading}
+                      disabled={submitDocument.isPending || isLoading || isAnalyzing}
                     >
                       Clear
                     </Button>
@@ -548,14 +615,11 @@ export const ComplianceAuditing: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* Results Display */}
             <div className="space-y-4">
-              {/* Performance Metrics */}
               {result?.status === 'completed' && (
                 <PerformanceMetrics data={result.data} />
               )}
 
-              {/* Loading State */}
               {isLoading && (
                 <Card className="bg-white/80 backdrop-blur-lg">
                   <CardHeader>
@@ -576,7 +640,6 @@ export const ComplianceAuditing: React.FC = () => {
                 </Card>
               )}
 
-              {/* Error State */}
               {result?.error && (
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
@@ -595,19 +658,12 @@ export const ComplianceAuditing: React.FC = () => {
                 </Alert>
               )}
 
-              {/* Enhanced Results Display */}
               {result?.status === 'completed' && result.data && (
                 <div className="space-y-6">
-                  {/* Analytics Summary */}
                   <AnalyticsSummary data={result.data} />
-
-                  {/* Risk Trends */}
                   <TrendsVisualization data={result.data} />
-
-                  {/* Issue Distribution */}
                   <IssueDistribution data={result.data} />
 
-                  {/* Detailed Issues List */}
                   <Card className="bg-white/80 backdrop-blur-lg">
                     <CardHeader>
                       <CardTitle className="flex items-center justify-between">
@@ -666,10 +722,72 @@ export const ComplianceAuditing: React.FC = () => {
                       </ScrollArea>
                     </CardContent>
                   </Card>
+
+                  {analysisResult?.legalResearch && (
+                    <Card className="bg-white/80 backdrop-blur-lg">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Book className="h-5 w-5 text-blue-600" />
+                          Legal Research & References
+                        </CardTitle>
+                        <CardDescription>
+                          Relevant legal precedents and documentation
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          <div className="p-4 bg-blue-50 rounded-lg">
+                            <h3 className="font-semibold mb-2">Analysis Summary</h3>
+                            <p className="text-sm text-gray-600">
+                              {analysisResult.legalResearch.summary}
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <h3 className="font-semibold">References & Resources</h3>
+                            {analysisResult.legalResearch.references.map((ref, index) => (
+                              <Card key={index} className="p-4">
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <h4 className="font-medium flex items-center gap-2">
+                                      <LinkIcon className="h-4 w-4 text-blue-600" />
+                                      {ref.title}
+                                    </h4>
+                                    <p className="text-sm text-gray-600 mt-1">
+                                      {ref.description}
+                                    </p>
+                                  </div>
+                                  <a
+                                    href={ref.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-700"
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
+                                  </a>
+                                </div>
+                              </Card>
+                            ))}
+                          </div>
+
+                          <div className="space-y-2">
+                            <h3 className="font-semibold">Recommendations</h3>
+                            <ul className="space-y-2">
+                              {analysisResult.legalResearch.recommendations.map((rec, index) => (
+                                <li key={index} className="text-sm text-gray-600 flex items-start gap-2">
+                                  <span className="text-green-600">•</span>
+                                  {rec}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               )}
 
-              {/* Empty State */}
               {!result && !isLoading && (
                 <div className="flex items-center justify-center h-96 border rounded-lg bg-white/50 backdrop-blur-sm">
                   <div className="text-center space-y-2">

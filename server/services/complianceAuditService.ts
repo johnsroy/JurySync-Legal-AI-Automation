@@ -24,6 +24,16 @@ interface AnalysisResult {
     complianceStatus: "COMPLIANT" | "NON_COMPLIANT" | "FLAGGED";
     recommendedActions: string[];
   };
+  legalResearch?: {
+    references: Array<{
+      title: string;
+      url: string;
+      relevance: number;
+      description: string;
+    }>;
+    summary: string;
+    recommendations: string[];
+  };
 }
 
 export class ComplianceAuditService {
@@ -56,20 +66,46 @@ export class ComplianceAuditService {
         messages: [
           {
             role: "system",
-            content: `You are a legal compliance expert. Analyze the provided document and respond with a JSON object in the following format:
+            content: `You are a legal compliance expert and researcher. Analyze the provided document and respond with a JSON object that includes both compliance analysis and relevant legal research. Include the following:
+
+1. Compliance Analysis:
+- Document summary
+- Specific compliance issues
+- Risk assessment
+- Recommended actions
+
+2. Legal Research:
+- Relevant legal precedents
+- Applicable regulations
+- Additional resources
+- Expert recommendations
+
+Respond in this format:
 {
   "analysis": {
-    "summary": "A concise summary of the document content",
+    "summary": "Concise document summary",
     "issues": [
       {
         "severity": "high|medium|low",
-        "description": "Description of the compliance issue",
-        "recommendation": "Specific recommendation to address the issue"
+        "description": "Issue description",
+        "recommendation": "Action to resolve"
       }
     ],
     "riskScore": <number between 0 and 100>,
     "complianceStatus": "COMPLIANT|NON_COMPLIANT|FLAGGED",
     "recommendedActions": ["Action 1", "Action 2"]
+  },
+  "legalResearch": {
+    "references": [
+      {
+        "title": "Reference title",
+        "url": "Reference URL",
+        "relevance": <number between 0 and 1>,
+        "description": "Brief description of relevance"
+      }
+    ],
+    "summary": "Research summary",
+    "recommendations": ["Recommendation 1", "Recommendation 2"]
   }
 }`
           },
@@ -119,8 +155,8 @@ export class ComplianceAuditService {
           description: issue.description,
           recommendation: issue.recommendation,
           status: "OPEN",
-          clause: 'General', // Default value for clause field
-          riskAssessmentId: 0, // Default value for risk assessment
+          clause: 'General',
+          riskAssessmentId: 0,
           createdAt: new Date(),
           updatedAt: new Date()
         }));
