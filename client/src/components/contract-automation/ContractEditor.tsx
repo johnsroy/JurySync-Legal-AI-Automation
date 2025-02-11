@@ -7,6 +7,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { LegalLoadingAnimation } from "@/components/ui/loading-animation";
@@ -20,7 +26,11 @@ import {
   Check,
   PenTool,
   Sparkles,
-  ListChecks
+  ListChecks,
+  X,
+  AlertTriangle,
+  ThumbsUp,
+  ThumbsDown
 } from "lucide-react";
 import type { DocumentAnalysis } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -39,12 +49,25 @@ interface DraftRequirement {
   importance: "HIGH" | "MEDIUM" | "LOW";
 }
 
+interface SuggestedEdit {
+  id: string;
+  originalText: string;
+  suggestedText: string;
+  riskScore: number;
+  reason: string;
+  startIndex: number;
+  endIndex: number;
+}
+
 interface ContractEditorProps {
   documentId: string;
   content: string;
   analysis: DocumentAnalysis;
   onUpdate: () => void;
-  setUploadedDocId: (documentId: string) => void; // Added function type
+  setUploadedDocId: (documentId: string) => void;
+  suggestedEdits?: SuggestedEdit[];
+  onAcceptEdit?: (editId: string) => void;
+  onRejectEdit?: (editId: string) => void;
 }
 
 export const ContractEditor: React.FC<ContractEditorProps> = ({
@@ -52,7 +75,10 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   content,
   analysis,
   onUpdate,
-  setUploadedDocId // Added prop
+  setUploadedDocId,
+  suggestedEdits = [],
+  onAcceptEdit,
+  onRejectEdit,
 }) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -69,7 +95,9 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   const [newRequirement, setNewRequirement] = useState("");
   const [requirementType, setRequirementType] = useState<"STANDARD" | "CUSTOM">("STANDARD");
   const [requirementImportance, setRequirementImportance] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
-  const [files, setFiles] = useState<any[]>([]); // Added state for FilePond
+  const [files, setFiles] = useState<any[]>([]);
+  const [showSideBySide, setShowSideBySide] = useState(false);
+  const [selectedEdit, setSelectedEdit] = useState<SuggestedEdit | null>(null);
 
 
   const standardRequirements = [
@@ -329,6 +357,76 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     }
   };
 
+  const renderHighlightedText = (text: string, edits: SuggestedEdit[]) => {
+    let lastIndex = 0;
+    const elements: JSX.Element[] = [];
+
+    edits.sort((a, b) => a.startIndex - b.startIndex).forEach((edit, index) => {
+      if (lastIndex < edit.startIndex) {
+        elements.push(
+          <span key={`text-${index}`}>
+            {text.slice(lastIndex, edit.startIndex)}
+          </span>
+        );
+      }
+
+      elements.push(
+        <TooltipProvider key={`tooltip-${edit.id}`}>
+          <Tooltip>
+            <TooltipTrigger>
+              <span
+                className={`px-1 rounded ${
+                  edit.riskScore > 0.7
+                    ? "bg-red-500/20 text-red-200"
+                    : edit.riskScore > 0.4
+                    ? "bg-yellow-500/20 text-yellow-200"
+                    : "bg-blue-500/20 text-blue-200"
+                }`}
+                onClick={() => setSelectedEdit(edit)}
+              >
+                {edit.originalText}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-md p-4 space-y-2">
+              <p className="font-medium">Suggested Change:</p>
+              <p className="text-sm">{edit.suggestedText}</p>
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-sm">Risk Score: {edit.riskScore * 100}%</span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-green-400 hover:text-green-300"
+                    onClick={() => onAcceptEdit?.(edit.id)}
+                  >
+                    <ThumbsUp className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-400 hover:text-red-300"
+                    onClick={() => onRejectEdit?.(edit.id)}
+                  >
+                    <ThumbsDown className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+
+      lastIndex = edit.endIndex;
+    });
+
+    if (lastIndex < text.length) {
+      elements.push(
+        <span key="text-final">{text.slice(lastIndex)}</span>
+      );
+    }
+
+    return elements;
+  };
 
   const tabs = [
     { id: "requirements", label: "Requirements", icon: ListChecks },
@@ -337,6 +435,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     { id: "redline", label: "Version History", icon: History },
     { id: "approvals", label: "Approval Pending", icon: UserCheck },
     { id: "workflow", label: "Workflow", icon: History },
+    { id: "redline-compare", label: "Redline View", icon: Edit },
   ];
 
   return (
@@ -710,6 +809,103 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                 />
               </div>
             </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="redline-compare" className="p-6">
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Contract Redline View</h3>
+              <Button
+                variant="outline"
+                onClick={() => setShowSideBySide(!showSideBySide)}
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                {showSideBySide ? "Single View" : "Side by Side"}
+              </Button>
+            </div>
+
+            <div className={`${showSideBySide ? 'grid grid-cols-2 gap-6' : 'space-y-6'}`}>
+              <div className="space-y-2">
+                {!showSideBySide && <Label>Current Version with Suggestions</Label>}
+                <ScrollArea className="h-[500px] w-full border rounded-md p-4">
+                  <div className="prose max-w-none dark:prose-invert">
+                    {renderHighlightedText(content, suggestedEdits)}
+                  </div>
+                </ScrollArea>
+              </div>
+
+              {showSideBySide && (
+                <div className="space-y-2">
+                  <Label>Selected Change Preview</Label>
+                  <ScrollArea className="h-[500px] w-full border rounded-md p-4">
+                    <div className="prose max-w-none dark:prose-invert">
+                      {selectedEdit ? (
+                        <div className="space-y-4">
+                          <div className="p-4 rounded bg-red-500/10 border border-red-500/20">
+                            <h4 className="text-red-400 mb-2">Original Text</h4>
+                            <p>{selectedEdit.originalText}</p>
+                          </div>
+                          <div className="p-4 rounded bg-green-500/10 border border-green-500/20">
+                            <h4 className="text-green-400 mb-2">Suggested Text</h4>
+                            <p>{selectedEdit.suggestedText}</p>
+                          </div>
+                          <div className="flex justify-end gap-4 mt-4">
+                            <Button
+                              variant="outline"
+                              onClick={() => onAcceptEdit?.(selectedEdit.id)}
+                              className="text-green-400 hover:text-green-300"
+                            >
+                              <Check className="h-4 w-4 mr-2" />
+                              Accept Change
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => onRejectEdit?.(selectedEdit.id)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              <X className="h-4 w-4 mr-2" />
+                              Reject Change
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-slate-400">
+                          <p>Select a highlighted section to view suggested changes</p>
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
+            </div>
+
+            {suggestedEdits.length > 0 && (
+              <div className="flex items-center justify-between p-4 bg-blue-500/10 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-blue-400" />
+                  <span className="text-sm">
+                    {suggestedEdits.length} suggested changes found
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => suggestedEdits.forEach(edit => onAcceptEdit?.(edit.id))}
+                  >
+                    Accept All
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => suggestedEdits.forEach(edit => onRejectEdit?.(edit.id))}
+                  >
+                    Reject All
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>
