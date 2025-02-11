@@ -24,20 +24,32 @@ const clauseAnalysisSchema = z.object({
 
 export type ClauseAnalysisResult = z.infer<typeof clauseAnalysisSchema>;
 
+// Helper function to sanitize text for JSON
+function sanitizeForJson(text: string): string {
+  return text
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
+    .replace(/\\(?!["\\/bfnrt])/g, '\\\\') // Escape backslashes
+    .replace(/"/g, '\\"') // Escape quotes
+    .trim();
+}
+
 export class ContractAnalysisService {
   // Split contract into clauses using semantic analysis
   private async splitIntoSemanticClauses(text: string): Promise<Array<{text: string, startIndex: number, endIndex: number}>> {
     try {
       console.log('Starting clause splitting...');
 
+      const sanitizedText = sanitizeForJson(text);
+      const prompt = `Split this contract into individual clauses. For each clause, return a JSON object with the clause text and its start/end indices. Format the output as a valid JSON array of objects with the exact keys: "text", "startIndex", "endIndex". Example format: [{"text": "clause text", "startIndex": 0, "endIndex": 100}]
+
+Contract to split:
+${sanitizedText}`;
+
       const response = await anthropic.messages.create({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 1024,
-        messages: [{
-          role: 'user',
-          content: `Split this contract into individual clauses. For each clause, return a JSON object with the clause text and its start/end indices. Format as array of {text, startIndex, endIndex}:\n\n${text}`
-        }],
-        system: "You are a legal document analyzer. Split contracts into semantic clauses, maintaining proper legal context."
+        messages: [{ role: 'user', content: prompt }],
+        system: "You are a legal document analyzer. Split contracts into semantic clauses. Always return valid JSON arrays."
       });
 
       if (!response.content || response.content.length === 0) {
@@ -49,7 +61,19 @@ export class ContractAnalysisService {
         throw new Error('Unexpected content type in response');
       }
 
-      const result = JSON.parse(content.text);
+      // Parse and validate the response
+      let result;
+      try {
+        result = JSON.parse(content.text);
+        if (!Array.isArray(result)) {
+          throw new Error('Response is not an array');
+        }
+      } catch (parseError) {
+        console.error('JSON Parse error:', parseError);
+        console.error('Raw response:', content.text);
+        throw new Error('Invalid JSON response from API');
+      }
+
       console.log('Successfully split contract into clauses');
       return result;
     } catch (error) {
@@ -66,38 +90,30 @@ export class ContractAnalysisService {
     try {
       console.log(`Analyzing clause ${index + 1}...`);
 
-      const prompt = `Analyze this contract clause and provide:
-1. Risk assessment (score 0-10)
-2. Suggested improvements
-3. Explanation of issues
-4. Risk level (HIGH/MEDIUM/LOW)
-5. Category (LEGAL/COMPLIANCE/COMMERCIAL/TECHNICAL)
-6. Business impact
-7. Confidence score (0-1)
-
-Respond in JSON format matching this schema:
+      const sanitizedText = sanitizeForJson(clause.text);
+      const prompt = `Analyze this contract clause and output a JSON object with exactly these fields:
 {
-  "clauseId": string,
-  "originalText": string,
+  "clauseId": "string",
+  "originalText": "string",
   "startIndex": number,
   "endIndex": number,
-  "riskScore": number,
-  "suggestedText": string,
-  "explanation": string,
-  "version": number,
-  "riskLevel": "HIGH" | "MEDIUM" | "LOW",
-  "category": "LEGAL" | "COMPLIANCE" | "COMMERCIAL" | "TECHNICAL",
-  "impact": string,
-  "confidence": number
+  "riskScore": number (0-10),
+  "suggestedText": "string",
+  "explanation": "string",
+  "version": 1,
+  "riskLevel": "HIGH" or "MEDIUM" or "LOW",
+  "category": "LEGAL" or "COMPLIANCE" or "COMMERCIAL" or "TECHNICAL",
+  "impact": "string",
+  "confidence": number (0-1)
 }
 
-Clause to analyze: ${clause.text}`;
+Clause to analyze: ${sanitizedText}`;
 
       const response = await anthropic.messages.create({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
-        system: "You are a legal contract analysis expert. Analyze contract clauses for risks and suggest improvements."
+        system: "You are a legal contract analysis expert. Always return valid JSON objects with the exact schema specified."
       });
 
       if (!response.content || response.content.length === 0) {
@@ -109,7 +125,17 @@ Clause to analyze: ${clause.text}`;
         throw new Error('Unexpected content type in response');
       }
 
-      const result = JSON.parse(content.text);
+      // Parse and validate the response
+      let result;
+      try {
+        result = JSON.parse(content.text);
+      } catch (parseError) {
+        console.error('JSON Parse error:', parseError);
+        console.error('Raw response:', content.text);
+        throw new Error('Invalid JSON response from API');
+      }
+
+      // Validate against schema and merge with clause info
       return clauseAnalysisSchema.parse({
         ...result,
         clauseId: `clause-${index + 1}`,
