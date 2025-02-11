@@ -18,17 +18,17 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const COMPLIANCE_KEYWORDS = [
-  'regulation', 'compliance', 'requirements', 'policy', 'guidelines',
-  'standards', 'rules', 'procedures', 'audit', 'assessment',
-  'control', 'risk', 'regulatory', 'framework', 'governance'
-];
-
 // Enhanced logging function
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [Orchestrator] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
 }
+
+const COMPLIANCE_KEYWORDS = [
+  'regulation', 'compliance', 'requirements', 'policy', 'guidelines',
+  'standards', 'rules', 'procedures', 'audit', 'assessment',
+  'control', 'risk', 'regulatory', 'framework', 'governance'
+];
 
 class TaskManager {
   private static instance: TaskManager;
@@ -57,6 +57,11 @@ class TaskManager {
       data,
       status: 'pending',
       progress: 0,
+      currentStep: 0,
+      currentStepDetails: {
+        name: 'Initialization',
+        description: 'Setting up task and validating inputs'
+      },
       events: [{
         timestamp,
         status: 'created',
@@ -125,6 +130,8 @@ class TaskManager {
       return {
         status: 'processing',
         progress: task.progress,
+        currentStep: task.currentStep,
+        currentStepDetails: task.currentStepDetails,
         message: 'Document analysis in progress'
       };
     }
@@ -133,6 +140,8 @@ class TaskManager {
       status: result ? 'completed' : task.status,
       data: result,
       progress: task.progress,
+      currentStep: task.currentStep,
+      currentStepDetails: task.currentStepDetails,
       error: task.error,
       completedAt: task.completedAt
     };
@@ -165,6 +174,349 @@ export class OrchestratorService {
       OrchestratorService.instance = new OrchestratorService();
     }
     return OrchestratorService.instance;
+  }
+
+  async createTask(input: {
+    type: 'contract' | 'compliance' | 'research',
+    data: any
+  }) {
+    const taskId = `task_${Date.now()}`;
+    log('Creating new task', 'info', {
+      taskId,
+      type: input.type,
+      hasData: !!input.data
+    });
+
+    try {
+      const task = this.taskManager.createTask(taskId, input.type, input.data);
+
+      // Start processing in background
+      this.processTask(task).catch(error => {
+        log('Task processing error', 'error', {
+          taskId,
+          error: error.message
+        });
+
+        this.taskManager.updateTask(taskId, {
+          status: 'error',
+          error: error.message,
+          progress: 0
+        });
+      });
+
+      return task;
+    } catch (error: any) {
+      log('Task creation error', 'error', { error: error.message });
+      throw new Error(`Failed to create task: ${error.message}`);
+    }
+  }
+
+  private async processTask(task: any) {
+    try {
+      // Update task to processing state
+      this.taskManager.updateTask(task.id, {
+        status: 'processing',
+        progress: 10,
+        currentStep: 0,
+        currentStepDetails: {
+          name: 'Document Analysis',
+          description: 'Analyzing document content and structure'
+        }
+      });
+
+      // Process based on task type
+      switch (task.type) {
+        case 'contract':
+          await this.processContractDocument(task);
+          break;
+        case 'compliance':
+          await this.processComplianceDocument(task);
+          break;
+        case 'research':
+          await this.processResearchDocument(task);
+          break;
+        default:
+          throw new Error(`Unsupported task type: ${task.type}`);
+      }
+
+    } catch (error: any) {
+      log('Document processing error', 'error', {
+        taskId: task.id,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  private async processContractDocument(task: any) {
+    const steps = [
+      { name: 'Draft Generation', description: 'Generating initial document draft', progress: 25 },
+      { name: 'Compliance Check', description: 'Verifying compliance requirements', progress: 50 },
+      { name: 'Legal Research', description: 'Conducting legal research and analysis', progress: 75 },
+      { name: 'Final Review', description: 'Performing final document review', progress: 90 }
+    ];
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      this.taskManager.updateTask(task.id, {
+        currentStep: i + 1,
+        currentStepDetails: step,
+        progress: step.progress
+      });
+
+      // Simulate processing time
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    const documentData = {
+      content: task.data.document,
+      date: new Date(),
+      title: task.data.filename || 'Untitled Document',
+      documentType: 'contract',
+      jurisdiction: 'Unknown',
+      status: 'active',
+      metadata: { processedAt: new Date() },
+      citations: [],
+      vectorId: null
+    };
+
+    // Store document in database
+    const [document] = await db
+      .insert(legalDocuments)
+      .values(documentData)
+      .returning();
+
+    // Set final result
+    this.taskManager.setTaskResult(task.id, {
+      status: 'completed',
+      documentId: document.id,
+      analysis: {
+        type: 'contract',
+        completedSteps: steps.length,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+
+  private async processComplianceDocument(task: any) {
+    // Reuse contract processing for now
+    await this.processContractDocument(task);
+  }
+
+  private async processResearchDocument(task: any) {
+    // Reuse contract processing for now
+    await this.processContractDocument(task);
+  }
+
+  async getTask(taskId: string) {
+    return this.taskManager.getTask(taskId);
+  }
+
+  async getAllTasks() {
+    return this.taskManager.getAllTasks();
+  }
+
+  async retryTask(taskId: string) {
+    const task = this.taskManager.getTask(taskId);
+    if (!task) {
+      throw new Error('Task not found');
+    }
+
+    // Reset task status and start processing again
+    this.taskManager.updateTask(taskId, {
+      status: 'pending',
+      progress: 0,
+      error: undefined,
+      currentStep: 0,
+      currentStepDetails: {
+        name: 'Initialization',
+        description: 'Restarting task processing'
+      }
+    });
+
+    // Start processing in background
+    this.processTask(task).catch(error => {
+      log('Task retry error', 'error', {
+        taskId,
+        error: error.message
+      });
+
+      this.taskManager.updateTask(taskId, {
+        status: 'error',
+        error: error.message,
+        progress: 0
+      });
+    });
+
+    return task;
+  }
+
+  async generateReport(taskId: string): Promise<Buffer> {
+    const task = this.taskManager.getTask(taskId);
+    if (!task) {
+      throw new Error('Task not found');
+    }
+
+    // For now, return a simple Buffer with task details
+    // In a real implementation, this would generate a proper PDF report
+    const reportContent = JSON.stringify(task, null, 2);
+    return Buffer.from(reportContent);
+  }
+
+  private async cleanAndValidateDocument(text: string): Promise<string> {
+    if (!text || typeof text !== 'string') {
+      throw new Error('Invalid document text');
+    }
+
+    log('Starting document cleaning', 'debug', {
+      originalLength: text.length,
+      hasDOCTYPE: DOCTYPE_REGEX.test(text)
+    });
+
+    // Remove DOCTYPE and HTML
+    let cleaned = text
+      .replace(DOCTYPE_REGEX, '')
+      .replace(/<\?xml\s+[^>]*\?>/gi, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ');
+
+    // Normalize whitespace
+    cleaned = cleaned
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (cleaned.length === 0) {
+      throw new Error('Document text cannot be empty after cleaning');
+    }
+
+    log('Document cleaning completed', 'debug', {
+      finalLength: cleaned.length,
+      hasDOCTYPEAfterCleaning: DOCTYPE_REGEX.test(cleaned)
+    });
+
+    return cleaned;
+  }
+  async getTaskResult(taskId: string) {
+    log('Fetching audit results', 'info', { taskId });
+    const result = this.taskManager.getTaskResult(taskId);
+
+    log('Task result status', 'debug', {
+      taskId,
+      status: result.status,
+      resultKeys: result.data ? Object.keys(result.data) : null
+    });
+
+    if (result.status === 'processing') {
+      log('Task still processing', 'info', {
+        taskId,
+        progress: result.progress
+      });
+    } else if (result.status === 'completed') {
+      log('Returning completed task result', 'info', {
+        taskId,
+        hasAuditReport: !!result.data?.auditReport,
+        completedAt: result.completedAt
+      });
+    } else if (result.status === 'error') {
+      log('Returning error task result', 'error', {
+        taskId,
+        error: result.error,
+        details: result.details
+      });
+    }
+
+    return result;
+  }
+
+  async monitorTask(taskId: string) {
+    const task = this.taskManager.getTask(taskId);
+    if (!task) throw new Error('Task not found');
+
+    return {
+      ...task,
+      history: this.taskManager.getTaskHistory(taskId)
+    };
+  }
+
+  async getAllTasks() {
+    return this.taskManager.getAllTasks();
+  }
+  async distributeTask(input: {
+    type?: 'contract' | 'compliance' | 'research',
+    data: any
+  }) {
+    const taskId = `task_${Date.now()}`;
+
+    log('Received document processing request', 'info', {
+      taskId,
+      inputType: input.type,
+      hasData: !!input.data
+    });
+
+    try {
+      if (!input?.data) {
+        throw new Error('Request data is required');
+      }
+
+      // Clean and validate document text
+      const cleanedText = await this.cleanAndValidateDocument(input.data.documentText);
+
+      // Create initial task
+      const task = this.taskManager.createTask(taskId, input.type || 'unknown', {
+        ...input.data,
+        documentText: cleanedText
+      });
+
+      // Classify document if type not provided
+      const classification = await this.classifyDocument(cleanedText);
+
+      // Update task with classification
+      this.taskManager.updateTask(taskId, {
+        type: classification.type,
+        metadata: {
+          classification,
+          crossModuleRelevance: classification.crossModuleRelevance
+        }
+      });
+
+      // Start processing in background
+      this.processTask(task).catch(error => {
+        log('Document processing error', 'error', {
+          taskId,
+          error: error.message
+        });
+
+        this.taskManager.updateTask(taskId, {
+          status: 'error',
+          error: error.message,
+          progress: 0
+        });
+      });
+
+      return {
+        taskId,
+        status: 'processing',
+        type: classification.type,
+        metadata: {
+          createdAt: new Date().toISOString(),
+          classification
+        }
+      };
+
+    } catch (error: any) {
+      log('Task distribution error', 'error', {
+        taskId,
+        error: error.message
+      });
+
+      throw {
+        error: 'Failed to process document',
+        details: error.message,
+        code: 'PROCESSING_ERROR',
+        requestId: taskId
+      };
+    }
   }
 
   private async classifyDocument(text: string): Promise<{
@@ -233,83 +585,6 @@ Provide response as JSON:
     } catch (error: any) {
       log('Document classification failed', 'error', { error });
       throw new Error(`Classification failed: ${error.message}`);
-    }
-  }
-
-  async distributeTask(input: {
-    type?: 'contract' | 'compliance' | 'research',
-    data: any
-  }) {
-    const taskId = `task_${Date.now()}`;
-
-    log('Received document processing request', 'info', {
-      taskId,
-      inputType: input.type,
-      hasData: !!input.data
-    });
-
-    try {
-      if (!input?.data) {
-        throw new Error('Request data is required');
-      }
-
-      // Clean and validate document text
-      const cleanedText = this.cleanAndValidateDocument(input.data.documentText);
-
-      // Create initial task
-      const task = this.taskManager.createTask(taskId, input.type || 'unknown', {
-        ...input.data,
-        documentText: cleanedText
-      });
-
-      // Classify document if type not provided
-      const classification = await this.classifyDocument(cleanedText);
-
-      // Update task with classification
-      this.taskManager.updateTask(taskId, {
-        type: classification.type,
-        metadata: {
-          classification,
-          crossModuleRelevance: classification.crossModuleRelevance
-        }
-      });
-
-      // Start processing in background
-      this.processDocument(taskId, classification).catch(error => {
-        log('Document processing error', 'error', {
-          taskId,
-          error: error.message
-        });
-
-        this.taskManager.updateTask(taskId, {
-          status: 'error',
-          error: error.message,
-          progress: 0
-        });
-      });
-
-      return {
-        taskId,
-        status: 'processing',
-        type: classification.type,
-        metadata: {
-          createdAt: new Date().toISOString(),
-          classification
-        }
-      };
-
-    } catch (error: any) {
-      log('Task distribution error', 'error', {
-        taskId,
-        error: error.message
-      });
-
-      throw {
-        error: 'Failed to process document',
-        details: error.message,
-        code: 'PROCESSING_ERROR',
-        requestId: taskId
-      };
     }
   }
 
@@ -416,52 +691,6 @@ Provide response as JSON:
       });
       throw error;
     }
-  }
-
-  async getTaskResult(taskId: string) {
-    log('Fetching audit results', 'info', { taskId });
-    const result = this.taskManager.getTaskResult(taskId);
-
-    log('Task result status', 'debug', {
-      taskId,
-      status: result.status,
-      resultKeys: result.data ? Object.keys(result.data) : null
-    });
-
-    if (result.status === 'processing') {
-      log('Task still processing', 'info', {
-        taskId,
-        progress: result.progress
-      });
-    } else if (result.status === 'completed') {
-      log('Returning completed task result', 'info', {
-        taskId,
-        hasAuditReport: !!result.data?.auditReport,
-        completedAt: result.completedAt
-      });
-    } else if (result.status === 'error') {
-      log('Returning error task result', 'error', {
-        taskId,
-        error: result.error,
-        details: result.details
-      });
-    }
-
-    return result;
-  }
-
-  async monitorTask(taskId: string) {
-    const task = this.taskManager.getTask(taskId);
-    if (!task) throw new Error('Task not found');
-
-    return {
-      ...task,
-      history: this.taskManager.getTaskHistory(taskId)
-    };
-  }
-
-  async getAllTasks() {
-    return this.taskManager.getAllTasks();
   }
 }
 

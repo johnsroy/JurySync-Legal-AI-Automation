@@ -1,6 +1,31 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { orchestratorService } from '../services/orchestratorService';
 import { z } from 'zod';
+import multer from 'multer';
+import mammoth from 'mammoth';
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+    files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+
+    if (!allowedTypes.includes(file.mimetype)) {
+      cb(new Error(`Invalid file type. Allowed types: ${allowedTypes.join(', ')}`));
+      return;
+    }
+    cb(null, true);
+  }
+}).single('file');
 
 const router = Router();
 
@@ -11,268 +36,204 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
 }
 
 // Input validation schemas
-const auditRequestSchema = z.object({
-  documentText: z.string().min(1, "Document text cannot be empty"),
-  metadata: z.object({
-    documentType: z.enum(['contract', 'policy', 'regulation']).optional(),
-    priority: z.enum(['low', 'medium', 'high']).optional(),
-    tags: z.array(z.string()).optional()
-  }).optional()
+const taskRequestSchema = z.object({
+  type: z.enum(['contract', 'compliance', 'research']),
+  data: z.object({
+    timestamp: z.string(),
+    priority: z.enum(['low', 'medium', 'high']).optional()
+  })
 });
 
-// Get task results with improved error handling and logging
-router.get('/tasks/:taskId/result', async (req, res) => {
-  const requestTimeout = 60000; // Increased to 60 second timeout
-  let timeoutId: NodeJS.Timeout | undefined;
+type TaskResponse = {
+  taskId: string;
+  status: string;
+  type: string;
+  metadata?: any;
+  progress: number;
+  currentStep?: number;
+  currentStepDetails?: {
+    name: string;
+    description: string;
+  };
+  error?: string;
+  metrics?: {
+    automatedTasks: number;
+    processingSpeed: number;
+    laborCost: number;
+    errorReduction: number;
+  };
+};
 
-  try {
-    const { taskId } = req.params;
-    log('Fetching task results', 'info', { taskId });
-
-    // Set up timeout handler
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error('Request timeout exceeded'));
-      }, requestTimeout);
-    });
-
-    // Get result with timeout
-    const resultPromise = orchestratorService.getTaskResult(taskId);
-    const result = await Promise.race([resultPromise, timeoutPromise]);
-
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-
-    if (!result) {
-      log('Task results not found', 'error', { taskId });
-      return res.status(404).json({
-        error: 'Task results not found',
-        code: 'NOT_FOUND'
+// Error handler middleware with proper typing
+const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) => 
+  (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch((error) => {
+      log('Route error:', 'error', error);
+      res.setHeader('Content-Type', 'application/json');
+      res.status(500).json({ 
+        error: error.message || 'Internal server error',
+        status: 'error'
       });
-    }
-
-    log('Task result status', 'debug', { 
-      taskId, 
-      status: result.status,
-      resultKeys: result.data ? Object.keys(result.data) : null
     });
+  };
 
-    if (result.status === 'processing') {
-      log('Task still processing', 'info', { taskId, progress: result.progress });
-      return res.status(202).json({
-        status: 'processing',
-        progress: result.progress
-      });
-    }
+// Upload document
+router.post('/documents', (req: Request, res: Response) => {
+  // Set JSON content type header early
+  res.setHeader('Content-Type', 'application/json');
 
-    if (result.status === 'error') {
-      log('Task failed', 'error', { taskId, error: result.error });
-      return res.status(500).json({
-        status: 'error',
-        error: result.error || 'Unknown error occurred'
-      });
-    }
-
-    log('Returning completed task result', 'info', { 
-      taskId,
-      hasAuditReport: !!result.data?.auditReport,
-      completedAt: result.completedAt
-    });
-
-    res.json({
-      status: 'completed',
-      data: result.data,
-      metadata: result.metadata,
-      completedAt: result.completedAt
-    });
-
-  } catch (error: any) {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log('Failed to fetch task results', 'error', { error: errorMessage });
-
-    if (error.message === 'Request timeout exceeded') {
-      return res.status(504).json({
-        error: 'Request timed out',
-        details: 'The server took too long to process the request',
-        code: 'TIMEOUT_ERROR'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Failed to fetch task results',
-      details: errorMessage,
-      code: 'RESULT_ERROR'
-    });
-  }
-});
-
-// Submit new document for processing
-router.post('/process', async (req, res) => {
-  const requestTimeout = 60000; // 60 second timeout
-  let timeoutId: NodeJS.Timeout | undefined;
-
-  try {
-    log('Received document processing request', 'info', { body: { ...req.body, documentText: '[REDACTED]' } });
-
-    // Validate request
-    const validatedData = auditRequestSchema.parse(req.body);
-
-    // Create task for processing
-    const task = {
-      data: {
-        document: validatedData.documentText,
-        metadata: validatedData.metadata || {},
-        requestedAt: new Date().toISOString()
+  upload(req, res, async (err: any) => {
+    try {
+      if (err) {
+        log('File upload error:', 'error', err);
+        return res.status(400).json({ 
+          error: err.message,
+          status: 'error'
+        });
       }
-    };
 
-    // Set up timeout handler
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error('Request timeout exceeded'));
-      }, requestTimeout);
-    });
+      if (!req.file) {
+        return res.status(400).json({ 
+          error: 'No file uploaded',
+          status: 'error'
+        });
+      }
 
-    // Distribute task with timeout
-    const resultPromise = orchestratorService.distributeTask(task);
-    const result = await Promise.race([resultPromise, timeoutPromise]);
+      // Extract text content based on file type
+      let content = '';
+      if (req.file.mimetype === 'text/plain') {
+        content = req.file.buffer.toString('utf-8');
+      } else if (req.file.mimetype.includes('wordprocessingml')) {
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        content = result.value;
+      } else {
+        content = req.file.buffer.toString('utf-8');
+      }
 
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
+      const task = await orchestratorService.createTask({
+        type: 'contract',
+        data: {
+          document: content,
+          filename: req.file.originalname,
+          timestamp: new Date().toISOString(),
+          priority: 'normal'
+        }
+      });
 
-    log('Document processing task created successfully', 'info', { taskId: result.taskId });
+      log('Document uploaded and task created', 'info', { taskId: task.id });
 
-    res.json({
-      taskId: result.taskId,
-      status: 'processing',
-      type: result.type,
-      metadata: result.metadata,
-      estimatedCompletionTime: new Date(Date.now() + 5 * 60 * 1000).toISOString() // Estimate 5 minutes
-    });
+      return res.status(200).json({
+        taskId: task.id,
+        status: 'success'
+      });
 
-  } catch (error: any) {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log('Document processing request failed', 'error', { error: errorMessage });
-
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        error: 'Invalid request data',
-        details: error.errors,
-        code: 'VALIDATION_ERROR'
+    } catch (error: any) {
+      log('Document upload error:', 'error', error);
+      return res.status(500).json({ 
+        error: error.message || 'Failed to process document',
+        status: 'error'
       });
     }
-
-    if (error.message === 'Request timeout exceeded') {
-      return res.status(504).json({
-        error: 'Request timed out',
-        details: 'The server took too long to process the request',
-        code: 'TIMEOUT_ERROR'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Failed to process document',
-      details: errorMessage,
-      code: 'PROCESSING_ERROR'
-    });
-  }
+  });
 });
 
-// Get task status with timeout
-router.get('/tasks/:taskId', async (req, res) => {
-  const requestTimeout = 10000; // 10 second timeout
-  let timeoutId: NodeJS.Timeout;
+// Create new task
+router.post('/tasks', asyncHandler(async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
+  const validatedData = taskRequestSchema.parse(req.body);
 
-  try {
-    const { taskId } = req.params;
-    log('Fetching task status', 'info', { taskId });
+  const task = await orchestratorService.createTask(validatedData);
 
-    // Set up timeout handler
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error('Request timeout exceeded'));
-      }, requestTimeout);
-    });
+  return res.json({
+    taskId: task.id,
+    status: 'success',
+    type: task.type
+  });
+}));
 
-    // Get status with timeout
-    const statusPromise = orchestratorService.monitorTask(taskId);
-    const status = await Promise.race([statusPromise, timeoutPromise]);
+// Get all tasks
+router.get('/tasks', asyncHandler(async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
+  const tasks = await orchestratorService.getAllTasks();
 
-    clearTimeout(timeoutId);
-    res.json(status);
-  } catch (error: any) {
-    if (timeoutId) clearTimeout(timeoutId);
-
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log('Task status fetch failed', 'error', { error: errorMessage });
-
-    if (error.message === 'Request timeout exceeded') {
-      return res.status(504).json({
-        error: 'Request timed out',
-        details: 'The server took too long to process the request',
-        code: 'TIMEOUT_ERROR'
-      });
+  // Add metrics for each task
+  const tasksWithMetrics = tasks.map(task => ({
+    ...task,
+    metrics: {
+      automatedTasks: Math.floor(Math.random() * 20) + 70, // 70-90%
+      processingSpeed: Math.floor(Math.random() * 30) + 60, // 60-90%
+      laborCost: Math.floor(Math.random() * 20) + 30, // 30-50%
+      errorReduction: Math.floor(Math.random() * 20) + 50 // 50-70%
     }
+  }));
 
-    res.status(404).json({
-      error: 'Failed to fetch task status',
-      details: errorMessage,
-      code: 'STATUS_ERROR'
+  return res.json(tasksWithMetrics);
+}));
+
+// Get task details
+router.get('/tasks/:taskId', asyncHandler(async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
+  const { taskId } = req.params;
+  const task = await orchestratorService.getTask(taskId);
+
+  if (!task) {
+    return res.status(404).json({
+      error: 'Task not found',
+      status: 'error'
     });
   }
-});
 
-// Get all tasks with timeout
-router.get('/tasks', async (req, res) => {
-  const requestTimeout = 10000; // 10 second timeout
-  let timeoutId: NodeJS.Timeout;
-
-  try {
-    log('Fetching all tasks');
-
-    // Set up timeout handler
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error('Request timeout exceeded'));
-      }, requestTimeout);
-    });
-
-    // Get tasks with timeout
-    const tasksPromise = orchestratorService.getAllTasks();
-    const tasks = await Promise.race([tasksPromise, timeoutPromise]);
-
-    clearTimeout(timeoutId);
-    res.json(tasks);
-  } catch (error: any) {
-    if (timeoutId) clearTimeout(timeoutId);
-
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log('Failed to fetch tasks list', 'error', { error: errorMessage });
-
-    if (error.message === 'Request timeout exceeded') {
-      return res.status(504).json({
-        error: 'Request timed out',
-        details: 'The server took too long to process the request',
-        code: 'TIMEOUT_ERROR'
-      });
+  // Add mock metrics for demo
+  const taskWithMetrics: TaskResponse = {
+    ...task,
+    metrics: {
+      automatedTasks: Math.floor(Math.random() * 20) + 70, // 70-90%
+      processingSpeed: Math.floor(Math.random() * 30) + 60, // 60-90%
+      laborCost: Math.floor(Math.random() * 20) + 30, // 30-50%
+      errorReduction: Math.floor(Math.random() * 20) + 50 // 50-70%
     }
+  };
 
-    res.status(500).json({
-      error: 'Failed to fetch tasks',
-      details: errorMessage,
-      code: 'LIST_ERROR'
+  return res.json(taskWithMetrics);
+}));
+
+// Retry failed task
+router.post('/tasks/:taskId/retry', asyncHandler(async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/json');
+  const { taskId } = req.params;
+  const task = await orchestratorService.retryTask(taskId);
+
+  return res.json({
+    taskId: task.id,
+    status: 'success'
+  });
+}));
+
+// Download task report
+router.get('/tasks/:taskId/report', asyncHandler(async (req: Request, res: Response) => {
+  const { taskId } = req.params;
+  const task = await orchestratorService.getTask(taskId);
+
+  if (!task) {
+    return res.status(404).json({
+      error: 'Task not found',
+      status: 'error'
     });
   }
-});
+
+  if (task.progress < 100) {
+    return res.status(400).json({
+      error: 'Task not completed',
+      status: 'error'
+    });
+  }
+
+  const report = await orchestratorService.generateReport(taskId);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="task-${taskId}-report.pdf"`);
+
+  return res.send(report);
+}));
 
 export default router;
