@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useRouter } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ContractRedlining } from "@/components/ContractRedlining/ContractRedlining";
 import { WorkflowIntegration } from "@/components/ContractRedlining/WorkflowIntegration";
@@ -12,7 +11,9 @@ import {
   BarChart3,
   Download,
   RefreshCw,
-  Eye
+  Eye,
+  ClipboardCheck,
+  FileSignature
 } from "lucide-react";
 
 // Workflow stages with their respective icons and status
@@ -32,7 +33,7 @@ const metrics = [
   { label: "Error Reduction", value: "60%", description: "Improved accuracy" }
 ];
 
-export default function WorkflowPage() {
+export function WorkflowPage() {
   const [currentStage, setCurrentStage] = useState(0);
   const [uploadedContent, setUploadedContent] = useState("");
   const [currentVersionId, setCurrentVersionId] = useState(1);
@@ -118,6 +119,7 @@ export default function WorkflowPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Workflow Analytics</CardTitle>
+                <CardDescription>Real-time performance metrics</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {metrics.map((metric) => (
@@ -136,6 +138,7 @@ export default function WorkflowPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Actions</CardTitle>
+                <CardDescription>Available workflow actions</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 <Button className="w-full gap-2" variant="outline">
@@ -190,3 +193,5 @@ export default function WorkflowPage() {
     </div>
   );
 }
+
+export default WorkflowPage;
