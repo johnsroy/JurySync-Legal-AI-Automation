@@ -154,7 +154,6 @@ export const WorkflowAutomation: React.FC = () => {
   const [currentStage, setCurrentStage] = useState<number>(0);
   const [stageStates, setStageStates] = useState<Record<number, WorkflowStageState>>({});
 
-  // Enhanced text selection handler with debounce
   const handleTextSelect = useCallback(() => {
     const selection = window.getSelection();
     if (selection && selection.toString().trim()) {
@@ -210,10 +209,10 @@ export const WorkflowAutomation: React.FC = () => {
   }, []);
 
   const handleSubmit = async () => {
-    if (!documentText.trim() && uploadedFiles.length === 0) {
+    if (!documentText.trim()) {
       toast({
         title: "No Content",
-        description: "Please upload a file or enter document text",
+        description: "Please enter document text",
         variant: "destructive"
       });
       return;
@@ -224,142 +223,100 @@ export const WorkflowAutomation: React.FC = () => {
     setWorkflowProgress(0);
     setStageStates({});
 
-    // Process each stage
     const stages = [
       { name: "Draft Generation", handler: async () => {
-        addStageOutput(0, {
-          message: "Analyzing document structure",
-          details: "Processing document formatting and structure",
-          timestamp: new Date().toISOString(),
-          status: 'info'
-        });
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1500));
       }},
       { name: "Compliance Check", handler: async () => {
-        addStageOutput(1, {
-          message: "Running compliance checks",
-          details: "Verifying regulatory requirements",
-          timestamp: new Date().toISOString(),
-          status: 'info'
-        });
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1500));
       }},
       { name: "Legal Research", handler: async () => {
-        addStageOutput(2, {
-          message: "Analyzing legal precedents",
-          details: "Searching relevant case law",
-          timestamp: new Date().toISOString(),
-          status: 'info'
-        });
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1500));
       }},
       { name: "Approval Process", handler: async () => {
-        addStageOutput(3, {
-          message: "Processing approvals",
-          details: "Routing for necessary sign-offs",
-          timestamp: new Date().toISOString(),
-          status: 'info'
-        });
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1500));
       }},
       { name: "Final Audit", handler: async () => {
-        addStageOutput(4, {
-          message: "Conducting final audit",
-          details: "Performing comprehensive review",
-          timestamp: new Date().toISOString(),
-          status: 'info'
-        });
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1500));
       }}
     ];
 
-    for (let i = 0; i < stages.length; i++) {
-      setCurrentStage(i);
-      updateStageStatus(i, 'processing');
-
-      try {
-        await stages[i].handler();
-        updateStageStatus(i, 'completed');
-        setWorkflowProgress((i + 1) * (100 / stages.length));
+    try {
+      for (let i = 0; i < stages.length; i++) {
+        setCurrentStage(i);
+        updateStageStatus(i, 'processing');
 
         addStageOutput(i, {
-          message: `${stages[i].name} completed`,
-          details: "Successfully processed",
+          message: `Starting ${stages[i].name}`,
+          details: "Initializing process...",
           timestamp: new Date().toISOString(),
-          status: 'success'
+          status: 'info'
         });
-      } catch (error) {
-        updateStageStatus(i, 'error');
-        addStageOutput(i, {
-          message: `Error in ${stages[i].name}`,
-          details: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString(),
-          status: 'error'
-        });
-        break;
+
+        try {
+          await stages[i].handler();
+
+          updateStageStatus(i, 'completed');
+          setWorkflowProgress((i + 1) * (100 / stages.length));
+
+          addStageOutput(i, {
+            message: `${stages[i].name} completed`,
+            details: "Successfully processed",
+            timestamp: new Date().toISOString(),
+            status: 'success'
+          });
+        } catch (error) {
+          updateStageStatus(i, 'error');
+          addStageOutput(i, {
+            message: `Error in ${stages[i].name}`,
+            details: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString(),
+            status: 'error'
+          });
+          throw error;
+        }
       }
+
+      toast({
+        title: "Processing Complete",
+        description: "Document workflow completed successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Processing Error",
+        description: "An error occurred during document processing",
+        variant: "destructive"
+      });
     }
   };
 
   const workflowStages = [
     {
-      icon: FileText,
       title: "Draft Generation",
       description: "AI-powered document drafting and formatting",
-      status: currentStage >= 0 ? (currentStage === 0 ? 'processing' : 'completed') : 'pending'
+      icon: FileText
     },
     {
-      icon: Shield,
-      title: "Compliance Auditing",
+      title: "Compliance Check",
       description: "Automated compliance check and risk assessment",
-      status: currentStage >= 1 ? (currentStage === 1 ? 'processing' : 'completed') : 'pending'
+      icon: Shield
     },
     {
-      icon: BookOpen,
-      title: "Legal Research & Summarization",
+      title: "Legal Research",
       description: "Context-aware legal research and analysis",
-      status: currentStage >= 2 ? (currentStage === 2 ? 'processing' : 'completed') : 'pending'
+      icon: BookOpen
     },
     {
-      icon: History,
-      title: "Approval & Execution",
+      title: "Approval Process",
       description: "Workflow approval and document execution",
-      status: currentStage >= 3 ? (currentStage === 3 ? 'processing' : 'completed') : 'pending'
+      icon: History
     },
     {
-      icon: RefreshCcw,
-      title: "Periodic Audit",
+      title: "Final Audit",
       description: "Continuous monitoring and compliance updates",
-      status: currentStage >= 4 ? (currentStage === 4 ? 'processing' : 'completed') : 'pending'
+      icon: RefreshCcw
     }
   ];
-
-  const handleFileSelect = (files: File[]) => {
-    if (files.length > 5) {
-      toast({
-        title: "Too Many Files",
-        description: "Please upload a maximum of 5 files at once",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
-    if (totalSize > 10 * 1024 * 1024) {
-      toast({
-        title: "Files Too Large",
-        description: "Total file size should not exceed 10MB",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setUploadedFiles(files);
-    toast({
-      title: "Files Added",
-      description: `${files.length} file(s) ready for upload`,
-    });
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
@@ -398,32 +355,15 @@ export const WorkflowAutomation: React.FC = () => {
           {/* Title Section */}
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900">
-              Full Lifecycle Automation Workflow
+              Document Workflow Automation
             </h1>
             <p className="mt-2 text-gray-600">
-              From Draft to Execution – Automating 80% of Legal Compliance Tasks
+              Process and analyze legal documents with AI assistance
             </p>
           </div>
 
-          {/* Navigation */}
-          <div className="flex justify-center gap-4 mb-8">
-            {[
-              { icon: Shield, label: "Compliance Audit", href: "/compliance-auditing" },
-              { icon: FileText, label: "Contract Automation", href: "/contract-automation" },
-              { icon: BookOpen, label: "Legal Research", href: "/legal-research" },
-              { icon: History, label: "History & Reports", href: "/reports" }
-            ].map((item) => (
-              <Link key={item.href} href={item.href}>
-                <Button variant="outline" className="gap-2">
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Button>
-              </Link>
-            ))}
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Document Upload and Editor Section */}
+            {/* Document Editor Section */}
             <div className="lg:col-span-2 space-y-6">
               <Card className="bg-white/80 backdrop-blur-lg">
                 <CardHeader>
@@ -457,15 +397,17 @@ export const WorkflowAutomation: React.FC = () => {
                 <Card key={stageIndex} className="bg-white/80 backdrop-blur-lg">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <div className="h-5 w-5">
-                        {workflowStages[Number(stageIndex)].icon({
-                          className:
+                      {(() => {
+                        const Icon = workflowStages[Number(stageIndex)].icon;
+                        return (
+                          <Icon className={
                             state.status === 'completed' ? 'text-green-500' :
-                              state.status === 'processing' ? 'text-blue-500' :
-                                state.status === 'error' ? 'text-red-500' :
-                                  'text-gray-500'
-                        })}
-                      </div>
+                            state.status === 'processing' ? 'text-blue-500' :
+                            state.status === 'error' ? 'text-red-500' :
+                            'text-gray-500'
+                          }/>
+                        );
+                      })()}
                       {workflowStages[Number(stageIndex)].title}
                     </CardTitle>
                   </CardHeader>
@@ -475,9 +417,9 @@ export const WorkflowAutomation: React.FC = () => {
                         key={idx}
                         className={`p-4 rounded-lg border ${
                           output.status === 'error' ? 'border-red-200 bg-red-50' :
-                            output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
-                              output.status === 'success' ? 'border-green-200 bg-green-50' :
-                                'border-blue-200 bg-blue-50'
+                          output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
+                          output.status === 'success' ? 'border-green-200 bg-green-50' :
+                          'border-blue-200 bg-blue-50'
                         }`}
                       >
                         <p className="font-medium">{output.message}</p>
