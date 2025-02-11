@@ -1,0 +1,69 @@
+Implement the redlining functionality in the Contract Automation Agent with a focus on clear, independent clause outputs and an interactive UI. The system should work as follows:
+
+Backend Processing:
+
+Each contract clause is routed individually to an AI risk model that analyzes the clause for deviations from standard legal language.
+The AI model returns a JSON object for each clause containing:
+clauseId: A unique identifier for the clause.
+originalText: The original text of the clause.
+riskScore: A numeric score (e.g., 1–10) indicating the level of deviation or risk.
+suggestedText: Alternative language suggestions to mitigate risk.
+version: A version number to track changes.
+The JSON for the entire contract should be an array of such clause objects.
+Frontend UI - Redlining Component:
+
+Clause List Display:
+
+Display each contract clause as an individual card or table row in a scrollable list.
+Each card should include:
+Original Clause Text: Clearly shown in a read-only format.
+Risk Score Indicator: A visual indicator (such as a colored badge) where, for example, scores 8–10 appear in red, 5–7 in yellow, and below 5 in green.
+Alternative Suggestion Preview: A short excerpt or icon indicating that alternative language is available.
+Version Tag: Display the current version number of the clause.
+Use a modern, responsive layout with ample white space and a clear typographic hierarchy.
+Interactive Editing and Detail Modal:
+
+When a clause card is clicked, open an inline modal or expandable panel that shows detailed information:
+Side-by-Side View: On the left, show the original text; on the right, show the AI's suggested alternative text.
+Editable Text Area: Allow users to modify the suggested text directly.
+Action Buttons: Provide buttons for 'Accept Suggestion', 'Reject Suggestion', or 'Save Custom Edit'. When a user accepts a suggestion, update the version number and mark that clause as approved.
+Tooltip Information: On hovering over the risk score badge, display additional details such as the factors contributing to the risk score and the confidence level of the AI model.
+Dynamic Data Rendering:
+
+The UI component must dynamically render the JSON data returned from the backend. Each clause should be rendered independently so that updates to one clause (e.g., accepting a suggestion) do not affect the others.
+Use React state management (or a no-code equivalent) to track individual clause statuses and version updates.
+Implement real‑time updates so that if the backend reprocesses a clause (e.g., after a user edit), the new risk score and suggestion are immediately reflected in the UI.
+Visual Enhancements:
+
+Include smooth animations for modal transitions and inline editing.
+Ensure that the color scheme and icons are consistent with a futuristic legal tech design—e.g., using cool blues and grays, with red/yellow/green for risk levels.
+Ensure responsiveness so that the redlining component works seamlessly on desktop, tablet, and mobile devices.
+Error Handling and Versioning:
+
+If the system encounters a versioning conflict (e.g., multiple edits on the same clause), display a conflict resolution prompt that allows the user to choose which version to keep.
+In case of a failure in fetching the AI output, show a clear error message on the corresponding clause card (e.g., 'Error retrieving suggestion, please retry.') and offer a 'Retry' button.
+Expected Output Example (JSON):
+
+json
+Copy
+[
+  {
+    "clauseId": "clause-001",
+    "originalText": "The vendor shall deliver goods within 30 days.",
+    "riskScore": 7,
+    "suggestedText": "The vendor shall deliver goods within 30 days, subject to force majeure conditions.",
+    "version": 1
+  },
+  {
+    "clauseId": "clause-002",
+    "originalText": "Payment is due upon receipt of invoice.",
+    "riskScore": 4,
+    "suggestedText": "Payment is due within 30 days of receipt of invoice.",
+    "version": 1
+  }
+]
+Final Notes:
+
+Ensure the UI updates dynamically and each clause’s edit is independent.
+The overall design should emphasize clarity, interactivity, and ease-of-use for legal professionals, turning complex AI output into actionable, easy-to-understand insights.
+This expanded prompt should provide clear, actionable instructions to build a robust Contract Automation Agent UI with detailed redlining functionality and proper versioning, meeting all use cases for legal professionals.

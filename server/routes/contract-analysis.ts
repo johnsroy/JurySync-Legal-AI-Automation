@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { analyzeContractClauses, getClauseImprovementSuggestions } from '../services/contract-analysis';
 import { z } from 'zod';
+import { contractAnalysisService } from '../services/contractAnalysisService';
 
 const router = Router();
 
@@ -10,19 +10,12 @@ const analyzeRequestSchema = z.object({
   jurisdiction: z.string().optional(),
 });
 
-const clauseRequestSchema = z.object({
-  clause: z.string().min(1, "Clause text is required"),
-  industry: z.string().optional(),
-  jurisdiction: z.string().optional(),
-  category: z.string().optional(),
-});
-
 // Analyze entire contract
 router.post('/analyze', async (req, res) => {
   try {
-    const { content, industry, jurisdiction } = analyzeRequestSchema.parse(req.body);
+    const { content } = analyzeRequestSchema.parse(req.body);
 
-    const analysis = await analyzeContractClauses(content, { industry, jurisdiction });
+    const analysis = await contractAnalysisService.analyzeContract(content);
 
     return res.json({
       success: true,
@@ -37,26 +30,29 @@ router.post('/analyze', async (req, res) => {
   }
 });
 
-// Get improvement suggestions for a specific clause
-router.post('/analyze/clause', async (req, res) => {
+// Update a clause suggestion
+router.post('/clauses/:clauseId/update', async (req, res) => {
   try {
-    const { clause, industry, jurisdiction, category } = clauseRequestSchema.parse(req.body);
+    const { clauseId } = req.params;
+    const { content } = z.object({
+      content: z.string().min(1, "New clause content is required")
+    }).parse(req.body);
 
-    const suggestions = await getClauseImprovementSuggestions(clause, { 
-      industry, 
-      jurisdiction, 
-      category 
-    });
+    const updatedAnalysis = await contractAnalysisService.analyzeClause({
+      text: content,
+      startIndex: 0,
+      endIndex: content.length
+    }, parseInt(clauseId.split('-')[1]) - 1);
 
     return res.json({
       success: true,
-      suggestions
+      analysis: updatedAnalysis
     });
   } catch (error) {
-    console.error('Clause analysis route error:', error);
+    console.error('Clause update route error:', error);
     return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to analyze clause'
+      error: error instanceof Error ? error.message : 'Failed to update clause'
     });
   }
 });
