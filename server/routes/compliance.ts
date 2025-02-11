@@ -3,6 +3,9 @@ import multer from "multer";
 import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
 import { complianceAuditService } from "../services/complianceAuditService";
+import { riskAssessmentService } from "../services/riskAssessment";
+import { modelRouter } from "../services/modelRouter";
+import { monitorDocument, generateWeeklyAnalytics } from "../services/complianceMonitor";
 import { eq } from "drizzle-orm";
 
 const router = Router();
@@ -75,9 +78,10 @@ router.post('/upload', async (req, res) => {
       message: 'Document uploaded and queued for analysis'
     });
 
-  } catch (error: any) {
-    console.error('Upload error:', error);
-    return res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Upload error:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -120,9 +124,10 @@ router.post('/analyze', async (req, res) => {
       message: 'Document queued for analysis'
     });
 
-  } catch (error: any) {
-    console.error('Analysis error:', error);
-    return res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Analysis error:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -137,9 +142,10 @@ router.get('/progress/:documentId', async (req, res) => {
     }
 
     res.json(progress);
-  } catch (error: any) {
-    console.error('Progress check error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Progress check error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -157,9 +163,10 @@ router.get('/document/:documentId', async (req, res) => {
     }
 
     res.json(document);
-  } catch (error: any) {
-    console.error('Document fetch error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Document fetch error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -173,9 +180,10 @@ router.get('/metrics', async (req, res) => {
 
     const metrics = await modelRouter.getMetrics();
     res.json(metrics);
-  } catch (error: any) {
-    console.error('Metrics fetch error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Metrics fetch error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -210,9 +218,10 @@ router.post('/monitor', async (req, res) => {
 
     res.json({ success: true, message: 'Monitoring started' });
 
-  } catch (error: any) {
-    console.error('Monitor start error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Monitor start error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -237,9 +246,10 @@ router.post('/stop-monitoring', async (req, res) => {
 
     res.json({ success: true, message: 'Monitoring stopped' });
 
-  } catch (error: any) {
-    console.error('Monitor stop error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Monitor stop error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -273,9 +283,10 @@ router.get('/results', async (req, res) => {
 
     res.json(documents);
 
-  } catch (error: any) {
-    console.error('Results fetch error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Results fetch error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -293,15 +304,16 @@ router.get('/api/compliance/documents', async (req, res) => {
         title: complianceDocuments.title,
         status: complianceDocuments.status,
         lastScanned: complianceDocuments.lastScanned,
-        riskScore: complianceDocuments.riskScore 
+        riskScore: complianceDocuments.riskScore
       })
       .from(complianceDocuments)
       .where(eq(complianceDocuments.userId, userId));
 
     res.json(documents);
-  } catch (error: any) {
-    console.error('Documents fetch error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Documents fetch error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -317,9 +329,10 @@ router.get('/api/compliance/documents/:id/risks', async (req, res) => {
     const risks = await riskAssessmentService.getDocumentRisks(documentId);
 
     res.json(risks);
-  } catch (error: any) {
-    console.error('Risk assessment fetch error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Risk assessment fetch error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -330,11 +343,12 @@ router.get('/dashboard-insights', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const insights = await generateDashboardInsights();
+    const insights = await generateWeeklyAnalytics();
     res.json(insights);
-  } catch (error: any) {
-    console.error('Dashboard insights error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('Dashboard insights error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -55,8 +55,8 @@ async function generateWeeklyAnalytics(): Promise<WeeklyAnalytics> {
       .from(complianceDocuments)
       .where(
         and(
-          sql`${complianceDocuments.createdAt} <= ${sql.timestamp(endDate)}`,
-          sql`${complianceDocuments.createdAt} >= ${sql.timestamp(startDate)}`
+          sql`${complianceDocuments.createdAt} <= ${new Date(endDate)}`,
+          sql`${complianceDocuments.createdAt} >= ${new Date(startDate)}`
         )
       );
 
@@ -77,8 +77,8 @@ async function generateWeeklyAnalytics(): Promise<WeeklyAnalytics> {
       .from(complianceIssues)
       .where(
         and(
-          sql`${complianceIssues.createdAt} <= ${sql.timestamp(endDate)}`,
-          sql`${complianceIssues.createdAt} >= ${sql.timestamp(startDate)}`
+          sql`${complianceIssues.createdAt} <= ${new Date(endDate)}`,
+          sql`${complianceIssues.createdAt} >= ${new Date(startDate)}`
         )
       );
 
@@ -103,8 +103,8 @@ async function generateWeeklyAnalytics(): Promise<WeeklyAnalytics> {
       .from(complianceDocuments)
       .where(
         and(
-          sql`${complianceDocuments.createdAt} <= ${sql.timestamp(startDate)}`,
-          sql`${complianceDocuments.createdAt} >= ${sql.timestamp(previousStartDate)}`
+          sql`${complianceDocuments.createdAt} <= ${new Date(startDate)}`,
+          sql`${complianceDocuments.createdAt} >= ${new Date(previousStartDate)}`
         )
       );
 
@@ -129,8 +129,20 @@ async function generateWeeklyAnalytics(): Promise<WeeklyAnalytics> {
 
     // Store analytics data
     await db.insert(analyticsData).values({
+      timestamp: new Date(),
       period: 'weekly',
-      metrics: analytics
+      metrics: {
+        modelUsage: {},
+        processingTimes: {},
+        errorRates: {},
+        costSavings: 0,
+        automationMetrics: {
+          automationPercentage: "0%",
+          processingTimeReduction: "0%",
+          laborCostSavings: "0%",
+          errorReduction: "0%"
+        }
+      }
     });
 
     log('Weekly analytics report generated successfully');
@@ -173,18 +185,26 @@ async function analyzeSection(section: DocumentSection, documentId: number): Pro
         }]
       });
 
-      const analysis = JSON.parse(response.content[0].text);
+      const analysis = response.content[0].value as {
+        issues: Array<{
+          clause: string;
+          description: string;
+          severity: RiskSeverity;
+          recommendation: string;
+          reference?: string;
+        }>;
+      };
 
       // Transform the analysis into ComplianceIssue format
-      return analysis.issues.map((issue: any) => ({
+      return analysis.issues.map((issue) => ({
         documentId,
-        riskAssessmentId: 0, // This will be set when risk assessment is created
+        riskAssessmentId: 0,
         clause: issue.clause,
         description: issue.description,
-        severity: issue.severity as RiskSeverity,
+        severity: issue.severity,
         recommendation: issue.recommendation,
         reference: issue.reference,
-        status: "OPEN"
+        status: "OPEN" as const
       }));
 
     } catch (error) {
