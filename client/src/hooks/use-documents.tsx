@@ -12,15 +12,6 @@ export function useDocuments() {
 export function useDocument(id: string) {
   return useQuery<Document>({
     queryKey: ["/api/documents", id],
-    queryFn: async () => {
-      const res = await fetch(`/api/documents/${id}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to fetch document: ${res.statusText}`);
-      }
-      return res.json();
-    },
     enabled: !!id,
   });
 }
@@ -30,41 +21,33 @@ export function useCreateDocument() {
 
   return useMutation({
     mutationFn: async (formData: FormData) => {
-      try {
-        const res = await fetch("/api/documents", {
-          method: "POST",
-          body: formData,
-          credentials: "include",
-        });
+      const response = await apiRequest("POST", "/api/documents", formData);
 
-        if (!res.ok) {
-          const error = await res.json();
-          throw new Error(error.message || "Failed to create document");
-        }
-
-        return await res.json();
-      } catch (error: any) {
-        console.error("Document creation error:", error);
-        throw error;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create document");
       }
+
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       toast({
         title: "Document uploaded",
-        description: "Your document has been uploaded and analyzed",
+        description: "Your document has been uploaded successfully",
       });
     },
     onError: (error: Error) => {
-      let description = "Failed to upload document. Please try again later.";
+      let description = "Failed to upload document. Please try again.";
+
       try {
         const data = JSON.parse(error.message);
-        if (data.code === "ANALYSIS_ERROR") {
-          description = "Our AI is currently busy. Please try again in a few minutes.";
-        } else if (data.code === "VALIDATION_ERROR") {
-          description = data.message;
+        if (data.code === "FILE_SIZE_ERROR") {
+          description = "File size exceeds the maximum limit. Please upload a smaller file.";
         } else if (data.code === "FILE_TYPE_ERROR") {
-          description = "Invalid file type. Please upload PDF, DOCX, DOC, or XLSX files only.";
+          description = "Invalid file type. Please upload PDF, DOCX, or TXT files only.";
+        } else if (data.code === "SERVER_ERROR") {
+          description = "Server error occurred. Please try again later.";
         }
       } catch {
         description = error.message || description;

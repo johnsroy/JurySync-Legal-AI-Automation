@@ -2,17 +2,12 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Gavel, Check } from "lucide-react";
+import { Gavel, Check, ChevronRight } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
-
-interface PlanFeature {
-  name: string;
-  included: boolean;
-}
 
 interface Plan {
   name: string;
