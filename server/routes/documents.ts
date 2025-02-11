@@ -301,11 +301,16 @@ router.post("/api/templates/:id/suggest-requirements", async (req, res) => {
     const templateId = req.params.id;
     const { currentDescription } = req.body;
 
-    console.log(`[Templates] Generating suggestions for template: ${templateId}`);
+    console.log(`[Templates] Generating suggestions for template: ${templateId}`, {
+      templateId,
+      currentDescription
+    });
 
     const suggestions = await suggestRequirements(templateId, currentDescription);
 
-    console.log(`[Templates] Generated ${suggestions.length} suggestions`);
+    console.log(`[Templates] Generated ${suggestions.length} suggestions:`, 
+      JSON.stringify(suggestions, null, 2)
+    );
 
     return res.json(suggestions);
   } catch (error: any) {
@@ -433,11 +438,16 @@ router.post("/api/templates/:id/custom-instruction-suggestions", async (req, res
       });
     }
 
-    console.log(`[Templates] Generating custom instruction suggestions for template: ${templateId}`);
+    console.log(`[Templates] Generating custom instruction suggestions for template: ${templateId}`, {
+      templateId,
+      requirementsCount: currentRequirements.length
+    });
 
     const suggestions = await getCustomInstructionSuggestions(templateId, currentRequirements);
 
-    console.log(`[Templates] Generated ${suggestions.length} custom instruction suggestions`);
+    console.log(`[Templates] Generated ${suggestions.length} custom instruction suggestions:`,
+      JSON.stringify(suggestions, null, 2)
+    );
 
     return res.json(suggestions);
   } catch (error: any) {

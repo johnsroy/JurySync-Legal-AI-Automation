@@ -8,6 +8,133 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Schema validation for suggestions
+const suggestionSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  category: z.string()
+});
+
+const customInstructionSchema = z.object({
+  instruction: z.string(),
+  explanation: z.string()
+});
+
+export async function suggestRequirements(templateId: string, currentDescription?: string): Promise<Array<{ id: string; text: string; category: string }>> {
+  try {
+    console.log(`[TemplateStore] Starting suggestion generation for template: ${templateId}`, {
+      templateId,
+      currentDescription: currentDescription || 'Not provided'
+    });
+
+    const template = getTemplate(templateId);
+    if (!template) {
+      throw new Error('Template not found');
+    }
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1000,
+      system: `You are a legal document assistant. Generate specific, practical requirements for contract templates.
+      Return exactly 5 suggestions in JSON array format.
+      Each suggestion must have:
+      {
+        "id": "<unique_string>",
+        "text": "<requirement_description>",
+        "category": "<requirement_category>"
+      }`,
+      messages: [{
+        role: "user",
+        content: `Generate 5 specific requirements for this contract template:
+Template: ${template.name}
+Description: ${template.description}
+Current Description: ${currentDescription || 'Not provided'}
+
+Return ONLY a JSON array of suggestion objects.`
+      }]
+    });
+
+    const content = response.content[0];
+    if (!content || !('text' in content)) {
+      console.error('[TemplateStore] Invalid AI response format:', response);
+      throw new Error('Invalid response format from AI');
+    }
+
+    console.log('[TemplateStore] Raw AI response:', content.text);
+    const rawSuggestions = JSON.parse(content.text);
+
+    // Validate suggestions against schema
+    const suggestions = z.array(suggestionSchema).parse(rawSuggestions);
+    console.log(`[TemplateStore] Generated ${suggestions.length} valid suggestions:`, 
+      JSON.stringify(suggestions, null, 2)
+    );
+
+    return suggestions;
+  } catch (error) {
+    console.error('[TemplateStore] Error generating suggestions:', error);
+    throw new Error('Failed to generate suggestions: ' + (error instanceof Error ? error.message : String(error)));
+  }
+}
+
+export async function getCustomInstructionSuggestions(
+  templateId: string,
+  currentRequirements: string[]
+): Promise<Array<{ instruction: string; explanation: string }>> {
+  try {
+    console.log(`[TemplateStore] Starting custom instruction generation for template: ${templateId}`, {
+      templateId,
+      requirementsCount: currentRequirements.length
+    });
+
+    const template = getTemplate(templateId);
+    if (!template) {
+      throw new Error('Template not found');
+    }
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1000,
+      system: `You are a legal document assistant. Generate specific instructions for customizing contract templates.
+      Return exactly 3 suggestions in JSON array format.
+      Each suggestion must have:
+      {
+        "instruction": "<specific_instruction>",
+        "explanation": "<explanation_of_benefit>"
+      }`,
+      messages: [{
+        role: "user",
+        content: `Generate 3 custom instruction suggestions for this contract template:
+
+Template: ${template.name}
+Description: ${template.description}
+Current Requirements: ${JSON.stringify(currentRequirements)}
+
+Return ONLY a JSON array of suggestion objects.`
+      }]
+    });
+
+    const content = response.content[0];
+    if (!content || !('text' in content)) {
+      console.error('[TemplateStore] Invalid AI response format:', response);
+      throw new Error('Invalid response format from AI');
+    }
+
+    console.log('[TemplateStore] Raw AI response:', content.text);
+    const rawSuggestions = JSON.parse(content.text);
+
+    // Validate suggestions against schema
+    const suggestions = z.array(customInstructionSchema).parse(rawSuggestions);
+    console.log(`[TemplateStore] Generated ${suggestions.length} valid custom instruction suggestions:`,
+      JSON.stringify(suggestions, null, 2)
+    );
+
+    return suggestions;
+  } catch (error) {
+    console.error('[TemplateStore] Error generating custom instructions:', error);
+    throw new Error('Failed to generate custom instruction suggestions: ' + (error instanceof Error ? error.message : String(error)));
+  }
+}
+
 // Schema for approval analysis
 export const templateSchema = z.object({
   id: z.string(),
@@ -29,7 +156,7 @@ export const templateSchema = z.object({
 
 export type Template = z.infer<typeof templateSchema>;
 
-// All template definitions remain unchanged
+// All template definitions
 const templates: Record<string, Template> = {
   "employment-standard": {
     id: "employment-standard",
@@ -467,53 +594,6 @@ interface Suggestion {
   category?: string;
 }
 
-export async function suggestRequirements(templateId: string, currentDescription?: string): Promise<Array<{ id: string; text: string; category: string }>> {
-  try {
-    console.log(`[TemplateStore] Generating suggestions for template: ${templateId}`);
-
-    const template = getTemplate(templateId);
-    if (!template) {
-      throw new Error('Template not found');
-    }
-
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1000,
-      system: `You are a legal document assistant. Generate specific, practical requirements for contract templates.
-      Return exactly 5 suggestions in JSON array format.
-      Each suggestion must have:
-      {
-        "id": "<unique_string>",
-        "text": "<requirement_description>",
-        "category": "<requirement_category>"
-      }`,
-      messages: [{
-        role: "user",
-        content: `Generate 5 specific requirements for this contract template:
-Template: ${template.name}
-Description: ${template.description}
-Current Description: ${currentDescription || 'Not provided'}
-
-Return ONLY a JSON array of suggestion objects.`
-      }]
-    });
-
-    const content = response.content[0];
-    if (!content || !('text' in content)) {
-      throw new Error('Invalid response format from AI');
-    }
-
-    console.log('[TemplateStore] Raw AI response:', content.text);
-    const suggestions = JSON.parse(content.text);
-    console.log(`[TemplateStore] Generated ${suggestions.length} suggestions`);
-
-    return suggestions;
-  } catch (error) {
-    console.error('[TemplateStore] Error generating suggestions:', error);
-    throw new Error('Failed to generate suggestions: ' + (error instanceof Error ? error.message : String(error)));
-  }
-}
-
 export async function getAutocomplete(templateId: string, partialText: string): Promise<{
   suggestions: Array<{ text: string; description?: string }>;
 }> {
@@ -556,56 +636,6 @@ Return ONLY a JSON array of suggestion objects.`
   } catch (error) {
     console.error('[TemplateStore] Error generating autocomplete:', error);
     throw new Error('Failed to generate autocomplete suggestions: ' + (error instanceof Error ? error.message : String(error)));
-  }
-}
-
-export async function getCustomInstructionSuggestions(
-  templateId: string,
-  currentRequirements: string[]
-): Promise<Array<{ instruction: string; explanation: string }>> {
-  try {
-    console.log(`[TemplateStore] Generating custom instruction suggestions for template: ${templateId}`);
-
-    const template = getTemplate(templateId);
-    if (!template) {
-      throw new Error('Template not found');
-    }
-
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1000,
-      system: `You are a legal document assistant. Generate specific instructions for customizing contract templates.
-      Return exactly 3 suggestions in JSON array format.
-      Each suggestion must have:
-      {
-        "instruction": "<specific_instruction>",
-        "explanation": "<explanation_of_benefit>"
-      }`,
-      messages: [{
-        role: "user",
-        content: `Generate 3 custom instruction suggestions for this contract template:
-
-Template: ${template.name}
-Description: ${template.description}
-Current Requirements: ${JSON.stringify(currentRequirements)}
-
-Return ONLY a JSON array of suggestion objects.`
-      }]
-    });
-
-    const content = response.content[0];
-    if (!content || !('text' in content)) {
-      throw new Error('Invalid response format from AI');
-    }
-
-    console.log('[TemplateStore] Raw AI response:', content.text);
-    const suggestions = JSON.parse(content.text);
-    console.log(`[TemplateStore] Generated ${suggestions.length} custom instruction suggestions`);
-
-    return suggestions;
-  } catch (error) {
-    console.error('[TemplateStore] Error generating custom instructions:', error);
-    throw new Error('Failed to generate custom instruction suggestions: ' + (error instanceof Error ? error.message : String(error)));
   }
 }
 
