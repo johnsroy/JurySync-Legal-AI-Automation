@@ -20,7 +20,13 @@ const customInstructionSchema = z.object({
   explanation: z.string()
 });
 
-export async function suggestRequirements(templateId: string, currentDescription?: string): Promise<Array<{ id: string; text: string; category: string }>> {
+interface RequirementSuggestion {
+  description: string;
+  importance: "HIGH" | "MEDIUM" | "LOW";
+  context: string;
+}
+
+export async function suggestRequirements(templateId: string, currentDescription?: string): Promise<RequirementSuggestion[]> {
   try {
     console.log(`[TemplateStore] Starting suggestion generation for template: ${templateId}`, {
       templateId,
@@ -39,9 +45,9 @@ export async function suggestRequirements(templateId: string, currentDescription
       Return exactly 5 suggestions in JSON array format.
       Each suggestion must have:
       {
-        "id": "<unique_string>",
-        "text": "<requirement_description>",
-        "category": "<requirement_category>"
+        "description": "<requirement_description>",
+        "importance": "HIGH" | "MEDIUM" | "LOW",
+        "context": "<requirement_context>"
       }`,
       messages: [{
         role: "user",
@@ -64,7 +70,12 @@ Return ONLY a JSON array of suggestion objects.`
     const rawSuggestions = JSON.parse(content.text);
 
     // Validate suggestions against schema
-    const suggestions = z.array(suggestionSchema).parse(rawSuggestions);
+    const suggestions = z.array(z.object({
+      description: z.string(),
+      importance: z.enum(["HIGH", "MEDIUM", "LOW"]),
+      context: z.string()
+    })).parse(rawSuggestions);
+
     console.log(`[TemplateStore] Generated ${suggestions.length} valid suggestions:`, 
       JSON.stringify(suggestions, null, 2)
     );
