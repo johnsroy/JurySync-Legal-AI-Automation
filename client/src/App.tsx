@@ -32,6 +32,12 @@ function Router() {
         </Layout>
       </Route>
 
+      <Route path="/workflow-automation">
+        <Layout>
+          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
+        </Layout>
+      </Route>
+
       <Route path="/compliance-auditing">
         <Layout>
           <ProtectedRoute component={ComplianceAuditing} path="/compliance-auditing" />
@@ -59,12 +65,6 @@ function Router() {
       <Route path="/settings">
         <Layout>
           <ProtectedRoute component={Settings} path="/settings" />
-        </Layout>
-      </Route>
-
-      <Route path="/workflow-automation">
-        <Layout>
-          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
         </Layout>
       </Route>
 

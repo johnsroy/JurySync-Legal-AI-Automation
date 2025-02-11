@@ -17,7 +17,8 @@ import {
   Settings,
   Shield,
   LogOut,
-  Loader2
+  Loader2,
+  Workflow
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <Link href="/dashboard" className="flex items-center">
                     <LayoutDashboard className="mr-2" />
                     Dashboard
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location === "/workflow-automation"}
+                  tooltip="Workflow Automation"
+                >
+                  <Link href="/workflow-automation" className="flex items-center">
+                    <Workflow className="mr-2" />
+                    Workflow Automation
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
