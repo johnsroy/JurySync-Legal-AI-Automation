@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+// import { apiRequest } from "@/lib/queryClient"; //removed as fetch is used instead
+
 
 interface ClauseAnalysis {
   clauseId: string;
@@ -38,16 +39,17 @@ export function ContractRedlining({ initialContent }: ContractRedliningProps) {
   const analyzeContract = async () => {
     setIsLoading(true);
     try {
-      const response = await apiRequest<ApiResponse<ClauseAnalysis[]>>("/api/contract-analysis/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch('/api/contract-analysis/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: initialContent }),
       });
 
-      if (response.success && response.analysis) {
-        setClauses(response.analysis);
+      const data = await response.json();
+      if (response.ok && data.success && data.analysis) {
+        setClauses(data.analysis);
       } else {
-        throw new Error(response.error || "Failed to analyze contract");
+        throw new Error(data.error || "Failed to analyze contract");
       }
     } catch (error) {
       toast({
@@ -62,17 +64,18 @@ export function ContractRedlining({ initialContent }: ContractRedliningProps) {
 
   const updateClause = async (clauseId: string, newContent: string) => {
     try {
-      const response = await apiRequest<ApiResponse<ClauseAnalysis>>(`/api/contract-analysis/clauses/${clauseId}/update`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch(`/api/contract-analysis/clauses/${clauseId}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: newContent }),
       });
 
-      if (response.success && response.analysis) {
+      const data = await response.json();
+      if (response.ok && data.success && data.analysis) {
         setClauses((prev) =>
           prev.map((clause) =>
             clause.clauseId === clauseId
-              ? { ...response.analysis, version: clause.version + 1 }
+              ? { ...data.analysis, version: clause.version + 1 }
               : clause
           )
         );
@@ -81,7 +84,7 @@ export function ContractRedlining({ initialContent }: ContractRedliningProps) {
           description: "Clause updated successfully",
         });
       } else {
-        throw new Error(response.error || "Failed to update clause");
+        throw new Error(data.error || "Failed to update clause");
       }
     } catch (error) {
       toast({
