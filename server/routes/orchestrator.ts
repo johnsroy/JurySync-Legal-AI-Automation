@@ -16,7 +16,9 @@ const upload = multer({
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain'
+      'text/plain',
+      'application/json',
+      'text/csv'
     ];
 
     if (!allowedTypes.includes(file.mimetype)) {
@@ -29,18 +31,23 @@ const upload = multer({
 
 const router = Router();
 
-// Enhanced logging
+// Enhanced logging for jury analysis
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] [Orchestrator] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
+  console.log(`[${timestamp}] [JurySync] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
 }
 
 // Input validation schemas
 const taskRequestSchema = z.object({
-  type: z.enum(['contract', 'compliance', 'research']),
+  type: z.enum(['jury', 'analysis', 'research']),
   data: z.object({
     timestamp: z.string(),
-    priority: z.enum(['low', 'medium', 'high']).optional()
+    priority: z.enum(['low', 'medium', 'high']).optional(),
+    jurorData: z.object({
+      demographics: z.boolean().optional(),
+      socialMedia: z.boolean().optional(),
+      questionnaire: z.boolean().optional()
+    }).optional()
   })
 });
 
@@ -79,7 +86,6 @@ const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => P
 
 // Upload document
 router.post('/documents', (req: Request, res: Response) => {
-  // Set JSON content type header early
   res.setHeader('Content-Type', 'application/json');
 
   upload(req, res, async (err: any) => {
@@ -101,7 +107,7 @@ router.post('/documents', (req: Request, res: Response) => {
 
       // Extract text content based on file type
       let content = '';
-      if (req.file.mimetype === 'text/plain') {
+      if (req.file.mimetype === 'text/plain' || req.file.mimetype === 'text/csv') {
         content = req.file.buffer.toString('utf-8');
       } else if (req.file.mimetype.includes('wordprocessingml')) {
         const result = await mammoth.extractRawText({ buffer: req.file.buffer });
@@ -111,16 +117,21 @@ router.post('/documents', (req: Request, res: Response) => {
       }
 
       const task = await orchestratorService.createTask({
-        type: 'contract',
+        type: 'jury',
         data: {
           document: content,
           filename: req.file.originalname,
           timestamp: new Date().toISOString(),
-          priority: 'normal'
+          priority: 'normal',
+          jurorData: {
+            questionnaire: true,
+            demographics: req.file.mimetype === 'text/csv',
+            socialMedia: false
+          }
         }
       });
 
-      log('Document uploaded and task created', 'info', { taskId: task.id });
+      log('Jury document uploaded and task created', 'info', { taskId: task.id });
 
       return res.status(200).json({
         taskId: task.id,

@@ -18,7 +18,9 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
-  ArrowRight
+  Users,
+  BrainCircuit,
+  ChartBar
 } from "lucide-react";
 import { useState } from "react";
 
@@ -63,13 +65,13 @@ export default function WorkflowAutomation() {
     }
   });
 
-  // Define workflow stages
+  // Define workflow stages for jury selection
   const stages = [
     { id: 'upload', name: 'Document Upload', icon: Upload },
-    { id: 'analysis', name: 'Initial Analysis', icon: FileText },
-    { id: 'compliance', name: 'Compliance Check', icon: Scale },
-    { id: 'research', name: 'Legal Research', icon: BookCheck },
-    { id: 'report', name: 'Report Generation', icon: BarChart2 }
+    { id: 'analysis', name: 'Initial Screening', icon: FileText },
+    { id: 'juryProfiling', name: 'Jury Profiling', icon: Users },
+    { id: 'biasDetection', name: 'Bias Analysis', icon: BrainCircuit },
+    { id: 'recommendations', name: 'Selection Strategy', icon: ChartBar }
   ];
 
   // Calculate current stage based on progress
@@ -82,18 +84,18 @@ export default function WorkflowAutomation() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       {/* Header Section */}
-      <header className="border-b border-gray-800">
+      <header className="border-b border-slate-700">
         <div className="container mx-auto py-8">
           <div className="flex items-center space-x-2 mb-2">
-            <Workflow className="h-8 w-8 text-blue-500" />
+            <Workflow className="h-8 w-8 text-blue-400" />
             <h1 className="text-4xl font-bold tracking-tight">
-              Full Lifecycle Automation Workflow
+              JurySync Workflow Automation
             </h1>
           </div>
-          <p className="text-gray-400 text-lg mb-8">
-            From Draft to Execution – Automating 80% of Legal Compliance Tasks
+          <p className="text-slate-400 text-lg mb-8">
+            Advanced Jury Selection & Analysis Pipeline
           </p>
         </div>
       </header>
@@ -101,29 +103,29 @@ export default function WorkflowAutomation() {
       {/* Main Content Area */}
       <main className="container mx-auto py-16">
         {/* Upload Section */}
-        <Card className="p-12 mb-12 bg-gray-900 border-gray-800">
+        <Card className="p-12 mb-12 bg-slate-800 border-slate-700">
           <div
             {...getRootProps()}
             className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors
-              ${isDragActive ? 'border-blue-500 bg-blue-500/10' : 'border-gray-700 hover:border-blue-500/50'}`}
+              ${isDragActive ? 'border-blue-400 bg-blue-400/10' : 'border-slate-600 hover:border-blue-400/50'}`}
           >
             <input {...getInputProps()} />
-            <Upload className="h-16 w-16 mx-auto mb-6 text-gray-400" />
+            <Upload className="h-16 w-16 mx-auto mb-6 text-slate-400" />
             <h3 className="text-xl font-semibold mb-3">
-              Drag & Drop Your Document
+              Upload Jury Selection Documents
             </h3>
-            <p className="text-gray-400">
-              or click to select files for automated processing
+            <p className="text-slate-400">
+              Drag & drop juror questionnaires or click to select files
             </p>
           </div>
         </Card>
 
         {/* Workflow Progress */}
         {activeTaskId && taskData && (
-          <Card className="p-12 mb-12 bg-gray-900 border-gray-800">
+          <Card className="p-12 mb-12 bg-slate-800 border-slate-700">
             {/* Stage Timeline */}
             <div className="relative mb-12">
-              <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-gray-800 -translate-y-1/2" />
+              <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-700 -translate-y-1/2" />
               <div className="relative flex justify-between">
                 {stages.map((stage, index) => {
                   const currentStage = getCurrentStage(taskData.progress);
@@ -135,12 +137,12 @@ export default function WorkflowAutomation() {
                     <div key={stage.id} className="flex flex-col items-center">
                       <div 
                         className={`w-10 h-10 rounded-full flex items-center justify-center relative z-10
-                          ${isCompleted ? 'bg-blue-500' : isCurrent ? 'bg-blue-500/20 border-2 border-blue-500' : 'bg-gray-800'}`}
+                          ${isCompleted ? 'bg-blue-500' : isCurrent ? 'bg-blue-500/20 border-2 border-blue-400' : 'bg-slate-700'}`}
                       >
-                        <Icon className={`h-5 w-5 ${isCompleted || isCurrent ? 'text-white' : 'text-gray-500'}`} />
+                        <Icon className={`h-5 w-5 ${isCompleted || isCurrent ? 'text-white' : 'text-slate-400'}`} />
                       </div>
                       <div className="mt-2 text-sm font-medium text-center">
-                        <span className={isCompleted || isCurrent ? 'text-white' : 'text-gray-500'}>
+                        <span className={isCompleted || isCurrent ? 'text-white' : 'text-slate-400'}>
                           {stage.name}
                         </span>
                       </div>
@@ -154,13 +156,13 @@ export default function WorkflowAutomation() {
             <div className="flex justify-between items-center mb-8">
               <div>
                 <div className="flex items-center space-x-2 mb-2">
-                  {taskData.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
-                  {taskData.status === 'processing' && <Clock className="h-5 w-5 text-blue-500 animate-spin" />}
-                  {taskData.status === 'failed' && <AlertCircle className="h-5 w-5 text-red-500" />}
-                  <h3 className="text-2xl font-semibold">Document Processing</h3>
+                  {taskData.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-400" />}
+                  {taskData.status === 'processing' && <Clock className="h-5 w-5 text-blue-400 animate-spin" />}
+                  {taskData.status === 'failed' && <AlertCircle className="h-5 w-5 text-red-400" />}
+                  <h3 className="text-2xl font-semibold">Jury Analysis Progress</h3>
                 </div>
-                <p className="text-gray-400">
-                  {taskData.currentStepDetails?.description || 'Automating compliance and legal analysis'}
+                <p className="text-slate-400">
+                  {taskData.currentStepDetails?.description || 'Analyzing jury selection data'}
                 </p>
               </div>
 
@@ -170,17 +172,17 @@ export default function WorkflowAutomation() {
                     variant="outline"
                     onClick={() => retryMutation.mutate()}
                     disabled={retryMutation.isPending}
-                    className="border-gray-700 hover:bg-gray-800"
+                    className="border-slate-600 hover:bg-slate-700"
                   >
                     <RefreshCcw className="h-4 w-4 mr-2" />
-                    Retry Process
+                    Retry Analysis
                   </Button>
                 )}
                 {taskData.status === 'completed' && (
-                  <Button asChild variant="default" className="bg-blue-600 hover:bg-blue-700">
+                  <Button asChild variant="default" className="bg-blue-500 hover:bg-blue-600">
                     <Link href={`/api/orchestrator/tasks/${activeTaskId}/report`}>
                       <Download className="h-4 w-4 mr-2" />
-                      Download Report
+                      Download Analysis Report
                     </Link>
                   </Button>
                 )}
@@ -190,16 +192,16 @@ export default function WorkflowAutomation() {
             {/* Progress Bar */}
             <Progress 
               value={taskData.progress} 
-              className="h-2 mb-6 bg-gray-800" 
+              className="h-2 mb-6 bg-slate-700" 
             />
 
             {/* Error Display */}
             {taskData.error && (
               <div className="mb-8 p-4 bg-red-500/10 rounded-lg border border-red-500/20 flex items-start space-x-3">
-                <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
+                <AlertCircle className="h-5 w-5 text-red-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <h4 className="text-red-500 font-medium mb-1">Processing Error</h4>
-                  <p className="text-gray-400 text-sm">{taskData.error}</p>
+                  <h4 className="text-red-400 font-medium mb-1">Analysis Error</h4>
+                  <p className="text-slate-400 text-sm">{taskData.error}</p>
                 </div>
               </div>
             )}
@@ -207,48 +209,48 @@ export default function WorkflowAutomation() {
             {/* Metrics */}
             {taskData.metrics && (
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-8">
-                <Card className="p-6 bg-gray-800 border-none">
-                  <h4 className="text-sm font-medium text-gray-400 mb-3">
-                    Automated Tasks
+                <Card className="p-6 bg-slate-700 border-none">
+                  <h4 className="text-sm font-medium text-slate-400 mb-3">
+                    Profile Accuracy
                   </h4>
                   <div className="flex items-baseline space-x-2">
-                    <p className="text-3xl font-bold text-blue-500">
+                    <p className="text-3xl font-bold text-blue-400">
                       {taskData.metrics.automatedTasks}%
                     </p>
-                    <span className="text-gray-500">completion</span>
+                    <span className="text-slate-400">match rate</span>
                   </div>
                 </Card>
-                <Card className="p-6 bg-gray-800 border-none">
-                  <h4 className="text-sm font-medium text-gray-400 mb-3">
-                    Processing Speed
+                <Card className="p-6 bg-slate-700 border-none">
+                  <h4 className="text-sm font-medium text-slate-400 mb-3">
+                    Analysis Speed
                   </h4>
                   <div className="flex items-baseline space-x-2">
-                    <p className="text-3xl font-bold text-blue-500">
+                    <p className="text-3xl font-bold text-blue-400">
                       {taskData.metrics.processingSpeed}%
                     </p>
-                    <span className="text-gray-500">faster</span>
+                    <span className="text-slate-400">faster</span>
                   </div>
                 </Card>
-                <Card className="p-6 bg-gray-800 border-none">
-                  <h4 className="text-sm font-medium text-gray-400 mb-3">
-                    Labor Cost Savings
+                <Card className="p-6 bg-slate-700 border-none">
+                  <h4 className="text-sm font-medium text-slate-400 mb-3">
+                    Time Savings
                   </h4>
                   <div className="flex items-baseline space-x-2">
-                    <p className="text-3xl font-bold text-blue-500">
+                    <p className="text-3xl font-bold text-blue-400">
                       {taskData.metrics.laborCost}%
                     </p>
-                    <span className="text-gray-500">reduced</span>
+                    <span className="text-slate-400">reduced</span>
                   </div>
                 </Card>
-                <Card className="p-6 bg-gray-800 border-none">
-                  <h4 className="text-sm font-medium text-gray-400 mb-3">
-                    Error Reduction
+                <Card className="p-6 bg-slate-700 border-none">
+                  <h4 className="text-sm font-medium text-slate-400 mb-3">
+                    Bias Detection
                   </h4>
                   <div className="flex items-baseline space-x-2">
-                    <p className="text-3xl font-bold text-blue-500">
+                    <p className="text-3xl font-bold text-blue-400">
                       {taskData.metrics.errorReduction}%
                     </p>
-                    <span className="text-gray-500">improvement</span>
+                    <span className="text-slate-400">accuracy</span>
                   </div>
                 </Card>
               </div>
