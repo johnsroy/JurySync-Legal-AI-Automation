@@ -13,8 +13,6 @@ import {
   Scale,
   FileText,
   History,
-  BarChart2,
-  Workflow,
   Upload,
   RefreshCcw,
   Download,
@@ -102,7 +100,7 @@ export default function WorkflowAutomation() {
         timestamp: new Date().toISOString(),
         stage: 'upload',
         message: 'Document upload failed',
-        details: error.message
+        details: error instanceof Error ? error.message : String(error)
       };
       setErrorLogs(prev => [errorLog, ...prev]);
       toast({
@@ -127,7 +125,9 @@ export default function WorkflowAutomation() {
     mutationFn: async (stageId?: string) => {
       if (!activeTaskId) return;
       await apiRequest('POST', `/api/orchestrator/tasks/${activeTaskId}/retry`, { stageId });
-      queryClient.invalidateQueries(['/api/orchestrator/tasks', activeTaskId]);
+      await queryClient.invalidateQueries({
+        queryKey: ['/api/orchestrator/tasks', activeTaskId]
+      });
     }
   });
 
@@ -207,7 +207,7 @@ export default function WorkflowAutomation() {
       <header className="border-b border-slate-700">
         <div className="container mx-auto py-8">
           <div className="flex items-center space-x-2 mb-2">
-            <Workflow className="h-8 w-8 text-blue-400" />
+            <BrainCircuit className="h-8 w-8 text-blue-400" />
             <h1 className="text-4xl font-bold tracking-tight">
               Full Lifecycle Automation Workflow
             </h1>
@@ -224,11 +224,11 @@ export default function WorkflowAutomation() {
         <Card className="p-12 mb-12 bg-slate-800 border-slate-700">
           <div
             {...getRootProps()}
-            className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors
-              ${isDragActive ? 'border-blue-400 bg-blue-400/10' : 'border-slate-600 hover:border-blue-400/50'}`}
+            className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-300
+              ${isDragActive ? 'border-blue-400 bg-blue-400/10 scale-102' : 'border-slate-600 hover:border-blue-400/50'}`}
           >
             <input {...getInputProps()} />
-            <Upload className="h-16 w-16 mx-auto mb-6 text-slate-400" />
+            <Upload className={`h-16 w-16 mx-auto mb-6 text-slate-400 transition-transform duration-300 ${isDragActive ? 'scale-110' : ''}`} />
             <h3 className="text-xl font-semibold mb-3">
               Upload Legal Documents
             </h3>
@@ -260,10 +260,10 @@ export default function WorkflowAutomation() {
                   return (
                     <div key={stage.id} className="flex flex-col items-center">
                       <div
-                        className={`w-12 h-12 rounded-full flex items-center justify-center relative z-10
-                          ${isCompleted ? 'bg-green-500' :
-                            isError ? 'bg-red-500' :
-                              isCurrent ? 'bg-blue-500/20 border-2 border-blue-400' :
+                        className={`w-12 h-12 rounded-full flex items-center justify-center relative z-10 transition-all duration-300
+                          ${isCompleted ? 'bg-green-500 scale-105' :
+                            isError ? 'bg-red-500 scale-105' :
+                              isCurrent ? 'bg-blue-500/20 border-2 border-blue-400 scale-110' :
                                 'bg-slate-700'}`}
                       >
                         {isCompleted ? (
@@ -277,12 +277,12 @@ export default function WorkflowAutomation() {
                         )}
                       </div>
                       <div className="mt-4 text-sm font-medium text-center">
-                        <span className={
+                        <span className={`transition-colors ${
                           isCompleted ? 'text-green-400' :
                             isError ? 'text-red-400' :
                               isCurrent ? 'text-blue-400' :
                                 'text-slate-400'
-                        }>
+                        }`}>
                           {stage.name}
                         </span>
                         {isError && (
@@ -342,7 +342,7 @@ export default function WorkflowAutomation() {
             {/* Error Log Section */}
             {errorLogs.length > 0 && (
               <Collapsible className="mb-8">
-                <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-red-500/10 rounded-lg border border-red-500/20">
+                <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-red-500/10 rounded-lg border border-red-500/20 transition-colors hover:bg-red-500/20">
                   <div className="flex items-center space-x-2">
                     <AlertTriangle className="h-5 w-5 text-red-400" />
                     <span className="font-medium text-red-400">Error Log</span>
@@ -395,7 +395,7 @@ export default function WorkflowAutomation() {
                       <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-600">
                         <div
                           style={{ width: `${metric.value}%` }}
-                          className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
+                          className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500"
                         />
                       </div>
                     </div>
@@ -451,7 +451,7 @@ export default function WorkflowAutomation() {
                   <Button
                     variant="outline"
                     onClick={handleDownloadPDF}
-                    className="border-slate-600 hover:bg-slate-700"
+                    className="border-slate-600 hover:bg-slate-700 transition-colors"
                   >
                     <FileDown className="h-4 w-4 mr-2" />
                     PDF Report
@@ -459,7 +459,7 @@ export default function WorkflowAutomation() {
                   <Button
                     variant="outline"
                     onClick={handleDownloadCSV}
-                    className="border-slate-600 hover:bg-slate-700"
+                    className="border-slate-600 hover:bg-slate-700 transition-colors"
                   >
                     <FileText className="h-4 w-4 mr-2" />
                     CSV Data
