@@ -1,6 +1,6 @@
 import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
-import { z } from "zod";
 import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
 
 // Define user roles for LegalAI
 export const UserRole = z.enum([
@@ -500,7 +500,6 @@ export const SignatureStatus = z.enum([
 export type SignatureStatus = z.infer<typeof SignatureStatus>;
 
 // Add these types after the existing imports
-
 export const ComplianceFileStatus = z.enum([
   "UPLOADING",
   "UPLOADED",
@@ -700,7 +699,7 @@ export type InsertCitation = typeof legalCitations.$inferInsert;
 export type InsertResearchQuery = typeof researchQueries.$inferInsert;
 
 
-// Add this after legal research types
+// Add this after the legal research types
 // Analytics data schema for metrics collection
 export const analyticsDataSchema = z.object({
   modelUsage: z.record(z.number()),
@@ -775,7 +774,7 @@ export const caseLawUpdates = pgTable("case_law_updates", {
   caseNumber: text("case_number").notNull(),
   title: text("title").notNull(),
   summary: text("summary").notNull(),
-  full_text: text("full_text").notNull(),
+  full_text: text("full_text").notNull(), 
   court: text("court").notNull(),
   jurisdiction: text("jurisdiction").notNull(),
   category: text("category").notNull(),
@@ -827,38 +826,3 @@ export type InsertContinuousLearningUpdate = z.infer<typeof insertContinuousLear
 export interface CaseLawUpdateWithFullText extends CaseLawUpdate {
   full_text: string;
 }
-
-// Workflow Events and Contract Versions tables
-export const workflowEvents = pgTable('workflow_events', {
-  id: serial('id').primaryKey(),
-  contractId: integer('contract_id').notNull(),
-  eventType: text('event_type').notNull(),
-  details: jsonb('details').$type<Record<string, any>>(),
-  timestamp: timestamp('timestamp').defaultNow(),
-});
-
-export const contractVersions = pgTable('contract_versions', {
-  id: serial('id').primaryKey(),
-  contractId: integer('contract_id').notNull(),
-  version: integer('version').notNull(),
-  content: text('content').notNull(),
-  status: text('status').notNull(),
-  author: text('author').notNull(),
-  changes: jsonb('changes').$type<{
-    type: 'ADDITION' | 'DELETION' | 'MODIFICATION';
-    content: string;
-    lineNumber?: number;
-  }[]>(),
-  timestamp: timestamp('timestamp').defaultNow(),
-});
-
-// Add type definitions
-export type WorkflowEvent = typeof workflowEvents.$inferSelect;
-export type ContractVersion = typeof contractVersions.$inferSelect;
-
-// Add insert schemas
-export const insertWorkflowEventSchema = createInsertSchema(workflowEvents);
-export const insertContractVersionSchema = createInsertSchema(contractVersions);
-
-export type InsertWorkflowEvent = z.infer<typeof insertWorkflowEventSchema>;
-export type InsertContractVersion = z.infer<typeof insertContractVersionSchema>;
