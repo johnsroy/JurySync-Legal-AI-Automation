@@ -2,13 +2,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { 
-  Gavel, 
-  LogOut, 
-  Loader2, 
-  Shield, 
-  FileText, 
-  Upload, 
+import {
+  Gavel,
+  LogOut,
+  Loader2,
+  Shield,
+  FileText,
+  Upload,
   ChevronRight,
   History,
   BookOpen,
@@ -20,6 +20,7 @@ import { useDropzone } from 'react-dropzone';
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { PredictiveSuggestions } from "@/components/ContractRedlining/PredictiveSuggestions";
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -135,6 +136,26 @@ export const WorkflowAutomation: React.FC = () => {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [workflowProgress, setWorkflowProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState<number>(0);
+  const [selectedText, setSelectedText] = useState("");
+
+  const handleTextSelect = () => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim()) {
+      setSelectedText(selection.toString().trim());
+    }
+  };
+
+  const handleSuggestionSelect = (suggestionText: string) => {
+    // Replace selected text with suggestion
+    setDocumentText((prevText) => {
+      if (!selectedText) return prevText;
+      return prevText.replace(selectedText, suggestionText);
+    });
+    toast({
+      title: "Suggestion Applied",
+      description: "The selected clause has been updated.",
+    });
+  };
 
   const workflowStages = [
     {
@@ -253,7 +274,7 @@ export const WorkflowAutomation: React.FC = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="max-w-6xl mx-auto space-y-6">
           {/* Title Section */}
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900">
@@ -281,74 +302,86 @@ export const WorkflowAutomation: React.FC = () => {
             ))}
           </div>
 
-          {/* Document Upload Card */}
-          <Card className="bg-white/80 backdrop-blur-lg">
-            <CardHeader>
-              <CardTitle>Document Upload</CardTitle>
-              <CardDescription>
-                Upload your legal documents or paste content directly
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FileUploadZone onFileSelect={handleFileSelect} />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Document Upload and Editor Section */}
+            <div className="lg:col-span-2 space-y-6">
+              <Card className="bg-white/80 backdrop-blur-lg">
+                <CardHeader>
+                  <CardTitle>Document Upload</CardTitle>
+                  <CardDescription>
+                    Upload your legal documents or paste content directly
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <FileUploadZone onFileSelect={handleFileSelect} />
 
-              {uploadedFiles.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="text-sm font-medium mb-2">Selected Files:</h4>
-                  <ul className="space-y-2">
-                    {uploadedFiles.map((file, index) => (
-                      <li key={index} className="flex items-center gap-2 text-sm">
-                        <FileText className="h-4 w-4" />
-                        {file.name}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                  {uploadedFiles.length > 0 && (
+                    <div className="mt-4">
+                      <h4 className="text-sm font-medium mb-2">Selected Files:</h4>
+                      <ul className="space-y-2">
+                        {uploadedFiles.map((file, index) => (
+                          <li key={index} className="flex items-center gap-2 text-sm">
+                            <FileText className="h-4 w-4" />
+                            {file.name}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
-              <div className="relative">
-                <Textarea
-                  placeholder="Or paste your document text here..."
-                  className="min-h-[200px] resize-none"
-                  value={documentText}
-                  onChange={(e) => setDocumentText(e.target.value)}
-                />
-              </div>
-
-              <Button 
-                className="w-full"
-                onClick={handleSubmit}
-                disabled={!documentText.trim() && uploadedFiles.length === 0}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Submit for Automation
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Workflow Progress Card */}
-          <Card className="bg-white/80 backdrop-blur-lg">
-            <CardHeader>
-              <CardTitle>Workflow Progress</CardTitle>
-              <CardDescription>
-                Track the progress of your document through each stage
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <Progress value={workflowProgress} className="h-2" />
-              
-              <div className="space-y-6">
-                {workflowStages.map((stage, index) => (
-                  <div key={index} className="relative">
-                    <WorkflowStage {...stage} />
-                    {index < workflowStages.length - 1 && (
-                      <div className="absolute left-5 top-14 bottom-0 w-px bg-gray-200" />
-                    )}
+                  <div className="relative">
+                    <Textarea
+                      placeholder="Or paste your document text here..."
+                      className="min-h-[200px] resize-none"
+                      value={documentText}
+                      onChange={(e) => setDocumentText(e.target.value)}
+                      onMouseUp={handleTextSelect}
+                      onKeyUp={handleTextSelect}
+                    />
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+
+                  <Button
+                    className="w-full"
+                    onClick={handleSubmit}
+                    disabled={!documentText.trim() && uploadedFiles.length === 0}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Submit for Automation
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Predictive Suggestions Section */}
+            <div className="space-y-6">
+              <PredictiveSuggestions
+                selectedText={selectedText}
+                onSuggestionSelect={handleSuggestionSelect}
+              />
+              <Card className="bg-white/80 backdrop-blur-lg">
+                <CardHeader>
+                  <CardTitle>Workflow Progress</CardTitle>
+                  <CardDescription>
+                    Track the progress of your document through each stage
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <Progress value={workflowProgress} className="h-2" />
+
+                  <div className="space-y-6">
+                    {workflowStages.map((stage, index) => (
+                      <div key={index} className="relative">
+                        <WorkflowStage {...stage} />
+                        {index < workflowStages.length - 1 && (
+                          <div className="absolute left-5 top-14 bottom-0 w-px bg-gray-200" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       </main>
     </div>
