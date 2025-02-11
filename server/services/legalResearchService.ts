@@ -60,14 +60,12 @@ class InMemoryVectorStore {
 export class LegalResearchService {
   private static instance: LegalResearchService;
   private vectorStore: InMemoryVectorStore;
-  private prePopulatedDocuments: LegalDocument[] = []; // Added to store pre-populated documents
+  private prePopulatedDocuments: LegalDocument[] = [];
 
   private constructor() {
     this.vectorStore = new InMemoryVectorStore();
     console.log('Initialized LegalResearchService with in-memory vector store');
-    //Load pre-populated documents (replace with your actual loading logic)
     this.loadPrePopulatedDocuments();
-
   }
 
   static getInstance(): LegalResearchService {
@@ -152,8 +150,6 @@ Return only the numerical vector values as a JSON array with a single key "embed
         throw new Error('Document not found');
       }
 
-      console.log('Analyzing document:', { id: documentId, title: document.title });
-
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 2000,
@@ -185,7 +181,6 @@ Provide your response in this JSON format:
         throw new Error('Unexpected response format from Anthropic API');
       }
 
-      console.log('Received Anthropic response');
       const analysis = JSON.parse(content.text);
       console.log('Analysis completed successfully');
       return analysis;
@@ -249,40 +244,6 @@ Provide your response in this JSON format:
     } catch (error) {
       console.error('Error generating summary:', error);
       throw error;
-    }
-  }
-
-  async searchSimilarCases(query: string): Promise<any[]> {
-    try {
-      console.log('Searching similar cases for query:', query);
-      const queryEmbedding = await this.generateEmbedding(query);
-
-      const results = await this.vectorStore.query({
-        queryEmbeddings: [queryEmbedding],
-        nResults: 5
-      });
-
-      if (!results.ids?.length) {
-        console.log('No similar cases found');
-        return [];
-      }
-
-      const documentIds = results.ids[0].map(id => parseInt(id));
-      const documents = await Promise.all(
-        documentIds.map(async (id) => {
-          const [doc] = await db
-            .select()
-            .from(legalDocuments)
-            .where(eq(legalDocuments.id, id));
-          return doc;
-        })
-      );
-
-      console.log('Found similar cases:', documents.length);
-      return documents.filter(Boolean);
-    } catch (error) {
-      console.error('Error searching similar cases:', error);
-      return [];
     }
   }
 
@@ -360,35 +321,111 @@ Provide your response in this JSON format:
     }
   }
 
+  async searchSimilarCases(query: string): Promise<any[]> {
+    try {
+      console.log('Searching similar cases for query:', query);
+      const queryEmbedding = await this.generateEmbedding(query);
+
+      const results = await this.vectorStore.query({
+        queryEmbeddings: [queryEmbedding],
+        nResults: 5
+      });
+
+      if (!results.ids?.length) {
+        console.log('No similar cases found');
+        return [];
+      }
+
+      const documentIds = results.ids[0].map(id => parseInt(id));
+      const documents = await Promise.all(
+        documentIds.map(async (id) => {
+          const [doc] = await db
+            .select()
+            .from(legalDocuments)
+            .where(eq(legalDocuments.id, id));
+          return doc;
+        })
+      );
+
+      console.log('Found similar cases:', documents.length);
+      return documents.filter(Boolean);
+    } catch (error) {
+      console.error('Error searching similar cases:', error);
+      return [];
+    }
+  }
 
   getPrePopulatedDocuments(): LegalDocument[] {
     return this.prePopulatedDocuments;
   }
 
-  private loadPrePopulatedDocuments(): void {
-    // Replace this with your actual data loading mechanism
-    //  This is a placeholder.  You'll need to fetch from a database or other source.
-    this.prePopulatedDocuments = [
+  private async loadPrePopulatedDocuments(): Promise<void> {
+    const landmarkCases: LegalDocument[] = [
       {
         id: 1,
-        title: "Sample Contract",
-        content: "This is sample contract text...",
-        documentType: "contract",
-        date: new Date(),
-        jurisdiction: "CA"
+        title: "Brown v. Board of Education",
+        content: `347 U.S. 483 (1954). This landmark case overturned Plessy v. Ferguson and declared state laws establishing separate public schools for black and white students to be unconstitutional. The Supreme Court's unanimous decision stated that "separate educational facilities are inherently unequal."`,
+        documentType: "CASE_LAW",
+        jurisdiction: "United States",
+        date: new Date("1954-05-17"),
+        status: "ACTIVE",
+        metadata: {
+          court: "Supreme Court",
+          citation: "347 U.S. 483"
+        },
+        citations: [],
+        vectorId: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
       },
       {
         id: 2,
-        title: "Sample NDA",
-        content: "This is sample NDA text...",
-        documentType: "nda",
-        date: new Date(),
-        jurisdiction: "NY"
+        title: "Miranda v. Arizona",
+        content: `384 U.S. 436 (1966). This decision established that prior to police interrogation, criminal suspects must be informed of their constitutional right to an attorney and against self-incrimination. The Supreme Court held that the Fifth Amendment requires law enforcement officials to advise suspects of their right to remain silent and to obtain an attorney during interrogation while in police custody.`,
+        documentType: "CASE_LAW",
+        jurisdiction: "United States",
+        date: new Date("1966-06-13"),
+        status: "ACTIVE",
+        metadata: {
+          court: "Supreme Court",
+          citation: "384 U.S. 436"
+        },
+        citations: [],
+        vectorId: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 3,
+        title: "Roe v. Wade",
+        content: `410 U.S. 113 (1973). The Court ruled that the Constitution protects a pregnant woman's liberty to choose to have an abortion without excessive government restriction. It struck down many federal and state abortion laws.`,
+        documentType: "CASE_LAW",
+        jurisdiction: "United States",
+        date: new Date("1973-01-22"),
+        status: "ACTIVE",
+        metadata: {
+          court: "Supreme Court",
+          citation: "410 U.S. 113"
+        },
+        citations: [],
+        vectorId: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
       }
     ];
 
-     this.prePopulatedDocuments.forEach(doc => this.addDocument(doc).catch(console.error));
+    this.prePopulatedDocuments = landmarkCases;
 
+    // Add documents to vector store
+    for (const doc of this.prePopulatedDocuments) {
+      try {
+        console.log('Adding document:', { title: doc.title, id: doc.id });
+        await this.addDocument(doc);
+        console.log(`Successfully added document to vector store: ${doc.title}`);
+      } catch (error) {
+        console.error(`Error adding document ${doc.title} to vector store:`, error);
+      }
+    }
   }
 }
 
