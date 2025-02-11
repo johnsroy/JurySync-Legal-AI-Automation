@@ -13,7 +13,10 @@ import {
   History,
   BookOpen,
   FileCheck,
-  RefreshCcw
+  RefreshCcw,
+  AlertTriangle,
+  Clock,
+  BarChart3
 } from "lucide-react";
 import { useState } from "react";
 import { useDropzone } from 'react-dropzone';
@@ -129,6 +132,18 @@ const WorkflowStage: React.FC<{
   );
 };
 
+interface StageOutput {
+  message: string;
+  details?: string;
+  timestamp: string;
+  status: 'success' | 'warning' | 'error' | 'info';
+}
+
+interface WorkflowStageState {
+  status: 'pending' | 'processing' | 'completed' | 'error';
+  outputs: StageOutput[];
+}
+
 export const WorkflowAutomation: React.FC = () => {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
@@ -137,16 +152,23 @@ export const WorkflowAutomation: React.FC = () => {
   const [workflowProgress, setWorkflowProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState<number>(0);
   const [selectedText, setSelectedText] = useState("");
+  const [stageStates, setStageStates] = useState<Record<number, WorkflowStageState>>({});
 
+  // Enhanced text selection handler
   const handleTextSelect = () => {
     const selection = window.getSelection();
     if (selection && selection.toString().trim()) {
-      setSelectedText(selection.toString().trim());
+      const selectedContent = selection.toString().trim();
+      setSelectedText(selectedContent);
+      // Trigger suggestions loading when text is selected
+      toast({
+        title: "Text Selected",
+        description: "Loading relevant suggestions...",
+      });
     }
   };
 
   const handleSuggestionSelect = (suggestionText: string) => {
-    // Replace selected text with suggestion
     setDocumentText((prevText) => {
       if (!selectedText) return prevText;
       return prevText.replace(selectedText, suggestionText);
@@ -155,6 +177,103 @@ export const WorkflowAutomation: React.FC = () => {
       title: "Suggestion Applied",
       description: "The selected clause has been updated.",
     });
+  };
+
+  const addStageOutput = (stageIndex: number, output: StageOutput) => {
+    setStageStates(prev => ({
+      ...prev,
+      [stageIndex]: {
+        ...prev[stageIndex],
+        outputs: [...(prev[stageIndex]?.outputs || []), output]
+      }
+    }));
+  };
+
+  const updateStageStatus = (stageIndex: number, status: WorkflowStageState['status']) => {
+    setStageStates(prev => ({
+      ...prev,
+      [stageIndex]: {
+        ...prev[stageIndex],
+        status,
+        outputs: prev[stageIndex]?.outputs || []
+      }
+    }));
+  };
+
+  const handleSubmit = async () => {
+    if (!documentText.trim() && uploadedFiles.length === 0) {
+      toast({
+        title: "No Content",
+        description: "Please upload a file or enter document text",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Reset progress
+    setCurrentStage(0);
+    setWorkflowProgress(0);
+    setStageStates({});
+
+    // Simulate workflow stages with detailed outputs
+    for (let i = 0; i <= 4; i++) {
+      setCurrentStage(i);
+      updateStageStatus(i, 'processing');
+
+      // Simulate stage processing with outputs
+      for (let progress = 0; progress <= 100; progress += 20) {
+        setWorkflowProgress(progress);
+
+        // Add stage-specific outputs
+        const timestamp = new Date().toISOString();
+        switch (i) {
+          case 0:
+            addStageOutput(i, {
+              message: "Analyzing document structure",
+              details: `Processing ${progress}% complete`,
+              timestamp,
+              status: 'info'
+            });
+            break;
+          case 1:
+            addStageOutput(i, {
+              message: "Running compliance checks",
+              details: `Verified ${progress}% of regulatory requirements`,
+              timestamp,
+              status: 'info'
+            });
+            break;
+          case 2:
+            addStageOutput(i, {
+              message: "Conducting legal research",
+              details: `Analyzed ${progress}% of relevant case law`,
+              timestamp,
+              status: 'info'
+            });
+            break;
+          case 3:
+            addStageOutput(i, {
+              message: "Processing approvals",
+              details: `Workflow approval progress: ${progress}%`,
+              timestamp,
+              status: 'info'
+            });
+            break;
+          case 4:
+            addStageOutput(i, {
+              message: "Performing periodic audit",
+              details: `Audit completion: ${progress}%`,
+              timestamp,
+              status: 'info'
+            });
+            break;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+
+      updateStageStatus(i, 'completed');
+    }
   };
 
   const workflowStages = [
@@ -215,30 +334,6 @@ export const WorkflowAutomation: React.FC = () => {
       title: "Files Added",
       description: `${files.length} file(s) ready for upload`,
     });
-  };
-
-  const handleSubmit = async () => {
-    if (!documentText.trim() && uploadedFiles.length === 0) {
-      toast({
-        title: "No Content",
-        description: "Please upload a file or enter document text",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Simulate workflow progress
-    setCurrentStage(0);
-    setWorkflowProgress(0);
-
-    // Simulate workflow stages
-    for (let i = 0; i <= 4; i++) {
-      setCurrentStage(i);
-      for (let progress = 0; progress <= 100; progress += 10) {
-        setWorkflowProgress(progress);
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-    }
   };
 
   return (
@@ -337,6 +432,7 @@ export const WorkflowAutomation: React.FC = () => {
                       onChange={(e) => setDocumentText(e.target.value)}
                       onMouseUp={handleTextSelect}
                       onKeyUp={handleTextSelect}
+                      onSelect={handleTextSelect}
                     />
                   </div>
 
@@ -350,6 +446,41 @@ export const WorkflowAutomation: React.FC = () => {
                   </Button>
                 </CardContent>
               </Card>
+
+              {/* Stage Output Display */}
+              {Object.entries(stageStates).map(([stageIndex, state]) => (
+                <Card key={stageIndex} className="bg-white/80 backdrop-blur-lg">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      {workflowStages[Number(stageIndex)].icon}
+                      {workflowStages[Number(stageIndex)].title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {state.outputs.map((output, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-4 rounded-lg border ${
+                          output.status === 'error' ? 'border-red-200 bg-red-50' :
+                            output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
+                              output.status === 'success' ? 'border-green-200 bg-green-50' :
+                                'border-blue-200 bg-blue-50'
+                        }`}
+                      >
+                        <p className="font-medium">{output.message}</p>
+                        {output.details && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {output.details}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {new Date(output.timestamp).toLocaleTimeString()}
+                        </p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ))}
             </div>
 
             {/* Predictive Suggestions Section */}
@@ -371,7 +502,12 @@ export const WorkflowAutomation: React.FC = () => {
                   <div className="space-y-6">
                     {workflowStages.map((stage, index) => (
                       <div key={index} className="relative">
-                        <WorkflowStage {...stage} />
+                        <WorkflowStage
+                          icon={stage.icon}
+                          title={stage.title}
+                          description={stage.description}
+                          status={stageStates[index]?.status || 'pending'}
+                        />
                         {index < workflowStages.length - 1 && (
                           <div className="absolute left-5 top-14 bottom-0 w-px bg-gray-200" />
                         )}
