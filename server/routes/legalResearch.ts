@@ -37,11 +37,12 @@ const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => P
   (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch((error) => {
       console.error('Route error:', error);
-      res.setHeader('Content-Type', 'application/json');
-      res.status(500).json({ 
-        error: error.message || 'Internal server error',
-        status: 'error'
-      });
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: error.message || 'Internal server error',
+          status: 'error'
+        });
+      }
     });
   };
 
@@ -50,28 +51,30 @@ const querySchema = z.object({
   query: z.string().min(1, "Query is required")
 });
 
+// Health check endpoint
+router.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
 // Upload document
 router.post('/documents', (req: Request, res: Response) => {
-  // Set JSON content type header early
-  res.setHeader('Content-Type', 'application/json');
-
   upload(req, res, async (err: any) => {
+    if (err) {
+      console.error('File upload error:', err);
+      return res.status(400).json({ 
+        error: err.message,
+        status: 'error'
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ 
+        error: 'No file uploaded',
+        status: 'error'
+      });
+    }
+
     try {
-      if (err) {
-        console.error('File upload error:', err);
-        return res.status(400).json({ 
-          error: err.message,
-          status: 'error'
-        });
-      }
-
-      if (!req.file) {
-        return res.status(400).json({ 
-          error: 'No file uploaded',
-          status: 'error'
-        });
-      }
-
       // Extract text content based on file type
       let content = '';
       if (req.file.mimetype === 'text/plain') {
@@ -107,7 +110,7 @@ router.post('/documents', (req: Request, res: Response) => {
 
       await legalResearchService.addDocument(insertedDoc);
 
-      return res.status(200).json({
+      return res.json({
         documentId: insertedDoc.id,
         title: insertedDoc.title,
         content: insertedDoc.content,
@@ -116,17 +119,18 @@ router.post('/documents', (req: Request, res: Response) => {
 
     } catch (error: any) {
       console.error('Document upload error:', error);
-      return res.status(500).json({ 
-        error: error.message || 'Failed to process document',
-        status: 'error'
-      });
+      if (!res.headersSent) {
+        return res.status(500).json({ 
+          error: error.message || 'Failed to process document',
+          status: 'error'
+        });
+      }
     }
   });
 });
 
 // Get all documents
 router.get('/documents', asyncHandler(async (req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'application/json');
   await legalResearchService.initialize();
   const documents = await db
     .select()
@@ -140,7 +144,6 @@ router.get('/documents', asyncHandler(async (req: Request, res: Response) => {
 
 // Analyze document
 router.post('/documents/:id/analyze', asyncHandler(async (req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'application/json');
   const documentId = parseInt(req.params.id);
   if (isNaN(documentId)) {
     return res.status(400).json({ 
@@ -158,7 +161,6 @@ router.post('/documents/:id/analyze', asyncHandler(async (req: Request, res: Res
 
 // Get document summary
 router.post('/documents/:id/summary', asyncHandler(async (req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'application/json');
   const documentId = parseInt(req.params.id);
   if (isNaN(documentId)) {
     return res.status(400).json({ 
@@ -176,7 +178,6 @@ router.post('/documents/:id/summary', asyncHandler(async (req: Request, res: Res
 
 // Search documents
 router.post('/query', asyncHandler(async (req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'application/json');
   const { query } = querySchema.parse(req.body);
   const results = await legalResearchService.analyzeQuery(query);
   return res.json({

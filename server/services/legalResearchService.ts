@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { legalDocuments } from '@shared/schema';
 import type { LegalDocument } from '@shared/schema';
+import { z } from 'zod';
 
 // Initialize Anthropic client
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -11,6 +12,57 @@ if (!process.env.ANTHROPIC_API_KEY) {
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// Validation schemas
+const embeddingSchema = z.object({
+  embedding: z.array(z.number()).length(1024)
+});
+
+const analysisSchema = z.object({
+  summary: z.string(),
+  keyPoints: z.array(z.string()),
+  legalImplications: z.array(z.string()),
+  recommendations: z.array(z.string()),
+  riskAreas: z.array(z.string())
+});
+
+const summarySchema = z.object({
+  executiveSummary: z.string(),
+  keyPoints: z.array(z.string()),
+  legalPrinciples: z.array(z.string()),
+  timeline: z.array(z.object({
+    date: z.string(),
+    event: z.string()
+  })),
+  visualSuggestions: z.object({
+    timelineData: z.array(z.object({
+      year: z.number(),
+      event: z.string()
+    })),
+    argumentMap: z.array(z.string()),
+    citationNetwork: z.array(z.string())
+  })
+});
+
+const queryAnalysisSchema = z.object({
+  summary: z.string(),
+  patternAnalysis: z.object({
+    commonPrinciples: z.array(z.string()),
+    outcomePatterns: z.array(z.string()),
+    jurisdictionalTrends: z.array(z.string())
+  }),
+  timeline: z.array(z.object({
+    date: z.string(),
+    event: z.string(),
+    significance: z.string()
+  })),
+  citationMap: z.array(z.object({
+    case: z.string(),
+    citedBy: z.array(z.string()),
+    significance: z.string()
+  })),
+  recommendations: z.array(z.string())
 });
 
 // In-memory vector store for search functionality
@@ -133,13 +185,15 @@ export class LegalResearchService {
         max_tokens: 1000,
         messages: [{
           role: "user",
-          content: `Please analyze this legal text and generate a numerical embedding vector that captures its semantic meaning. The vector should have 1024 dimensions.
+          content: `Generate a numerical embedding vector that captures the semantic meaning of this legal text. The vector should have exactly 1024 dimensions with values between -1 and 1.
 
-Return ONLY a JSON object with a single "embedding" key containing the array of 1024 numbers between -1 and 1. For example: {"embedding": [-0.1, 0.2, ...]}
+Return ONLY a JSON object in this exact format, with no additional text:
+{"embedding": [number1, number2, ..., number1024]}
 
 Text to analyze:
-${text}`
-        }]
+${text.substring(0, 8000)}`
+        }],
+        temperature: 0.1
       });
 
       const content = response.content[0];
@@ -148,35 +202,31 @@ ${text}`
       }
 
       try {
-        const result = JSON.parse(content.text);
-        if (!Array.isArray(result.embedding) || result.embedding.length !== 1024) {
-          throw new Error('Invalid embedding format returned from API');
-        }
-        console.log('Successfully generated embedding');
+        const result = embeddingSchema.parse(JSON.parse(content.text));
+        console.log('Successfully generated and validated embedding');
         return result.embedding;
       } catch (parseError) {
-        console.error('Error parsing embedding JSON:', parseError);
-        // Return a fallback embedding based on character codes
-        const vector = new Array(1024).fill(0);
-        for (let i = 0; i < Math.min(text.length, 1024); i++) {
-          vector[i] = text.charCodeAt(i) / 255;
-        }
-        return vector;
+        console.error('Error parsing or validating embedding JSON:', parseError);
+        throw new Error('Failed to generate valid embedding');
       }
     } catch (error) {
-      console.error('Error generating embedding:', error);
-      // Return a fallback embedding based on character codes
-      const vector = new Array(1024).fill(0);
-      for (let i = 0; i < Math.min(text.length, 1024); i++) {
-        vector[i] = text.charCodeAt(i) / 255;
-      }
-      return vector;
+      console.error('Error in embedding generation:', error);
+      throw error;
     }
   }
 
   private async loadPrePopulatedDocuments(): Promise<void> {
     try {
-      console.log('Starting legal database seeding...');
+      console.log('Loading pre-populated documents...');
+      const existingDocs = await db
+        .select()
+        .from(legalDocuments)
+        .limit(1);
+
+      if (existingDocs.length > 0) {
+        console.log('Documents already loaded');
+        return;
+      }
 
       const landmarkCases: LegalDocument[] = [
         {
@@ -195,64 +245,24 @@ ${text}`
           vectorId: null,
           createdAt: new Date(),
           updatedAt: new Date()
-        },
-        {
-          id: 2,
-          title: "Miranda v. Arizona",
-          content: `384 U.S. 436 (1966). This decision established that prior to police interrogation, criminal suspects must be informed of their constitutional right to an attorney and against self-incrimination. The Supreme Court held that the Fifth Amendment requires law enforcement officials to advise suspects of their right to remain silent and to obtain an attorney during interrogation while in police custody.`,
-          documentType: "CASE_LAW",
-          jurisdiction: "United States",
-          date: new Date("1966-06-13"),
-          status: "ACTIVE",
-          metadata: {
-            court: "Supreme Court",
-            citation: "384 U.S. 436"
-          },
-          citations: [],
-          vectorId: null,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: 3,
-          title: "Roe v. Wade",
-          content: `410 U.S. 113 (1973). The Court ruled that the Constitution protects a pregnant woman's liberty to choose to have an abortion without excessive government restriction. It struck down many federal and state abortion laws.`,
-          documentType: "CASE_LAW",
-          jurisdiction: "United States",
-          date: new Date("1973-01-22"),
-          status: "ACTIVE",
-          metadata: {
-            court: "Supreme Court",
-            citation: "410 U.S. 113"
-          },
-          citations: [],
-          vectorId: null,
-          createdAt: new Date(),
-          updatedAt: new Date()
         }
       ];
 
       this.prePopulatedDocuments = landmarkCases;
 
-      // Add documents to vector store and database
       for (const doc of this.prePopulatedDocuments) {
-        try {
-          console.log('Adding document:', { title: doc.title, id: doc.id });
-          await this.addDocument(doc);
-          console.log(`Successfully added document to vector store: ${doc.title}`);
-        } catch (error) {
-          console.error(`Error adding document ${doc.title} to vector store:`, error);
-        }
+        await this.addDocument(doc);
+        console.log(`Added document: ${doc.title}`);
       }
 
-      console.log('Legal database seeding completed');
+      console.log('Pre-populated documents loaded successfully');
     } catch (error) {
-      console.error('Error in loadPrePopulatedDocuments:', error);
+      console.error('Error loading pre-populated documents:', error);
       throw error;
     }
   }
 
-  async analyzeDocument(documentId: number): Promise<any> {
+  async analyzeDocument(documentId: number): Promise<z.infer<typeof analysisSchema>> {
     try {
       console.log('Analyzing document:', documentId);
       const [document] = await db
@@ -269,25 +279,19 @@ ${text}`
         max_tokens: 2000,
         messages: [{
           role: "user",
-          content: `Analyze this legal document comprehensively. Consider:
-1. Key legal principles and holdings
-2. Precedential value
-3. Legal reasoning and analysis
-4. Implications for future cases
-5. Historical context and significance
-
-Document Title: ${document.title}
-Content: ${document.content}
-
-Provide your response in this JSON format:
+          content: `Analyze this legal document and provide a JSON response with exactly these fields:
 {
   "summary": "A concise summary of the document",
   "keyPoints": ["Array of main points"],
   "legalImplications": ["Array of legal implications"],
-  "recommendations": ["Array of recommendations or next steps"],
-  "riskAreas": ["Array of potential risk areas identified"]
-}`
-        }]
+  "recommendations": ["Array of recommendations"],
+  "riskAreas": ["Array of risk areas"]
+}
+
+Document Title: ${document.title}
+Content: ${document.content}`
+        }],
+        temperature: 0.1
       });
 
       const content = response.content[0];
@@ -295,8 +299,8 @@ Provide your response in this JSON format:
         throw new Error('Unexpected response format from Anthropic API');
       }
 
-      const analysis = JSON.parse(content.text);
-      console.log('Analysis completed successfully');
+      const analysis = analysisSchema.parse(JSON.parse(content.text));
+      console.log('Analysis completed and validated');
       return analysis;
 
     } catch (error) {
@@ -305,7 +309,7 @@ Provide your response in this JSON format:
     }
   }
 
-  async generateSummary(documentId: number): Promise<any> {
+  async generateSummary(documentId: number): Promise<z.infer<typeof summarySchema>> {
     try {
       console.log('Generating summary for document:', documentId);
       const [document] = await db
@@ -322,29 +326,23 @@ Provide your response in this JSON format:
         max_tokens: 2000,
         messages: [{
           role: "user",
-          content: `Generate a concise yet comprehensive summary of this legal document. Include:
-1. Key legal principles and holdings
-2. Main arguments and reasoning
-3. Significant citations and precedents
-4. Visual representation suggestions
-5. Timeline of events
-
-Document Title: ${document.title}
-Content: ${document.content}
-
-Provide your response in this JSON format:
+          content: `Generate a comprehensive summary of this legal document and return a JSON response with exactly these fields:
 {
   "executiveSummary": "Brief overview",
   "keyPoints": ["Array of main points"],
   "legalPrinciples": ["Array of principles"],
   "timeline": [{"date": "string", "event": "string"}],
   "visualSuggestions": {
-    "timelineData": [{"year": Number, "event": "string"}],
-    "argumentMap": ["Array of key arguments and their relationships"],
-    "citationNetwork": ["Array of important citations and their connections"]
+    "timelineData": [{"year": number, "event": "string"}],
+    "argumentMap": ["Array of key arguments"],
+    "citationNetwork": ["Array of citations"]
   }
-}`
-        }]
+}
+
+Document Title: ${document.title}
+Content: ${document.content}`
+        }],
+        temperature: 0.1
       });
 
       const content = response.content[0];
@@ -352,8 +350,8 @@ Provide your response in this JSON format:
         throw new Error('Unexpected response format from Anthropic API');
       }
 
-      const summary = JSON.parse(content.text);
-      console.log('Summary generated successfully');
+      const summary = summarySchema.parse(JSON.parse(content.text));
+      console.log('Summary generated and validated');
       return summary;
     } catch (error) {
       console.error('Error generating summary:', error);
@@ -361,7 +359,7 @@ Provide your response in this JSON format:
     }
   }
 
-  async analyzeQuery(query: string): Promise<any> {
+  async analyzeQuery(query: string): Promise<z.infer<typeof queryAnalysisSchema>> {
     try {
       console.log('Analyzing legal research query:', query);
       const similarCases = await this.searchSimilarCases(query);
@@ -369,15 +367,24 @@ Provide your response in this JSON format:
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 2000,
-        temperature: 0.2,
         messages: [{
           role: "user",
-          content: `Analyze this legal query using both retrieval-augmented generation and case-based reasoning. Consider:
-1. Pattern recognition across similar cases
-2. Common legal principles and their application
-3. Outcome comparison and prediction
-4. Timeline of legal developments
-5. Citation relationships and precedent strength
+          content: `Analyze this legal query and return a JSON response with exactly these fields:
+{
+  "summary": "Analysis of the query and cases",
+  "patternAnalysis": {
+    "commonPrinciples": ["Array of principles"],
+    "outcomePatterns": ["Array of outcomes"],
+    "jurisdictionalTrends": ["Array of trends"]
+  },
+  "timeline": [{"date": "string", "event": "string", "significance": "string"}],
+  "citationMap": [{
+    "case": "string",
+    "citedBy": ["Array of citing cases"],
+    "significance": "string"
+  }],
+  "recommendations": ["Array of recommendations"]
+}
 
 Query: ${query}
 
@@ -387,25 +394,9 @@ Title: ${doc.title}
 Content: ${doc.content}
 Jurisdiction: ${doc.jurisdiction}
 Date: ${doc.date}
-`).join('\n')}
-
-Provide your response in this JSON format:
-{
-  "summary": "A detailed analysis of the query and relevant cases",
-  "patternAnalysis": {
-    "commonPrinciples": ["Array of recurring legal principles"],
-    "outcomePatterns": ["Array of similar outcomes and their conditions"],
-    "jurisdictionalTrends": ["Array of jurisdiction-specific patterns"]
-  },
-  "timeline": [{"date": "string", "event": "string", "significance": "string"}],
-  "citationMap": [{
-    "case": "string",
-    "citedBy": ["Array of cases citing this one"],
-    "significance": "string"
-  }],
-  "recommendations": ["Array of recommendations based on pattern analysis"]
-}`
-        }]
+`).join('\n')}`
+        }],
+        temperature: 0.1
       });
 
       const content = response.content[0];
@@ -413,8 +404,8 @@ Provide your response in this JSON format:
         throw new Error('Unexpected response format from Anthropic API');
       }
 
-      const analysis = JSON.parse(content.text);
-      console.log('Query analysis completed successfully');
+      const analysis = queryAnalysisSchema.parse(JSON.parse(content.text));
+      console.log('Query analysis completed and validated');
       return analysis;
     } catch (error) {
       console.error('Failed to analyze query:', error);
@@ -422,7 +413,7 @@ Provide your response in this JSON format:
     }
   }
 
-  async searchSimilarCases(query: string): Promise<any[]> {
+  async searchSimilarCases(query: string): Promise<LegalDocument[]> {
     try {
       console.log('Searching similar cases for query:', query);
       const queryEmbedding = await this.generateEmbedding(query);
