@@ -26,12 +26,28 @@ import {
   ChartBar,
   FileCheck,
   BadgeCheck,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  FileDown
 } from "lucide-react";
+import { 
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+
+interface ErrorLog {
+  timestamp: string;
+  stage: string;
+  message: string;
+  details?: string;
+}
 
 export default function WorkflowAutomation() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -82,6 +98,13 @@ export default function WorkflowAutomation() {
       }
     } catch (error) {
       console.error('Upload failed:', error);
+      const errorLog: ErrorLog = {
+        timestamp: new Date().toISOString(),
+        stage: 'upload',
+        message: 'Document upload failed',
+        details: error.message
+      };
+      setErrorLogs(prev => [errorLog, ...prev]);
       toast({
         title: "Upload Failed",
         description: "There was an error uploading your document",
@@ -101,11 +124,57 @@ export default function WorkflowAutomation() {
 
   // Retry mutation
   const retryMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (stageId?: string) => {
       if (!activeTaskId) return;
-      await apiRequest('POST', `/api/orchestrator/tasks/${activeTaskId}/retry`);
+      await apiRequest('POST', `/api/orchestrator/tasks/${activeTaskId}/retry`, { stageId });
+      queryClient.invalidateQueries(['/api/orchestrator/tasks', activeTaskId]);
     }
   });
+
+  // Download handlers
+  const handleDownloadPDF = async () => {
+    try {
+      const response = await fetch(`/api/orchestrator/tasks/${activeTaskId}/report?format=pdf`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workflow-report-${activeTaskId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('PDF download failed:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download PDF report",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDownloadCSV = async () => {
+    try {
+      const response = await fetch(`/api/orchestrator/tasks/${activeTaskId}/report?format=csv`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workflow-metrics-${activeTaskId}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('CSV download failed:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download CSV report",
+        variant: "destructive"
+      });
+    }
+  };
 
   // Get current stage based on progress
   const getCurrentStage = (progress: number) => {
@@ -216,6 +285,18 @@ export default function WorkflowAutomation() {
                         }>
                           {stage.name}
                         </span>
+                        {isError && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => retryMutation.mutate(stage.id)}
+                            disabled={retryMutation.isPending}
+                            className="mt-2 text-red-400 hover:text-red-300"
+                          >
+                            <RefreshCcw className="h-3 w-3 mr-1" />
+                            Retry Stage
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );
@@ -249,14 +330,6 @@ export default function WorkflowAutomation() {
                     Retry Process
                   </Button>
                 )}
-                {taskData.status === 'completed' && (
-                  <Button asChild variant="default" className="bg-blue-500 hover:bg-blue-600">
-                    <Link href={`/api/orchestrator/tasks/${activeTaskId}/report`}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download Report
-                    </Link>
-                  </Button>
-                )}
               </div>
             </div>
 
@@ -266,8 +339,41 @@ export default function WorkflowAutomation() {
               className="h-2 mb-6 bg-slate-700"
             />
 
+            {/* Error Log Section */}
+            {errorLogs.length > 0 && (
+              <Collapsible className="mb-8">
+                <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-red-500/10 rounded-lg border border-red-500/20">
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="h-5 w-5 text-red-400" />
+                    <span className="font-medium text-red-400">Error Log</span>
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-red-400" />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <ScrollArea className="h-[200px] mt-4">
+                    <div className="space-y-4">
+                      {errorLogs.map((log, index) => (
+                        <div key={index} className="p-4 bg-red-500/5 rounded border border-red-500/10">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-red-400 font-medium">{log.stage}</span>
+                            <span className="text-sm text-slate-500">
+                              {new Date(log.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-slate-300">{log.message}</p>
+                          {log.details && (
+                            <p className="mt-2 text-sm text-slate-400">{log.details}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+
             {/* Metrics Dashboard */}
-            <div className="grid grid-cols-2 gap-8 mt-12">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
               {/* Performance Metrics */}
               <Card className="bg-slate-700/50 border-none p-6">
                 <h4 className="text-lg font-semibold mb-6">Performance Metrics</h4>
@@ -332,6 +438,34 @@ export default function WorkflowAutomation() {
                   </ResponsiveContainer>
                 </div>
               </Card>
+            </div>
+
+            {/* Report Download Section */}
+            <div className="mt-12 border-t border-slate-700 pt-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-lg font-semibold mb-2">Download Report</h4>
+                  <p className="text-slate-400">Export workflow results and metrics in your preferred format</p>
+                </div>
+                <div className="flex gap-4">
+                  <Button
+                    variant="outline"
+                    onClick={handleDownloadPDF}
+                    className="border-slate-600 hover:bg-slate-700"
+                  >
+                    <FileDown className="h-4 w-4 mr-2" />
+                    PDF Report
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleDownloadCSV}
+                    className="border-slate-600 hover:bg-slate-700"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    CSV Data
+                  </Button>
+                </div>
+              </div>
             </div>
           </Card>
         )}
