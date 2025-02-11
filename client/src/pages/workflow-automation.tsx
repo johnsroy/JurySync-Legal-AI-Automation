@@ -24,6 +24,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { PredictiveSuggestions } from "@/components/ContractRedlining/PredictiveSuggestions";
+import { DocumentPreview } from "@/components/DocumentPreview";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -139,9 +142,16 @@ interface StageOutput {
   status: 'success' | 'warning' | 'error' | 'info';
 }
 
+interface StageResult {
+  content: string;
+  title: string;
+  downloadUrl?: string;
+}
+
 interface WorkflowStageState {
   status: 'pending' | 'processing' | 'completed' | 'error';
   outputs: StageOutput[];
+  result?: StageResult;
 }
 
 export const WorkflowAutomation: React.FC = () => {
@@ -208,6 +218,24 @@ export const WorkflowAutomation: React.FC = () => {
     }));
   }, []);
 
+  const generatePDF = async (content: string, title: string) => {
+    const doc = new jsPDF();
+
+    // Create a temporary div to render the content
+    const element = document.createElement('div');
+    element.innerHTML = content;
+    document.body.appendChild(element);
+
+    try {
+      const canvas = await html2canvas(element);
+      const imgData = canvas.toDataURL('image/png');
+      doc.addImage(imgData, 'PNG', 10, 10, 190, 0);
+      doc.save(`${title.toLowerCase().replace(/\s+/g, '-')}.pdf`);
+    } finally {
+      document.body.removeChild(element);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!documentText.trim()) {
       toast({
@@ -224,21 +252,82 @@ export const WorkflowAutomation: React.FC = () => {
     setStageStates({});
 
     const stages = [
-      { name: "Draft Generation", handler: async () => {
-        await new Promise(r => setTimeout(r, 1500));
-      }},
-      { name: "Compliance Check", handler: async () => {
-        await new Promise(r => setTimeout(r, 1500));
-      }},
-      { name: "Legal Research", handler: async () => {
-        await new Promise(r => setTimeout(r, 1500));
-      }},
-      { name: "Approval Process", handler: async () => {
-        await new Promise(r => setTimeout(r, 1500));
-      }},
-      { name: "Final Audit", handler: async () => {
-        await new Promise(r => setTimeout(r, 1500));
-      }}
+      {
+        name: "Draft Generation",
+        handler: async () => {
+          // Simulate AI draft generation
+          const draftContent = `
+            <h2>Legal Draft Summary</h2>
+            <p><strong>Document Type:</strong> Contract Agreement</p>
+            <p><strong>Key Points:</strong></p>
+            <ul>
+              <li>Identified main parties and their obligations</li>
+              <li>Structured key terms and conditions</li>
+              <li>Added standard legal clauses and protections</li>
+            </ul>
+            <p>${documentText.substring(0, 200)}...</p>
+          `;
+
+          return {
+            content: draftContent,
+            title: "Generated Legal Draft"
+          };
+        }
+      },
+      {
+        name: "Compliance Check",
+        handler: async () => {
+          // Simulate compliance analysis
+          const complianceContent = `
+            <h2>Compliance Analysis Report</h2>
+            <p><strong>Overall Compliance Score:</strong> 85%</p>
+            <h3>Key Findings:</h3>
+            <ul>
+              <li>✅ GDPR Compliance: Satisfactory</li>
+              <li>⚠️ Data Protection: Minor revisions needed</li>
+              <li>✅ Contract Terms: Compliant with local laws</li>
+            </ul>
+            <h3>Recommendations:</h3>
+            <p>1. Add specific data retention periods</p>
+            <p>2. Include breach notification procedures</p>
+          `;
+
+          return {
+            content: complianceContent,
+            title: "Compliance Analysis Report"
+          };
+        }
+      },
+      {
+        name: "Legal Research",
+        handler: async () => {
+          // Simulate legal research
+          const researchContent = `
+            <h2>Legal Research Findings</h2>
+            <h3>Relevant Case Law:</h3>
+            <ul>
+              <li><a href="#">Smith v. Johnson (2024) - Similar contract dispute</a></li>
+              <li><a href="#">Tech Corp v. Data Inc (2023) - Data protection precedent</a></li>
+            </ul>
+            <h3>Regulatory Framework:</h3>
+            <ul>
+              <li>Electronic Communications Privacy Act</li>
+              <li>State Data Protection Laws</li>
+            </ul>
+            <h3>Additional Resources:</h3>
+            <p>📚 Recommended Reading:</p>
+            <ul>
+              <li><a href="#">Guide to Modern Contract Law</a></li>
+              <li><a href="#">Digital Privacy Compliance Handbook</a></li>
+            </ul>
+          `;
+
+          return {
+            content: researchContent,
+            title: "Legal Research Report"
+          };
+        }
+      }
     ];
 
     try {
@@ -254,14 +343,22 @@ export const WorkflowAutomation: React.FC = () => {
         });
 
         try {
-          await stages[i].handler();
+          const result = await stages[i].handler();
 
-          updateStageStatus(i, 'completed');
+          setStageStates(prev => ({
+            ...prev,
+            [i]: {
+              ...prev[i],
+              status: 'completed',
+              result
+            }
+          }));
+
           setWorkflowProgress((i + 1) * (100 / stages.length));
 
           addStageOutput(i, {
             message: `${stages[i].name} completed`,
-            details: "Successfully processed",
+            details: "Results ready for review",
             timestamp: new Date().toISOString(),
             status: 'success'
           });
@@ -433,6 +530,14 @@ export const WorkflowAutomation: React.FC = () => {
                         </p>
                       </div>
                     ))}
+
+                    {state.result && (
+                      <DocumentPreview
+                        content={state.result.content}
+                        title={state.result.title}
+                        onDownload={() => generatePDF(state.result!.content, state.result!.title)}
+                      />
+                    )}
                   </CardContent>
                 </Card>
               ))}
