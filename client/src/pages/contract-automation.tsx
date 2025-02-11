@@ -15,6 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
+import { ContractRedlining } from "@/components/ContractRedlining/ContractRedlining";
 
 // Define the template interface
 interface Template {
@@ -710,49 +711,30 @@ export default function ContractAutomation() {
                 <>
                   <Card>
                     <CardHeader>
-                      <CardTitle>Generated Contract</CardTitle>
+                      <CardTitle>Contract Analysis</CardTitle>
                       <CardDescription>
-                        Review your generated contract with AI suggestions
+                        Review and edit contract clauses with AI assistance
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        <DiffViewer
-                          original={selectedTemplate?.baseContent || ''}
-                          modified={generatedContract.content}
-                        />
-                        <div className="flex gap-4">
-                          <Button onClick={() => handleDownload('pdf')}>
-                            Download as PDF
-                          </Button>
-                          <Button onClick={() => handleDownload('docx')}>
-                            Download as DOCX
-                          </Button>
-                        </div>
-                      </div>
+                      <ContractRedlining initialContent={generatedContract.content} />
                     </CardContent>
                   </Card>
 
                   <Card>
                     <CardHeader>
-                      <CardTitle>AI Suggestions</CardTitle>
-                      <CardDescription>
-                        Review and apply AI-generated improvements
-                      </CardDescription>
+                      <CardTitle>Download Options</CardTitle>
+                      <CardDescription>Export your contract in different formats</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <ScrollArea className="h-[200px]">
-                        {/* Placeholder for AI suggestions */}
-                        <div className="space-y-2">
-                          {[1, 2, 3].map((i) => (
-                            <Alert key={i} className="cursor-pointer hover:bg-accent">
-                              <AlertDescription>
-                                Suggested improvement {i}
-                              </AlertDescription>
-                            </Alert>
-                          ))}
-                        </div>
-                      </ScrollArea>
+                      <div className="flex gap-4">
+                        <Button onClick={() => handleDownload('pdf')}>
+                          Download as PDF
+                        </Button>
+                        <Button onClick={() => handleDownload('docx')}>
+                          Download as DOCX
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 </>
