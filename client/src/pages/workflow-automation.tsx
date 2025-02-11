@@ -16,7 +16,9 @@ import {
   RefreshCcw,
   MessageSquare,
   Users,
-  AlertTriangle
+  AlertTriangle,
+  Eye,
+  Download
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDropzone } from 'react-dropzone';
@@ -97,32 +99,32 @@ export const WorkflowAutomation: React.FC = () => {
   const workflowStages = [
     {
       icon: FileText,
-      title: "Intelligent Draft",
-      description: "AI-powered document drafting with suggestions",
+      title: "Draft Generation",
+      description: "AI-powered document drafting and formatting",
       status: currentStage >= 0 ? (currentStage === 0 ? 'processing' : 'completed') : 'pending' as const
     },
     {
       icon: Shield,
-      title: "Compliance Check",
-      description: "Automated compliance and risk assessment",
+      title: "Compliance Review",
+      description: "Automated compliance check and risk assessment",
       status: currentStage >= 1 ? (currentStage === 1 ? 'processing' : 'completed') : 'pending' as const
     },
     {
-      icon: Users,
-      title: "Collaboration",
-      description: "Team review and annotations",
+      icon: BookOpen,
+      title: "Legal Research",
+      description: "Context-aware legal research and analysis",
       status: currentStage >= 2 ? (currentStage === 2 ? 'processing' : 'completed') : 'pending' as const
     },
     {
       icon: History,
-      title: "Version Control",
-      description: "Document versioning and audit trail",
+      title: "Approval",
+      description: "Workflow approval and document execution",
       status: currentStage >= 3 ? (currentStage === 3 ? 'processing' : 'completed') : 'pending' as const
     },
     {
-      icon: AlertTriangle,
-      title: "Risk Analysis",
-      description: "Continuous risk monitoring and updates",
+      icon: RefreshCcw,
+      title: "Periodic Audit",
+      description: "Continuous monitoring and compliance updates",
       status: currentStage >= 4 ? (currentStage === 4 ? 'processing' : 'completed') : 'pending' as const
     }
   ] as const;
@@ -182,29 +184,64 @@ export const WorkflowAutomation: React.FC = () => {
       for (let i = 0; i <= 4; i++) {
         setCurrentStage(i);
 
-        // Make appropriate API calls for each stage
-        switch (i) {
-          case 0: // Intelligent Draft
-            await apiRequest('POST', '/api/workflow/draft', { text: documentText });
-            break;
-          case 1: // Compliance Check
-            await apiRequest('POST', '/api/workflow/compliance', { documentId: '1' });
-            break;
-          case 2: // Collaboration
-            await apiRequest('POST', '/api/workflow/collaborate', { documentId: '1' });
-            break;
-          case 3: // Version Control
-            await apiRequest('POST', '/api/workflow/version', { documentId: '1' });
-            break;
-          case 4: // Risk Analysis
-            await apiRequest('POST', '/api/workflow/risk', { documentId: '1' });
-            break;
-        }
+        try {
+          let response;
+          const basePayload = {
+            text: documentText,
+            metadata: {
+              type: uploadedFiles.length > 0 ? uploadedFiles[0].type : 'text/plain',
+              fileName: uploadedFiles.length > 0 ? uploadedFiles[0].name : 'manual-input.txt'
+            }
+          };
 
-        // Update progress
-        for (let progress = 0; progress <= 100; progress += 10) {
-          setWorkflowProgress(progress);
-          await new Promise(resolve => setTimeout(resolve, 100));
+          // Make appropriate API calls for each stage
+          switch (i) {
+            case 0: // Draft Generation
+              response = await apiRequest('POST', '/api/workflow/draft', basePayload);
+              break;
+            case 1: // Compliance Check
+              response = await apiRequest('POST', '/api/workflow/compliance', {
+                ...basePayload,
+                documentId: '1'
+              });
+              break;
+            case 2: // Legal Research
+              response = await apiRequest('POST', '/api/workflow/collaborate', {
+                ...basePayload,
+                documentId: '1'
+              });
+              break;
+            case 3: // Approval
+              response = await apiRequest('POST', '/api/workflow/version', {
+                ...basePayload,
+                documentId: '1'
+              });
+              break;
+            case 4: // Periodic Audit
+              response = await apiRequest('POST', '/api/workflow/risk', {
+                ...basePayload,
+                documentId: '1'
+              });
+              break;
+          }
+
+          if (!response.ok) {
+            throw new Error(`Stage ${workflowStages[i].title} failed: ${response.statusText}`);
+          }
+
+          // Update progress
+          for (let progress = 0; progress <= 100; progress += 10) {
+            setWorkflowProgress(progress);
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        } catch (stageError) {
+          console.error(`Error in stage ${workflowStages[i].title}:`, stageError);
+          toast({
+            title: `${workflowStages[i].title} Failed`,
+            description: stageError instanceof Error ? stageError.message : 'Stage processing failed',
+            variant: "destructive"
+          });
+          return;
         }
       }
 
@@ -213,9 +250,10 @@ export const WorkflowAutomation: React.FC = () => {
         description: "Document has been processed successfully",
       });
     } catch (error) {
+      console.error('Workflow error:', error);
       toast({
         title: "Error",
-        description: "Failed to process document. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to process document. Please try again.",
         variant: "destructive"
       });
     }
@@ -223,6 +261,7 @@ export const WorkflowAutomation: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+      {/* Header */}
       <header className="bg-white/80 backdrop-blur-lg border-b border-indigo-100">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -230,6 +269,20 @@ export const WorkflowAutomation: React.FC = () => {
               <Gavel className="h-6 w-6 text-indigo-600" />
               <h1 className="text-xl font-semibold">JurySync.io</h1>
             </Link>
+          </div>
+          <div className="hidden md:flex space-x-6">
+            <Button variant="ghost" asChild>
+              <Link href="/dashboard">Dashboard</Link>
+            </Button>
+            <Button variant="ghost" asChild>
+              <Link href="/contract-automation">Contract Automation</Link>
+            </Button>
+            <Button variant="ghost" asChild>
+              <Link href="/compliance-auditing">Compliance Audit</Link>
+            </Button>
+            <Button variant="ghost" asChild>
+              <Link href="/legal-research">Legal Research</Link>
+            </Button>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-600">
@@ -251,15 +304,45 @@ export const WorkflowAutomation: React.FC = () => {
         </div>
       </header>
 
+      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto space-y-6">
+          {/* Title Section */}
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900">
-              Intelligent Legal Document Workflow
+              End-to-End Legal Workflow Automation
             </h1>
             <p className="mt-2 text-gray-600">
-              AI-Powered Document Processing with Real-Time Collaboration
+              Streamline your legal processes with AI-powered automation
             </p>
+          </div>
+
+          {/* Workflow Progress Tracker */}
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold mb-4">Workflow Progress</h2>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              {workflowStages.map((stage, index) => {
+                const Icon = stage.icon;
+                const isComplete = index < currentStage;
+                const isCurrent = index === currentStage;
+
+                return (
+                  <div
+                    key={stage.title}
+                    className={`flex flex-col items-center p-4 rounded-lg border ${
+                      isCurrent ? "border-primary bg-primary/5" :
+                        isComplete ? "border-green-500 bg-green-50" : "border-gray-200"
+                    }`}
+                  >
+                    <Icon className={`h-6 w-6 ${
+                      isCurrent ? "text-primary" :
+                        isComplete ? "text-green-500" : "text-gray-400"
+                    }`} />
+                    <span className="text-sm mt-2 text-center">{stage.title}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -427,8 +510,78 @@ export const WorkflowAutomation: React.FC = () => {
               </Card>
             </div>
           </div>
+
+          {/* Add Summary Panel */}
+          <Card className="bg-white/80 backdrop-blur-lg">
+            <CardHeader>
+              <CardTitle>Performance Metrics</CardTitle>
+              <CardDescription>Key automation and efficiency metrics</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {[
+                  { label: "Tasks Automated", value: "80%", description: "Increased efficiency" },
+                  { label: "Processing Time", value: "70%", description: "Time reduction" },
+                  { label: "Labor Cost", value: "30-50%", description: "Cost savings" },
+                  { label: "Error Reduction", value: "60%", description: "Improved accuracy" }
+                ].map((metric) => (
+                  <div key={metric.label} className="p-4 bg-gray-50 rounded-lg">
+                    <h3 className="font-bold text-xl text-primary">{metric.value}</h3>
+                    <p className="font-medium text-gray-700">{metric.label}</p>
+                    <p className="text-sm text-gray-500">{metric.description}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-4">
+            <Button variant="outline" className="gap-2">
+              <RefreshCcw className="h-4 w-4" />
+              Retry Process
+            </Button>
+            <Button variant="outline" className="gap-2">
+              <Eye className="h-4 w-4" />
+              View Details
+            </Button>
+            <Button className="gap-2">
+              <Download className="h-4 w-4" />
+              Download Report
+            </Button>
+          </div>
         </div>
       </main>
+
+      {/* Footer */}
+      <footer className="border-t mt-16 bg-card">
+        <div className="container mx-auto px-4 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div>
+              <div className="flex items-center space-x-2">
+                <Gavel className="h-6 w-6 text-primary" />
+                <span className="font-bold">JurySync</span>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Transforming legal workflows with intelligent automation
+              </p>
+            </div>
+            <div>
+              <h3 className="font-medium mb-2">Contact</h3>
+              <p className="text-sm text-muted-foreground">support@jurysync.com</p>
+              <p className="text-sm text-muted-foreground">1-800-JURYSYNC</p>
+            </div>
+            <div>
+              <h3 className="font-medium mb-2">Support</h3>
+              <div className="space-y-1">
+                <Button variant="link" className="p-0 h-auto text-sm">Help Center</Button>
+                <Button variant="link" className="p-0 h-auto text-sm">Documentation</Button>
+                <Button variant="link" className="p-0 h-auto text-sm">API Reference</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

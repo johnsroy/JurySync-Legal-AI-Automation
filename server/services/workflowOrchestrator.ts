@@ -1,5 +1,12 @@
 import { db } from "../db";
 import { z } from "zod";
+import { eq, and } from 'drizzle-orm';
+import { 
+  workflowEvents,
+  contractVersions,
+  type WorkflowEvent,
+  type ContractVersion
+} from "@shared/schema";
 
 // Workflow stage types
 type WorkflowStage = 'draft' | 'review' | 'approval' | 'signature' | 'audit';
@@ -30,7 +37,7 @@ interface SignatureResponse {
   }>;
 }
 
-// Version history schema
+// Version schema
 const versionSchema = z.object({
   id: z.number(),
   contractId: z.number(),
@@ -127,12 +134,11 @@ class WorkflowOrchestrator {
     try {
       console.log(`Fetching version history for contract ${contractId}`);
 
-      const versions = await db.query(
-        'SELECT * FROM contract_versions WHERE contract_id = $1 ORDER BY version DESC',
-        [contractId]
-      );
+      const versions = await db.select().from(contractVersions)
+        .where(eq(contractVersions.contractId, contractId))
+        .orderBy(contractVersions.version);
 
-      return versions.rows.map(row => versionSchema.parse(row));
+      return versions.map(version => versionSchema.parse(version));
     } catch (error) {
       const workflowError = this.handleError(error, 'version_history');
       await this.logWorkflowEvent(contractId, 'version_history_error', workflowError);
@@ -142,17 +148,16 @@ class WorkflowOrchestrator {
 
   async getDiagnosticReport(contractId: number) {
     try {
-      const events = await db.query(
-        'SELECT * FROM workflow_events WHERE contract_id = $1 ORDER BY timestamp DESC',
-        [contractId]
-      );
+      const events = await db.select().from(workflowEvents)
+        .where(eq(workflowEvents.contractId, contractId))
+        .orderBy(workflowEvents.timestamp);
 
       const diagnosticReport = {
         contractId,
-        totalEvents: events.rowCount,
-        errors: events.rows.filter(e => e.event_type.endsWith('_error')),
-        stages: this.aggregateStageMetrics(events.rows),
-        recommendations: this.generateRecommendations(events.rows)
+        totalEvents: events.length,
+        errors: events.filter(e => e.eventType.endsWith('_error')),
+        stages: this.aggregateStageMetrics(events),
+        recommendations: this.generateRecommendations(events)
       };
 
       return {
@@ -176,25 +181,48 @@ class WorkflowOrchestrator {
   }): Promise<Version> {
     try {
       // Get the latest version number
-      const result = await db.query(
-        'SELECT MAX(version) as max_version FROM contract_versions WHERE contract_id = $1',
-        [contractId]
-      );
-      const nextVersion = (result.rows[0].max_version || 0) + 1;
+      const latestVersion = await db.select({ maxVersion: contractVersions.version })
+        .from(contractVersions)
+        .where(eq(contractVersions.contractId, contractId))
+        .orderBy(contractVersions.version, 'desc')
+        .limit(1);
+
+      const nextVersion = (latestVersion[0]?.maxVersion || 0) + 1;
 
       // Insert new version
-      const [newVersion] = await db.query(
-        `INSERT INTO contract_versions 
-         (contract_id, version, status, author, changes, timestamp) 
-         VALUES ($1, $2, $3, $4, $5, NOW()) 
-         RETURNING *`,
-        [contractId, nextVersion, status, author, changes]
-      );
+      const [newVersion] = await db.insert(contractVersions)
+        .values({
+          contractId,
+          version: nextVersion,
+          status,
+          author,
+          changes,
+          timestamp: new Date()
+        })
+        .returning();
 
       return versionSchema.parse(newVersion);
     } catch (error) {
       console.error('Failed to create version:', error);
       throw new Error('Failed to create new version');
+    }
+  }
+
+  private async logWorkflowEvent(
+    contractId: number,
+    eventType: string,
+    details: Record<string, any>
+  ) {
+    try {
+      await db.insert(workflowEvents).values({
+        contractId,
+        eventType,
+        details: JSON.stringify(details),
+        timestamp: new Date()
+      });
+    } catch (error) {
+      console.error('Failed to log workflow event:', error);
+      // Don't throw here to prevent workflow interruption
     }
   }
 
@@ -245,25 +273,7 @@ class WorkflowOrchestrator {
     };
   }
 
-  private async logWorkflowEvent(
-    contractId: number,
-    eventType: string,
-    details: Record<string, any>
-  ) {
-    try {
-      await db.query(
-        `INSERT INTO workflow_events 
-         (contract_id, event_type, details, timestamp) 
-         VALUES ($1, $2, $3, NOW())`,
-        [contractId, eventType, JSON.stringify(details)]
-      );
-    } catch (error) {
-      console.error('Failed to log workflow event:', error);
-      // Don't throw here to prevent workflow interruption
-    }
-  }
-
-  private aggregateStageMetrics(events: any[]) {
+  private aggregateStageMetrics(events: WorkflowEvent[]) {
     const stages = new Map<string, {
       totalTime: number,
       errorCount: number,
@@ -271,13 +281,13 @@ class WorkflowOrchestrator {
     }>();
 
     events.forEach(event => {
-      const stage = event.event_type.split('_')[0];
+      const stage = event.eventType.split('_')[0];
       const current = stages.get(stage) || { totalTime: 0, errorCount: 0, retryCount: 0 };
 
-      if (event.event_type.endsWith('_error')) {
+      if (event.eventType.endsWith('_error')) {
         current.errorCount++;
       }
-      if (event.details.retryCount) {
+      if (event.details?.retryCount) {
         current.retryCount += event.details.retryCount;
       }
 
@@ -287,12 +297,12 @@ class WorkflowOrchestrator {
     return Object.fromEntries(stages);
   }
 
-  private generateRecommendations(events: any[]) {
+  private generateRecommendations(events: WorkflowEvent[]) {
     const recommendations: string[] = [];
     const errorCounts = new Map<WorkflowErrorType, number>();
 
     events
-      .filter(e => e.event_type.endsWith('_error'))
+      .filter(e => e.eventType.endsWith('_error'))
       .forEach(error => {
         const count = errorCounts.get(error.details.type) || 0;
         errorCounts.set(error.details.type, count + 1);
