@@ -1,10 +1,13 @@
-import { Link } from "wouter";
+import { useState } from "react";
+import { Link, useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useDropzone } from "react-dropzone";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, type TaskData } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import {
   BookCheck,
   Scale,
@@ -20,16 +23,45 @@ import {
   Clock,
   Users,
   BrainCircuit,
-  ChartBar
+  ChartBar,
+  FileCheck,
+  BadgeCheck,
+  AlertTriangle
 } from "lucide-react";
-import { useState } from "react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
 export default function WorkflowAutomation() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+
+  // Protect the route
+  if (!user) {
+    console.log("No user found, redirecting to login");
+    setLocation("/login");
+    return null;
+  }
+
+  // Workflow stages definition
+  const workflowStages = [
+    { id: 'draft', name: 'Draft Generation', icon: FileText },
+    { id: 'compliance', name: 'Compliance Auditing', icon: Scale },
+    { id: 'research', name: 'Legal Research & Summarization', icon: BookCheck },
+    { id: 'approval', name: 'Approval & Execution', icon: BadgeCheck },
+    { id: 'audit', name: 'Periodic Audit', icon: History }
+  ];
 
   // Document upload handler
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
+
+    toast({
+      title: "Document Submitted",
+      description: "Starting automation workflow...",
+      duration: 3000
+    });
 
     const formData = new FormData();
     formData.append('file', acceptedFiles[0]);
@@ -42,9 +74,19 @@ export default function WorkflowAutomation() {
       const data = await response.json();
       if (data.taskId) {
         setActiveTaskId(data.taskId);
+        toast({
+          title: "Processing Started",
+          description: "Your document is being analyzed",
+          duration: 5000
+        });
       }
     } catch (error) {
       console.error('Upload failed:', error);
+      toast({
+        title: "Upload Failed",
+        description: "There was an error uploading your document",
+        variant: "destructive"
+      });
     }
   };
 
@@ -54,7 +96,7 @@ export default function WorkflowAutomation() {
   const { data: taskData } = useQuery<TaskData>({
     queryKey: ['/api/orchestrator/tasks', activeTaskId],
     enabled: !!activeTaskId,
-    refetchInterval: 2000, // Poll every 2 seconds
+    refetchInterval: 2000,
   });
 
   // Retry mutation
@@ -65,16 +107,7 @@ export default function WorkflowAutomation() {
     }
   });
 
-  // Define workflow stages for jury selection
-  const stages = [
-    { id: 'upload', name: 'Document Upload', icon: Upload },
-    { id: 'analysis', name: 'Initial Screening', icon: FileText },
-    { id: 'juryProfiling', name: 'Jury Profiling', icon: Users },
-    { id: 'biasDetection', name: 'Bias Analysis', icon: BrainCircuit },
-    { id: 'recommendations', name: 'Selection Strategy', icon: ChartBar }
-  ];
-
-  // Calculate current stage based on progress
+  // Get current stage based on progress
   const getCurrentStage = (progress: number) => {
     if (progress <= 20) return 0;
     if (progress <= 40) return 1;
@@ -82,6 +115,22 @@ export default function WorkflowAutomation() {
     if (progress <= 80) return 3;
     return 4;
   };
+
+  // Sample metrics data
+  const metricsData = [
+    { name: 'Tasks Automated', value: 80, label: '80% of routine tasks automated' },
+    { name: 'Processing Speed', value: 70, label: '70% faster processing' },
+    { name: 'Cost Savings', value: 40, label: '40% labor cost savings' },
+    { name: 'Error Reduction', value: 60, label: '60% error reduction' }
+  ];
+
+  // Sample timeline data
+  const timelineData = [
+    { name: 'Week 1', tasks: 45, time: 120 },
+    { name: 'Week 2', tasks: 52, time: 110 },
+    { name: 'Week 3', tasks: 48, time: 90 },
+    { name: 'Week 4', tasks: 60, time: 85 }
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
@@ -91,11 +140,11 @@ export default function WorkflowAutomation() {
           <div className="flex items-center space-x-2 mb-2">
             <Workflow className="h-8 w-8 text-blue-400" />
             <h1 className="text-4xl font-bold tracking-tight">
-              JurySync Workflow Automation
+              Full Lifecycle Automation Workflow
             </h1>
           </div>
           <p className="text-slate-400 text-lg mb-8">
-            Advanced Jury Selection & Analysis Pipeline
+            From Draft to Execution – Automating 80% of Legal Compliance Tasks
           </p>
         </div>
       </header>
@@ -112,11 +161,16 @@ export default function WorkflowAutomation() {
             <input {...getInputProps()} />
             <Upload className="h-16 w-16 mx-auto mb-6 text-slate-400" />
             <h3 className="text-xl font-semibold mb-3">
-              Upload Jury Selection Documents
+              Upload Legal Documents
             </h3>
-            <p className="text-slate-400">
-              Drag & drop juror questionnaires or click to select files
+            <p className="text-slate-400 mb-4">
+              Drag & drop your documents here or click to select files
             </p>
+            <div className="flex justify-center gap-4 text-sm text-slate-500">
+              <span>PDF</span>
+              <span>DOCX</span>
+              <span>TXT</span>
+            </div>
           </div>
         </Card>
 
@@ -127,22 +181,39 @@ export default function WorkflowAutomation() {
             <div className="relative mb-12">
               <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-700 -translate-y-1/2" />
               <div className="relative flex justify-between">
-                {stages.map((stage, index) => {
+                {workflowStages.map((stage, index) => {
                   const currentStage = getCurrentStage(taskData.progress);
                   const Icon = stage.icon;
                   const isCompleted = index < currentStage;
                   const isCurrent = index === currentStage;
+                  const isError = taskData.status === 'failed' && isCurrent;
 
                   return (
                     <div key={stage.id} className="flex flex-col items-center">
-                      <div 
-                        className={`w-10 h-10 rounded-full flex items-center justify-center relative z-10
-                          ${isCompleted ? 'bg-blue-500' : isCurrent ? 'bg-blue-500/20 border-2 border-blue-400' : 'bg-slate-700'}`}
+                      <div
+                        className={`w-12 h-12 rounded-full flex items-center justify-center relative z-10
+                          ${isCompleted ? 'bg-green-500' :
+                            isError ? 'bg-red-500' :
+                              isCurrent ? 'bg-blue-500/20 border-2 border-blue-400' :
+                                'bg-slate-700'}`}
                       >
-                        <Icon className={`h-5 w-5 ${isCompleted || isCurrent ? 'text-white' : 'text-slate-400'}`} />
+                        {isCompleted ? (
+                          <CheckCircle2 className="h-6 w-6 text-white" />
+                        ) : isError ? (
+                          <AlertTriangle className="h-6 w-6 text-white" />
+                        ) : isCurrent ? (
+                          <Clock className="h-6 w-6 text-blue-400 animate-spin" />
+                        ) : (
+                          <Icon className="h-6 w-6 text-slate-400" />
+                        )}
                       </div>
-                      <div className="mt-2 text-sm font-medium text-center">
-                        <span className={isCompleted || isCurrent ? 'text-white' : 'text-slate-400'}>
+                      <div className="mt-4 text-sm font-medium text-center">
+                        <span className={
+                          isCompleted ? 'text-green-400' :
+                            isError ? 'text-red-400' :
+                              isCurrent ? 'text-blue-400' :
+                                'text-slate-400'
+                        }>
                           {stage.name}
                         </span>
                       </div>
@@ -159,10 +230,10 @@ export default function WorkflowAutomation() {
                   {taskData.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-400" />}
                   {taskData.status === 'processing' && <Clock className="h-5 w-5 text-blue-400 animate-spin" />}
                   {taskData.status === 'failed' && <AlertCircle className="h-5 w-5 text-red-400" />}
-                  <h3 className="text-2xl font-semibold">Jury Analysis Progress</h3>
+                  <h3 className="text-2xl font-semibold">Workflow Progress</h3>
                 </div>
                 <p className="text-slate-400">
-                  {taskData.currentStepDetails?.description || 'Analyzing jury selection data'}
+                  {taskData.currentStepDetails?.description || 'Processing your document...'}
                 </p>
               </div>
 
@@ -175,14 +246,14 @@ export default function WorkflowAutomation() {
                     className="border-slate-600 hover:bg-slate-700"
                   >
                     <RefreshCcw className="h-4 w-4 mr-2" />
-                    Retry Analysis
+                    Retry Process
                   </Button>
                 )}
                 {taskData.status === 'completed' && (
                   <Button asChild variant="default" className="bg-blue-500 hover:bg-blue-600">
                     <Link href={`/api/orchestrator/tasks/${activeTaskId}/report`}>
                       <Download className="h-4 w-4 mr-2" />
-                      Download Analysis Report
+                      Download Report
                     </Link>
                   </Button>
                 )}
@@ -190,71 +261,78 @@ export default function WorkflowAutomation() {
             </div>
 
             {/* Progress Bar */}
-            <Progress 
-              value={taskData.progress} 
-              className="h-2 mb-6 bg-slate-700" 
+            <Progress
+              value={taskData.progress}
+              className="h-2 mb-6 bg-slate-700"
             />
 
-            {/* Error Display */}
-            {taskData.error && (
-              <div className="mb-8 p-4 bg-red-500/10 rounded-lg border border-red-500/20 flex items-start space-x-3">
-                <AlertCircle className="h-5 w-5 text-red-400 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h4 className="text-red-400 font-medium mb-1">Analysis Error</h4>
-                  <p className="text-slate-400 text-sm">{taskData.error}</p>
+            {/* Metrics Dashboard */}
+            <div className="grid grid-cols-2 gap-8 mt-12">
+              {/* Performance Metrics */}
+              <Card className="bg-slate-700/50 border-none p-6">
+                <h4 className="text-lg font-semibold mb-6">Performance Metrics</h4>
+                <div className="space-y-4">
+                  {metricsData.map((metric, index) => (
+                    <div key={index} className="relative pt-1">
+                      <div className="flex mb-2 items-center justify-between">
+                        <div>
+                          <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-500/20 text-blue-400">
+                            {metric.name}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-semibold inline-block text-blue-400">
+                            {metric.value}%
+                          </span>
+                        </div>
+                      </div>
+                      <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-600">
+                        <div
+                          style={{ width: `${metric.value}%` }}
+                          className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            )}
+              </Card>
 
-            {/* Metrics */}
-            {taskData.metrics && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-8">
-                <Card className="p-6 bg-slate-700 border-none">
-                  <h4 className="text-sm font-medium text-slate-400 mb-3">
-                    Profile Accuracy
-                  </h4>
-                  <div className="flex items-baseline space-x-2">
-                    <p className="text-3xl font-bold text-blue-400">
-                      {taskData.metrics.automatedTasks}%
-                    </p>
-                    <span className="text-slate-400">match rate</span>
-                  </div>
-                </Card>
-                <Card className="p-6 bg-slate-700 border-none">
-                  <h4 className="text-sm font-medium text-slate-400 mb-3">
-                    Analysis Speed
-                  </h4>
-                  <div className="flex items-baseline space-x-2">
-                    <p className="text-3xl font-bold text-blue-400">
-                      {taskData.metrics.processingSpeed}%
-                    </p>
-                    <span className="text-slate-400">faster</span>
-                  </div>
-                </Card>
-                <Card className="p-6 bg-slate-700 border-none">
-                  <h4 className="text-sm font-medium text-slate-400 mb-3">
-                    Time Savings
-                  </h4>
-                  <div className="flex items-baseline space-x-2">
-                    <p className="text-3xl font-bold text-blue-400">
-                      {taskData.metrics.laborCost}%
-                    </p>
-                    <span className="text-slate-400">reduced</span>
-                  </div>
-                </Card>
-                <Card className="p-6 bg-slate-700 border-none">
-                  <h4 className="text-sm font-medium text-slate-400 mb-3">
-                    Bias Detection
-                  </h4>
-                  <div className="flex items-baseline space-x-2">
-                    <p className="text-3xl font-bold text-blue-400">
-                      {taskData.metrics.errorReduction}%
-                    </p>
-                    <span className="text-slate-400">accuracy</span>
-                  </div>
-                </Card>
-              </div>
-            )}
+              {/* Processing Timeline */}
+              <Card className="bg-slate-700/50 border-none p-6">
+                <h4 className="text-lg font-semibold mb-6">Processing Timeline</h4>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={timelineData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                      <XAxis dataKey="name" stroke="#94a3b8" />
+                      <YAxis stroke="#94a3b8" />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1e293b',
+                          border: 'none',
+                          borderRadius: '0.5rem',
+                          color: '#f8fafc'
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="tasks"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        dot={{ fill: '#3b82f6' }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="time"
+                        stroke="#22c55e"
+                        strokeWidth={2}
+                        dot={{ fill: '#22c55e' }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </div>
           </Card>
         )}
       </main>
