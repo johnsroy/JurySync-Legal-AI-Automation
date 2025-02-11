@@ -201,7 +201,7 @@ export const PredictionConfidence = z.enum([
 
 export type PredictionConfidence = z.infer<typeof PredictionConfidence>;
 
-// Schema for compliance documents
+// Update complianceDocuments table
 export const complianceDocuments = pgTable("compliance_documents", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
@@ -212,6 +212,7 @@ export const complianceDocuments = pgTable("compliance_documents", {
   riskScore: integer("risk_score"),
   lastScanned: timestamp("last_scanned"),
   nextScanDue: timestamp("next_scan_due"),
+  auditSummary: text("audit_summary"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
 });
@@ -271,12 +272,16 @@ export const complianceAlerts = pgTable("compliance_alerts", {
 // Create insert schemas for the new tables
 export const insertRiskAssessmentSchema = createInsertSchema(riskAssessments);
 export const insertComplianceIssueSchema = createInsertSchema(complianceIssues);
+export const insertComplianceDocumentSchema = createInsertSchema(complianceDocuments);
+
 
 // Export types
 export type RiskAssessmentRecord = typeof riskAssessments.$inferSelect;
 export type InsertRiskAssessment = z.infer<typeof insertRiskAssessmentSchema>;
 export type ComplianceIssueRecord = typeof complianceIssues.$inferSelect;
 export type InsertComplianceIssue = z.infer<typeof insertComplianceIssueSchema>;
+export type ComplianceDocument = typeof complianceDocuments.$inferSelect;
+export type InsertComplianceDocument = z.infer<typeof insertComplianceDocumentSchema>;
 
 // Schema for compliance monitoring results
 export const ComplianceIssue = z.object({
@@ -660,9 +665,8 @@ export type InsertLegalDocument = typeof legalDocuments.$inferInsert;
 export type InsertCitation = typeof legalCitations.$inferInsert;
 export type InsertResearchQuery = typeof researchQueries.$inferInsert;
 
-import { boolean } from "drizzle-orm/pg-core";
 
-// Add after the legal research types
+// Add this after the legal research types
 // Analytics data schema for metrics collection
 export const analyticsDataSchema = z.object({
   modelUsage: z.record(z.number()),
