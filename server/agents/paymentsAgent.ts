@@ -1,4 +1,4 @@
-import { stripe, stripeService, SUBSCRIPTION_PLANS } from '../services/stripe';
+import { stripe, stripeService } from '../services/stripe';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
 import { subscriptions, subscriptionPlans } from '@shared/schema/subscriptions';
@@ -57,17 +57,36 @@ export class PaymentsAgent {
   }> {
     try {
       // Validate user and subscription requirements
-      const validation = await this.validateUserForSubscription(user, planId);
-      if (!validation.isValid) {
-        return { success: false, error: validation.error };
+      if (!user) {
+        return { success: false, error: 'User not authenticated' };
       }
 
+      // Get the plan details
       const plan = await db.select().from(subscriptionPlans)
         .where(eq(subscriptionPlans.id, planId))
         .limit(1);
 
       if (!plan || plan.length === 0) {
-        return { success: false, error: 'Plan not found' };
+        return { success: false, error: 'Invalid subscription plan' };
+      }
+
+      const selectedPlan = plan[0];
+
+      // Verify student status if needed
+      if (selectedPlan.isStudent) {
+        const isValidStudent = await stripeService.verifyStudentEmail(user.email);
+        if (!isValidStudent) {
+          return { success: false, error: 'Invalid student email. Must be a .edu email address' };
+        }
+      }
+
+      // Check if user already has an active subscription
+      const existingSubscription = await db.select().from(subscriptions)
+        .where(eq(subscriptions.userId, user.id))
+        .limit(1);
+
+      if (existingSubscription && existingSubscription.length > 0 && !existingSubscription[0].cancelAtPeriodEnd) {
+        return { success: false, error: 'User already has an active subscription' };
       }
 
       // Create or get customer
@@ -76,13 +95,19 @@ export class PaymentsAgent {
         user.stripeCustomerId
       );
 
+      // Get the correct price ID based on interval
+      const priceId = interval === 'year' ? selectedPlan.stripePriceIdYearly : selectedPlan.stripePriceIdMonthly;
+      if (!priceId) {
+        return { success: false, error: 'Invalid price configuration' };
+      }
+
       // Create checkout session
       const session = await stripeService.createCheckoutSession({
         customerId,
-        priceId: interval === 'year' ? plan[0].stripePriceIdYearly : plan[0].stripePriceIdMonthly,
+        priceId,
         userId: user.id,
-        planId: plan[0].id,
-        isTrial: plan[0].isStudent,
+        planId: selectedPlan.id,
+        isTrial: selectedPlan.isStudent,
         successUrl: `${process.env.APP_URL}/subscription-management?success=true`,
         cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`
       });
@@ -90,7 +115,7 @@ export class PaymentsAgent {
       return { success: true, sessionId: session.id };
     } catch (error) {
       console.error('Payment initialization error:', error);
-      return { success: false, error: 'Failed to initialize payment' };
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to initialize payment' };
     }
   }
 
@@ -175,5 +200,4 @@ export class PaymentsAgent {
   }
 }
 
-// Export singleton instance
 export const paymentsAgent = new PaymentsAgent();

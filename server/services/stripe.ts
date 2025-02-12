@@ -6,7 +6,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16'
+  apiVersion: '2023-10-16',
 });
 
 export const SUBSCRIPTION_PLANS = {
@@ -59,9 +59,14 @@ export class StripeService {
   ): Promise<string> {
     try {
       if (stripeCustomerId) {
-        const customer = await stripe.customers.retrieve(stripeCustomerId);
-        if (!customer.deleted) {
-          return stripeCustomerId;
+        try {
+          const customer = await stripe.customers.retrieve(stripeCustomerId);
+          if (!customer.deleted) {
+            return stripeCustomerId;
+          }
+        } catch (error) {
+          console.error('Error retrieving customer:', error);
+          // Continue to create new customer if retrieval fails
         }
       }
 
@@ -76,7 +81,7 @@ export class StripeService {
       return customer.id;
     } catch (error) {
       console.error('Error in getOrCreateCustomer:', error);
-      throw error;
+      throw new Error('Failed to process customer information');
     }
   }
 
@@ -98,6 +103,14 @@ export class StripeService {
     isTrial?: boolean;
   }) {
     try {
+      // Validate the price ID exists
+      try {
+        await stripe.prices.retrieve(priceId);
+      } catch (error) {
+        console.error('Invalid price ID:', error);
+        throw new Error('Invalid subscription plan configuration');
+      }
+
       console.log('Creating checkout session:', {
         customerId,
         priceId,
@@ -106,8 +119,7 @@ export class StripeService {
         isTrial
       });
 
-      const sessionConfig: Stripe.Checkout.SessionCreateParams = {
-        mode: 'subscription',
+      const session = await stripe.checkout.sessions.create({
         customer: customerId,
         payment_method_types: ['card'],
         line_items: [
@@ -116,18 +128,19 @@ export class StripeService {
             quantity: 1
           }
         ],
+        mode: 'subscription',
         subscription_data: isTrial ? {
-          trial_period_days: 1 // 1-day trial for student plans
+          trial_period_days: 1
         } : undefined,
-        success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: cancelUrl,
+        allow_promotion_codes: true,
         metadata: {
           userId: userId.toString(),
           planId: planId.toString()
-        }
-      };
+        },
+        success_url: successUrl,
+        cancel_url: cancelUrl
+      });
 
-      const session = await stripe.checkout.sessions.create(sessionConfig);
       console.log('Checkout session created:', session.id);
       return session;
     } catch (error) {
