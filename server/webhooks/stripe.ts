@@ -26,6 +26,8 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Webhook signature verification failed' });
     }
 
+    console.log('Received Stripe webhook event:', event.type);
+
     // Handle the event
     switch (event.type) {
       case 'checkout.session.completed':
@@ -38,16 +40,19 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
         }
 
         await db.insert(subscriptions).values({
+          userId: parseInt(userId),
+          planId: parseInt(planId),
           stripeCustomerId: session.customer as string,
           stripeSubscriptionId: session.subscription as string,
-          planId: parseInt(planId),
-          userId: parseInt(userId),
           status: 'active',
           currentPeriodStart: new Date(),
-          currentPeriodEnd: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day trial
+          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
           cancelAtPeriodEnd: false
         });
         break;
+
+      default:
+        console.log(`Unhandled event type ${event.type}`);
     }
 
     return res.json({ received: true });

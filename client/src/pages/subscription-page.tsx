@@ -57,21 +57,21 @@ export default function SubscriptionPage() {
 
       setIsLoading(true);
 
-      const response = await apiRequest('POST', '/api/payments/create-checkout-session', {
+      const response = await apiRequest('POST', '/api/payments/create-payment-link', {
         planId: parseInt(planId),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session');
+        throw new Error(data.error || 'Failed to create payment link');
       }
 
       if (!data.url) {
-        throw new Error('No checkout URL received from server');
+        throw new Error('No payment URL received from server');
       }
 
-      // Redirect to Stripe Checkout
+      // Redirect to Stripe Payment Link
       window.location.href = data.url;
     } catch (error) {
       console.error('Checkout error:', error);
