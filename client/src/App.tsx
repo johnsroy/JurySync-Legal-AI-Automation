@@ -33,7 +33,9 @@ function Router() {
       <Route path="/dashboard">
         {() => (
           <Layout>
-            <ProtectedRoute path="/dashboard" component={Dashboard} />
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
@@ -41,7 +43,9 @@ function Router() {
       <Route path="/workflow">
         {() => (
           <Layout>
-            <ProtectedRoute path="/workflow" component={WorkflowPage} />
+            <ProtectedRoute>
+              <WorkflowPage />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
@@ -49,7 +53,9 @@ function Router() {
       <Route path="/workflow-automation">
         {() => (
           <Layout>
-            <ProtectedRoute path="/workflow-automation" component={WorkflowAutomation} />
+            <ProtectedRoute>
+              <WorkflowAutomation />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
@@ -57,7 +63,9 @@ function Router() {
       <Route path="/compliance-auditing">
         {() => (
           <Layout>
-            <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
+            <ProtectedRoute>
+              <ComplianceAuditing />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
@@ -65,7 +73,9 @@ function Router() {
       <Route path="/contract-automation">
         {() => (
           <Layout>
-            <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
+            <ProtectedRoute>
+              <ContractAutomation />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
@@ -73,7 +83,9 @@ function Router() {
       <Route path="/legal-research">
         {() => (
           <Layout>
-            <ProtectedRoute path="/legal-research" component={LegalResearch} />
+            <ProtectedRoute>
+              <LegalResearch />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
@@ -81,7 +93,9 @@ function Router() {
       <Route path="/reports">
         {() => (
           <Layout>
-            <ProtectedRoute path="/reports" component={Reports} />
+            <ProtectedRoute>
+              <Reports />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
@@ -89,7 +103,9 @@ function Router() {
       <Route path="/analytics">
         {() => (
           <Layout>
-            <ProtectedRoute path="/analytics" component={ReportsDashboard} />
+            <ProtectedRoute>
+              <ReportsDashboard />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
@@ -97,7 +113,9 @@ function Router() {
       <Route path="/documents">
         {() => (
           <Layout>
-            <ProtectedRoute path="/documents" component={LegalResearch} />
+            <ProtectedRoute>
+              <LegalResearch />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
@@ -105,7 +123,9 @@ function Router() {
       <Route path="/settings">
         {() => (
           <Layout>
-            <ProtectedRoute path="/settings" component={Settings} />
+            <ProtectedRoute>
+              <Settings />
+            </ProtectedRoute>
           </Layout>
         )}
       </Route>
