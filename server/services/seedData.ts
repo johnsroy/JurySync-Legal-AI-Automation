@@ -147,3 +147,146 @@ export async function seedLegalDatabase() {
     console.error('Error in database seeding:', error);
   }
 }
+
+
+import { db } from '../db';
+import { modelMetrics, workflowMetrics, aggregateMetrics } from '@shared/schema/metrics';
+import { chromaStore } from './chromaStore';
+import { eq } from 'drizzle-orm';
+
+// Sample data for analytics
+const sampleModelData = [
+  {
+    modelId: "claude-3-opus-20240229",
+    taskType: "DOCUMENT_ANALYSIS",
+    processingTimeMs: 1200,
+    tokenCount: 1500,
+    successRate: 0.95,
+    costPerRequest: 0.12,
+    errorRate: 0.05,
+    metadata: {
+      promptTokens: 500,
+      completionTokens: 1000,
+      totalCost: 0.12,
+      capabilities: ["document_analysis", "legal_research"],
+      performance: { accuracy: 0.95, latency: 1200 }
+    }
+  },
+  {
+    modelId: "gpt-4o",
+    taskType: "COMPLIANCE",
+    processingTimeMs: 800,
+    tokenCount: 1200,
+    successRate: 0.92,
+    costPerRequest: 0.10,
+    errorRate: 0.08,
+    metadata: {
+      promptTokens: 400,
+      completionTokens: 800,
+      totalCost: 0.10,
+      capabilities: ["compliance_check", "risk_assessment"],
+      performance: { accuracy: 0.92, latency: 800 }
+    }
+  },
+  {
+    modelId: "claude-3-sonnet-20240229",
+    taskType: "RESEARCH",
+    processingTimeMs: 1500,
+    tokenCount: 2000,
+    successRate: 0.88,
+    costPerRequest: 0.08,
+    errorRate: 0.12,
+    metadata: {
+      promptTokens: 800,
+      completionTokens: 1200,
+      totalCost: 0.08,
+      capabilities: ["legal_research", "citation_analysis"],
+      performance: { accuracy: 0.88, latency: 1500 }
+    }
+  }
+];
+
+const workflowTypes = ["CONTRACT_REVIEW", "COMPLIANCE_AUDIT", "LEGAL_RESEARCH"];
+
+export async function seedAnalyticsData() {
+  try {
+    console.log('Starting analytics data seeding...');
+
+    // Check if data already exists
+    const existingData = await db
+      .select()
+      .from(modelMetrics)
+      .limit(1);
+
+    if (existingData.length > 0) {
+      console.log('Analytics data already exists, skipping seeding');
+      return;
+    }
+
+    // Seed model metrics data
+    for (const modelData of sampleModelData) {
+      // Create multiple entries over the past 7 days
+      for (let i = 0; i < 20; i++) {
+        const timestamp = new Date();
+        timestamp.setDate(timestamp.getDate() - Math.floor(Math.random() * 7));
+
+        await db.insert(modelMetrics).values({
+          ...modelData,
+          timestamp,
+          processingTimeMs: modelData.processingTimeMs + Math.floor(Math.random() * 500),
+          successRate: modelData.successRate + (Math.random() * 0.1 - 0.05),
+          errorRate: modelData.errorRate + (Math.random() * 0.1 - 0.05),
+        });
+
+        // Store in ChromaDB for vector search
+        await chromaStore.storeMetrics({
+          modelId: modelData.modelId,
+          metrics: [
+            modelData.successRate,
+            modelData.errorRate || 0,
+            modelData.processingTimeMs / 1000,
+            modelData.costPerRequest,
+            modelData.tokenCount / 1000
+          ],
+          metadata: {
+            ...modelData.metadata,
+            timestamp: timestamp.toISOString()
+          }
+        });
+      }
+    }
+
+    // Seed workflow metrics
+    for (const workflowType of workflowTypes) {
+      for (let i = 0; i < 15; i++) {
+        const timestamp = new Date();
+        timestamp.setDate(timestamp.getDate() - Math.floor(Math.random() * 7));
+
+        await db.insert(workflowMetrics).values({
+          workflowId: `wf_${Date.now()}_${i}`,
+          workflowType,
+          modelUsed: sampleModelData[Math.floor(Math.random() * sampleModelData.length)].modelId,
+          totalSteps: 5,
+          completedSteps: Math.floor(Math.random() * 2) + 3,
+          processingTime: Math.floor(Math.random() * 2000) + 1000,
+          successRate: 0.75 + Math.random() * 0.2,
+          timestamp,
+          metadata: {
+            stepsBreakdown: { analysis: 2, review: 2, approval: 1 },
+            automationRate: 0.7 + Math.random() * 0.2,
+            costSavings: Math.floor(Math.random() * 30) + 20,
+            performance: {
+              accuracy: 0.85 + Math.random() * 0.1,
+              efficiency: 0.8 + Math.random() * 0.15
+            }
+          }
+        });
+      }
+    }
+
+    console.log('Analytics data seeding completed successfully');
+  } catch (error) {
+    console.error('Error seeding analytics data:', error);
+    throw error;
+  }
+}

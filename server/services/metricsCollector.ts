@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { modelMetrics, workflowMetrics, documentMetrics, userActivityMetrics, aggregateMetrics } from "@shared/schema/metrics";
+import { modelMetrics, workflowMetrics, aggregateMetrics } from "@shared/schema/metrics";
 import { eq, and, sql } from "drizzle-orm";
 
 // Model costs for efficiency calculations
@@ -106,7 +106,7 @@ export class MetricsCollector {
 
       const modelStats = await db
         .select({
-          model: modelMetrics.modelUsed,
+          model: modelMetrics.modelId,
           count: sql<number>`count(*)::integer`,
           avgProcessingTime: sql<number>`avg(${modelMetrics.processingTimeMs})::integer`,
           errorRate: sql<number>`avg(${modelMetrics.errorRate})::float`,
@@ -114,7 +114,7 @@ export class MetricsCollector {
         })
         .from(modelMetrics)
         .where(baseQuery)
-        .groupBy(modelMetrics.modelUsed, modelMetrics.taskType);
+        .groupBy(modelMetrics.modelId, modelMetrics.taskType);
 
       const modelDistribution = modelStats.reduce((acc, { model, count }) => ({
         ...acc,
@@ -191,22 +191,6 @@ export class MetricsCollector {
 
   public async recordWorkflowMetric(data: Record<string, any>) {
     await db.insert(workflowMetrics).values({
-      ...data,
-      timestamp: new Date(),
-      metadata: data.metadata || {}
-    });
-  }
-
-  public async recordDocumentMetric(data: Record<string, any>) {
-    await db.insert(documentMetrics).values({
-      ...data,
-      timestamp: new Date(),
-      metadata: data.metadata || {}
-    });
-  }
-
-  public async recordUserActivity(data: Record<string, any>) {
-    await db.insert(userActivityMetrics).values({
       ...data,
       timestamp: new Date(),
       metadata: data.metadata || {}

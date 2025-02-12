@@ -31,69 +31,91 @@ function Router() {
 
       {/* Protected routes with Layout */}
       <Route path="/dashboard">
-        <Layout>
-          <ProtectedRoute component={Dashboard} path="/dashboard" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/dashboard" component={Dashboard} />
+          </Layout>
+        )}
       </Route>
 
       <Route path="/workflow">
-        <Layout>
-          <ProtectedRoute component={WorkflowPage} path="/workflow" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/workflow" component={WorkflowPage} />
+          </Layout>
+        )}
       </Route>
 
       <Route path="/workflow-automation">
-        <Layout>
-          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/workflow-automation" component={WorkflowAutomation} />
+          </Layout>
+        )}
       </Route>
 
       <Route path="/compliance-auditing">
-        <Layout>
-          <ProtectedRoute component={ComplianceAuditing} path="/compliance-auditing" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/compliance-auditing" component={ComplianceAuditing} />
+          </Layout>
+        )}
       </Route>
 
       <Route path="/contract-automation">
-        <Layout>
-          <ProtectedRoute component={ContractAutomation} path="/contract-automation" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/contract-automation" component={ContractAutomation} />
+          </Layout>
+        )}
       </Route>
 
       <Route path="/legal-research">
-        <Layout>
-          <ProtectedRoute component={LegalResearch} path="/legal-research" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/legal-research" component={LegalResearch} />
+          </Layout>
+        )}
       </Route>
 
       <Route path="/reports">
-        <Layout>
-          <ProtectedRoute component={Reports} path="/reports" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/reports" component={Reports} />
+          </Layout>
+        )}
       </Route>
 
       <Route path="/analytics">
-        <Layout>
-          <ProtectedRoute component={ReportsDashboard} path="/analytics" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/analytics" component={ReportsDashboard} />
+          </Layout>
+        )}
       </Route>
 
       <Route path="/documents">
-        <Layout>
-          <ProtectedRoute component={LegalResearch} path="/documents" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/documents" component={LegalResearch} />
+          </Layout>
+        )}
       </Route>
 
       <Route path="/settings">
-        <Layout>
-          <ProtectedRoute component={Settings} path="/settings" />
-        </Layout>
+        {() => (
+          <Layout>
+            <ProtectedRoute path="/settings" component={Settings} />
+          </Layout>
+        )}
       </Route>
 
       <Route>
-        <Layout>
-          <NotFound />
-        </Layout>
+        {() => (
+          <Layout>
+            <NotFound />
+          </Layout>
+        )}
       </Route>
     </Switch>
   );
