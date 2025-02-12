@@ -7,11 +7,19 @@ const router = Router();
 // Simple checkout session creation
 router.post('/create-checkout-session', async (req, res) => {
   try {
+    // Create Stripe checkout session with basic payment configuration
     const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
       line_items: [
         {
-          // Provide the exact Price ID (e.g. pr_1234) of your product
-          price: 'price_1OiXXXXXXXXXXXXXXXXXXXXX',
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: 'Student Plan',
+              description: 'Access to legal research tools',
+            },
+            unit_amount: 2400, // $24.00
+          },
           quantity: 1,
         },
       ],
@@ -22,32 +30,41 @@ router.post('/create-checkout-session', async (req, res) => {
 
     res.json({ url: session.url });
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    console.error('Stripe error:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to create checkout session' 
+    });
   }
 });
 
-// Stripe webhook handler
+// Webhook handling
 router.post('/webhook', async (req, res) => {
   const payload = await getRawBody(req);
   const sig = req.headers['stripe-signature'];
 
-  let event;
-
   try {
-    event = stripe.webhooks.constructEvent(payload, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    const event = stripe.webhooks.constructEvent(
+      payload,
+      sig!,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+
+    switch (event.type) {
+      case 'checkout.session.completed':
+        const session = event.data.object;
+        console.log('Payment successful:', session);
+        break;
+      default:
+        console.log(`Unhandled event type ${event.type}`);
+    }
+
+    res.json({ received: true });
   } catch (err) {
-    console.error('Webhook Error:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    console.error('Webhook Error:', err);
+    return res.status(400).send(
+      `Webhook Error: ${err instanceof Error ? err.message : 'Unknown error'}`
+    );
   }
-
-  // Handle the checkout.session.completed event
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    console.log('Payment successful:', session);
-  }
-
-  res.status(200).json({ received: true });
 });
 
 export default router;
