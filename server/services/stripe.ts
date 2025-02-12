@@ -69,25 +69,10 @@ export class StripeService {
     isTrial?: boolean;
   }) {
     try {
-      // Validate priceId exists
-      try {
-        await stripe.prices.retrieve(priceId);
-      } catch (error) {
-        console.error('Invalid price ID:', error);
-        throw new Error('Invalid price configuration');
-      }
-
-      console.log('Creating checkout session with params:', {
-        email,
-        priceId,
-        userId,
-        planId,
-        isTrial
-      });
-
       // Create session with minimal required configuration
       const session = await stripe.checkout.sessions.create({
         mode: 'subscription',
+        billing_address_collection: 'required',
         line_items: [{
           price: priceId,
           quantity: 1
@@ -97,8 +82,9 @@ export class StripeService {
           userId: userId.toString(),
           planId: planId.toString()
         },
-        success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: successUrl,
         cancel_url: cancelUrl,
+        payment_method_types: ['card'],
         ...(isTrial ? {
           subscription_data: {
             trial_period_days: 1
