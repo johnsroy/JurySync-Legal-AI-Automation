@@ -32,13 +32,13 @@ export class StripeService {
       const session = await stripe.checkout.sessions.create({
         customer: customer.id,
         mode: 'subscription',
+        payment_method_types: ['card'],
         line_items: [{
           price: priceId,
           quantity: 1,
         }],
         success_url: successUrl,
         cancel_url: cancelUrl,
-        client_reference_id: userId.toString(),
         metadata: {
           userId: userId.toString(),
           planId: planId.toString(),

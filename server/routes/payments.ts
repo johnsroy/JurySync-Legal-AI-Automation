@@ -15,6 +15,10 @@ router.post('/create-checkout-session', async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
+    if (!planId) {
+      return res.status(400).json({ error: 'Plan ID is required' });
+    }
+
     // Get the plan details
     const plan = await db.select().from(subscriptionPlans)
       .where(eq(subscriptionPlans.id, planId))
@@ -37,7 +41,7 @@ router.post('/create-checkout-session', async (req, res) => {
       priceId,
       userId: req.user.id,
       planId: selectedPlan.id,
-      successUrl: `${process.env.APP_URL}/subscription?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      successUrl: `${process.env.APP_URL}/subscription?success=true`,
       cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`
     });
 
@@ -45,10 +49,14 @@ router.post('/create-checkout-session', async (req, res) => {
       return res.status(400).json({ error: result.error });
     }
 
-    res.json({ url: result.url });
+    if (!result.url) {
+      return res.status(500).json({ error: 'Failed to generate checkout URL' });
+    }
+
+    return res.json({ url: result.url });
   } catch (error) {
     console.error('Checkout error:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Failed to create checkout session' 
     });
   }

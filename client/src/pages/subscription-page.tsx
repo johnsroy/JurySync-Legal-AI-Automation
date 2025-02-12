@@ -3,13 +3,11 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, CreditCard } from 'lucide-react';
-import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/use-auth';
 
 export default function SubscriptionPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [location] = useLocation();
   const { user } = useAuth();
 
   // Extract success and canceled status from URL
@@ -32,7 +30,6 @@ export default function SubscriptionPage() {
     }
   }, [success, canceled, toast]);
 
-
   const handleCheckout = async () => {
     try {
       if (!user) {
@@ -46,23 +43,34 @@ export default function SubscriptionPage() {
 
       setIsLoading(true);
 
-      // Hardcoded student plan ID for now
-      const planId = 1; // Student plan ID
-
       const response = await fetch('/api/payments/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          planId: planId
+          planId: 1, // Student plan ID
         }),
       });
 
-      const data = await response.json();
+      // First get the raw text response
+      const text = await response.text();
+      let data;
+
+      try {
+        // Attempt to parse the response as JSON
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error('Server response:', text);
+        throw new Error('Invalid response from server');
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to start checkout process');
+        throw new Error(data.error || 'Failed to create checkout session');
+      }
+
+      if (!data.url) {
+        throw new Error('No checkout URL received from server');
       }
 
       // Redirect to Stripe Checkout
@@ -91,6 +99,22 @@ export default function SubscriptionPage() {
               <div className="text-center">
                 <p className="text-3xl font-bold">$24</p>
                 <p className="text-sm text-gray-500">per month</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-blue-900">Secure Payment with Stripe</h4>
+                  <p className="text-sm text-blue-700">
+                    Your payment information will be securely processed securely via Stripe.
+                  </p>
+                </div>
+
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-green-900">Free Trial Included</h4>
+                  <p className="text-sm text-green-700">
+                    Get started with 1 day of free access.
+                  </p>
+                </div>
               </div>
 
               <Button 
