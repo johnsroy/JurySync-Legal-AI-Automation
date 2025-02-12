@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, CreditCard } from 'lucide-react';
+import { Loader2, CreditCard, Shield } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
+import { PRICING_PLANS } from '@shared/schema/pricing';
 
 export default function SubscriptionPage() {
   const { toast } = useToast();
@@ -43,6 +44,7 @@ export default function SubscriptionPage() {
           description: 'Please sign in to continue.',
           variant: 'destructive',
         });
+        setLocation('/login');
         return;
       }
 
@@ -55,17 +57,27 @@ export default function SubscriptionPage() {
         return;
       }
 
+      const selectedPlan = PRICING_PLANS.find(p => p.id === planId);
+      if (!selectedPlan || !selectedPlan.priceId) {
+        toast({
+          title: 'Invalid Plan',
+          description: 'Please select a valid subscription plan.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       setIsLoading(true);
 
       const response = await apiRequest('POST', '/api/payments/create-payment-link', {
-        planId: parseInt(planId),
+        priceId: selectedPlan.priceId,
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create payment link');
+        throw new Error('Failed to create payment link');
       }
+
+      const data = await response.json();
 
       if (!data.url) {
         throw new Error('No payment URL received from server');
@@ -107,6 +119,12 @@ export default function SubscriptionPage() {
     );
   }
 
+  const selectedPlan = PRICING_PLANS.find(p => p.id === planId);
+  if (!selectedPlan) {
+    setLocation('/pricing');
+    return null;
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-md mx-auto">
@@ -117,18 +135,24 @@ export default function SubscriptionPage() {
           <CardContent>
             <div className="space-y-6">
               <div className="space-y-4">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-blue-900">Secure Payment with Stripe</h4>
-                  <p className="text-sm text-blue-700">
-                    Your payment information will be processed securely via Stripe.
-                  </p>
+                <div className="bg-blue-50 p-4 rounded-lg flex items-start space-x-3">
+                  <Shield className="h-5 w-5 text-blue-500 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-blue-900">Secure Payment with Stripe</h4>
+                    <p className="text-sm text-blue-700">
+                      Your payment information will be processed securely via Stripe.
+                    </p>
+                  </div>
                 </div>
 
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-green-900">Free Trial Included</h4>
-                  <p className="text-sm text-green-700">
-                    Start with a 1-day free trial. Cancel anytime.
-                  </p>
+                <div className="bg-green-50 p-4 rounded-lg flex items-start space-x-3">
+                  <CreditCard className="h-5 w-5 text-green-500 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-green-900">Free Trial Included</h4>
+                    <p className="text-sm text-green-700">
+                      Start with a 1-day free trial. Cancel anytime.
+                    </p>
+                  </div>
                 </div>
               </div>
 

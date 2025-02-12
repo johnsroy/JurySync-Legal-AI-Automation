@@ -5,8 +5,6 @@ import { setupAuth } from "./auth";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { db } from "./db";
-import { seedLegalDatabase } from './services/seedData';
-import { continuousLearningService } from './services/continuousLearningService';
 import cors from 'cors';
 import { handleStripeWebhook } from "./webhooks/stripe";
 
@@ -60,17 +58,6 @@ setupAuth(app);
 
 (async () => {
   try {
-    // Database setup
-    await seedLegalDatabase();
-    console.log('Legal database seeded successfully');
-
-    try {
-      await continuousLearningService.startContinuousLearning();
-      console.log('Continuous learning service started successfully');
-    } catch (error) {
-      console.error('Failed to start continuous learning service:', error);
-    }
-
     // Register routes for API paths first
     app.use('/api', express.json(), express.urlencoded({ extended: false }));
     registerRoutes(app);
@@ -98,11 +85,9 @@ setupAuth(app);
 
     // Setup Vite or serve static files for non-API paths
     if (process.env.NODE_ENV !== "production") {
-      app.use((req, res, next) => {
-        if (!req.path.startsWith('/api/')) {
-          return setupVite(app)(req, res, next);
-        }
-        next();
+      // Pass app instance to setupVite
+      await setupVite(app, {
+        server: { middlewareMode: true }
       });
       console.log('Vite middleware setup complete');
     } else {

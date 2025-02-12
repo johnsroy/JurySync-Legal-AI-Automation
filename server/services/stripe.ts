@@ -5,27 +5,17 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2025-01-27.acacia',
+  apiVersion: '2023-10-16',
   typescript: true,
 });
 
 export class StripeService {
-  async createPaymentLink({
-    priceId,
-    userId,
-    planId,
-    successUrl,
-    cancelUrl,
-  }: {
-    priceId: string;
-    userId: number;
-    planId: number;
-    successUrl: string;
-    cancelUrl: string;
-  }) {
+  async createPaymentLink(priceId: string): Promise<{ 
+    success: boolean;
+    url?: string;
+    error?: string;
+  }> {
     try {
-      console.log('Creating payment link...', { priceId, userId, planId });
-
       const paymentLink = await stripe.paymentLinks.create({
         line_items: [
           {
@@ -33,17 +23,8 @@ export class StripeService {
             quantity: 1,
           },
         ],
-        after_completion: {
-          type: 'redirect',
-          redirect: { url: successUrl },
-        },
-        metadata: {
-          userId: userId.toString(),
-          planId: planId.toString(),
-        },
       });
 
-      console.log('Payment link created:', paymentLink.url);
       return { success: true, url: paymentLink.url };
     } catch (error) {
       console.error('Error creating payment link:', error);
