@@ -11,6 +11,7 @@ import legalResearchRouter from "./routes/legalResearch";
 import predictiveMonitoringRouter from "./routes/predictiveMonitoring";
 import orchestratorRouter from "./routes/orchestrator";
 import contractAnalysisRouter from "./routes/contract-analysis";
+import reportsRouter from "./routes/reports";
 import cors from 'cors';
 import { json } from 'express';
 
@@ -41,6 +42,9 @@ export function registerRoutes(app: Express): Server {
 
   // Add metrics routes
   app.use("/api/metrics", metricsRouter);
+
+  // Add reports routes
+  app.use("/api", reportsRouter);
 
   // Add predictive monitoring routes
   app.use("/api/monitoring", predictiveMonitoringRouter);

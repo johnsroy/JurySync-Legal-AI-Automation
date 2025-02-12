@@ -90,7 +90,11 @@ function Router() {
         </Layout>
       </Route>
 
-      <Route component={NotFound} />
+      <Route>
+        <Layout>
+          <NotFound />
+        </Layout>
+      </Route>
     </Switch>
   );
 }

@@ -4,11 +4,12 @@ import { db } from '../db';
 import { complianceAudits, documents } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import PDFKit from 'pdfkit';
+import { Readable } from 'stream';
 
 const router = Router();
 
 // Existing compliance report endpoint
-router.post('/api/reports/compliance/generate', async (req, res) => {
+router.post('/reports/compliance/generate', async (req, res) => {
   try {
     const { auditId, config } = req.body;
 
@@ -38,103 +39,125 @@ router.post('/api/reports/compliance/generate', async (req, res) => {
   }
 });
 
-// New endpoint for exporting all reports
-router.get('/api/reports/export-all', async (req, res) => {
+// Export all reports endpoint
+router.get('/reports/export-all', async (req, res) => {
   try {
-    // Create a new PDF document with some metadata
+    // Create a new PDF document
     const doc = new PDFKit({
+      bufferPages: true,
+      size: 'A4',
+      margin: 50,
       info: {
         Title: 'Combined Legal Reports',
         Author: 'Legal Intelligence Platform',
-        Subject: 'Legal Documents and Compliance Audits Report'
-      },
-      autoFirstPage: true,
-      margins: {
-        top: 50,
-        bottom: 50,
-        left: 50,
-        right: 50
+        Subject: 'Legal Documents and Compliance Audits Report',
+        Keywords: 'legal, compliance, reports'
       }
     });
 
-    // Set response headers
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=legal-reports-${new Date().toISOString().split('T')[0]}.pdf`);
+    // Create a buffer to store the PDF
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => {
+      const result = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=legal-reports-${new Date().toISOString().split('T')[0]}.pdf`);
+      res.setHeader('Content-Length', result.length);
+      res.end(result);
+    });
 
-    // Pipe the PDF document directly to the response
-    doc.pipe(res);
-
-    // Add a header with styling
-    doc.font('Helvetica-Bold')
-      .fontSize(24)
+    // Add title page
+    doc.fontSize(24)
+      .font('Helvetica-Bold')
       .text('Combined Legal Reports', {
-        align: 'center',
-        underline: true
-      });
-    doc.moveDown(2);
+        align: 'center'
+      })
+      .moveDown(2);
+
+    // Add date
+    doc.fontSize(12)
+      .font('Helvetica')
+      .text(`Generated on: ${new Date().toLocaleDateString()}`, {
+        align: 'center'
+      })
+      .moveDown(2);
 
     // Fetch all documents
     const allDocuments = await db.select().from(documents);
 
-    // Add document summaries with better formatting
-    doc.font('Helvetica-Bold')
-      .fontSize(18)
-      .text('Document Summaries', { align: 'left' });
-    doc.moveDown();
+    // Add document summaries
+    doc.addPage()
+      .fontSize(20)
+      .font('Helvetica-Bold')
+      .text('Document Summaries')
+      .moveDown();
 
     for (const document of allDocuments) {
-      doc.font('Helvetica-Bold')
-        .fontSize(14)
-        .text(document.title || 'Untitled Document');
+      doc.fontSize(14)
+        .font('Helvetica-Bold')
+        .text(document.title || 'Untitled Document')
+        .moveDown(0.5);
 
-      doc.font('Helvetica')
-        .fontSize(12)
-        .text(`Created: ${document.createdAt ? new Date(document.createdAt).toLocaleDateString() : 'Date not available'}`);
+      doc.fontSize(12)
+        .font('Helvetica')
+        .text(`Created: ${document.createdAt ? new Date(document.createdAt).toLocaleDateString() : 'Date not available'}`)
+        .moveDown(0.5);
 
-      if (document.analysis && typeof document.analysis === 'object' && 'summary' in document.analysis) {
-        doc.moveDown()
-          .fontSize(12)
-          .text('Analysis Summary:', { underline: true })
-          .text(document.analysis.summary as string);
+      if (document.analysis && typeof document.analysis === 'object') {
+        const analysis = document.analysis as { summary?: string };
+        if (analysis.summary) {
+          doc.text('Analysis Summary:', { underline: true })
+            .moveDown(0.5)
+            .text(analysis.summary)
+            .moveDown();
+        }
       }
-      doc.moveDown(2);
+      doc.moveDown();
     }
 
-    // Fetch compliance audits
+    // Fetch and add compliance audits
     const audits = await db.select().from(complianceAudits);
 
-    // Add compliance audit summaries if any exist
     if (audits.length > 0) {
-      doc.addPage();
-      doc.font('Helvetica-Bold')
-        .fontSize(18)
-        .text('Compliance Audits', { align: 'left' });
-      doc.moveDown();
+      doc.addPage()
+        .fontSize(20)
+        .font('Helvetica-Bold')
+        .text('Compliance Audits')
+        .moveDown();
 
       for (const audit of audits) {
-        doc.font('Helvetica-Bold')
-          .fontSize(14)
-          .text(`Audit ID: ${audit.id}`);
+        doc.fontSize(14)
+          .font('Helvetica-Bold')
+          .text(`Audit ID: ${audit.id}`)
+          .moveDown(0.5);
 
-        doc.font('Helvetica')
-          .fontSize(12)
-          .text(`Date: ${audit.createdAt ? new Date(audit.createdAt).toLocaleDateString() : 'Date not available'}`);
+        doc.fontSize(12)
+          .font('Helvetica')
+          .text(`Date: ${audit.createdAt ? new Date(audit.createdAt).toLocaleDateString() : 'Date not available'}`)
+          .moveDown(0.5);
 
         if (audit.combinedReport) {
-          doc.moveDown()
-            .fontSize(12)
-            .text('Findings:', { underline: true })
-            .text(JSON.stringify(audit.combinedReport, null, 2));
+          doc.text('Findings:', { underline: true })
+            .moveDown(0.5)
+            .text(typeof audit.combinedReport === 'string' 
+              ? audit.combinedReport 
+              : JSON.stringify(audit.combinedReport, null, 2))
+            .moveDown();
         }
-        doc.moveDown(2);
+        doc.moveDown();
       }
     }
 
-    // Add footer with page numbers
-    let pageNumber = 1;
-    doc.on('pageAdded', () => {
-      pageNumber++;
-    });
+    // Add page numbers
+    let pageCount = doc.bufferedPageRange().count;
+    for (let i = 0; i < pageCount; i++) {
+      doc.switchToPage(i);
+      doc.fontSize(10)
+        .text(`Page ${i + 1} of ${pageCount}`, 
+          doc.page.margins.left,
+          doc.page.height - doc.page.margins.bottom - 20,
+          { align: 'center' });
+    }
 
     // Finalize the PDF
     doc.end();
