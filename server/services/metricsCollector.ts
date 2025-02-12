@@ -14,6 +14,20 @@ interface ModelUsageMetrics {
     laborCostSavings: string;
     errorReduction: string;
   };
+  modelPerformance: Array<{
+    model: string;
+    avgProcessingTime: number;
+    errorRate: number;
+    successRate: number;
+  }>;
+  costEfficiency: Array<{
+    model: string;
+    costSavings: number;
+  }>;
+  documentAnalysisSuccessRate: number;
+  codeReviewSuccessRate: number;
+  researchSuccessRate: number;
+  complianceSuccessRate: number;
 }
 
 const MODEL_COSTS = {
@@ -46,53 +60,65 @@ export class MetricsCollector {
 
       const totalTasks = totalTasksResult[0]?.count || 0;
 
-      // Get model distribution
-      const modelCounts = await db
+      // Get model distribution and performance metrics
+      const modelStats = await db
         .select({
           model: modelMetrics.modelUsed,
           count: sql<number>`count(*)::integer`,
+          avgProcessingTime: sql<number>`avg(${modelMetrics.processingTimeMs})::integer`,
+          errorRate: sql<number>`avg(${modelMetrics.errorRate})::float`,
+          taskType: modelMetrics.taskType
         })
         .from(modelMetrics)
         .where(baseQuery)
-        .groupBy(modelMetrics.modelUsed);
+        .groupBy(modelMetrics.modelUsed, modelMetrics.taskType);
 
-      const modelDistribution = modelCounts.reduce((acc, { model, count }) => ({
+      // Calculate model distribution
+      const modelDistribution = modelStats.reduce((acc, { model, count }) => ({
         ...acc,
         [model]: Math.round((count / totalTasks) * 100)
       }), {} as Record<string, number>);
 
-      // Calculate average processing time
-      const avgResult = await db
-        .select({
-          avg: sql<number>`avg(${modelMetrics.processingTimeMs})::integer`
-        })
-        .from(modelMetrics)
-        .where(baseQuery);
+      // Calculate average processing time and error rates
+      const errorRates: Record<string, number> = {};
+      const modelPerformance = modelStats.map(({ model, avgProcessingTime, errorRate }) => {
+        errorRates[model] = errorRate || 0;
+        return {
+          model,
+          avgProcessingTime: avgProcessingTime || 0,
+          errorRate: errorRate || 0,
+          successRate: 100 - ((errorRate || 0) * 100)
+        };
+      });
 
-      const avgProcessingTime = avgResult[0]?.avg || 0;
-
-      // Calculate error rates per model
-      const errorRates = await db
-        .select({
-          model: modelMetrics.modelUsed,
-          errorRate: sql<number>`avg(${modelMetrics.errorRate})::float`
-        })
-        .from(modelMetrics)
-        .where(baseQuery)
-        .groupBy(modelMetrics.modelUsed);
-
-      const errorRatesMap = errorRates.reduce((acc, { model, errorRate }) => ({
-        ...acc,
-        [model]: Number(errorRate || 0)
-      }), {} as Record<string, number>);
+      // Calculate task-specific success rates
+      const taskSuccessRates = modelStats.reduce((acc, { taskType, errorRate }) => {
+        if (!acc[taskType]) {
+          acc[taskType] = { total: 0, success: 0 };
+        }
+        acc[taskType].total++;
+        acc[taskType].success += (1 - (errorRate || 0));
+        return acc;
+      }, {} as Record<string, { total: number; success: number }>);
 
       // Calculate cost savings
-      const costSavings = this.calculateCostSavings(modelCounts);
+      const costSavings = this.calculateCostSavings(
+        modelStats.map(({ model, count }) => ({ model, count }))
+      );
+
+      // Calculate cost efficiency per model
+      const costEfficiency = Object.entries(MODEL_COSTS).map(([model, cost]) => ({
+        model,
+        costSavings: Math.round(((this.BASELINE_COST - cost) / this.BASELINE_COST) * 100)
+      }));
 
       // Calculate automation metrics
+      const avgProcessingTime = modelStats.reduce((sum, { avgProcessingTime, count }) => 
+        sum + (avgProcessingTime * count), 0) / totalTasks;
+
       const automationMetrics = this.calculateAutomationMetrics(
         avgProcessingTime,
-        errorRatesMap,
+        errorRates,
         costSavings
       );
 
@@ -100,14 +126,25 @@ export class MetricsCollector {
         totalTasks,
         modelDistribution,
         averageProcessingTime: avgProcessingTime,
-        errorRates: errorRatesMap,
+        errorRates,
         costSavings,
-        automationMetrics
+        automationMetrics,
+        modelPerformance,
+        costEfficiency,
+        documentAnalysisSuccessRate: this.calculateSuccessRate(taskSuccessRates['DOCUMENT_ANALYSIS']),
+        codeReviewSuccessRate: this.calculateSuccessRate(taskSuccessRates['CODE_REVIEW']),
+        researchSuccessRate: this.calculateSuccessRate(taskSuccessRates['RESEARCH']),
+        complianceSuccessRate: this.calculateSuccessRate(taskSuccessRates['COMPLIANCE'])
       };
     } catch (error) {
       console.error('Error collecting metrics:', error);
       throw new Error('Failed to collect metrics');
     }
+  }
+
+  private calculateSuccessRate(taskStats?: { total: number; success: number }): number {
+    if (!taskStats || taskStats.total === 0) return 0;
+    return Math.round((taskStats.success / taskStats.total) * 100);
   }
 
   // Record document metrics with enhanced tracking
@@ -215,11 +252,12 @@ export class MetricsCollector {
       automationRate?: number;
       efficiency?: number;
       costSavings?: number;
+      templateUsed?: string;
+      templateCategory?: string;
     };
   }) {
     await db.insert(workflowMetrics).values(data);
   }
-
 
   // User activity metrics
   public async recordUserActivity(data: {

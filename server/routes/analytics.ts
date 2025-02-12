@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "../db";
 import { reports } from "@shared/schema/reports";
-import { modelMetrics, workflowMetrics, documentMetrics, userActivityMetrics } from "@shared/schema/metrics";
-import { and, eq, gte } from "drizzle-orm";
+import { modelMetrics, workflowMetrics, documentMetrics } from "@shared/schema/metrics";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { subDays } from "date-fns";
 import { metricsCollector } from "../services/metricsCollector";
 
@@ -18,15 +18,15 @@ router.get("/", async (req, res) => {
     const { timeRange = "7d" } = req.query;
     const startDate = subDays(new Date(), parseInt(timeRange.toString()));
 
-    // Fetch document activity data with template info
+    // Get document metrics with template info
     const documentsData = await db
       .select({
         id: documentMetrics.id,
         startTime: documentMetrics.startTime,
         successful: documentMetrics.successful,
         metadata: documentMetrics.metadata,
-        templateUsed: documentMetrics.metadata.templateUsed,
-        templateCategory: documentMetrics.metadata.templateCategory
+        documentType: documentMetrics.documentType,
+        processingType: documentMetrics.processingType
       })
       .from(documentMetrics)
       .where(
@@ -36,29 +36,61 @@ router.get("/", async (req, res) => {
         )
       );
 
-    // Process document activity data with template info
-    const documentActivity = documentsData.map(d => ({
-      date: d.startTime.toISOString().split('T')[0],
-      processed: d.successful ? 1 : 0,
-      uploaded: 1,
-      template: d.metadata?.templateUsed || 'Custom',
-      category: d.metadata?.templateCategory || 'None'
+    // Process document activity data
+    const documentActivity = documentsData.reduce((acc, doc) => {
+      const date = doc.startTime.toISOString().split('T')[0];
+      const template = doc.metadata?.templateUsed || 'Custom';
+      const category = doc.metadata?.templateCategory || 'None';
+
+      if (!acc[date]) {
+        acc[date] = {
+          date,
+          processed: 0,
+          uploaded: 0,
+          byTemplate: {} as Record<string, number>,
+          byCategory: {} as Record<string, number>
+        };
+      }
+
+      acc[date].processed += doc.successful ? 1 : 0;
+      acc[date].uploaded += 1;
+      acc[date].byTemplate[template] = (acc[date].byTemplate[template] || 0) + 1;
+      acc[date].byCategory[category] = (acc[date].byCategory[category] || 0) + 1;
+
+      return acc;
+    }, {} as Record<string, any>);
+
+    // Convert to array and calculate percentages
+    const documentActivityArray = Object.values(documentActivity).map(day => ({
+      date: day.date,
+      processed: day.processed,
+      uploaded: day.uploaded,
+      templates: Object.entries(day.byTemplate).map(([name, count]) => ({
+        name,
+        value: Math.round((count as number / day.uploaded) * 100)
+      })),
+      categories: Object.entries(day.byCategory).map(([name, count]) => ({
+        name,
+        value: Math.round((count as number / day.uploaded) * 100)
+      }))
     }));
 
-    // Calculate risk distribution from document metrics
-    const riskScores = documentsData
-      .filter(d => d.metadata?.riskScore !== undefined)
-      .map(d => d.metadata!.riskScore as number);
+    // Get metrics from metricsCollector
+    const metrics = await metricsCollector.collectMetrics({
+      start: startDate,
+      end: new Date()
+    });
 
-    const riskDistribution = {
-      low: riskScores.filter(score => score < 0.3).length,
-      medium: riskScores.filter(score => score >= 0.3 && score < 0.7).length,
-      high: riskScores.filter(score => score >= 0.7).length
-    };
-
-    // Get workflow metrics with template usage
+    // Get workflow metrics with enhanced details
     const workflowData = await db
-      .select()
+      .select({
+        id: workflowMetrics.id,
+        workflowType: workflowMetrics.workflowType,
+        status: workflowMetrics.status,
+        metadata: workflowMetrics.metadata,
+        processingTimeMs: workflowMetrics.processingTimeMs,
+        successful: workflowMetrics.successful
+      })
       .from(workflowMetrics)
       .where(
         and(
@@ -67,26 +99,61 @@ router.get("/", async (req, res) => {
         )
       );
 
-    // Get metrics from metricsCollector
-    const metrics = await metricsCollector.collectMetrics({
-      start: startDate,
-      end: new Date()
-    });
+    // Process workflow efficiency data
+    const workflowEfficiency = workflowData.reduce((acc, workflow) => {
+      const type = workflow.workflowType;
+      if (!acc[type]) {
+        acc[type] = {
+          name: type,
+          successRate: 0,
+          avgProcessingTime: 0,
+          totalRuns: 0,
+          templates: {} as Record<string, number>,
+          categories: {} as Record<string, number>
+        };
+      }
+
+      acc[type].totalRuns++;
+      acc[type].successRate += workflow.successful ? 1 : 0;
+      acc[type].avgProcessingTime += workflow.processingTimeMs || 0;
+
+      const template = workflow.metadata?.templateUsed || 'Custom';
+      const category = workflow.metadata?.templateCategory || 'None';
+
+      acc[type].templates[template] = (acc[type].templates[template] || 0) + 1;
+      acc[type].categories[category] = (acc[type].categories[category] || 0) + 1;
+
+      return acc;
+    }, {} as Record<string, any>);
+
+    // Calculate final percentages and averages
+    const workflowEfficiencyArray = Object.values(workflowEfficiency).map(wf => ({
+      name: wf.name,
+      successRate: Math.round((wf.successRate / wf.totalRuns) * 100),
+      avgProcessingTime: Math.round(wf.avgProcessingTime / wf.totalRuns),
+      templates: Object.entries(wf.templates).map(([name, count]) => ({
+        name,
+        value: Math.round((count as number / wf.totalRuns) * 100)
+      })),
+      categories: Object.entries(wf.categories).map(([name, count]) => ({
+        name,
+        value: Math.round((count as number / wf.totalRuns) * 100)
+      }))
+    }));
 
     const response = {
-      documentActivity,
-      riskDistribution: Object.entries(riskDistribution).map(([name, value]) => ({
-        name: name.charAt(0).toUpperCase() + name.slice(1),
-        value
-      })),
-      modelPerformance: metrics.modelPerformance || [],
+      documentActivity: documentActivityArray,
+      modelPerformance: metrics.modelPerformance,
       automationMetrics: metrics.automationMetrics,
-      workflowEfficiency: workflowData.map(w => ({
-        name: w.workflowType,
-        value: w.metadata?.efficiency || 0,
-        template: w.metadata?.templateUsed || 'Custom',
-        category: w.metadata?.templateCategory || 'None'
-      }))
+      workflowEfficiency: workflowEfficiencyArray,
+      modelDistribution: metrics.modelDistribution,
+      costEfficiency: metrics.costEfficiency,
+      taskSuccess: [
+        { taskType: "Document Analysis", successRate: metrics.documentAnalysisSuccessRate },
+        { taskType: "Code Review", successRate: metrics.codeReviewSuccessRate },
+        { taskType: "Research", successRate: metrics.researchSuccessRate },
+        { taskType: "Compliance", successRate: metrics.complianceSuccessRate }
+      ]
     };
 
     res.json(response);
