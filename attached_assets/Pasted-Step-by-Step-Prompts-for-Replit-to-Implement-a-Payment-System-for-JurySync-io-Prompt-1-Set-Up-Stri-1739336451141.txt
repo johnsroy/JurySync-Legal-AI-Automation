@@ -1,0 +1,93 @@
+Step-by-Step Prompts for Replit to Implement a Payment System for JurySync.io
+
+Prompt 1: Set Up Stripe Payment Gateway
+
+Prompt:
+"Integrate Stripe as the payment processor for JurySync.io. The system should support:
+
+Monthly and yearly subscriptions.
+
+Three pricing tiers: Student ($24/month), Professional ($194/month), and Enterprise (custom pricing).
+
+A 1-day free trial for Student plans.
+
+Automatic invoicing and billing history tracking.
+
+Secure payment processing with Stripe’s API for card and ACH payments."
+
+Expected Outcome: A fully functional Stripe payment integration supporting subscription billing and secure transactions.
+
+Prompt 2: Build Subscription Management UI
+
+Prompt:
+"Design a subscription management page in React with:
+
+A clean layout listing all pricing plans (Student, Professional, Enterprise).
+
+‘Start Free Trial’ and ‘Subscribe’ buttons for Student and Professional plans.
+
+A ‘Contact Us’ button for Enterprise users.
+
+Payment method selection during checkout.
+
+A user dashboard showing active subscription details, billing history, and an option to upgrade/downgrade."
+
+Expected Outcome: A dynamic UI that allows users to subscribe, manage, and modify their plans seamlessly.
+
+Prompt 3: Implement Payment Flow with Webhooks
+
+Prompt:
+"Set up Stripe Webhooks to handle:
+
+Successful payments (activate user subscription).
+
+Failed payments (notify user and retry logic).
+
+Subscription changes (upgrade/downgrade processing).
+
+Cancellations (revoke access at the end of the billing period)."
+
+Expected Outcome: Automated subscription handling ensuring users maintain access based on their payment status.
+
+Prompt 4: Add Student Email Verification
+
+Prompt:
+"Ensure that only students with a .edu email can subscribe to the Student plan:
+
+Verify .edu emails using a validation script.
+
+Send a confirmation email with a verification link.
+
+Restrict Student plan access to verified emails only."
+
+Expected Outcome: Secure eligibility verification for Student plan users.
+
+Prompt 5: Implement Admin Revenue Dashboard
+
+Prompt:
+"Create an admin dashboard displaying:
+
+Total revenue generated per pricing tier.
+
+Active subscriptions count per plan.
+
+Monthly and yearly revenue breakdown.
+
+Failed payment notifications.
+
+Refund and cancellation tracking."
+
+Expected Outcome: A CEO-friendly dashboard providing real-time revenue insights.
+
+Prompt 6: Secure CEO Payout Process
+
+Prompt:
+"Ensure that collected payments are correctly routed to the CEO’s connected payout account:
+
+Configure Stripe Payouts to transfer funds to the designated bank account.
+
+Set a threshold amount for payouts to optimize transaction fees.
+
+Implement notifications when payouts are processed."
+
+Expected Outcome: Automatic and timely fund transfers ensuring the CEO receives payments efficiently.
