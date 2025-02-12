@@ -1,15 +1,18 @@
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Loader2, CreditCard } from 'lucide-react';
 
-export default function CheckoutPage() {
+export default function SubscriptionPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleCheckout = async () => {
     try {
       setIsLoading(true);
+      console.log('Initiating checkout...');
+
       const response = await fetch('/api/payments/create-checkout-session', {
         method: 'POST',
         headers: {
@@ -17,19 +20,23 @@ export default function CheckoutPage() {
         },
       });
 
+      console.log('Checkout response status:', response.status);
+
       if (!response.ok) {
-        throw new Error('Network response was not ok');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create checkout session');
       }
 
       const { url } = await response.json();
+      console.log('Redirecting to:', url);
 
       // Redirect to Stripe Checkout
       window.location.href = url;
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Checkout error:', error);
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'An error occurred',
+        title: 'Payment Error',
+        description: error instanceof Error ? error.message : 'Failed to initialize payment',
         variant: 'destructive',
       });
     } finally {
@@ -38,21 +45,45 @@ export default function CheckoutPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <Button 
-        onClick={handleCheckout}
-        disabled={isLoading}
-        size="lg"
-      >
-        {isLoading ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Processing...
-          </>
-        ) : (
-          'Checkout'
-        )}
-      </Button>
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-md mx-auto">
+        <Card className="shadow-lg">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Student Plan</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              <div className="text-center">
+                <p className="text-3xl font-bold">$24</p>
+                <p className="text-sm text-gray-500">per month</p>
+              </div>
+
+              <Button 
+                className="w-full"
+                size="lg"
+                onClick={handleCheckout}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="mr-2 h-5 w-5" />
+                    Start Your Free Trial
+                  </>
+                )}
+              </Button>
+
+              <p className="text-sm text-gray-500 text-center">
+                Includes 1-day free trial
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

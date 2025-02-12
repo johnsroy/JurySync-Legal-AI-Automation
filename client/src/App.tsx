@@ -9,6 +9,7 @@ import LandingPage from "@/pages/landing-page";
 import LoginPage from "@/pages/login-page";
 import RegisterPage from "@/pages/register-page";
 import PricingPage from "@/pages/pricing-page";
+import SubscriptionPage from "@/pages/subscription-page";
 import Dashboard from "@/pages/dashboard";
 import ComplianceAuditing from "@/pages/compliance-auditing";
 import ContractAutomation from "@/pages/contract-automation";
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
       <Route path="/pricing" component={PricingPage} />
+      <Route path="/subscription" component={SubscriptionPage} />
 
       {/* Protected routes with Layout */}
       <Route path="/dashboard">
@@ -75,12 +77,6 @@ function Router() {
       <Route path="/analytics">
         <Layout>
           <ProtectedRoute component={ReportsDashboard} path="/analytics" />
-        </Layout>
-      </Route>
-
-      <Route path="/documents">
-        <Layout>
-          <ProtectedRoute component={LegalResearch} path="/documents" />
         </Layout>
       </Route>
 

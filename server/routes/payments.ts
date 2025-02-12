@@ -7,6 +7,8 @@ const router = Router();
 // Simple checkout session creation
 router.post('/create-checkout-session', async (req, res) => {
   try {
+    console.log('Creating checkout session...');
+
     // Create Stripe checkout session with basic payment configuration
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -28,6 +30,7 @@ router.post('/create-checkout-session', async (req, res) => {
       cancel_url: `${process.env.APP_URL}/subscription?canceled=true`,
     });
 
+    console.log('Checkout session created:', session.id);
     res.json({ url: session.url });
   } catch (error) {
     console.error('Stripe error:', error);
@@ -39,20 +42,25 @@ router.post('/create-checkout-session', async (req, res) => {
 
 // Webhook handling
 router.post('/webhook', async (req, res) => {
-  const payload = await getRawBody(req);
-  const sig = req.headers['stripe-signature'];
-
   try {
+    const rawBody = await getRawBody(req);
+    const sig = req.headers['stripe-signature'];
+
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      console.error('Webhook secret not configured');
+      return res.status(500).send('Webhook secret not configured');
+    }
+
     const event = stripe.webhooks.constructEvent(
-      payload,
+      rawBody,
       sig!,
-      process.env.STRIPE_WEBHOOK_SECRET!
+      process.env.STRIPE_WEBHOOK_SECRET
     );
 
     switch (event.type) {
       case 'checkout.session.completed':
         const session = event.data.object;
-        console.log('Payment successful:', session);
+        console.log('Payment successful, session:', session);
         break;
       default:
         console.log(`Unhandled event type ${event.type}`);
