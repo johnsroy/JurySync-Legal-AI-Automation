@@ -3,12 +3,9 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Gavel, Check, ChevronRight } from "lucide-react";
-import { loadStripe } from "@stripe/stripe-js";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { PRICING_PLANS } from "@shared/schema/pricing";
-
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 export default function PricingPage() {
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
@@ -36,35 +33,8 @@ export default function PricingPage() {
       return;
     }
 
-    try {
-      const response = await fetch("/api/checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ planType: plan.id }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Payment initialization failed");
-      }
-
-      const { sessionId } = await response.json();
-      const stripe = await stripePromise;
-
-      if (!stripe) throw new Error("Stripe failed to load");
-
-      const { error } = await stripe.redirectToCheckout({ sessionId });
-      if (error) throw error;
-    } catch (error) {
-      console.error("Payment error:", error);
-      toast({
-        title: "Payment Error",
-        description: error instanceof Error ? error.message : "Failed to process payment. Please try again.",
-        variant: "destructive"
-      });
-    }
+    // Redirect to subscription page for Student and Professional plans
+    navigate("/subscription");
   };
 
   return (
