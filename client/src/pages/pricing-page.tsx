@@ -6,127 +6,9 @@ import { Gavel, Check, ChevronRight } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { PRICING_PLANS } from "@shared/schema/pricing";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
-
-interface Plan {
-  name: string;
-  price: string;
-  period?: string;
-  savings?: string;
-  description: string;
-  features: string[];
-  note?: string;
-  highlighted?: boolean;
-  planType: string;
-  cta: string;
-  href: string;
-}
-
-const plans: { monthly: Plan[]; yearly: Plan[] } = {
-  monthly: [
-    {
-      name: "Student",
-      price: "24",
-      description: "For the budding legal minds. Access all the features of JurySync.io.",
-      features: [
-        "Full access to our all-in-one AI legal assistant",
-        "Discounted rate geared for students",
-        "Free 1 Day Trial",
-      ],
-      note: "(Sign up with a .edu email for the Student Rate)",
-      cta: "Connect",
-      planType: "student-monthly",
-      href: "/register?plan=student"
-    },
-    {
-      name: "Professional",
-      price: "194",
-      description: "Designed for legal professionals who want to apply cutting-edge AI to their legal work.",
-      features: [
-        "Full access to our all-in-one AI legal assistant",
-        "Drafting assistance for memos, emails, legal briefs",
-        "Comprehensive Federal and State regulations knowledge base",
-        "Custom document uploads for personalized insights",
-        "Streamlined Contract Review with AI insights",
-        "Regulatory compliance reviews for your documents",
-        "Intuitive Boolean search composer"
-      ],
-      highlighted: true,
-      planType: "professional-monthly",
-      cta: "Start Your Free Trial",
-      href: "/register?plan=professional"
-    },
-    {
-      name: "Enterprise",
-      price: "Custom",
-      description: "Built for law firms and corporate legal departments looking for enhanced security and collaboration features.",
-      features: [
-        "All the benefits of the Professional Plan",
-        "Single Sign-On (SSO) for enhanced security",
-        "Advanced user management capabilities",
-        "Collaboration features for shared document sets",
-        "Dedicated support and account manager"
-      ],
-      cta: "Contact Us",
-      planType: "enterprise",
-      href: "mailto:contact@jurysync.io?subject=Enterprise%20Plan%20Inquiry"
-    }
-  ],
-  yearly: [
-    {
-      name: "Student",
-      price: "20",
-      period: "280/year",
-      savings: "Save 14%",
-      description: "For the budding legal minds. Access all the features of JurySync.io.",
-      features: [
-        "Full access to our all-in-one AI legal assistant",
-        "Discounted rate geared for students",
-        "Free 1 Day Trial",
-      ],
-      note: "(Sign up with a .edu email for the Student Rate)",
-      planType: "student-yearly",
-      cta: "Connect",
-      href: "/register?plan=student-yearly"
-    },
-    {
-      name: "Professional",
-      price: "154",
-      period: "1,888/year",
-      savings: "Save 20%",
-      description: "Designed for legal professionals who want to apply cutting-edge AI to their legal work.",
-      features: [
-        "Full access to our all-in-one AI legal assistant",
-        "Drafting assistance for memos, emails, legal briefs",
-        "Comprehensive Federal and State regulations knowledge base",
-        "Custom document uploads for personalized insights",
-        "Streamlined Contract Review with AI insights",
-        "Regulatory compliance reviews for your documents",
-        "Search laws, case laws and regulations"
-      ],
-      highlighted: true,
-      planType: "professional-yearly",
-      cta: "Start Your Free Trial",
-      href: "/register?plan=professional-yearly"
-    },
-    {
-      name: "Enterprise",
-      price: "Custom",
-      description: "Built for law firms and corporate legal departments looking for enhanced security and collaboration features.",
-      features: [
-        "All the benefits of the Professional Plan",
-        "Single Sign-On (SSO) for enhanced security",
-        "Advanced user management capabilities",
-        "Collaboration features for shared document sets",
-        "Dedicated support and account manager"
-      ],
-      cta: "Contact Us",
-      planType: "enterprise",
-      href: "mailto:contact@jurysync.io?subject=Enterprise%20Plan%20Inquiry"
-    }
-  ]
-};
 
 export default function PricingPage() {
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
@@ -134,15 +16,23 @@ export default function PricingPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const handleSubscribe = async (plan: Plan) => {
-    if (plan.price === "Custom") {
-      window.location.href = plan.href;
+  const filteredPlans = PRICING_PLANS.filter(plan => {
+    if (billingPeriod === "monthly") {
+      return plan.interval === "month";
+    } else {
+      return plan.interval === "year";
+    }
+  });
+
+  const handleSubscribe = async (plan: typeof PRICING_PLANS[0]) => {
+    if (plan.tier === "enterprise") {
+      window.location.href = "mailto:contact@jurysync.io?subject=Enterprise%20Plan%20Inquiry";
       return;
     }
 
     if (!user) {
       // If user is not logged in, redirect to register with plan info
-      navigate(`/register?plan=${plan.planType}`);
+      navigate(`/register?plan=${plan.id}`);
       return;
     }
 
@@ -152,7 +42,7 @@ export default function PricingPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ planType: plan.planType }),
+        body: JSON.stringify({ planType: plan.id }),
       });
 
       if (!response.ok) {
@@ -223,16 +113,16 @@ export default function PricingPage() {
             >
               Yearly
               <span className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">
-                Save 20%
+                Save 17%
               </span>
             </Button>
           </div>
         </div>
 
         <div className="grid md:grid-cols-3 gap-8 max-w-7xl mx-auto">
-          {plans[billingPeriod].map((plan) => (
-            <Card key={plan.name} className={`relative ${plan.highlighted ? 'border-green-500 shadow-lg' : ''}`}>
-              {plan.highlighted && (
+          {filteredPlans.map((plan) => (
+            <Card key={plan.id} className={`relative ${plan.tier === 'professional' ? 'border-green-500 shadow-lg' : ''}`}>
+              {plan.tier === 'professional' && (
                 <div className="absolute top-0 right-0 bg-green-500 text-white text-sm px-3 py-1 rounded-bl-lg rounded-tr-lg">
                   Most Popular
                 </div>
@@ -241,23 +131,18 @@ export default function PricingPage() {
                 <CardTitle>{plan.name}</CardTitle>
                 <div className="mt-4">
                   <div className="flex items-baseline">
-                    {plan.price === "Custom" ? (
+                    {plan.tier === "enterprise" ? (
                       <span className="text-4xl font-bold">Custom</span>
                     ) : (
                       <>
                         <span className="text-sm font-semibold text-gray-500">$</span>
                         <span className="text-4xl font-bold">{plan.price}</span>
-                        <span className="text-sm text-gray-500 ml-1">/month</span>
+                        <span className="text-sm text-gray-500 ml-1">/{plan.interval}</span>
                       </>
                     )}
                   </div>
-                  {plan.period && (
-                    <div className="text-sm text-gray-500 mt-1">
-                      ${plan.period} <span className="text-green-500 ml-1">{plan.savings}</span>
-                    </div>
-                  )}
-                  {plan.note && (
-                    <div className="text-sm text-gray-500 mt-2">{plan.note}</div>
+                  {plan.tier !== "enterprise" && billingPeriod === "yearly" && (
+                    <div className="text-sm text-green-500 mt-1">Save 17% with annual billing</div>
                   )}
                 </div>
               </CardHeader>
@@ -275,7 +160,7 @@ export default function PricingPage() {
                   className="w-full bg-green-600 hover:bg-green-700"
                   onClick={() => handleSubscribe(plan)}
                 >
-                  {plan.cta}
+                  {plan.tier === "enterprise" ? "Contact Us" : "Start Your Free Trial"}
                 </Button>
               </CardContent>
             </Card>

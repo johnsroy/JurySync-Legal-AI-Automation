@@ -6,18 +6,29 @@ import documentsRouter from "./routes/documents";
 import complianceRouter from "./routes/compliance";
 import metricsRouter from "./routes/metrics";
 import { UserRole } from "@shared/schema";
-import { createCheckoutSession, createPortalSession } from './stripe';
+import { createCheckoutSession, createPortalSession, handleWebhook } from './stripe';
 import legalResearchRouter from "./routes/legalResearch";
 import predictiveMonitoringRouter from "./routes/predictiveMonitoring";
 import orchestratorRouter from "./routes/orchestrator";
 import contractAnalysisRouter from "./routes/contract-analysis";
 import cors from 'cors';
+import { json } from 'express';
 
 export function registerRoutes(app: Express): Server {
   // Enable CORS for all routes
   app.use(cors());
 
   const server = createServer(app);
+
+  // Special handling for Stripe webhook endpoint - needs raw body
+  app.post("/api/webhook", 
+    json({
+      verify: (req: any, res, buf) => {
+        req.rawBody = buf;
+      }
+    }), 
+    handleWebhook
+  );
 
   // Add the legal research router
   app.use("/api/legal", legalResearchRouter);
