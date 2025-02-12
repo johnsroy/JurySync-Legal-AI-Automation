@@ -32,7 +32,7 @@ export function registerRoutes(app: Express): Server {
     handleWebhook
   );
 
-  // Add the vault router
+  // Add the vault router with enhanced AI capabilities
   app.use("/api/vault", vaultRouter);
 
   // Add the legal research router
@@ -81,25 +81,4 @@ export function registerRoutes(app: Express): Server {
   });
 
   return server;
-}
-
-// Helper function for RBAC middleware
-function requireRole(role: UserRole) {
-  return (req: any, res: any, next: any) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({
-        message: "Authentication required",
-        code: "NOT_AUTHENTICATED"
-      });
-    }
-
-    if (req.user.role !== role && req.user.role !== "ADMIN") {
-      return res.status(403).json({
-        message: "Insufficient permissions",
-        code: "FORBIDDEN"
-      });
-    }
-
-    next();
-  };
 }
