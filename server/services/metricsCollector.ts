@@ -110,6 +110,35 @@ export class MetricsCollector {
     }
   }
 
+  // Record document metrics with enhanced tracking
+  public async recordDocumentMetric(data: {
+    userId: number;
+    documentId: string;
+    documentType: string;
+    processingType: string;
+    startTime: Date;
+    completionTime?: Date;
+    pageCount?: number;
+    wordCount?: number;
+    processingTimeMs?: number;
+    successful: boolean;
+    metadata?: {
+      complexity?: number;
+      riskScore?: number;
+      suggestions?: number;
+      revisions?: number;
+      templateUsed?: string;
+      templateCategory?: string;
+    };
+  }) {
+    console.log('Recording document metric:', {
+      ...data,
+      userId: '[REDACTED]', // Don't log sensitive data
+    });
+
+    await db.insert(documentMetrics).values(data);
+  }
+
   private calculateCostSavings(modelCounts: Array<{ model: string; count: number }>): number {
     // Calculate actual cost
     const actualCost = modelCounts.reduce((total, { model, count }) => {
@@ -134,7 +163,7 @@ export class MetricsCollector {
     const timeReduction = ((this.BASELINE_PROCESSING_TIME - avgProcessingTime) / this.BASELINE_PROCESSING_TIME) * 100;
 
     // Calculate average error rate
-    const avgErrorRate = Object.values(errorRates).reduce((sum, rate) => sum + rate, 0) / 
+    const avgErrorRate = Object.values(errorRates).reduce((sum, rate) => sum + rate, 0) /
       Math.max(1, Object.values(errorRates).length);
     const errorReduction = ((this.BASELINE_ERROR_RATE - avgErrorRate) / this.BASELINE_ERROR_RATE) * 100;
 
@@ -191,27 +220,6 @@ export class MetricsCollector {
     await db.insert(workflowMetrics).values(data);
   }
 
-  // Document processing metrics
-  public async recordDocumentMetric(data: {
-    userId: number;
-    documentId: string;
-    documentType: string;
-    processingType: string;
-    startTime: Date;
-    completionTime?: Date;
-    pageCount?: number;
-    wordCount?: number;
-    processingTimeMs?: number;
-    successful: boolean;
-    metadata?: {
-      complexity?: number;
-      riskScore?: number;
-      suggestions?: number;
-      revisions?: number;
-    };
-  }) {
-    await db.insert(documentMetrics).values(data);
-  }
 
   // User activity metrics
   public async recordUserActivity(data: {

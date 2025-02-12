@@ -10,7 +10,7 @@ export default function Reports() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  // Fetch documents specific to workflows
+  // Fetch documents with enhanced query
   const { data: documents, isLoading } = useQuery({
     queryKey: ['/api/compliance/documents'],
     queryFn: async () => {
@@ -19,7 +19,14 @@ export default function Reports() {
         throw new Error('Failed to fetch documents');
       }
       const data = await response.json();
-      return data;
+      return data.map((doc: any) => ({
+        title: doc.title,
+        status: doc.status,
+        riskScore: doc.riskScore,
+        lastScanned: doc.lastScanned,
+        templateUsed: doc.templateUsed,
+        templateCategory: doc.templateCategory
+      }));
     }
   });
 
@@ -56,7 +63,8 @@ export default function Reports() {
     title: doc.title,
     status: doc.status,
     riskScore: doc.riskScore,
-    lastScanned: doc.lastScanned ? new Date(doc.lastScanned).toLocaleDateString() : 'Not scanned'
+    lastScanned: doc.lastScanned ? new Date(doc.lastScanned).toLocaleDateString() : 'Not scanned',
+    templateInfo: doc.templateUsed ? `${doc.templateCategory} - ${doc.templateUsed}` : 'Custom Document'
   })) || [];
 
   return (
@@ -111,6 +119,7 @@ export default function Reports() {
                     <div>
                       <h4 className="font-medium">{doc.title}</h4>
                       <p className="text-sm text-muted-foreground">Last scanned: {doc.lastScanned}</p>
+                      <p className="text-sm text-muted-foreground">Template: {doc.templateInfo}</p>
                     </div>
                     <div className="flex items-center gap-4">
                       <span className={`px-2 py-1 rounded-full text-xs ${

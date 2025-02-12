@@ -18,9 +18,16 @@ router.get("/", async (req, res) => {
     const { timeRange = "7d" } = req.query;
     const startDate = subDays(new Date(), parseInt(timeRange.toString()));
 
-    // Fetch document activity data
+    // Fetch document activity data with template info
     const documentsData = await db
-      .select()
+      .select({
+        id: documentMetrics.id,
+        startTime: documentMetrics.startTime,
+        successful: documentMetrics.successful,
+        metadata: documentMetrics.metadata,
+        templateUsed: documentMetrics.metadata.templateUsed,
+        templateCategory: documentMetrics.metadata.templateCategory
+      })
       .from(documentMetrics)
       .where(
         and(
@@ -29,11 +36,13 @@ router.get("/", async (req, res) => {
         )
       );
 
-    // Process document activity data
+    // Process document activity data with template info
     const documentActivity = documentsData.map(d => ({
       date: d.startTime.toISOString().split('T')[0],
       processed: d.successful ? 1 : 0,
       uploaded: 1,
+      template: d.metadata?.templateUsed || 'Custom',
+      category: d.metadata?.templateCategory || 'None'
     }));
 
     // Calculate risk distribution from document metrics
@@ -47,7 +56,7 @@ router.get("/", async (req, res) => {
       high: riskScores.filter(score => score >= 0.7).length
     };
 
-    // Get workflow metrics
+    // Get workflow metrics with template usage
     const workflowData = await db
       .select()
       .from(workflowMetrics)
@@ -58,51 +67,11 @@ router.get("/", async (req, res) => {
         )
       );
 
-    // Get model usage metrics
-    const modelData = await db
-      .select()
-      .from(modelMetrics)
-      .where(
-        and(
-          eq(modelMetrics.userId, req.user.id),
-          gte(modelMetrics.timestamp, startDate)
-        )
-      );
-
-    // Calculate model efficiency
-    const modelEfficiency = modelData.reduce((acc, metric) => {
-      const model = metric.modelUsed;
-      if (!acc[model]) {
-        acc[model] = {
-          totalTime: 0,
-          totalTokens: 0,
-          successCount: 0,
-          totalCalls: 0
-        };
-      }
-      acc[model].totalTime += metric.processingTimeMs;
-      acc[model].totalTokens += metric.tokenCount;
-      acc[model].totalCalls += 1;
-      if (metric.errorRate === 0 || !metric.errorRate) {
-        acc[model].successCount += 1;
-      }
-      return acc;
-    }, {} as Record<string, { totalTime: number, totalTokens: number, successCount: number, totalCalls: number }>);
-
-    const modelPerformance = Object.entries(modelEfficiency).map(([model, stats]) => ({
-      model,
-      avgProcessingTime: stats.totalTime / stats.totalCalls,
-      successRate: (stats.successCount / stats.totalCalls) * 100,
-      tokenThroughput: stats.totalTokens / stats.totalCalls
-    }));
-
-    // Calculate automation metrics
-    const automationMetrics = {
-      automationPercentage: workflowData.filter(w => w.successful).length / workflowData.length * 100,
-      processingTimeReduction: workflowData.reduce((acc, w) => acc + (w.processingTimeMs || 0), 0) / workflowData.length,
-      laborCostSavings: workflowData.reduce((acc, w) => acc + (w.metadata?.costSavings || 0), 0),
-      errorReduction: workflowData.filter(w => w.successful).length / workflowData.length * 100
-    };
+    // Get metrics from metricsCollector
+    const metrics = await metricsCollector.collectMetrics({
+      start: startDate,
+      end: new Date()
+    });
 
     const response = {
       documentActivity,
@@ -110,11 +79,13 @@ router.get("/", async (req, res) => {
         name: name.charAt(0).toUpperCase() + name.slice(1),
         value
       })),
-      modelPerformance,
-      automationMetrics,
+      modelPerformance: metrics.modelPerformance || [],
+      automationMetrics: metrics.automationMetrics,
       workflowEfficiency: workflowData.map(w => ({
         name: w.workflowType,
-        value: w.metadata?.efficiency || 0
+        value: w.metadata?.efficiency || 0,
+        template: w.metadata?.templateUsed || 'Custom',
+        category: w.metadata?.templateCategory || 'None'
       }))
     };
 
@@ -135,35 +106,22 @@ router.get("/metrics/models", async (req, res) => {
     const { timeRange = "7d" } = req.query;
     const metrics = await metricsCollector.collectMetrics({
       start: subDays(new Date(), parseInt(timeRange.toString())),
-      end: new Date(),
-      userId: req.user.id
+      end: new Date()
     });
 
     const response = {
-      modelDistribution: Object.entries(metrics.modelDistribution).map(([model, percentage]) => ({
+      modelDistribution: Object.entries(metrics.modelDistribution || {}).map(([model, percentage]) => ({
         name: model,
         value: percentage
       })),
-      modelPerformance: Object.entries(metrics.errorRates).map(([model, errorRate]) => ({
-        model,
-        errorRate: Math.round(errorRate * 100),
-        avgProcessingTime: metrics.averageProcessingTime
-      })),
-      automationMetrics: {
-        automationPercentage: metrics.automationMetrics.automationPercentage,
-        processingTimeReduction: metrics.automationMetrics.processingTimeReduction,
-        laborCostSavings: metrics.automationMetrics.laborCostSavings,
-        errorReduction: metrics.automationMetrics.errorReduction
-      },
-      costEfficiency: Object.entries(metrics.modelDistribution).map(([model, _]) => ({
-        model,
-        costSavings: Math.round(metrics.costSavings)
-      })),
+      modelPerformance: metrics.modelPerformance || [],
+      automationMetrics: metrics.automationMetrics,
+      costEfficiency: metrics.costEfficiency || [],
       taskSuccess: [
-        { taskType: "Document Analysis", successRate: 95 },
-        { taskType: "Code Review", successRate: 92 },
-        { taskType: "Research", successRate: 88 },
-        { taskType: "Compliance", successRate: 94 }
+        { taskType: "Document Analysis", successRate: metrics.documentAnalysisSuccessRate || 95 },
+        { taskType: "Code Review", successRate: metrics.codeReviewSuccessRate || 92 },
+        { taskType: "Research", successRate: metrics.researchSuccessRate || 88 },
+        { taskType: "Compliance", successRate: metrics.complianceSuccessRate || 94 }
       ]
     };
 
@@ -174,7 +132,7 @@ router.get("/metrics/models", async (req, res) => {
   }
 });
 
-// Get reports
+// Get reports with template information
 router.get("/reports", async (req, res) => {
   try {
     if (!req.user) {
@@ -185,14 +143,32 @@ router.get("/reports", async (req, res) => {
     const query = db.select().from(reports);
 
     if (type !== "all") {
-      const reportType = type.toString().toUpperCase();
-      if (reportType in reports.type.enumValues) {
-        query.where(eq(reports.type, reportType as any));
-      }
+      query.where(eq(reports.type, type.toString()));
     }
 
     const allReports = await query;
-    res.json(allReports);
+
+    // Add template information to reports
+    const reportsWithTemplates = await Promise.all(
+      allReports.map(async (report) => {
+        const documentData = await db
+          .select({
+            templateUsed: documentMetrics.metadata.templateUsed,
+            templateCategory: documentMetrics.metadata.templateCategory
+          })
+          .from(documentMetrics)
+          .where(eq(documentMetrics.id, report.documentId))
+          .limit(1);
+
+        return {
+          ...report,
+          template: documentData[0]?.templateUsed || 'Custom',
+          category: documentData[0]?.templateCategory || 'None'
+        };
+      })
+    );
+
+    res.json(reportsWithTemplates);
   } catch (error) {
     console.error("Reports fetch error:", error);
     res.status(500).json({ error: "Failed to fetch reports" });
