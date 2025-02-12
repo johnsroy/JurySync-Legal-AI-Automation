@@ -1,0 +1,80 @@
+# In your existing backend codebase, create a new file at routes/vault.js
+cat > routes/vault.js << 'EOF'
+const express = require('express');
+const multer = require('multer');
+const router = express.Router();
+const upload = multer({ dest: 'uploads/' });
+
+// Assume you have shared Postgres and ChromaDB configurations available
+const { pool } = require('../db'); // Adjust path as necessary
+
+// File upload endpoint
+router.post('/upload', upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    // Replace these simulated functions with actual image recognition and NLP calls
+    const documentType = await simulateDocumentTypeExtraction(file.path);
+    const industry = await simulateIndustryExtraction(file.path);
+
+    const result = await pool.query(
+      'INSERT INTO files(name, document_type, industry) VALUES($1, $2, $3) RETURNING *',
+      [file.originalname, documentType, industry]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Error processing file.');
+  }
+});
+
+// Analysis endpoint
+router.post('/analyze', async (req, res) => {
+  try {
+    const { analysisType } = req.body;
+    const analysisResult = await simulateAnalysis(analysisType);
+    res.json(analysisResult);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Error performing analysis.');
+  }
+});
+
+// RBAC update endpoint
+router.post('/update-sharing', async (req, res) => {
+  const { policy } = req.body;
+  // Integrate with your existing RBAC system to update project sharing policies
+  res.json({ success: true, policy });
+});
+
+// Statistics endpoint
+router.get('/stats', async (req, res) => {
+  try {
+    // Replace with your actual logic to calculate statistics from Postgres/ChromaDB
+    const stats = {
+      accuracy: '97%',
+      documents: '10K+',
+      fieldExtractions: '50K+'
+    };
+    res.json(stats);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Error retrieving statistics.');
+  }
+});
+
+// Simulated helper functions for demonstration (replace with real logic)
+async function simulateDocumentTypeExtraction(filePath) {
+  return "Lease Agreement";
+}
+async function simulateIndustryExtraction(filePath) {
+  return "Financial";
+}
+async function simulateAnalysis(analysisType) {
+  return { analysis: analysisType, details: "Key terms: Governing Law, Effective Date, Termination Fee" };
+}
+
+module.exports = router;
+EOF
+This prompt creates a new vault-specific router in your backend that ties into your existing database and security systems.
+

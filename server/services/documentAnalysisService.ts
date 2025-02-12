@@ -19,9 +19,12 @@ const GPT_MODEL = "gpt-4o";
 interface DocumentAnalysis {
   summary: string;
   classification: string;
+  industry: string;
   keywords: string[];
   confidence: number;
   entities: string[];
+  riskLevel: string;
+  recommendations: string[];
 }
 
 export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
@@ -34,11 +37,14 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
         role: "user",
         content: `Analyze this legal document content and provide: 
         1. A classification (e.g., CONTRACT, BRIEF, CASE_LAW, LEGISLATION, CORRESPONDENCE, OTHER)
-        2. A confidence score (0-1) for the classification
-        3. Key entities mentioned
-        4. Important keywords
+        2. Industry classification (e.g., FINANCIAL, TECHNOLOGY, HEALTHCARE, etc.)
+        3. A confidence score (0-1) for the classification
+        4. Key entities mentioned (companies, individuals, organizations)
+        5. Important keywords
+        6. Risk level assessment (LOW, MEDIUM, HIGH)
+        7. Key recommendations based on content analysis
 
-        Respond in JSON format with these keys: classification, confidence, entities, keywords
+        Respond in JSON format with these keys: classification, industry, confidence, entities, keywords, riskLevel, recommendations
 
         Document content:
         ${content.substring(0, 8000)} // Limit content length
@@ -54,7 +60,7 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       messages: [
         {
           role: "system",
-          content: "You are a legal document analysis expert. Provide a concise but comprehensive summary of the document.",
+          content: "You are a legal document analysis expert. Provide a concise but comprehensive summary of the document, focusing on key legal implications, risks, and important clauses.",
         },
         {
           role: "user",
@@ -68,9 +74,12 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
     return {
       summary,
       classification: claudeAnalysis.classification,
+      industry: claudeAnalysis.industry,
       keywords: claudeAnalysis.keywords,
       confidence: claudeAnalysis.confidence,
       entities: claudeAnalysis.entities,
+      riskLevel: claudeAnalysis.riskLevel,
+      recommendations: claudeAnalysis.recommendations,
     };
   } catch (error) {
     console.error("Document analysis error:", error);

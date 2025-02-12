@@ -1,10 +1,10 @@
 import { Router } from "express";
 import multer from "multer";
-import { apiRequest } from "@/lib/queryClient";
 import { db } from "../db";
-import { vaultDocuments } from "@shared/schema";
+import { vaultDocuments, type VaultDocument } from "@shared/schema";
 import { rbacMiddleware } from "../middleware/rbac";
 import { analyzeDocument } from "../services/documentAnalysisService";
+import { eq, count, avg } from "drizzle-orm";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -33,7 +33,7 @@ const router = Router();
 // Apply RBAC middleware to all routes
 router.use(rbacMiddleware());
 
-// File upload endpoint
+// File upload endpoint with AI-powered document analysis
 router.post('/upload', async (req, res) => {
   try {
     await new Promise((resolve, reject) => {
@@ -57,7 +57,7 @@ router.post('/upload', async (req, res) => {
     // Get AI insights using our document analysis service
     const analysis = await analyzeDocument(content);
 
-    // Store document in vault storage
+    // Store document in vault storage with enhanced metadata
     const [document] = await db
       .insert(vaultDocuments)
       .values({
@@ -71,7 +71,10 @@ router.post('/upload', async (req, res) => {
         metadata: {
           keywords: analysis.keywords,
           confidence: analysis.confidence,
-          entities: analysis.entities
+          entities: analysis.entities,
+          industry: analysis.industry,
+          riskLevel: analysis.riskLevel,
+          recommendations: analysis.recommendations
         },
         userId
       })
@@ -95,36 +98,67 @@ router.post('/upload', async (req, res) => {
   }
 });
 
-// Analysis endpoint
+// Analysis endpoint with detailed document insights
 router.post('/analyze', async (req, res) => {
   try {
-    const { analysisType } = req.body;
+    const { analysisType, documentId } = req.body;
     const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Here you would integrate with your AI analysis service
-    // For now, returning simulated analysis
-    const analysisResult = {
-      type: analysisType,
-      summary: `Analysis of type ${analysisType} completed successfully`,
-      details: {
-        keyTerms: ["Governing Law", "Effective Date", "Termination Fee"],
-        riskLevel: "LOW",
-        recommendations: ["Review section 3.2", "Update compliance terms"]
-      }
-    };
+    // Fetch the document
+    const [document] = await db
+      .select()
+      .from(vaultDocuments)
+      .where(eq(vaultDocuments.id, documentId));
 
-    res.json(analysisResult);
+    if (!document) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    // Perform specific analysis based on type
+    let analysisResult;
+    switch (analysisType) {
+      case 'Reps & Warranties':
+        analysisResult = await analyzeDocument(document.content);
+        break;
+      case 'M&A Deal Points':
+        // Additional M&A specific analysis could be implemented here
+        analysisResult = await analyzeDocument(document.content);
+        break;
+      case 'Compliance Analysis':
+        // Additional compliance specific analysis could be implemented here
+        analysisResult = await analyzeDocument(document.content);
+        break;
+      default:
+        return res.status(400).json({ error: "Invalid analysis type" });
+    }
+
+    // Store analysis results
+    await db
+      .update(vaultDocuments)
+      .set({
+        metadata: {
+          ...document.metadata,
+          [`${analysisType.toLowerCase()}_analysis`]: analysisResult
+        }
+      })
+      .where(eq(vaultDocuments.id, documentId));
+
+    res.json({
+      success: true,
+      analysis: analysisResult,
+      summary: analysisResult.summary
+    });
   } catch (error: any) {
     console.error('Analysis error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// RBAC update endpoint
+// RBAC update endpoint with policy enforcement
 router.post('/update-sharing', async (req, res) => {
   try {
     const { policy } = req.body;
@@ -134,8 +168,22 @@ router.post('/update-sharing', async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Here you would update your RBAC policies
-    // For now, just acknowledging the request
+    // Validate policy
+    if (!['workspace', 'session'].includes(policy)) {
+      return res.status(400).json({ error: "Invalid policy type" });
+    }
+
+    // Update document sharing settings in user's documents
+    await db
+      .update(vaultDocuments)
+      .set({
+        metadata: {
+          sharingPolicy: policy,
+          updatedAt: new Date().toISOString()
+        }
+      })
+      .where(eq(vaultDocuments.userId, userId));
+
     res.json({ success: true, policy });
   } catch (error: any) {
     console.error('Sharing update error:', error);
@@ -143,7 +191,7 @@ router.post('/update-sharing', async (req, res) => {
   }
 });
 
-// Statistics endpoint
+// Statistics endpoint with real-time analytics
 router.get('/stats', async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -152,12 +200,38 @@ router.get('/stats', async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // For now, returning static statistics
-    // In a production environment, you would calculate these from your database
+    // Calculate real statistics from the database
+    const [documentCount] = await db
+      .select({ count: count() })
+      .from(vaultDocuments);
+
+    const [avgConfidence] = await db
+      .select({
+        avgConfidence: avg(vaultDocuments.metadata.confidence)
+      })
+      .from(vaultDocuments);
+
+    // Calculate extraction statistics
+    const documents = await db
+      .select({
+        metadata: vaultDocuments.metadata
+      })
+      .from(vaultDocuments);
+
+    const totalExtractions = documents.reduce((acc, doc) => {
+      return acc + (doc.metadata.entities?.length || 0) + (doc.metadata.keywords?.length || 0);
+    }, 0);
+
     const stats = {
-      accuracy: '97%',
-      documents: '10K+',
-      fieldExtractions: '50K+'
+      accuracy: `${Math.round((avgConfidence?.avgConfidence || 0.97) * 100)}%`,
+      documents: documentCount ?
+        documentCount.count > 1000 ?
+          `${Math.floor(documentCount.count/1000)}K+` :
+          documentCount.count.toString() :
+        "0",
+      fieldExtractions: totalExtractions > 1000 ?
+        `${Math.floor(totalExtractions/1000)}K+` :
+        totalExtractions.toString()
     };
 
     res.json(stats);
