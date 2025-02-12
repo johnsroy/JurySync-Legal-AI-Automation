@@ -23,7 +23,7 @@ export default function SubscriptionPage() {
     if (success && sessionId) {
       toast({
         title: 'Success!',
-        description: 'Your trial subscription has been activated.',
+        description: 'Your payment method has been authorized. Your free trial starts now!',
       });
     } else if (canceled) {
       toast({
@@ -95,6 +95,22 @@ export default function SubscriptionPage() {
                 <p className="text-sm text-gray-500">per month</p>
               </div>
 
+              <div className="space-y-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-blue-900">Secure Payment with Stripe</h4>
+                  <p className="text-sm text-blue-700">
+                    Your payment information will be securely stored for future billing.
+                  </p>
+                </div>
+
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-green-900">Free Trial Included</h4>
+                  <p className="text-sm text-green-700">
+                    After authorizing your payment method, enjoy 1 day of free access.
+                  </p>
+                </div>
+              </div>
+
               <Button 
                 className="w-full"
                 size="lg"
@@ -115,7 +131,7 @@ export default function SubscriptionPage() {
               </Button>
 
               <p className="text-sm text-gray-500 text-center">
-                Includes 1-day free trial
+                Secure payment powered by Stripe
               </p>
             </div>
           </CardContent>

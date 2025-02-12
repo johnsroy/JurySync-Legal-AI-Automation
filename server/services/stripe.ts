@@ -28,11 +28,12 @@ export class StripeService {
       // Create a customer if they don't exist
       const customer = await this.getOrCreateCustomer(email);
 
-      // Set up the subscription parameters with trial period
+      // Set up the subscription parameters with Link payment and trial period
       const subscriptionData: Stripe.Checkout.SessionCreateParams = {
         customer: customer.id,
         mode: 'subscription',
-        payment_method_types: ['card'],
+        payment_method_types: ['card', 'link'],
+        payment_method_collection: 'always',
         line_items: [{
           price: priceId,
           quantity: 1,
@@ -40,7 +41,7 @@ export class StripeService {
         success_url: successUrl,
         cancel_url: cancelUrl,
         subscription_data: {
-          trial_period_days: 1, // 1-day trial for all new subscriptions
+          trial_period_days: 1, // 1-day trial after payment method is authorized
           metadata: {
             userId: userId.toString(),
             planId: planId.toString(),
@@ -53,6 +54,12 @@ export class StripeService {
         allow_promotion_codes: true,
         billing_address_collection: 'required',
         client_reference_id: userId.toString(),
+        consent_collection: {
+          terms_of_service: 'required',
+        },
+        automatic_tax: {
+          enabled: true,
+        }
       };
 
       const session = await stripe.checkout.sessions.create(subscriptionData);

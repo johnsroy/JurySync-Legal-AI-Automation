@@ -32,7 +32,7 @@ router.post('/create-checkout-session', async (req, res) => {
       return res.status(400).json({ error: 'Invalid price configuration' });
     }
 
-    // Create checkout session
+    // Create checkout session with Link payment
     const result = await stripeService.createCheckoutSession({
       email: req.user.email,
       priceId,
@@ -63,13 +63,29 @@ router.get('/current-subscription', async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const result = await paymentsAgent.getSubscriptionStatus(req.user);
+    const subscription = await db.select().from(subscriptions)
+      .where(eq(subscriptions.userId, req.user.id))
+      .limit(1);
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (!subscription || subscription.length === 0) {
+      return res.json(null);
     }
 
-    res.json(result.subscription);
+    // Get plan details
+    const plan = await db.select().from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, subscription[0].planId))
+      .limit(1);
+
+    // Get Stripe subscription details
+    const stripeSubscription = await stripe.subscriptions.retrieve(
+      subscription[0].stripeSubscriptionId
+    );
+
+    res.json({
+      ...subscription[0],
+      plan: plan[0],
+      stripeSubscription
+    });
   } catch (error) {
     console.error('Error fetching subscription:', error);
     res.status(500).json({ error: 'Failed to fetch subscription details' });
