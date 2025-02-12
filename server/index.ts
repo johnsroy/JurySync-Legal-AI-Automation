@@ -24,20 +24,29 @@ async function isPortInUse(port: number): Promise<boolean> {
 
 const app = express();
 
-// Increase JSON payload limit for large documents
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: false }));
-
 // Configure CORS with specific options
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://jurysync.io'] // Replace with actual production domain
     : true, // Allow all origins in development
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Stripe-Signature'],
   credentials: true,
   maxAge: 600 // Cache preflight requests for 10 minutes
 }));
+
+// Security headers with relaxed CSP for development
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+
+  // Add request logging for API routes
+  if (req.path.startsWith('/api/')) {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  }
+
+  next();
+});
 
 // Initialize session store with retry logic
 const PostgresStore = connectPg(session);
@@ -64,30 +73,11 @@ app.use(session({
   },
 }));
 
-// Security headers with relaxed CSP for development
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-
-  // Add request logging for API routes
-  if (req.path.startsWith('/api/')) {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  }
-
-  // Add better error handling middleware
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
-
 // Setup auth before other routes
 setupAuth(app);
 
 (async () => {
   try {
-    // Check if port 5000 is in use and find an available port
     let port = Number(process.env.PORT) || 5000;
     while (await isPortInUse(port)) {
       console.log(`Port ${port} is in use, trying ${port + 1}`);
@@ -106,6 +96,15 @@ setupAuth(app);
       console.error('Failed to start continuous learning service:', error);
       // Continue app startup even if continuous learning fails
     }
+
+    // Configure body parsing middleware based on route
+    app.use((req, res, next) => {
+      if (req.originalUrl.startsWith('/api/payments/webhook')) {
+        express.raw({ type: 'application/json' })(req, res, next);
+      } else {
+        express.json({ limit: '50mb' })(req, res, next);
+      }
+    });
 
     // Register API routes first
     const server = registerRoutes(app);

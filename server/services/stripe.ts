@@ -6,6 +6,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
+  typescript: true,
 });
 
 export class StripeService {
@@ -25,8 +26,11 @@ export class StripeService {
     cancelUrl: string;
   }) {
     try {
+      console.log('Creating checkout session...', { email, priceId, userId, planId });
+
       // Create a customer if they don't exist
       const customer = await this.getOrCreateCustomer(email);
+      console.log('Customer retrieved/created:', customer.id);
 
       // Create Checkout Session for subscription
       const session = await stripe.checkout.sessions.create({
@@ -45,6 +49,7 @@ export class StripeService {
         },
       });
 
+      console.log('Checkout session created:', session.id);
       return { success: true, url: session.url };
     } catch (error) {
       console.error('Error creating checkout session:', error);
@@ -56,18 +61,26 @@ export class StripeService {
   }
 
   private async getOrCreateCustomer(email: string): Promise<Stripe.Customer> {
-    const existingCustomers = await stripe.customers.list({
-      email: email,
-      limit: 1,
-    });
+    try {
+      const existingCustomers = await stripe.customers.list({
+        email: email,
+        limit: 1,
+      });
 
-    if (existingCustomers.data.length > 0) {
-      return existingCustomers.data[0];
+      if (existingCustomers.data.length > 0) {
+        console.log('Found existing customer:', existingCustomers.data[0].id);
+        return existingCustomers.data[0];
+      }
+
+      const newCustomer = await stripe.customers.create({
+        email: email,
+      });
+      console.log('Created new customer:', newCustomer.id);
+      return newCustomer;
+    } catch (error) {
+      console.error('Error in getOrCreateCustomer:', error);
+      throw error;
     }
-
-    return await stripe.customers.create({
-      email: email,
-    });
   }
 }
 
