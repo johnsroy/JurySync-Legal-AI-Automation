@@ -51,25 +51,25 @@ export default function SubscriptionPage() {
   });
 
   const handleSubscribe = async (plan: Plan) => {
-    if (!user) {
-      toast({
-        title: 'Authentication Required',
-        description: 'Please sign in to subscribe',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (plan.isEnterprise) {
-      window.location.href = 'mailto:enterprise@jurysync.io?subject=Enterprise Plan Inquiry';
-      return;
-    }
-
-    setIsLoading(true);
-    setProcessingPlanId(plan.id);
-
     try {
-      // Verify student email if student plan
+      if (!user) {
+        toast({
+          title: 'Authentication Required',
+          description: 'Please sign in to subscribe',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (plan.isEnterprise) {
+        window.location.href = 'mailto:enterprise@jurysync.io?subject=Enterprise Plan Inquiry';
+        return;
+      }
+
+      setIsLoading(true);
+      setProcessingPlanId(plan.id);
+
+      // If student plan, verify email first
       if (plan.isStudent) {
         const verifyResponse = await apiRequest('POST', '/api/payments/verify-student', {
           email: user.email
@@ -95,9 +95,15 @@ export default function SubscriptionPage() {
       }
 
       const { sessionId } = await response.json();
+      if (!sessionId) {
+        throw new Error('No session ID returned from server');
+      }
 
       const { error } = await stripe.redirectToCheckout({ sessionId });
-      if (error) throw error;
+      if (error) {
+        console.error('Stripe redirect error:', error);
+        throw error;
+      }
 
     } catch (error) {
       console.error('Payment error:', error);
