@@ -19,6 +19,7 @@ import ReportsDashboard from "@/pages/reports-dashboard";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
 import WorkflowAutomation from "@/pages/workflow-automation";
+import VaultPage from "@/pages/vault-page";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
@@ -35,6 +36,12 @@ function Router() {
       <Route path="/dashboard">
         <Layout>
           <ProtectedRoute component={Dashboard} path="/dashboard" />
+        </Layout>
+      </Route>
+
+      <Route path="/vault">
+        <Layout>
+          <ProtectedRoute component={VaultPage} path="/vault" />
         </Layout>
       </Route>
 
