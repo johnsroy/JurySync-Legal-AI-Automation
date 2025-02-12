@@ -93,7 +93,7 @@ export class StripeService {
     cancelUrl,
     isTrial = false
   }: {
-    customerId: string;
+    customerId: string | null;
     priceId: string;
     userId: number;
     planId: number;
@@ -118,8 +118,7 @@ export class StripeService {
         isTrial
       });
 
-      const session = await stripe.checkout.sessions.create({
-        customer: customerId,
+      const sessionConfig: Stripe.Checkout.SessionCreateParams = {
         payment_method_types: ['card'],
         line_items: [
           {
@@ -139,10 +138,16 @@ export class StripeService {
         success_url: successUrl,
         cancel_url: cancelUrl,
         automatic_tax: { enabled: true },
-        client_reference_id: userId.toString(),
-        ui_mode: 'embedded',
-        return_url: successUrl
-      });
+      };
+
+      // Add customer_creation or customer based on whether we have a customer ID
+      if (customerId) {
+        sessionConfig.customer = customerId;
+      } else {
+        sessionConfig.customer_creation = 'always';
+      }
+
+      const session = await stripe.checkout.sessions.create(sessionConfig);
 
       console.log('Checkout session created:', session.id);
       return session;

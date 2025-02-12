@@ -72,21 +72,15 @@ export class PaymentsAgent {
 
       const selectedPlan = plan[0];
 
-      // Create or get customer
-      const customerId = await stripeService.getOrCreateCustomer(
-        user.email,
-        user.stripeCustomerId
-      );
-
       // Get the correct price ID based on interval
       const priceId = interval === 'year' ? selectedPlan.stripePriceIdYearly : selectedPlan.stripePriceIdMonthly;
       if (!priceId) {
         return { success: false, error: 'Invalid price configuration' };
       }
 
-      // Create checkout session
+      // Create checkout session - passing null for customerId to enable customer creation
       const session = await stripeService.createCheckoutSession({
-        customerId,
+        customerId: null,
         priceId,
         userId: user.id,
         planId: selectedPlan.id,

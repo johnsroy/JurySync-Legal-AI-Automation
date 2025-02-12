@@ -119,7 +119,11 @@ router.get('/plans', async (req, res) => {
 router.post('/create-checkout-session', requireAuth, async (req, res) => {
   try {
     const { planId, interval } = req.body;
-    console.log('Creating checkout session:', { planId, interval, userId: req.user?.id });
+    console.log('Creating checkout session:', {
+      planId,
+      interval,
+      userId: req.user?.id
+    });
 
     const result = await paymentsAgent.initializeCheckout(
       req.user!,
@@ -166,20 +170,6 @@ router.get('/current-subscription', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching subscription:', error);
     res.status(500).json({ error: 'Failed to fetch subscription' });
-  }
-});
-
-// Cancel subscription
-router.post('/cancel-subscription', requireAuth, async (req, res) => {
-  try {
-    const result = await paymentsAgent.cancelSubscription(req.user!);
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error canceling subscription:', error);
-    res.status(500).json({ error: 'Failed to cancel subscription' });
   }
 });
 
