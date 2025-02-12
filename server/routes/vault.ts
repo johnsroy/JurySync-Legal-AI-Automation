@@ -2,8 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
 import { vaultDocuments, users } from "@shared/schema";
-import { legalResearchService } from "../services/legalResearchService";
 import { eq } from "drizzle-orm";
+import { analyzeDocument } from "../services/documentAnalysisService";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -66,16 +66,15 @@ router.post('/documents', checkRole(['ADMIN', 'LAWYER']), async (req, res) => {
     const content = req.file.buffer.toString('utf-8');
 
     // Get AI insights
-    const analysis = await legalResearchService.analyzeDocument(content);
-    
+    const analysis = await analyzeDocument(content);
+
     // Store document with AI insights
     const [document] = await db
       .insert(vaultDocuments)
       .values({
-        userId,
         title: req.file.originalname,
         content,
-        documentType: analysis.classification || 'OTHER',
+        documentType: analysis.classification,
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
         aiSummary: analysis.summary,
@@ -84,7 +83,8 @@ router.post('/documents', checkRole(['ADMIN', 'LAWYER']), async (req, res) => {
           keywords: analysis.keywords,
           confidence: analysis.confidence,
           entities: analysis.entities
-        }
+        },
+        userId
       })
       .returning();
 
@@ -147,9 +147,10 @@ router.get('/documents/:id', async (req, res) => {
     const [document] = await db
       .select()
       .from(vaultDocuments)
-      .where(eq(vaultDocuments.id, documentId));
+      .where(eq(vaultDocuments.id, documentId))
+      .where(eq(vaultDocuments.userId, userId));
 
-    if (!document || document.userId !== userId) {
+    if (!document) {
       return res.status(404).json({ error: 'Document not found' });
     }
 
