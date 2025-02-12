@@ -1,14 +1,13 @@
 import { Router } from "express";
 import { db } from "../db";
-import { reports } from "@shared/schema/reports";
-import { modelMetrics, workflowMetrics, documentMetrics } from "@shared/schema/metrics";
+import { analyticsData, modelAnalytics, workflowAnalytics } from "@shared/schema/analytics";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { subDays } from "date-fns";
+import { analyticsService } from "../services/analyticsService";
 import { metricsCollector } from "../services/metricsCollector";
 
 const router = Router();
 
-// Get analytics data with enhanced compliance metrics
 router.get("/", async (req, res) => {
   try {
     if (!req.user) {
@@ -17,122 +16,73 @@ router.get("/", async (req, res) => {
 
     const { timeRange = "7d" } = req.query;
     const startDate = subDays(new Date(), parseInt(timeRange.toString()));
+    const endDate = new Date();
 
-    // Get document metrics
-    const documentsData = await db
-      .select({
-        id: documentMetrics.id,
-        startTime: documentMetrics.startTime,
-        successful: documentMetrics.successful,
-        metadata: documentMetrics.metadata,
-        documentType: documentMetrics.documentType,
-        processingType: documentMetrics.processingType
-      })
-      .from(documentMetrics)
-      .where(
-        and(
-          eq(documentMetrics.userId, req.user.id),
-          gte(documentMetrics.startTime, startDate)
-        )
-      );
-
-    // Process document activity data
-    const documentActivityByDate = documentsData.reduce((acc, doc) => {
-      const date = doc.startTime.toISOString().split('T')[0];
-
-      if (!acc[date]) {
-        acc[date] = {
-          date,
-          processed: 0,
-          uploaded: 0
-        };
-      }
-
-      acc[date].processed += doc.successful ? 1 : 0;
-      acc[date].uploaded += 1;
-
-      return acc;
-    }, {} as Record<string, any>);
-
-    // Convert to array format for charts
-    const documentActivity = Object.values(documentActivityByDate);
-
-    // Calculate risk distribution
-    const riskDistribution = documentsData.reduce((acc, doc) => {
-      const riskScore = doc.metadata?.riskScore || 0;
-      let category;
-
-      if (riskScore < 0.3) category = 'Low Risk';
-      else if (riskScore < 0.7) category = 'Medium Risk';
-      else category = 'High Risk';
-
-      if (!acc[category]) acc[category] = 0;
-      acc[category]++;
-
-      return acc;
-    }, {} as Record<string, number>);
-
-    const riskDistributionData = Object.entries(riskDistribution).map(([name, value]) => ({
-      name,
-      value
-    }));
-
-    // Get workflow efficiency data
-    const workflowData = await db
-      .select({
-        workflowType: workflowMetrics.workflowType,
-        processingTimeMs: workflowMetrics.processingTimeMs,
-        successful: workflowMetrics.successful,
-        metadata: workflowMetrics.metadata
-      })
-      .from(workflowMetrics)
-      .where(
-        and(
-          eq(workflowMetrics.userId, req.user.id),
-          gte(workflowMetrics.startTime, startDate)
-        )
-      );
-
-    // Calculate workflow efficiency
-    const workflowEfficiency = workflowData.reduce((acc, workflow) => {
-      const type = workflow.workflowType;
-      if (!acc[type]) {
-        acc[type] = {
-          total: 0,
-          successful: 0,
-          totalTime: 0
-        };
-      }
-
-      acc[type].total++;
-      acc[type].successful += workflow.successful ? 1 : 0;
-      acc[type].totalTime += workflow.processingTimeMs || 0;
-
-      return acc;
-    }, {} as Record<string, any>);
-
-    const workflowEfficiencyData = Object.entries(workflowEfficiency).map(([type, data]) => ({
-      name: type,
-      successRate: Math.round((data.successful / data.total) * 100),
-      avgProcessingTime: Math.round(data.totalTime / data.total)
-    }));
-
-    // Get metrics from metricsCollector
-    const metrics = await metricsCollector.collectMetrics({
+    // Get aggregated metrics from the analytics service
+    const analyticsMetrics = await analyticsService.getAggregatedMetrics({
       start: startDate,
-      end: new Date()
+      end: endDate
     });
 
+    // Get document processing metrics
+    const documentMetrics = await db
+      .select({
+        date: sql`date_trunc('day', ${analyticsData.timestamp})::date`,
+        processed: sql<number>`count(*) filter (where success_rate > 0.5)::integer`,
+        uploaded: sql<number>`count(*)::integer`
+      })
+      .from(analyticsData)
+      .where(
+        and(
+          gte(analyticsData.timestamp, startDate),
+          eq(analyticsData.taskType, 'document_processing')
+        )
+      )
+      .groupBy(sql`date_trunc('day', ${analyticsData.timestamp})::date`);
+
+    // Calculate risk distribution
+    const riskDistribution = await db
+      .select({
+        riskLevel: sql`
+          case 
+            when success_rate >= 0.7 then 'Low Risk'
+            when success_rate >= 0.3 then 'Medium Risk'
+            else 'High Risk'
+          end
+        `,
+        count: sql<number>`count(*)::integer`
+      })
+      .from(analyticsData)
+      .where(gte(analyticsData.timestamp, startDate))
+      .groupBy(sql`
+        case 
+          when success_rate >= 0.7 then 'Low Risk'
+          when success_rate >= 0.3 then 'Medium Risk'
+          else 'High Risk'
+        end
+      `);
+
+    // Get automation metrics from metrics collector
+    const metrics = await metricsCollector.collectMetrics({
+      start: startDate,
+      end: endDate
+    });
+
+    // Format the response
     const response = {
-      documentActivity,
-      riskDistribution: riskDistributionData,
-      modelPerformance: metrics.modelPerformance || [],
-      automationMetrics: metrics.automationMetrics,
-      workflowEfficiency: workflowEfficiencyData,
-      modelDistribution: Object.entries(metrics.modelDistribution || {}).map(([model, value]) => ({
-        name: model,
-        value
+      documentActivity: documentMetrics.map(doc => ({
+        date: doc.date.toISOString().split('T')[0],
+        processed: doc.processed,
+        uploaded: doc.uploaded
       })),
+      riskDistribution: riskDistribution.map(risk => ({
+        name: risk.riskLevel,
+        value: risk.count
+      })),
+      modelPerformance: analyticsMetrics.modelPerformance,
+      automationMetrics: metrics.automationMetrics,
+      workflowEfficiency: analyticsMetrics.workflowEfficiency,
+      modelDistribution: analyticsMetrics.modelDistribution,
       costEfficiency: metrics.costEfficiency || [],
       taskSuccess: [
         { taskType: "Document Analysis", successRate: metrics.documentAnalysisSuccessRate },
@@ -149,7 +99,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Get model performance metrics
 router.get("/metrics/models", async (req, res) => {
   try {
     if (!req.user) {
@@ -185,7 +134,6 @@ router.get("/metrics/models", async (req, res) => {
   }
 });
 
-// Get reports with template information
 router.get("/reports", async (req, res) => {
   try {
     if (!req.user) {
