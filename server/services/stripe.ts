@@ -5,9 +5,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY must be set');
 }
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
-});
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export const SUBSCRIPTION_PLANS = {
   STUDENT: {
@@ -53,22 +51,9 @@ export const SUBSCRIPTION_PLANS = {
 };
 
 export class StripeService {
-  async getOrCreateCustomer(
-    email: string,
-    stripeCustomerId?: string | null
-  ): Promise<string> {
+  async getOrCreateCustomer(email: string): Promise<string> {
     try {
-      if (stripeCustomerId) {
-        try {
-          const customer = await stripe.customers.retrieve(stripeCustomerId);
-          if (!customer.deleted) {
-            return stripeCustomerId;
-          }
-        } catch (error) {
-          console.error('Error retrieving customer:', error);
-        }
-      }
-
+      // Create new customer
       console.log('Creating new Stripe customer:', { email });
       const customer = await stripe.customers.create({
         email,
@@ -85,7 +70,7 @@ export class StripeService {
   }
 
   async createCheckoutSession({
-    customerId,
+    email,
     priceId,
     userId,
     planId,
@@ -93,7 +78,7 @@ export class StripeService {
     cancelUrl,
     isTrial = false
   }: {
-    customerId: string | null;
+    email: string;
     priceId: string;
     userId: number;
     planId: number;
@@ -102,16 +87,11 @@ export class StripeService {
     isTrial?: boolean;
   }) {
     try {
-      // Validate the price ID exists
-      try {
-        await stripe.prices.retrieve(priceId);
-      } catch (error) {
-        console.error('Invalid price ID:', error);
-        throw new Error('Invalid subscription plan configuration');
-      }
+      // Create a new customer for each checkout
+      const customer = await this.getOrCreateCustomer(email);
 
       console.log('Creating checkout session:', {
-        customerId,
+        customer,
         priceId,
         userId,
         planId,
@@ -119,33 +99,26 @@ export class StripeService {
       });
 
       const sessionConfig: Stripe.Checkout.SessionCreateParams = {
+        customer,
+        mode: 'subscription',
         payment_method_types: ['card'],
         line_items: [
           {
             price: priceId,
-            quantity: 1
+            quantity: 1,
           }
         ],
-        mode: 'subscription',
         subscription_data: isTrial ? {
           trial_period_days: 1
         } : undefined,
-        allow_promotion_codes: true,
         metadata: {
           userId: userId.toString(),
           planId: planId.toString()
         },
         success_url: successUrl,
         cancel_url: cancelUrl,
-        automatic_tax: { enabled: true },
+        automatic_tax: { enabled: true }
       };
-
-      // Add customer_creation or customer based on whether we have a customer ID
-      if (customerId) {
-        sessionConfig.customer = customerId;
-      } else {
-        sessionConfig.customer_creation = 'always';
-      }
 
       const session = await stripe.checkout.sessions.create(sessionConfig);
 

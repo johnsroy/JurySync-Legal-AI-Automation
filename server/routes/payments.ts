@@ -122,7 +122,8 @@ router.post('/create-checkout-session', requireAuth, async (req, res) => {
     console.log('Creating checkout session:', {
       planId,
       interval,
-      userId: req.user?.id
+      userId: req.user?.id,
+      userEmail: req.user?.email
     });
 
     const result = await paymentsAgent.initializeCheckout(

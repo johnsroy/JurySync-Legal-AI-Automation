@@ -78,9 +78,9 @@ export class PaymentsAgent {
         return { success: false, error: 'Invalid price configuration' };
       }
 
-      // Create checkout session - passing null for customerId to enable customer creation
+      // Create checkout session
       const session = await stripeService.createCheckoutSession({
-        customerId: null,
+        email: user.email,
         priceId,
         userId: user.id,
         planId: selectedPlan.id,
@@ -174,7 +174,6 @@ export class PaymentsAgent {
         .where(eq(subscriptionPlans.id, subscription[0].planId))
         .limit(1);
 
-      // Get subscription details from Stripe
       const stripeSubscription = await stripe.subscriptions.retrieve(
         subscription[0].stripeSubscriptionId
       );
