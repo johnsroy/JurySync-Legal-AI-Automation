@@ -1,10 +1,9 @@
 import { Router } from "express";
 import { db } from "../db";
-import { reports, analyticsData } from "@shared/schema/reports";
-import { modelMetrics } from "@shared/schema/metrics";
+import { reports } from "@shared/schema/reports";
+import { modelMetrics, workflowMetrics, documentMetrics, userActivityMetrics } from "@shared/schema/metrics";
 import { and, eq, gte } from "drizzle-orm";
 import { subDays } from "date-fns";
-import { generateWeeklyAnalytics } from "../services/complianceMonitor";
 import { metricsCollector } from "../services/metricsCollector";
 
 const router = Router();
@@ -13,67 +12,62 @@ const router = Router();
 router.get("/", async (req, res) => {
   try {
     const { timeRange = "7d" } = req.query;
-    const daysToSubtract = parseInt(timeRange.toString());
-    const startDate = subDays(new Date(), daysToSubtract);
+    const startDate = subDays(new Date(), parseInt(timeRange.toString()));
 
-    // Generate fresh weekly analytics
-    const weeklyAnalytics = await generateWeeklyAnalytics();
-
-    // Fetch historical analytics data
-    const [documentsData, analyticsMetrics] = await Promise.all([
-      db.select().from(analyticsData).where(
+    // Fetch document activity data
+    const documentsData = await db
+      .select()
+      .from(documentMetrics)
+      .where(
         and(
-          eq(analyticsData.metric, "document_activity"),
-          gte(analyticsData.timestamp, startDate)
+          eq(documentMetrics.userId, req.user!.id),
+          gte(documentMetrics.startTime, startDate)
         )
-      ),
-      db.select().from(analyticsData).where(
-        and(
-          eq(analyticsData.metric, "weekly_compliance_report"),
-          gte(analyticsData.timestamp, startDate)
-        )
-      ),
-    ]);
+      );
 
     // Process document activity data
     const documentActivity = documentsData.map(d => ({
-      date: d.timestamp,
-      processed: (d.value as any).processed || 0,
-      uploaded: (d.value as any).uploaded || 0,
+      date: d.startTime,
+      processed: d.successful ? 1 : 0,
+      uploaded: 1,
     }));
 
-    // Calculate metrics from weekly analytics
-    const latestMetrics = weeklyAnalytics;
-    const previousMetrics = analyticsMetrics[0]?.value as any || {};
+    // Calculate risk distribution from document metrics
+    const riskScores = documentsData
+      .filter(d => d.metadata?.riskScore !== undefined)
+      .map(d => d.metadata!.riskScore as number);
 
-    const calculateChange = (current: number, previous: number) => 
-      previous ? ((current - previous) / previous) * 100 : 0;
+    const riskDistribution = {
+      low: riskScores.filter(score => score < 0.3).length,
+      medium: riskScores.filter(score => score >= 0.3 && score < 0.7).length,
+      high: riskScores.filter(score => score >= 0.7).length
+    };
 
-    // Convert risk distribution to chart format
-    const riskDistribution = Object.entries(latestMetrics.riskDistribution).map(([name, value]) => ({
-      name: name.charAt(0).toUpperCase() + name.slice(1),
-      value
-    }));
+    // Get workflow metrics
+    const workflowData = await db
+      .select()
+      .from(workflowMetrics)
+      .where(
+        and(
+          eq(workflowMetrics.userId, req.user!.id),
+          gte(workflowMetrics.startTime, startDate)
+        )
+      );
 
-    // Create compliance metrics from common issues
-    const complianceMetrics = latestMetrics.commonIssues.map(issue => ({
-      name: issue.type,
-      value: issue.count
-    }));
+    const complianceMetrics = workflowData
+      .filter(w => w.workflowType === 'COMPLIANCE_CHECK')
+      .map(workflow => ({
+        name: workflow.status,
+        value: workflow.metadata?.efficiency || 0
+      }));
 
     const response = {
-      totalDocuments: latestMetrics.totalDocuments,
-      documentIncrease: calculateChange(
-        latestMetrics.totalDocuments,
-        previousMetrics.totalDocuments || 0
-      ),
-      averageRiskScore: latestMetrics.averageRiskScore,
-      riskScoreChange: latestMetrics.trends.riskScoreTrend,
-      complianceRate: 100 - (latestMetrics.riskDistribution.high / latestMetrics.totalDocuments * 100),
-      complianceChange: latestMetrics.trends.complianceRateTrend,
       documentActivity,
-      riskDistribution,
-      complianceMetrics,
+      riskDistribution: Object.entries(riskDistribution).map(([name, value]) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        value
+      })),
+      complianceMetrics
     };
 
     res.json(response);
@@ -132,8 +126,15 @@ router.get("/reports", async (req, res) => {
   try {
     const { type = "all" } = req.query;
     const query = db.select().from(reports);
-    const whereClause = type !== "all" ? eq(reports.type, type as any) : undefined;
-    const allReports = await (whereClause ? query.where(whereClause) : query);
+
+    if (type !== "all") {
+      const reportType = type.toString().toUpperCase();
+      if (reportType in reports.type.enumValues) {
+        query.where(eq(reports.type, reportType as any));
+      }
+    }
+
+    const allReports = await query;
     res.json(allReports);
   } catch (error) {
     console.error("Reports fetch error:", error);
@@ -146,59 +147,26 @@ router.post("/reports", async (req, res) => {
   try {
     const { title, type, config } = req.body;
 
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const [report] = await db
       .insert(reports)
       .values({
-        title,
-        type,
-        config,
-        userId: req.user!.id,
+        type: type.toUpperCase(),
+        userId: req.user.id,
         status: "GENERATING",
+        config: config || {},
+        title: title || `Report ${new Date().toISOString()}`
       })
       .returning();
 
-    // Start report generation in background
-    generateReport(report.id, type, config)
-      .catch(error => {
-        console.error("Report generation error:", error);
-        db.update(reports)
-          .set({ status: "ERROR" })
-          .where(eq(reports.id, report.id))
-          .execute();
-      });
-
     res.json(report);
-
   } catch (error) {
     console.error("Report creation error:", error);
     res.status(500).json({ error: "Failed to create report" });
   }
 });
-
-// Get a specific report by ID
-router.get("/reports/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const [report] = await db
-      .select()
-      .from(reports)
-      .where(eq(reports.id, parseInt(id)));
-
-    if (!report) {
-      return res.status(404).json({ error: "Report not found" });
-    }
-
-    res.json(report);
-
-  } catch (error) {
-    console.error("Report fetch error:", error);
-    res.status(500).json({ error: "Failed to fetch report" });
-  }
-});
-
-async function generateReport(reportId: number, type: string, config: any) {
-  // Implement report generation logic here
-  // This will be implemented in the next iteration
-}
 
 export default router;

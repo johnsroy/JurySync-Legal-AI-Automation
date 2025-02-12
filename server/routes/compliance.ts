@@ -5,7 +5,8 @@ import { complianceDocuments, metricsEvents } from "@shared/schema";
 import { complianceAuditService } from "../services/complianceAuditService";
 import { riskAssessmentService } from "../services/riskAssessment";
 import { modelRouter } from "../services/modelRouter";
-import { monitorDocument, generateWeeklyAnalytics } from "../services/complianceMonitor";
+import { monitorDocument } from "../services/complianceMonitor";
+import { metricsCollector } from "../services/metricsCollector";
 import { eq, and, sql } from "drizzle-orm";
 
 // Configure multer for memory storage
@@ -463,8 +464,20 @@ router.get('/dashboard-insights', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const insights = await generateWeeklyAnalytics();
-    res.json(insights);
+    // Collect metrics using metricsCollector
+    const metrics = await metricsCollector.collectMetrics({
+      start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
+      end: new Date()
+    });
+
+    // Add additional compliance-specific metrics
+    const complianceMetrics = await metricsCollector.getComplianceMetrics(userId);
+
+    res.json({
+      ...metrics,
+      compliance: complianceMetrics
+    });
+
   } catch (error: unknown) {
     const err = error as Error;
     console.error('Dashboard insights error:', err);

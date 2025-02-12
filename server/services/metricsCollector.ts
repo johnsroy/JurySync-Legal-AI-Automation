@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { modelMetrics } from "@shared/schema/metrics";
+import { modelMetrics, workflowMetrics, documentMetrics, userActivityMetrics, aggregateMetrics } from "@shared/schema/metrics";
 import { eq, and, sql } from "drizzle-orm";
 
 interface ModelUsageMetrics {
@@ -148,6 +148,97 @@ export class MetricsCollector {
       laborCostSavings: `${laborSavingsLow}-${laborSavingsHigh}%`,
       errorReduction: `${Math.round(errorReduction)}%`
     };
+  }
+
+  // Record model metrics
+  public async recordModelMetric(data: {
+    userId: number;
+    taskId: string;
+    modelUsed: string;
+    taskType: string;
+    processingTimeMs: number;
+    tokenCount: number;
+    errorRate?: number;
+    qualityScore?: number;
+    metadata?: {
+      promptTokens?: number;
+      completionTokens?: number;
+      totalCost?: number;
+      modelCapabilities?: string[];
+    };
+  }) {
+    await db.insert(modelMetrics).values(data);
+  }
+
+  // Record workflow metrics
+  public async recordWorkflowMetric(data: {
+    userId: number;
+    workflowId: string;
+    workflowType: string;
+    status: string;
+    startTime: Date;
+    completionTime?: Date;
+    processingTimeMs?: number;
+    successful: boolean;
+    errorMessage?: string;
+    metadata?: {
+      stepsCompleted?: string[];
+      automationRate?: number;
+      efficiency?: number;
+      costSavings?: number;
+    };
+  }) {
+    await db.insert(workflowMetrics).values(data);
+  }
+
+  // Document processing metrics
+  public async recordDocumentMetric(data: {
+    userId: number;
+    documentId: string;
+    documentType: string;
+    processingType: string;
+    startTime: Date;
+    completionTime?: Date;
+    pageCount?: number;
+    wordCount?: number;
+    processingTimeMs?: number;
+    successful: boolean;
+    metadata?: {
+      complexity?: number;
+      riskScore?: number;
+      suggestions?: number;
+      revisions?: number;
+    };
+  }) {
+    await db.insert(documentMetrics).values(data);
+  }
+
+  // User activity metrics
+  public async recordUserActivity(data: {
+    userId: number;
+    activityType: string;
+    resourceType?: string;
+    resourceId?: string;
+    actionResult: string;
+    metadata?: {
+      duration?: number;
+      interactionType?: string;
+      features?: string[];
+      success?: boolean;
+    };
+  }) {
+    await db.insert(userActivityMetrics).values(data);
+  }
+
+  // Aggregate metrics for dashboard
+  public async recordAggregateMetric(data: {
+    userId: number;
+    metricType: string;
+    timeframe: string;
+    value: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  }) {
+    await db.insert(aggregateMetrics).values(data);
   }
 }
 
