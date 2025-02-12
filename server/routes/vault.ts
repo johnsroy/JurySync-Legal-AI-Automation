@@ -4,6 +4,7 @@ import { db } from "../db";
 import { vaultDocuments, users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { analyzeDocument } from "../services/documentAnalysisService";
+import { rbacMiddleware } from "../middleware/rbac";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -29,27 +30,11 @@ const upload = multer({
 
 const router = Router();
 
-// Check if user has required role
-const checkRole = (allowedRoles: string[]) => async (req: any, res: any, next: any) => {
-  const userId = req.user?.id;
-  if (!userId) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, userId));
-
-  if (!user || !allowedRoles.includes(user.role)) {
-    return res.status(403).json({ error: 'Insufficient permissions' });
-  }
-
-  next();
-};
+// Apply RBAC middleware to all routes
+router.use(rbacMiddleware());
 
 // Upload document
-router.post('/documents', checkRole(['ADMIN', 'LAWYER']), async (req, res) => {
+router.post('/documents', async (req, res) => {
   try {
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
@@ -74,7 +59,7 @@ router.post('/documents', checkRole(['ADMIN', 'LAWYER']), async (req, res) => {
       .values({
         title: req.file.originalname,
         content,
-        documentType: analysis.classification,
+        documentType: analysis.classification || 'OTHER',
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
         aiSummary: analysis.summary,
@@ -95,7 +80,8 @@ router.post('/documents', checkRole(['ADMIN', 'LAWYER']), async (req, res) => {
         title: document.title,
         documentType: document.documentType,
         aiSummary: document.aiSummary,
-        createdAt: document.createdAt
+        createdAt: document.createdAt,
+        metadata: document.metadata
       }
     });
 
@@ -105,7 +91,7 @@ router.post('/documents', checkRole(['ADMIN', 'LAWYER']), async (req, res) => {
   }
 });
 
-// Get all documents
+// Get all documents - accessible by all authenticated users
 router.get('/documents', async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -113,19 +99,44 @@ router.get('/documents', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const documents = await db
-      .select({
-        id: vaultDocuments.id,
-        title: vaultDocuments.title,
-        documentType: vaultDocuments.documentType,
-        aiSummary: vaultDocuments.aiSummary,
-        aiClassification: vaultDocuments.aiClassification,
-        createdAt: vaultDocuments.createdAt,
-        metadata: vaultDocuments.metadata
-      })
-      .from(vaultDocuments)
-      .where(eq(vaultDocuments.userId, userId))
-      .orderBy(vaultDocuments.createdAt);
+    // Get user's role
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId));
+
+    // Query documents based on role
+    let documents;
+    if (user.role === 'ADMIN') {
+      // Admins can see all documents
+      documents = await db
+        .select({
+          id: vaultDocuments.id,
+          title: vaultDocuments.title,
+          documentType: vaultDocuments.documentType,
+          aiSummary: vaultDocuments.aiSummary,
+          aiClassification: vaultDocuments.aiClassification,
+          createdAt: vaultDocuments.createdAt,
+          metadata: vaultDocuments.metadata
+        })
+        .from(vaultDocuments)
+        .orderBy(vaultDocuments.createdAt);
+    } else {
+      // Other users can only see their own documents
+      documents = await db
+        .select({
+          id: vaultDocuments.id,
+          title: vaultDocuments.title,
+          documentType: vaultDocuments.documentType,
+          aiSummary: vaultDocuments.aiSummary,
+          aiClassification: vaultDocuments.aiClassification,
+          createdAt: vaultDocuments.createdAt,
+          metadata: vaultDocuments.metadata
+        })
+        .from(vaultDocuments)
+        .where(eq(vaultDocuments.userId, userId))
+        .orderBy(vaultDocuments.createdAt);
+    }
 
     return res.json({ documents });
 
@@ -144,11 +155,28 @@ router.get('/documents/:id', async (req, res) => {
     }
 
     const documentId = parseInt(req.params.id);
-    const [document] = await db
+
+    // Get user's role
+    const [user] = await db
       .select()
-      .from(vaultDocuments)
-      .where(eq(vaultDocuments.id, documentId))
-      .where(eq(vaultDocuments.userId, userId));
+      .from(users)
+      .where(eq(users.id, userId));
+
+    let document;
+    if (user.role === 'ADMIN') {
+      // Admins can access any document
+      [document] = await db
+        .select()
+        .from(vaultDocuments)
+        .where(eq(vaultDocuments.id, documentId));
+    } else {
+      // Other users can only access their own documents
+      [document] = await db
+        .select()
+        .from(vaultDocuments)
+        .where(eq(vaultDocuments.id, documentId))
+        .where(eq(vaultDocuments.userId, userId));
+    }
 
     if (!document) {
       return res.status(404).json({ error: 'Document not found' });
