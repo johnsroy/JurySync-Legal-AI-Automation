@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, CheckCircle } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
@@ -31,7 +31,6 @@ interface Plan {
 export default function SubscriptionPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [billingInterval, setBillingInterval] = useState<'month' | 'year'>('month');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -61,10 +60,9 @@ export default function SubscriptionPage() {
         });
 
         if (!verifyResponse.ok) {
-          const error = await verifyResponse.json();
           toast({
             title: 'Invalid Student Email',
-            description: error.message || 'Please use a valid .edu email address',
+            description: 'Please use a valid .edu email address',
             variant: 'destructive',
           });
           return;
@@ -74,30 +72,27 @@ export default function SubscriptionPage() {
       const stripe = await stripePromise;
       if (!stripe) throw new Error('Stripe failed to load');
 
-      const response = await apiRequest('POST', '/api/payments/create-subscription', {
+      const response = await apiRequest('POST', '/api/payments/create-checkout-session', {
         planId: plan.id,
         interval: billingInterval,
       });
 
-      if (!response.ok) throw new Error('Failed to create subscription');
-      
-      const { subscriptionId, clientSecret } = await response.json();
+      if (!response.ok) throw new Error('Failed to create checkout session');
 
-      const { error } = await stripe.confirmCardPayment(clientSecret);
+      const { sessionId } = await response.json();
+
+      const { error } = await stripe.redirectToCheckout({
+        sessionId
+      });
+
       if (error) {
         throw new Error(error.message);
       }
-
-      toast({
-        title: 'Subscription Successful',
-        description: `You are now subscribed to the ${plan.name} plan`,
-      });
-
     } catch (error) {
-      console.error('Subscription error:', error);
+      console.error('Payment error:', error);
       toast({
-        title: 'Subscription Failed',
-        description: error instanceof Error ? error.message : 'Failed to process subscription',
+        title: 'Payment Failed',
+        description: error instanceof Error ? error.message : 'Failed to process payment',
         variant: 'destructive',
       });
     } finally {
@@ -140,9 +135,7 @@ export default function SubscriptionPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {plans?.map((plan: Plan) => (
-            <Card key={plan.id} className={`relative overflow-hidden ${
-              selectedPlan?.id === plan.id ? 'border-primary' : ''
-            }`}>
+            <Card key={plan.id} className="relative overflow-hidden">
               <CardHeader>
                 <CardTitle>{plan.name}</CardTitle>
                 <CardDescription>{plan.description}</CardDescription>

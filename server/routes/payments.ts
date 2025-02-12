@@ -20,14 +20,14 @@ router.get('/plans', async (req, res) => {
   }
 });
 
-// Create subscription
-router.post('/create-subscription', async (req, res) => {
+// Create checkout session
+router.post('/create-checkout-session', async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { planId, paymentMethodId, interval } = req.body;
+    const { planId, interval } = req.body;
 
     const plan = await db.query.subscriptionPlans.findFirst({
       where: eq(subscriptionPlans.id, planId)
@@ -37,6 +37,14 @@ router.post('/create-subscription', async (req, res) => {
       return res.status(404).json({ error: 'Plan not found' });
     }
 
+    // If student plan, verify email
+    if (plan.isStudent) {
+      const isValidStudent = await stripeService.verifyStudentEmail(req.user.email);
+      if (!isValidStudent) {
+        return res.status(403).json({ error: 'Invalid student email. Must be a .edu email address.' });
+      }
+    }
+
     // Create or get customer
     const customerId = await stripeService.createOrRetrieveCustomer(
       req.user.id,
@@ -44,44 +52,50 @@ router.post('/create-subscription', async (req, res) => {
       req.user.name
     );
 
-    // If student plan, verify email
-    if (plan.isStudent) {
-      const isValidStudent = await stripeService.verifyStudentEmail(req.user.email);
-      if (!isValidStudent) {
-        return res.status(403).json({ error: 'Invalid student email' });
-      }
-    }
-
-    // Attach payment method to customer if provided
-    if (paymentMethodId) {
-      await stripe.paymentMethods.attach(paymentMethodId, {
-        customer: customerId,
-      });
-
-      // Set as default payment method
-      await stripe.customers.update(customerId, {
-        invoice_settings: {
-          default_payment_method: paymentMethodId,
-        },
-      });
-    }
-
-    // Create subscription
-    const subscription = await stripeService.createSubscription({
+    const session = await stripeService.createCheckoutSession({
       customerId,
       priceId: interval === 'year' ? plan.stripePriceIdYearly : plan.stripePriceIdMonthly,
       userId: req.user.id,
       planId: plan.id,
-      isTrial: plan.isStudent
+      isTrial: plan.isStudent,
+      successUrl: `${process.env.APP_URL}/subscription-management?success=true`,
+      cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`,
     });
 
+    res.json({ sessionId: session.id });
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// Get current subscription
+router.get('/current-subscription', async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const subscription = await db.query.subscriptions.findFirst({
+      where: eq(subscriptions.userId, req.user.id),
+      with: {
+        plan: true
+      }
+    });
+
+    if (!subscription) {
+      return res.json(null);
+    }
+
+    const stripeSubscription = await stripeService.getSubscriptionDetails(subscription.stripeSubscriptionId);
+
     res.json({
-      subscriptionId: subscription.id,
-      clientSecret: (subscription as any).latest_invoice.payment_intent.client_secret
+      ...subscription,
+      stripeSubscription
     });
   } catch (error) {
-    console.error('Error creating subscription:', error);
-    res.status(500).json({ error: 'Failed to create subscription' });
+    console.error('Error fetching subscription:', error);
+    res.status(500).json({ error: 'Failed to fetch subscription' });
   }
 });
 
@@ -152,7 +166,7 @@ router.post('/verify-student', async (req, res) => {
   try {
     const { email } = req.body;
     const result = studentEmailSchema.safeParse({ email });
-    
+
     if (!result.success) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
@@ -177,6 +191,23 @@ router.post('/webhook', async (req, res) => {
     const event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
 
     switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+
+        // Record the subscription in our database
+        await db.insert(subscriptions).values({
+          userId: parseInt(session.metadata?.userId || '0'),
+          planId: parseInt(session.metadata?.planId || '0'),
+          stripeCustomerId: session.customer as string,
+          stripeSubscriptionId: subscription.id,
+          status: subscription.status,
+          currentPeriodStart: new Date(subscription.current_period_start * 1000),
+          currentPeriodEnd: new Date(subscription.current_period_end * 1000)
+        });
+        break;
+      }
+
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;

@@ -79,45 +79,46 @@ export class StripeService {
     }
   }
 
-  // Create a subscription
-  async createSubscription({
+  // Create a checkout session
+  async createCheckoutSession({
     customerId,
     priceId,
     userId,
     planId,
-    isTrial = false
+    isTrial = false,
+    successUrl,
+    cancelUrl
   }: {
     customerId: string;
     priceId: string;
     userId: number;
     planId: number;
     isTrial?: boolean;
+    successUrl: string;
+    cancelUrl: string;
   }) {
     try {
-      const subscription = await stripe.subscriptions.create({
+      const session = await stripe.checkout.sessions.create({
         customer: customerId,
-        items: [{ price: priceId }],
-        payment_behavior: 'default_incomplete',
-        payment_settings: { save_default_payment_method: 'on_subscription' },
-        expand: ['latest_invoice.payment_intent'],
-        trial_period_days: isTrial ? SUBSCRIPTION_PLANS.STUDENT.trial_days : undefined
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        mode: 'subscription',
+        subscription_data: {
+          trial_period_days: isTrial ? SUBSCRIPTION_PLANS.STUDENT.trial_days : undefined,
+        },
+        success_url: successUrl,
+        cancel_url: cancelUrl,
       });
 
-      // Save subscription details to database
-      await db.insert(subscriptions).values({
-        userId,
-        planId,
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: subscription.id,
-        status: subscription.status,
-        currentPeriodStart: new Date(subscription.current_period_start * 1000),
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000)
-      });
-
-      return subscription;
+      return session;
     } catch (error) {
-      console.error('Error in createSubscription:', error);
-      throw new Error('Failed to create subscription');
+      console.error('Error creating checkout session:', error);
+      throw error;
     }
   }
 
@@ -125,8 +126,10 @@ export class StripeService {
   async updateSubscription(subscriptionId: string, priceId: string) {
     try {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-      
+
       return await stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: false,
+        proration_behavior: 'create_prorations',
         items: [{
           id: subscription.items.data[0].id,
           price: priceId,
@@ -152,7 +155,6 @@ export class StripeService {
 
   // Verify student email
   async verifyStudentEmail(email: string): Promise<boolean> {
-    // Basic verification - check if email ends with .edu
     return email.toLowerCase().endsWith('.edu');
   }
 
