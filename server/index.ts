@@ -1,6 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { setupVite, serveStatic } from "./vite";
 import { setupAuth } from "./auth";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
@@ -9,8 +9,8 @@ import { seedLegalDatabase } from './services/seedData';
 import { continuousLearningService } from './services/continuousLearningService';
 import cors from 'cors';
 import { createServer } from 'net';
+import { handleStripeWebhook } from "./webhooks/stripe";
 
-// Helper function to check if port is in use
 async function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createServer()
@@ -22,33 +22,53 @@ async function isPortInUse(port: number): Promise<boolean> {
   });
 }
 
+// Create a separate webhook server
+const webhookServer = express();
+webhookServer.use(cors());
+webhookServer.use(express.raw({ type: 'application/json' }));
+
+// Configure webhook routes
+webhookServer.post('/webhook', handleStripeWebhook);
+webhookServer.post('/webhook-test', (req: Request, res: Response) => {
+  try {
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      return res.status(500).json({ error: 'Webhook secret not configured' });
+    }
+
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+
+    return res.status(200).json({ 
+      status: 'success',
+      message: 'Webhook endpoint is accessible',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Webhook test error:', error);
+    return res.status(500).json({ error: 'Webhook test failed' });
+  }
+});
+
+// Create main application
 const app = express();
 
-// Configure CORS with specific options
+// Configure API specific middleware
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://jurysync.io'] // Replace with actual production domain
-    : true, // Allow all origins in development
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Stripe-Signature'],
-  credentials: true,
-  maxAge: 600 // Cache preflight requests for 10 minutes
+  origin: process.env.NODE_ENV === 'production' ? ['https://jurysync.io'] : true,
+  credentials: true
 }));
 
-// Security headers with relaxed CSP for development
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// Security headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-
-  // Add request logging for API routes
-  if (req.path.startsWith('/api/')) {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  }
-
   next();
 });
 
-// Initialize session store with retry logic
+// Session handling
 const PostgresStore = connectPg(session);
 const sessionStore = new PostgresStore({
   conObject: {
@@ -59,71 +79,50 @@ const sessionStore = new PostgresStore({
   pruneSessionInterval: 60
 });
 
-const sessionSecret = process.env.SESSION_SECRET || process.env.REPL_ID || 'your-session-secret';
-
 app.use(session({
   store: sessionStore,
-  secret: sessionSecret,
+  secret: process.env.SESSION_SECRET || 'your-session-secret',
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-    sameSite: 'lax'
-  },
+    maxAge: 30 * 24 * 60 * 60 * 1000
+  }
 }));
 
-// Setup auth before other routes
+// Setup auth
 setupAuth(app);
 
 (async () => {
   try {
-    let port = Number(process.env.PORT) || 5000;
-    while (await isPortInUse(port)) {
-      console.log(`Port ${port} is in use, trying ${port + 1}`);
-      port++;
-    }
-
-    // Initialize database and seed data
+    // Database setup
     await seedLegalDatabase();
     console.log('Legal database seeded successfully');
 
-    // Start continuous learning service
     try {
       await continuousLearningService.startContinuousLearning();
       console.log('Continuous learning service started successfully');
     } catch (error) {
       console.error('Failed to start continuous learning service:', error);
-      // Continue app startup even if continuous learning fails
     }
 
-    // Configure body parsing middleware based on route
-    app.use((req, res, next) => {
-      if (req.originalUrl.startsWith('/api/payments/webhook')) {
-        express.raw({ type: 'application/json' })(req, res, next);
-      } else {
-        express.json({ limit: '50mb' })(req, res, next);
-      }
-    });
+    // Register routes
+    registerRoutes(app);
 
-    // Register API routes first
-    const server = registerRoutes(app);
-
-    // Enhanced error handling middleware for API routes
-    app.use('/api', (err: any, req: Request, res: Response, next: NextFunction) => {
+    // API error handling
+    app.use((err: any, req: Request, res: Response, next: NextFunction) => {
       console.error(`API Error [${req.method} ${req.path}]:`, err);
 
       if (!res.headersSent) {
         const statusCode = err.status || 500;
-        const errorMessage = process.env.NODE_ENV === 'production' 
-          ? 'Internal Server Error' 
+        const errorMessage = process.env.NODE_ENV === 'production'
+          ? 'Internal Server Error'
           : (err.message || 'Internal Server Error');
 
-        // Send detailed error response
         res.status(statusCode).json({
           error: errorMessage,
           code: err.code || 'INTERNAL_ERROR',
-          ...(process.env.NODE_ENV !== 'production' && { 
+          ...(process.env.NODE_ENV !== 'production' && {
             stack: err.stack,
             details: err.details || null
           })
@@ -131,31 +130,37 @@ setupAuth(app);
       }
     });
 
-    // Setup Vite after API routes in development
-    if (process.env.NODE_ENV !== "production") {
-      try {
-        await setupVite(app, server);
-        console.log('Vite middleware setup complete');
-      } catch (error) {
-        console.error('Failed to setup Vite middleware:', error);
-        process.exit(1);
-      }
+    // Start webhook server first
+    let webhookPort = 5001;
+    while (await isPortInUse(webhookPort)) {
+      console.log(`Port ${webhookPort} is in use, trying ${webhookPort + 1}`);
+      webhookPort++;
     }
+    webhookServer.listen(webhookPort, '0.0.0.0', () => {
+      console.log(`Webhook server running at http://0.0.0.0:${webhookPort}`);
+    });
 
-    // Serve static files in production
-    if (process.env.NODE_ENV === "production") {
+    // Setup Vite or serve static files for main application
+    if (process.env.NODE_ENV !== "production") {
+      await setupVite(app);
+      console.log('Vite middleware setup complete');
+    } else {
       serveStatic(app);
     }
 
-    server.listen(port, '0.0.0.0', () => {
-      console.log(`Server running at http://0.0.0.0:${port}`);
+    // Start main application server
+    let mainPort = Number(process.env.PORT) || 5000;
+    while (await isPortInUse(mainPort)) {
+      console.log(`Port ${mainPort} is in use, trying ${mainPort + 1}`);
+      mainPort++;
+    }
+
+    app.listen(mainPort, '0.0.0.0', () => {
+      console.log(`Main application server running at http://0.0.0.0:${mainPort}`);
     });
 
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
   }
-})().catch((error) => {
-  console.error('Failed to start server:', error);
-  process.exit(1);
-});
+})();
