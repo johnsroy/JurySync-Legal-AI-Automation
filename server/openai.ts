@@ -1,7 +1,12 @@
 import OpenAI from "openai";
 import type { AgentType, DocumentAnalysis } from "@shared/schema";
 
-export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+const openai = new OpenAI();
+
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error("OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.");
+}
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
@@ -15,7 +20,7 @@ interface DocumentSection {
 async function analyzeSection(section: DocumentSection, agentType: AgentType): Promise<DocumentAnalysis> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4-1106-preview",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
@@ -88,7 +93,7 @@ export async function analyzeDocument(text: string, agentType: AgentType, sectio
 }
 
 function combineAnalysisResults(results: DocumentAnalysis[]): DocumentAnalysis {
-  const combined: DocumentAnalysis = {
+  const combined: Required<DocumentAnalysis> = {
     summary: results.map(r => r.summary).join(" "),
     keyPoints: Array.from(new Set(results.flatMap(r => r.keyPoints))),
     suggestions: Array.from(new Set(results.flatMap(r => r.suggestions))),
@@ -104,23 +109,19 @@ function combineAnalysisResults(results: DocumentAnalysis[]): DocumentAnalysis {
       disputeResolution: "",
       missingClauses: [],
       suggestedClauses: [],
-      riskFactors: [],
-      workflowState: {
-        status: "DRAFT",
-        updatedAt: new Date().toISOString()
-      }
+      riskFactors: []
     }
   };
 
   // Merge contract details from all sections
   results.forEach(result => {
     if (result.contractDetails) {
-      combined.contractDetails.parties.push(...(result.contractDetails.parties || []));
-      combined.contractDetails.keyObligations.push(...(result.contractDetails.keyObligations || []));
-      combined.contractDetails.terminationClauses.push(...(result.contractDetails.terminationClauses || []));
-      combined.contractDetails.missingClauses.push(...(result.contractDetails.missingClauses || []));
-      combined.contractDetails.suggestedClauses.push(...(result.contractDetails.suggestedClauses || []));
-      combined.contractDetails.riskFactors.push(...(result.contractDetails.riskFactors || []));
+      if (result.contractDetails.parties) combined.contractDetails.parties.push(...result.contractDetails.parties);
+      if (result.contractDetails.keyObligations) combined.contractDetails.keyObligations.push(...result.contractDetails.keyObligations);
+      if (result.contractDetails.terminationClauses) combined.contractDetails.terminationClauses.push(...result.contractDetails.terminationClauses);
+      if (result.contractDetails.missingClauses) combined.contractDetails.missingClauses.push(...result.contractDetails.missingClauses);
+      if (result.contractDetails.suggestedClauses) combined.contractDetails.suggestedClauses.push(...result.contractDetails.suggestedClauses);
+      if (result.contractDetails.riskFactors) combined.contractDetails.riskFactors.push(...result.contractDetails.riskFactors);
 
       // Take the most recent non-empty values
       if (result.contractDetails.effectiveDate) {
@@ -163,7 +164,7 @@ export async function chatWithDocument(
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4-1106-preview",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
