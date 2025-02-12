@@ -14,12 +14,12 @@ import Dashboard from "@/pages/dashboard";
 import ComplianceAuditing from "@/pages/compliance-auditing";
 import ContractAutomation from "@/pages/contract-automation";
 import LegalResearch from "@/pages/legal-research";
+import VaultPage from "@/pages/VaultPage";
 import Reports from "@/pages/reports";
 import ReportsDashboard from "@/pages/reports-dashboard";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
 import WorkflowAutomation from "@/pages/workflow-automation";
-import VaultPage from "@/pages/vault-page";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
