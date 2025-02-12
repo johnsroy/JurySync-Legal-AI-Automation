@@ -2,39 +2,75 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Gavel, Check, ChevronRight, Loader2 } from "lucide-react";
+import { Gavel, Check, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { PRICING_PLANS } from "@shared/schema/pricing";
+import { useAuth } from "@/hooks/use-auth";
+
+const PRICING_PLANS = [
+  {
+    id: 1,
+    name: "Student",
+    description: "Perfect for law students and academic research",
+    price: "24",
+    interval: "month",
+    tier: "student",
+    features: [
+      "Full access to legal research tools",
+      "Basic document analysis",
+      "Access to precedent database",
+      "Email support"
+    ]
+  },
+  {
+    id: 2,
+    name: "Professional",
+    description: "Ideal for law firms and legal professionals",
+    price: "99",
+    interval: "month",
+    tier: "professional",
+    features: [
+      "Everything in Student, plus:",
+      "Advanced document automation",
+      "Priority support",
+      "Custom workflows",
+      "Team collaboration features"
+    ]
+  },
+  {
+    id: 3,
+    name: "Enterprise",
+    description: "Custom solutions for large organizations",
+    price: "Custom",
+    interval: "month",
+    tier: "enterprise",
+    features: [
+      "Everything in Professional, plus:",
+      "Custom integrations",
+      "Dedicated account manager",
+      "SLA guarantees",
+      "On-premise deployment options"
+    ]
+  }
+];
 
 export default function PricingPage() {
-  const [isLoading, setIsLoading] = useState<{[key: string]: boolean}>({});
+  const [billingPeriod] = useState<"monthly" | "yearly">("monthly");
+  const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
+  const { user } = useAuth();
 
   const handleSubscribe = async (plan: typeof PRICING_PLANS[0]) => {
-    if (plan.tier === 'enterprise') {
+    if (plan.tier === "enterprise") {
       window.location.href = "mailto:contact@jurysync.io?subject=Enterprise%20Plan%20Inquiry";
       return;
     }
 
-    try {
-      setIsLoading(prev => ({ ...prev, [plan.id]: true }));
-
-      if (!plan.priceId) {
-        throw new Error('Invalid plan configuration');
-      }
-
-      setLocation(`/subscription?plan=${plan.id}`);
-    } catch (error) {
-      console.error('Subscription error:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to process subscription',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(prev => ({ ...prev, [plan.id]: false }));
+    if (!user) {
+      navigate(`/register?plan=${plan.id}`);
+      return;
     }
+
+    navigate(`/subscription?plan=${plan.id}`);
   };
 
   return (
@@ -47,8 +83,18 @@ export default function PricingPage() {
           </a>
           <div className="flex items-center space-x-8">
             <a href="/products" className="text-gray-700 hover:text-green-600">Products</a>
+            <a href="/customers" className="text-gray-700 hover:text-green-600">Customers</a>
             <a href="/pricing" className="text-gray-700 hover:text-green-600">Pricing</a>
             <a href="/company" className="text-gray-700 hover:text-green-600">Company</a>
+            {user ? (
+              <Button variant="ghost" onClick={() => navigate('/dashboard')}>
+                Dashboard
+              </Button>
+            ) : (
+              <Button variant="ghost" onClick={() => navigate('/login')}>
+                Login
+              </Button>
+            )}
           </div>
         </div>
       </nav>
@@ -61,12 +107,17 @@ export default function PricingPage() {
 
         <div className="grid md:grid-cols-3 gap-8 max-w-7xl mx-auto">
           {PRICING_PLANS.map((plan) => (
-            <Card key={plan.id} className="relative">
+            <Card key={plan.id} className={`relative ${plan.tier === 'professional' ? 'border-green-500 shadow-lg' : ''}`}>
+              {plan.tier === 'professional' && (
+                <div className="absolute top-0 right-0 bg-green-500 text-white text-sm px-3 py-1 rounded-bl-lg rounded-tr-lg">
+                  Most Popular
+                </div>
+              )}
               <CardHeader>
                 <CardTitle>{plan.name}</CardTitle>
                 <div className="mt-4">
                   <div className="flex items-baseline">
-                    {plan.tier === 'enterprise' ? (
+                    {plan.tier === "enterprise" ? (
                       <span className="text-4xl font-bold">Custom</span>
                     ) : (
                       <>
@@ -91,19 +142,9 @@ export default function PricingPage() {
                 <Button 
                   className="w-full bg-green-600 hover:bg-green-700"
                   onClick={() => handleSubscribe(plan)}
-                  disabled={isLoading[plan.id]}
                 >
-                  {isLoading[plan.id] ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      {plan.tier === 'enterprise' ? "Contact Us" : "Start Free Trial"}
-                      <ChevronRight className="h-4 w-4 ml-2" />
-                    </>
-                  )}
+                  {plan.tier === "enterprise" ? "Contact Us" : "Start Your Free Trial"}
+                  <ChevronRight className="h-4 w-4 ml-2" />
                 </Button>
               </CardContent>
             </Card>

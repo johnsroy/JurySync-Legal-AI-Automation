@@ -5,40 +5,81 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2025-01-27.acacia',
+  apiVersion: '2023-10-16',
   typescript: true,
 });
 
 export class StripeService {
-  async createPaymentLink(priceId: string): Promise<{ 
-    success: boolean;
-    url?: string;
-    error?: string;
-  }> {
+  async createCheckoutSession({
+    email,
+    priceId,
+    userId,
+    planId,
+    successUrl,
+    cancelUrl,
+  }: {
+    email: string;
+    priceId: string;
+    userId: number;
+    planId: number;
+    successUrl: string;
+    cancelUrl: string;
+  }) {
     try {
-      const paymentLink = await stripe.paymentLinks.create({
-        line_items: [
-          {
-            price: priceId,
-            quantity: 1,
-          },
-        ],
-        after_completion: { 
-          type: 'redirect',
-          redirect: { url: `${process.env.APP_URL}/subscription?success=true` }
-        },
+      console.log('Creating checkout session...', { email, priceId, userId, planId });
+
+      // Create a customer if they don't exist
+      const customer = await this.getOrCreateCustomer(email);
+      console.log('Customer retrieved/created:', customer.id);
+
+      // Create Checkout Session for subscription
+      const session = await stripe.checkout.sessions.create({
+        customer: customer.id,
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: [{
+          price: priceId,
+          quantity: 1,
+        }],
+        success_url: successUrl,
+        cancel_url: cancelUrl,
         metadata: {
-          priceId: priceId
-        }
+          userId: userId.toString(),
+          planId: planId.toString(),
+        },
       });
 
-      return { success: true, url: paymentLink.url };
+      console.log('Checkout session created:', session.id);
+      return { success: true, url: session.url };
     } catch (error) {
-      console.error('Error creating payment link:', error);
+      console.error('Error creating checkout session:', error);
       return { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to create payment link' 
+        error: error instanceof Error ? error.message : 'Failed to create checkout session' 
       };
+    }
+  }
+
+  private async getOrCreateCustomer(email: string): Promise<Stripe.Customer> {
+    try {
+      const existingCustomers = await stripe.customers.list({
+        email: email,
+        limit: 1,
+      });
+
+      if (existingCustomers.data.length > 0) {
+        console.log('Found existing customer:', existingCustomers.data[0].id);
+        return existingCustomers.data[0];
+      }
+
+      const newCustomer = await stripe.customers.create({
+        email: email,
+      });
+      console.log('Created new customer:', newCustomer.id);
+      return newCustomer;
+    } catch (error) {
+      console.error('Error in getOrCreateCustomer:', error);
+      throw error;
     }
   }
 }

@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
 import { stripe } from '../services/stripe';
 import { db } from '../db';
-import { subscriptions, subscriptionPlans } from '@shared/schema/subscriptions';
-import { eq } from 'drizzle-orm';
+import { subscriptions } from '@shared/schema/subscriptions';
 
 export const handleStripeWebhook = async (req: Request, res: Response) => {
   try {
@@ -27,25 +26,31 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Webhook signature verification failed' });
     }
 
-    console.log('Received Stripe webhook event:', event.type);
-
     // Handle the event
     switch (event.type) {
       case 'checkout.session.completed':
         const session = event.data.object;
+        const userId = session.metadata?.userId;
+        const planId = session.metadata?.planId;
 
-        console.log('Payment completed:', {
-          customerId: session.customer,
-          metadata: session.metadata
+        if (!userId || !planId) {
+          return res.status(400).json({ error: 'Missing required metadata' });
+        }
+
+        await db.insert(subscriptions).values({
+          stripeCustomerId: session.customer as string,
+          stripeSubscriptionId: session.subscription as string,
+          planId: parseInt(planId),
+          userId: parseInt(userId),
+          status: 'active',
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day trial
+          cancelAtPeriodEnd: false
         });
-
-        // Acknowledge the webhook
-        return res.json({ received: true });
-
-      default:
-        console.log(`Unhandled event type ${event.type}`);
-        return res.json({ received: true });
+        break;
     }
+
+    return res.json({ received: true });
   } catch (error) {
     console.error('Webhook error:', error);
     return res.status(400).json({
