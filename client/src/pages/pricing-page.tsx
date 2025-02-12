@@ -33,8 +33,8 @@ export default function PricingPage() {
       return;
     }
 
-    // Redirect to subscription page for Student and Professional plans
-    navigate("/subscription");
+    // Redirect to subscription page with plan ID for Student and Professional plans
+    navigate(`/subscription?plan=${plan.id}`);
   };
 
   return (

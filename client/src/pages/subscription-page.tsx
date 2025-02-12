@@ -3,21 +3,33 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, CreditCard } from 'lucide-react';
+import { useLocation } from 'wouter';
 
 export default function SubscriptionPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [location] = useLocation();
+
+  // Extract plan ID from URL using URLSearchParams
+  const params = new URLSearchParams(window.location.search);
+  const planId = params.get('plan');
+  const success = params.get('success');
+  const canceled = params.get('canceled');
 
   const handleCheckout = async () => {
     try {
       setIsLoading(true);
-      console.log('Initiating checkout...');
+      console.log('Initiating checkout...', { planId });
 
       const response = await fetch('/api/payments/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          planId: parseInt(planId || '1'), // Default to first plan if not specified
+          interval: 'month', // Default to monthly
+        }),
       });
 
       console.log('Checkout response status:', response.status);
@@ -43,6 +55,20 @@ export default function SubscriptionPage() {
       setIsLoading(false);
     }
   };
+
+  // Handle success/failure redirects
+  if (success) {
+    toast({
+      title: 'Success!',
+      description: 'Your subscription has been activated.',
+    });
+  } else if (canceled) {
+    toast({
+      title: 'Checkout canceled',
+      description: 'You have not been charged.',
+      variant: 'destructive',
+    });
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
