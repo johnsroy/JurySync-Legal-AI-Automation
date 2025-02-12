@@ -9,29 +9,46 @@ import { useAuth } from "@/hooks/use-auth";
 const PRICING_PLANS = [
   {
     id: 1,
-    name: "Basic",
-    description: "Perfect for individuals and small teams",
-    price: "29",
+    name: "Student",
+    description: "Perfect for law students and academic research",
+    price: "24",
     interval: "month",
+    tier: "student",
     features: [
+      "Full access to legal research tools",
       "Basic document analysis",
-      "Standard support",
-      "Up to 100 documents/month",
+      "Access to precedent database",
       "Email support"
     ]
   },
   {
     id: 2,
     name: "Professional",
-    description: "Ideal for growing businesses",
+    description: "Ideal for law firms and legal professionals",
     price: "99",
     interval: "month",
+    tier: "professional",
     features: [
-      "Everything in Basic, plus:",
-      "Advanced analytics",
+      "Everything in Student, plus:",
+      "Advanced document automation",
       "Priority support",
-      "Unlimited documents",
-      "API access"
+      "Custom workflows",
+      "Team collaboration features"
+    ]
+  },
+  {
+    id: 3,
+    name: "Enterprise",
+    description: "Custom solutions for large organizations",
+    price: "Custom",
+    interval: "month",
+    tier: "enterprise",
+    features: [
+      "Everything in Professional, plus:",
+      "Custom integrations",
+      "Dedicated account manager",
+      "SLA guarantees",
+      "On-premise deployment options"
     ]
   }
 ];
@@ -43,10 +60,16 @@ export default function PricingPage() {
   const { user } = useAuth();
 
   const handleSubscribe = async (plan: typeof PRICING_PLANS[0]) => {
+    if (plan.tier === "enterprise") {
+      window.location.href = "mailto:contact@jurysync.io?subject=Enterprise%20Plan%20Inquiry";
+      return;
+    }
+
     if (!user) {
       navigate(`/register?plan=${plan.id}`);
       return;
     }
+
     navigate(`/subscription?plan=${plan.id}`);
   };
 
@@ -79,19 +102,30 @@ export default function PricingPage() {
       <main className="container mx-auto pt-32 px-4 pb-16">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-4">Simple, Transparent Pricing</h1>
-          <p className="text-lg text-gray-600">Choose the plan that's right for you</p>
+          <p className="text-lg text-gray-600">Get started with JurySync.io today</p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+        <div className="grid md:grid-cols-3 gap-8 max-w-7xl mx-auto">
           {PRICING_PLANS.map((plan) => (
-            <Card key={plan.id} className="relative">
+            <Card key={plan.id} className={`relative ${plan.tier === 'professional' ? 'border-green-500 shadow-lg' : ''}`}>
+              {plan.tier === 'professional' && (
+                <div className="absolute top-0 right-0 bg-green-500 text-white text-sm px-3 py-1 rounded-bl-lg rounded-tr-lg">
+                  Most Popular
+                </div>
+              )}
               <CardHeader>
                 <CardTitle>{plan.name}</CardTitle>
                 <div className="mt-4">
                   <div className="flex items-baseline">
-                    <span className="text-sm font-semibold text-gray-500">$</span>
-                    <span className="text-4xl font-bold">{plan.price}</span>
-                    <span className="text-sm text-gray-500 ml-1">/{plan.interval}</span>
+                    {plan.tier === "enterprise" ? (
+                      <span className="text-4xl font-bold">Custom</span>
+                    ) : (
+                      <>
+                        <span className="text-sm font-semibold text-gray-500">$</span>
+                        <span className="text-4xl font-bold">{plan.price}</span>
+                        <span className="text-sm text-gray-500 ml-1">/{plan.interval}</span>
+                      </>
+                    )}
                   </div>
                   <p className="text-gray-600 mt-2">{plan.description}</p>
                 </div>
@@ -109,7 +143,7 @@ export default function PricingPage() {
                   className="w-full bg-green-600 hover:bg-green-700"
                   onClick={() => handleSubscribe(plan)}
                 >
-                  Start Free Trial
+                  {plan.tier === "enterprise" ? "Contact Us" : "Start Your Free Trial"}
                   <ChevronRight className="h-4 w-4 ml-2" />
                 </Button>
               </CardContent>
