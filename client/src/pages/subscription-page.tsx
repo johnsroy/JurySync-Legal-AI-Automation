@@ -35,10 +35,11 @@ export default function SubscriptionPage() {
   const { toast } = useToast();
   const [billingInterval, setBillingInterval] = useState<'month' | 'year'>('month');
   const [isLoading, setIsLoading] = useState(false);
+  const [processingPlanId, setProcessingPlanId] = useState<number | null>(null);
 
   const { data: plans, isLoading: isLoadingPlans } = useQuery({
     queryKey: ['plans'],
-    queryFn: () => apiRequest('GET', '/api/payments/plans')
+    queryFn: () => apiRequest('GET', '/api/payments/plans').then(res => res.json())
   });
 
   const handleSubscribe = async (plan: Plan) => {
@@ -51,7 +52,13 @@ export default function SubscriptionPage() {
       return;
     }
 
+    if (plan.isEnterprise) {
+      window.location.href = 'mailto:enterprise@jurysync.io?subject=Enterprise Plan Inquiry';
+      return;
+    }
+
     setIsLoading(true);
+    setProcessingPlanId(plan.id);
 
     try {
       // Verify student email if student plan
@@ -61,41 +68,38 @@ export default function SubscriptionPage() {
         });
 
         if (!verifyResponse.ok) {
-          toast({
-            title: 'Invalid Student Email',
-            description: 'Please use a valid .edu email address',
-            variant: 'destructive',
-          });
-          return;
+          throw new Error('Please use a valid .edu email address for student plans');
         }
       }
 
       const stripe = await stripePromise;
-      if (!stripe) throw new Error('Stripe failed to load');
+      if (!stripe) throw new Error('Payment system not available');
 
       const response = await apiRequest('POST', '/api/payments/create-checkout-session', {
         planId: plan.id,
         interval: billingInterval,
       });
 
-      if (!response.ok) throw new Error('Failed to create checkout session');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to start subscription process');
+      }
 
       const { sessionId } = await response.json();
 
-      const { error } = await stripe.redirectToCheckout({
-        sessionId
-      });
-
+      const { error } = await stripe.redirectToCheckout({ sessionId });
       if (error) throw error;
+
     } catch (error) {
       console.error('Payment error:', error);
       toast({
-        title: 'Payment Failed',
-        description: error instanceof Error ? error.message : 'Failed to process payment',
+        title: 'Subscription Error',
+        description: error instanceof Error ? error.message : 'Failed to process subscription',
         variant: 'destructive',
       });
     } finally {
       setIsLoading(false);
+      setProcessingPlanId(null);
     }
   };
 
@@ -168,10 +172,13 @@ export default function SubscriptionPage() {
               <Button
                 className="w-full"
                 onClick={() => handleSubscribe(plan)}
-                disabled={isLoading || plan.isEnterprise}
+                disabled={isLoading || plan.isEnterprise || processingPlanId === plan.id}
               >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                {isLoading && processingPlanId === plan.id ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Processing...
+                  </>
                 ) : plan.isEnterprise ? (
                   'Contact Sales'
                 ) : (

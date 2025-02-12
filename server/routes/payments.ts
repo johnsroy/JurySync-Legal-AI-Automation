@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { stripe, stripeService } from '../services/stripe';
+import { paymentsAgent } from '../agents/paymentsAgent';
+import { stripe } from '../services/stripe';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
 import { subscriptions, subscriptionPlans } from '@shared/schema/subscriptions';
@@ -31,41 +32,17 @@ router.post('/create-checkout-session', requireAuth, async (req, res) => {
   try {
     const { planId, interval } = req.body;
 
-    const plan = await db.query.subscriptionPlans.findFirst({
-      where: eq(subscriptionPlans.id, planId)
-    });
-
-    if (!plan) {
-      return res.status(404).json({ error: 'Plan not found' });
-    }
-
-    // If student plan, verify email
-    if (plan.isStudent) {
-      const isValidStudent = await stripeService.verifyStudentEmail(req.user.email);
-      if (!isValidStudent) {
-        return res.status(403).json({ error: 'Invalid student email. Must be a .edu email address.' });
-      }
-    }
-
-    // Create or get customer
-    const customerId = await stripeService.getOrCreateCustomer(
-      req.user.email,
-      req.user.stripeCustomerId,
-      req.user.name
+    const result = await paymentsAgent.initializeCheckout(
+      req.user,
+      planId,
+      interval
     );
 
-    // Create checkout session
-    const session = await stripeService.createCheckoutSession({
-      customerId,
-      priceId: interval === 'year' ? plan.stripePriceIdYearly : plan.stripePriceIdMonthly,
-      userId: req.user.id,
-      planId: plan.id,
-      isTrial: plan.isStudent,
-      successUrl: `${process.env.APP_URL}/subscription-management?success=true`,
-      cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`
-    });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
 
-    res.json({ sessionId: session.id });
+    res.json({ sessionId: result.sessionId });
   } catch (error) {
     console.error('Error creating checkout session:', error);
     res.status(500).json({ error: 'Failed to create checkout session' });
@@ -75,25 +52,13 @@ router.post('/create-checkout-session', requireAuth, async (req, res) => {
 // Get current subscription
 router.get('/current-subscription', requireAuth, async (req, res) => {
   try {
-    const subscription = await db.query.subscriptions.findFirst({
-      where: eq(subscriptions.userId, req.user.id),
-      with: {
-        plan: true
-      }
-    });
+    const result = await paymentsAgent.getSubscriptionStatus(req.user);
 
-    if (!subscription) {
-      return res.json(null);
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
     }
 
-    const stripeSubscription = await stripeService.getSubscriptionDetails(
-      subscription.stripeSubscriptionId
-    );
-
-    res.json({
-      ...subscription,
-      stripeSubscription
-    });
+    res.json(result.subscription);
   } catch (error) {
     console.error('Error fetching subscription:', error);
     res.status(500).json({ error: 'Failed to fetch subscription' });
@@ -103,24 +68,13 @@ router.get('/current-subscription', requireAuth, async (req, res) => {
 // Cancel subscription
 router.post('/cancel-subscription', requireAuth, async (req, res) => {
   try {
-    const subscription = await db.query.subscriptions.findFirst({
-      where: eq(subscriptions.userId, req.user.id)
-    });
+    const result = await paymentsAgent.cancelSubscription(req.user);
 
-    if (!subscription) {
-      return res.status(404).json({ error: 'No active subscription found' });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
 
-    const updatedSubscription = await stripeService.cancelSubscription(
-      subscription.stripeSubscriptionId
-    );
-
-    await db
-      .update(subscriptions)
-      .set({ cancelAtPeriodEnd: true })
-      .where(eq(subscriptions.id, subscription.id));
-
-    res.json(updatedSubscription);
+    res.json({ success: true });
   } catch (error) {
     console.error('Error canceling subscription:', error);
     res.status(500).json({ error: 'Failed to cancel subscription' });
@@ -130,16 +84,13 @@ router.post('/cancel-subscription', requireAuth, async (req, res) => {
 // Get billing history
 router.get('/billing-history', requireAuth, async (req, res) => {
   try {
-    const subscription = await db.query.subscriptions.findFirst({
-      where: eq(subscriptions.userId, req.user.id)
-    });
+    const result = await paymentsAgent.getBillingHistory(req.user);
 
-    if (!subscription) {
-      return res.json([]);
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
     }
 
-    const invoices = await stripeService.getBillingHistory(subscription.stripeCustomerId);
-    res.json(invoices);
+    res.json(result.invoices);
   } catch (error) {
     console.error('Error fetching billing history:', error);
     res.status(500).json({ error: 'Failed to fetch billing history' });
@@ -179,7 +130,7 @@ router.post('/webhook', async (req, res) => {
 
     switch (event.type) {
       case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session;
+        const session = event.data.object;
         const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
 
         // Record the subscription in our database
@@ -197,7 +148,7 @@ router.post('/webhook', async (req, res) => {
 
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription;
+        const subscription = event.data.object;
         await db
           .update(subscriptions)
           .set({
