@@ -46,7 +46,11 @@ export default function SubscriptionPage() {
       }
 
       setIsLoading(true);
-      console.log('Initiating checkout...', { planId: 1 }); // Student plan ID
+      console.log('Initiating checkout...', { planId });
+
+      if (!planId) {
+        throw new Error("Plan ID not provided in URL parameters.");
+      }
 
       const response = await fetch('/api/payments/create-checkout-session', {
         method: 'POST',
@@ -54,18 +58,21 @@ export default function SubscriptionPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          planId: 1, // Hard-coded student plan ID
+          planId: planId, 
           interval: 'month',
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create checkout session');
+        const errorMessage = errorData.error || 'Failed to create checkout session';
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
-      if (!data.url) throw new Error('No checkout URL received');
+      if (!data.url) {
+        throw new Error('No checkout URL received from the server.');
+      }
 
       // Redirect to Stripe Checkout
       window.location.href = data.url;

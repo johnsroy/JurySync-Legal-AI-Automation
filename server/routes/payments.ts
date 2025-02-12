@@ -157,18 +157,6 @@ router.post('/webhook', async (req, res) => {
         break;
       }
 
-      case 'customer.subscription.updated': {
-        const subscription = event.data.object;
-        await db.update(subscriptions)
-          .set({
-            status: subscription.status,
-            currentPeriodStart: new Date(subscription.current_period_start * 1000),
-            currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-          })
-          .where(eq(subscriptions.stripeSubscriptionId, subscription.id));
-        break;
-      }
-
       default:
         console.log(`Unhandled event type ${event.type}`);
     }
