@@ -17,7 +17,7 @@ import { Loader2, CheckCircle } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 import { apiRequest } from '@/lib/queryClient';
 
-// Initialize Stripe and check for environment variable
+// Initialize Stripe
 if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
   throw new Error('VITE_STRIPE_PUBLIC_KEY must be set');
 }
@@ -69,47 +69,39 @@ export default function SubscriptionPage() {
       setIsLoading(true);
       setProcessingPlanId(plan.id);
 
-      // If student plan, verify email first
-      if (plan.isStudent) {
-        const verifyResponse = await apiRequest('POST', '/api/payments/verify-student', {
-          email: user.email
-        });
-
-        if (!verifyResponse.ok) {
-          const error = await verifyResponse.json();
-          throw new Error(error.error || 'Please use a valid .edu email address for student plans');
-        }
+      const stripe = await stripePromise;
+      if (!stripe) {
+        throw new Error('Stripe failed to initialize');
       }
 
-      const stripe = await stripePromise;
-      if (!stripe) throw new Error('Payment system not available');
-
+      // Create checkout session
       const response = await apiRequest('POST', '/api/payments/create-checkout-session', {
         planId: plan.id,
         interval: billingInterval,
       });
 
+      const responseData = await response.json();
+
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to start subscription process');
+        throw new Error(responseData.error || 'Failed to initialize payment');
       }
 
-      const { sessionId } = await response.json();
+      const { sessionId } = responseData;
       if (!sessionId) {
         throw new Error('No session ID returned from server');
       }
 
-      const { error } = await stripe.redirectToCheckout({ sessionId });
-      if (error) {
-        console.error('Stripe redirect error:', error);
-        throw error;
+      // Redirect to Stripe checkout
+      const { error: redirectError } = await stripe.redirectToCheckout({ sessionId });
+      if (redirectError) {
+        throw redirectError;
       }
 
     } catch (error) {
-      console.error('Payment error:', error);
+      console.error('Payment initialization error:', error);
       toast({
-        title: 'Subscription Error',
-        description: error instanceof Error ? error.message : 'Failed to process subscription',
+        title: 'Payment Error',
+        description: error instanceof Error ? error.message : 'Failed to initialize payment',
         variant: 'destructive',
       });
     } finally {
@@ -130,7 +122,7 @@ export default function SubscriptionPage() {
     <div className="container mx-auto px-4 py-8">
       <div className="text-center mb-8">
         <h1 className="text-3xl font-bold">Choose Your Plan</h1>
-        <p className="text-gray-500">Real-time insights and performance metrics</p>
+        <p className="text-gray-500">Select the plan that best fits your needs</p>
 
         <div className="flex justify-center items-center gap-4 mt-8">
           <Select value={billingInterval} onValueChange={(value: 'month' | 'year') => setBillingInterval(value)}>
