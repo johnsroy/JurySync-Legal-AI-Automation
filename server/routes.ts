@@ -12,6 +12,7 @@ import predictiveMonitoringRouter from "./routes/predictiveMonitoring";
 import orchestratorRouter from "./routes/orchestrator";
 import contractAnalysisRouter from "./routes/contract-analysis";
 import reportsRouter from "./routes/reports";
+import vaultRouter from "./routes/vault";
 import cors from 'cors';
 import { json } from 'express';
 
@@ -30,6 +31,9 @@ export function registerRoutes(app: Express): Server {
     }), 
     handleWebhook
   );
+
+  // Add the vault router
+  app.use("/api/vault", vaultRouter);
 
   // Add the legal research router
   app.use("/api/legal", legalResearchRouter);

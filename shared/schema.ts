@@ -819,3 +819,52 @@ export type MetricsEvent = typeof metricsEvents.$inferSelect;
 export type InsertMetricsEvent = typeof metricsEvents.$inferInsert;
 
 export const insertMetricsEventSchema = createInsertSchema(metricsEvents);
+
+// Add after existing document types
+export const VaultDocumentType = z.enum([
+  "CONTRACT",
+  "BRIEF",
+  "CASE_LAW",
+  "LEGISLATION",
+  "CORRESPONDENCE",
+  "OTHER"
+]);
+
+export type VaultDocumentType = z.infer<typeof VaultDocumentType>;
+
+export const vaultDocuments = pgTable("vault_documents", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  documentType: text("document_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  mimeType: text("mime_type").notNull(),
+  aiSummary: text("ai_summary"),
+  aiClassification: text("ai_classification"),
+  vectorId: text("vector_id"),
+  metadata: jsonb("metadata").$type<{
+    keywords?: string[];
+    relevance?: number;
+    confidence?: number;
+    entities?: string[];
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertVaultDocumentSchema = createInsertSchema(vaultDocuments)
+  .pick({
+    title: true,
+    content: true,
+    documentType: true,
+    fileSize: true,
+    mimeType: true,
+  })
+  .extend({
+    title: z.string().min(1, "Title is required"),
+    documentType: VaultDocumentType,
+  });
+
+export type VaultDocument = typeof vaultDocuments.$inferSelect;
+export type InsertVaultDocument = z.infer<typeof insertVaultDocumentSchema>;

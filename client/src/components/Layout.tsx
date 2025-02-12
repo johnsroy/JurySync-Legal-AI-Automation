@@ -16,7 +16,8 @@ import {
   Shield,
   LogOut,
   Loader2,
-  Workflow
+  Workflow,
+  Vault
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <Link href="/contract-automation" className="flex items-center">
                     <FileText className="mr-2" />
                     Contract Automation
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location === "/vault"}
+                  tooltip="JuryVault"
+                >
+                  <Link href="/vault" className="flex items-center">
+                    <Vault className="mr-2" />
+                    JuryVault
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
