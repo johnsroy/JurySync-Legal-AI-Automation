@@ -129,28 +129,6 @@ export class PaymentsAgent {
     }
   }
 
-  async getBillingHistory(user: User): Promise<{ 
-    success: boolean; 
-    invoices?: any[]; 
-    error?: string; 
-  }> {
-    try {
-      const subscription = await db.select().from(subscriptions)
-        .where(eq(subscriptions.userId, user.id))
-        .limit(1);
-
-      if (!subscription || subscription.length === 0) {
-        return { success: true, invoices: [] };
-      }
-
-      const invoices = await stripeService.getBillingHistory(subscription[0].stripeCustomerId);
-      return { success: true, invoices };
-    } catch (error) {
-      console.error('Billing history error:', error);
-      return { success: false, error: 'Failed to fetch billing history' };
-    }
-  }
-
   async getSubscriptionStatus(user: User): Promise<{
     success: boolean;
     subscription?: any;

@@ -1,23 +1,50 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, CreditCard } from 'lucide-react';
 import { useLocation } from 'wouter';
+import { useAuth } from '@/hooks/use-auth';
 
 export default function SubscriptionPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [location] = useLocation();
+  const { user } = useAuth();
 
-  // Extract plan ID from URL using URLSearchParams
+  // Extract plan ID and status from URL
   const params = new URLSearchParams(window.location.search);
   const planId = params.get('plan');
   const success = params.get('success');
   const canceled = params.get('canceled');
+  const sessionId = params.get('session_id');
+
+  useEffect(() => {
+    if (success && sessionId) {
+      toast({
+        title: 'Success!',
+        description: 'Your trial subscription has been activated.',
+      });
+    } else if (canceled) {
+      toast({
+        title: 'Checkout canceled',
+        description: 'You have not been charged.',
+        variant: 'destructive',
+      });
+    }
+  }, [success, canceled, sessionId, toast]);
 
   const handleCheckout = async () => {
     try {
+      if (!user) {
+        toast({
+          title: 'Authentication Required',
+          description: 'Please sign in to continue.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       setIsLoading(true);
       console.log('Initiating checkout...', { planId });
 
@@ -27,12 +54,10 @@ export default function SubscriptionPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          planId: parseInt(planId || '1'), // Default to first plan if not specified
-          interval: 'month', // Default to monthly
+          planId: parseInt(planId || '1'),
+          interval: 'month',
         }),
       });
-
-      console.log('Checkout response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -40,7 +65,7 @@ export default function SubscriptionPage() {
       }
 
       const { url } = await response.json();
-      console.log('Redirecting to:', url);
+      if (!url) throw new Error('No checkout URL received');
 
       // Redirect to Stripe Checkout
       window.location.href = url;
@@ -55,20 +80,6 @@ export default function SubscriptionPage() {
       setIsLoading(false);
     }
   };
-
-  // Handle success/failure redirects
-  if (success) {
-    toast({
-      title: 'Success!',
-      description: 'Your subscription has been activated.',
-    });
-  } else if (canceled) {
-    toast({
-      title: 'Checkout canceled',
-      description: 'You have not been charged.',
-      variant: 'destructive',
-    });
-  }
 
   return (
     <div className="container mx-auto px-4 py-8">

@@ -10,7 +10,6 @@ const router = Router();
 // Create checkout session
 router.post('/create-checkout-session', async (req, res) => {
   try {
-    console.log('Creating checkout session...');
     const { planId, interval = 'month' } = req.body;
 
     if (!req.user) {
@@ -23,30 +22,77 @@ router.post('/create-checkout-session', async (req, res) => {
       .limit(1);
 
     if (!plan || plan.length === 0) {
-      return res.status(400).json({ error: 'Invalid plan selected' });
+      return res.status(400).json({ error: 'Invalid subscription plan' });
     }
 
     const selectedPlan = plan[0];
     const priceId = interval === 'year' ? selectedPlan.stripePriceIdYearly : selectedPlan.stripePriceIdMonthly;
 
+    if (!priceId) {
+      return res.status(400).json({ error: 'Invalid price configuration' });
+    }
+
     // Create checkout session
-    const session = await stripeService.createCheckoutSession({
+    const result = await stripeService.createCheckoutSession({
       email: req.user.email,
       priceId,
       userId: req.user.id,
       planId: selectedPlan.id,
-      isTrial: selectedPlan.isStudent,
-      successUrl: `${process.env.APP_URL}/subscription?success=true`,
+      successUrl: `${process.env.APP_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`
     });
 
-    console.log('Checkout session created:', session.id);
-    res.json({ url: session.url });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    // Return the URL for the client to redirect to
+    res.json({ url: result.session.url });
   } catch (error) {
     console.error('Stripe error:', error);
     res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Failed to create checkout session' 
     });
+  }
+});
+
+// Get current subscription
+router.get('/current-subscription', async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const result = await paymentsAgent.getSubscriptionStatus(req.user);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json(result.subscription);
+  } catch (error) {
+    console.error('Error fetching subscription:', error);
+    res.status(500).json({ error: 'Failed to fetch subscription details' });
+  }
+});
+
+// Cancel subscription
+router.post('/cancel-subscription', async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const result = await paymentsAgent.cancelSubscription(req.user);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({ message: 'Subscription cancelled successfully' });
+  } catch (error) {
+    console.error('Error cancelling subscription:', error);
+    res.status(500).json({ error: 'Failed to cancel subscription' });
   }
 });
 
@@ -58,18 +104,27 @@ router.post('/webhook', async (req, res) => {
 
     if (!process.env.STRIPE_WEBHOOK_SECRET) {
       console.error('Webhook secret not configured');
-      return res.status(500).send('Webhook secret not configured');
+      return res.status(500).json({ error: 'Webhook secret not configured' });
+    }
+
+    if (!sig) {
+      return res.status(400).json({ error: 'No signature header' });
     }
 
     const event = stripe.webhooks.constructEvent(
       rawBody,
-      sig!,
+      sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );
 
     switch (event.type) {
-      case 'checkout.session.completed':
+      case 'checkout.session.completed': {
         const session = event.data.object;
+
+        if (!session.metadata?.userId || !session.metadata?.planId) {
+          throw new Error('Missing metadata in session');
+        }
+
         // Create subscription record
         await db.insert(subscriptions).values({
           userId: parseInt(session.metadata.userId),
@@ -78,12 +133,15 @@ router.post('/webhook', async (req, res) => {
           stripeSubscriptionId: session.subscription as string,
           status: 'active',
           currentPeriodStart: new Date(session.created * 1000),
-          currentPeriodEnd: new Date(session.expires_at * 1000),
+          currentPeriodEnd: new Date((session.created + 86400) * 1000), // 1 day trial
+          cancelAtPeriodEnd: false,
         });
-        console.log('Subscription created:', session);
-        break;
 
-      case 'customer.subscription.updated':
+        console.log('Subscription created:', session.id);
+        break;
+      }
+
+      case 'customer.subscription.updated': {
         const subscription = event.data.object;
         await db.update(subscriptions)
           .set({
@@ -93,6 +151,7 @@ router.post('/webhook', async (req, res) => {
           })
           .where(eq(subscriptions.stripeSubscriptionId, subscription.id));
         break;
+      }
 
       default:
         console.log(`Unhandled event type ${event.type}`);
@@ -101,9 +160,9 @@ router.post('/webhook', async (req, res) => {
     res.json({ received: true });
   } catch (err) {
     console.error('Webhook Error:', err);
-    return res.status(400).send(
-      `Webhook Error: ${err instanceof Error ? err.message : 'Unknown error'}`
-    );
+    return res.status(400).json({
+      error: err instanceof Error ? err.message : 'Unknown error'
+    });
   }
 });
 

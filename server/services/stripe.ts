@@ -14,7 +14,6 @@ export class StripeService {
     priceId,
     userId,
     planId,
-    isTrial,
     successUrl,
     cancelUrl,
   }: {
@@ -22,7 +21,6 @@ export class StripeService {
     priceId: string;
     userId: number;
     planId: number;
-    isTrial: boolean;
     successUrl: string;
     cancelUrl: string;
   }) {
@@ -30,7 +28,7 @@ export class StripeService {
       // Create a customer if they don't exist
       const customer = await this.getOrCreateCustomer(email);
 
-      // Set up the subscription parameters
+      // Set up the subscription parameters with trial period
       const subscriptionData: Stripe.Checkout.SessionCreateParams = {
         customer: customer.id,
         mode: 'subscription',
@@ -42,7 +40,7 @@ export class StripeService {
         success_url: successUrl,
         cancel_url: cancelUrl,
         subscription_data: {
-          trial_period_days: isTrial ? 1 : undefined,
+          trial_period_days: 1, // 1-day trial for all new subscriptions
           metadata: {
             userId: userId.toString(),
             planId: planId.toString(),
@@ -52,13 +50,19 @@ export class StripeService {
           userId: userId.toString(),
           planId: planId.toString(),
         },
+        allow_promotion_codes: true,
+        billing_address_collection: 'required',
+        client_reference_id: userId.toString(),
       };
 
       const session = await stripe.checkout.sessions.create(subscriptionData);
-      return session;
+      return { success: true, session };
     } catch (error) {
       console.error('Error creating checkout session:', error);
-      throw error;
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to create checkout session' 
+      };
     }
   }
 
