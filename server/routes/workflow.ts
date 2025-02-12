@@ -29,7 +29,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
       .values({
         title: req.file.originalname,
         content,
-        documentType: analysis.classification,
+        documentType: analysis.classification || 'OTHER',
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
         aiSummary: analysis.summary,

@@ -79,7 +79,7 @@ export default function VaultPage() {
         <div className="mb-8">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">My Vault</h1>
+              <h1 className="text-3xl font-bold text-gray-900">Document Vault</h1>
               <p className="text-gray-600 mt-2">Securely store and manage your legal documents</p>
             </div>
             {canUpload && (
