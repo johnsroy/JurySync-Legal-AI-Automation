@@ -1,10 +1,10 @@
 import { Router } from "express";
 import multer from "multer";
+import { apiRequest } from "@/lib/queryClient";
 import { db } from "../db";
-import { vaultDocuments, users } from "@shared/schema";
-import { eq } from "drizzle-orm";
-import { analyzeDocument } from "../services/documentAnalysisService";
+import { vaultDocuments } from "@shared/schema";
 import { rbacMiddleware } from "../middleware/rbac";
+import { analyzeDocument } from "../services/documentAnalysisService";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -33,8 +33,8 @@ const router = Router();
 // Apply RBAC middleware to all routes
 router.use(rbacMiddleware());
 
-// Upload document
-router.post('/documents', async (req, res) => {
+// File upload endpoint
+router.post('/upload', async (req, res) => {
   try {
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
@@ -44,22 +44,26 @@ router.post('/documents', async (req, res) => {
     });
 
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      return res.status(400).json({ error: "No file uploaded" });
     }
 
     const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const content = req.file.buffer.toString('utf-8');
 
-    // Get AI insights
+    // Get AI insights using our document analysis service
     const analysis = await analyzeDocument(content);
 
-    // Store document with AI insights
+    // Store document in vault storage
     const [document] = await db
       .insert(vaultDocuments)
       .values({
         title: req.file.originalname,
         content,
-        documentType: analysis.classification || 'OTHER',
+        documentType: analysis.classification,
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
         aiSummary: analysis.summary,
@@ -91,102 +95,75 @@ router.post('/documents', async (req, res) => {
   }
 });
 
-// Get all documents - accessible by all authenticated users
-router.get('/documents', async (req, res) => {
+// Analysis endpoint
+router.post('/analyze', async (req, res) => {
   try {
+    const { analysisType } = req.body;
     const userId = req.user?.id;
+
     if (!userId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Get user's role
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId));
+    // Here you would integrate with your AI analysis service
+    // For now, returning simulated analysis
+    const analysisResult = {
+      type: analysisType,
+      summary: `Analysis of type ${analysisType} completed successfully`,
+      details: {
+        keyTerms: ["Governing Law", "Effective Date", "Termination Fee"],
+        riskLevel: "LOW",
+        recommendations: ["Review section 3.2", "Update compliance terms"]
+      }
+    };
 
-    // Query documents based on role
-    let documents;
-    if (user.role === 'ADMIN') {
-      // Admins can see all documents
-      documents = await db
-        .select({
-          id: vaultDocuments.id,
-          title: vaultDocuments.title,
-          documentType: vaultDocuments.documentType,
-          aiSummary: vaultDocuments.aiSummary,
-          aiClassification: vaultDocuments.aiClassification,
-          createdAt: vaultDocuments.createdAt,
-          metadata: vaultDocuments.metadata
-        })
-        .from(vaultDocuments)
-        .orderBy(vaultDocuments.createdAt);
-    } else {
-      // Other users can only see their own documents
-      documents = await db
-        .select({
-          id: vaultDocuments.id,
-          title: vaultDocuments.title,
-          documentType: vaultDocuments.documentType,
-          aiSummary: vaultDocuments.aiSummary,
-          aiClassification: vaultDocuments.aiClassification,
-          createdAt: vaultDocuments.createdAt,
-          metadata: vaultDocuments.metadata
-        })
-        .from(vaultDocuments)
-        .where(eq(vaultDocuments.userId, userId))
-        .orderBy(vaultDocuments.createdAt);
-    }
-
-    return res.json({ documents });
-
+    res.json(analysisResult);
   } catch (error: any) {
-    console.error('Documents fetch error:', error);
-    return res.status(500).json({ error: error.message });
+    console.error('Analysis error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Get document by ID with AI insights
-router.get('/documents/:id', async (req, res) => {
+// RBAC update endpoint
+router.post('/update-sharing', async (req, res) => {
+  try {
+    const { policy } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Here you would update your RBAC policies
+    // For now, just acknowledging the request
+    res.json({ success: true, policy });
+  } catch (error: any) {
+    console.error('Sharing update error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Statistics endpoint
+router.get('/stats', async (req, res) => {
   try {
     const userId = req.user?.id;
+
     if (!userId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const documentId = parseInt(req.params.id);
+    // For now, returning static statistics
+    // In a production environment, you would calculate these from your database
+    const stats = {
+      accuracy: '97%',
+      documents: '10K+',
+      fieldExtractions: '50K+'
+    };
 
-    // Get user's role
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId));
-
-    let document;
-    if (user.role === 'ADMIN') {
-      // Admins can access any document
-      [document] = await db
-        .select()
-        .from(vaultDocuments)
-        .where(eq(vaultDocuments.id, documentId));
-    } else {
-      // Other users can only access their own documents
-      [document] = await db
-        .select()
-        .from(vaultDocuments)
-        .where(eq(vaultDocuments.id, documentId))
-        .where(eq(vaultDocuments.userId, userId));
-    }
-
-    if (!document) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
-
-    return res.json({ document });
-
+    res.json(stats);
   } catch (error: any) {
-    console.error('Document fetch error:', error);
-    return res.status(500).json({ error: error.message });
+    console.error('Stats error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

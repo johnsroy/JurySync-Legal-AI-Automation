@@ -16,8 +16,17 @@ export const rbacConfig: RBACConfig = {
     GET: ['ADMIN', 'LAWYER', 'PARALEGAL', 'CLIENT'],
     POST: ['ADMIN', 'LAWYER'],
   },
-  '/api/workflow/upload': {
+  '/api/vault/upload': {
     POST: ['ADMIN', 'LAWYER'],
+  },
+  '/api/vault/analyze': {
+    POST: ['ADMIN', 'LAWYER', 'PARALEGAL'],
+  },
+  '/api/vault/update-sharing': {
+    POST: ['ADMIN', 'LAWYER'],
+  },
+  '/api/vault/stats': {
+    GET: ['ADMIN', 'LAWYER', 'PARALEGAL', 'CLIENT'],
   }
 };
 
