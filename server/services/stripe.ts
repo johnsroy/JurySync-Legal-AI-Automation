@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { db } from '../db';
+import { db } from "../db";
 
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY must be set');
@@ -51,24 +51,6 @@ export const SUBSCRIPTION_PLANS = {
 };
 
 export class StripeService {
-  async getOrCreateCustomer(email: string): Promise<string> {
-    try {
-      // Create new customer
-      console.log('Creating new Stripe customer:', { email });
-      const customer = await stripe.customers.create({
-        email,
-        metadata: {
-          createdAt: new Date().toISOString()
-        }
-      });
-
-      return customer.id;
-    } catch (error) {
-      console.error('Error in getOrCreateCustomer:', error);
-      throw new Error('Failed to process customer information');
-    }
-  }
-
   async createCheckoutSession({
     email,
     priceId,
@@ -87,40 +69,42 @@ export class StripeService {
     isTrial?: boolean;
   }) {
     try {
-      // Create a new customer for each checkout
-      const customer = await this.getOrCreateCustomer(email);
+      // Validate priceId exists
+      try {
+        await stripe.prices.retrieve(priceId);
+      } catch (error) {
+        console.error('Invalid price ID:', error);
+        throw new Error('Invalid price configuration');
+      }
 
-      console.log('Creating checkout session:', {
-        customer,
+      console.log('Creating checkout session with params:', {
+        email,
         priceId,
         userId,
         planId,
         isTrial
       });
 
-      const sessionConfig: Stripe.Checkout.SessionCreateParams = {
-        customer,
+      // Create session with minimal required configuration
+      const session = await stripe.checkout.sessions.create({
         mode: 'subscription',
-        payment_method_types: ['card'],
-        line_items: [
-          {
-            price: priceId,
-            quantity: 1,
-          }
-        ],
-        subscription_data: isTrial ? {
-          trial_period_days: 1
-        } : undefined,
+        line_items: [{
+          price: priceId,
+          quantity: 1
+        }],
+        customer_email: email,
         metadata: {
           userId: userId.toString(),
           planId: planId.toString()
         },
-        success_url: successUrl,
+        success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: cancelUrl,
-        automatic_tax: { enabled: true }
-      };
-
-      const session = await stripe.checkout.sessions.create(sessionConfig);
+        ...(isTrial ? {
+          subscription_data: {
+            trial_period_days: 1
+          }
+        } : {})
+      });
 
       console.log('Checkout session created:', session.id);
       return session;
@@ -132,20 +116,6 @@ export class StripeService {
 
   async verifyStudentEmail(email: string): Promise<boolean> {
     return email.toLowerCase().endsWith('.edu');
-  }
-
-  async getBillingHistory(customerId: string) {
-    try {
-      const invoices = await stripe.invoices.list({
-        customer: customerId,
-        limit: 24,
-        expand: ['data.subscription']
-      });
-      return invoices.data;
-    } catch (error) {
-      console.error('Error retrieving billing history:', error);
-      throw error;
-    }
   }
 }
 

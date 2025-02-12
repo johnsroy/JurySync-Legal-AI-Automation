@@ -18,57 +18,61 @@ const requireAuth = (req: any, res: any, next: any) => {
 
 // Webhook handling route - must be before express.json() middleware
 router.post('/webhook', async (req, res) => {
-  if (req.headers['content-type'] !== 'application/json') {
-    return res.status(400).send('Invalid content type');
-  }
-
-  let event;
-
   try {
-    const rawBody = await getRawBody(req);
-    const sig = req.headers['stripe-signature'];
-
     if (!process.env.STRIPE_WEBHOOK_SECRET) {
       console.error('Webhook secret not configured');
       return res.status(500).send('Webhook secret not configured');
     }
 
+    // Get the raw body for signature verification
+    const rawBody = await getRawBody(req);
+    const signature = req.headers['stripe-signature'];
+
+    if (!signature) {
+      console.error('No Stripe signature found');
+      return res.status(400).send('No Stripe signature');
+    }
+
+    let event;
     try {
       event = stripe.webhooks.constructEvent(
         rawBody,
-        sig!,
+        signature,
         process.env.STRIPE_WEBHOOK_SECRET
       );
-    } catch (err: any) {
-      console.error(`⚠️ Webhook signature verification failed:`, err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+    } catch (err) {
+      console.error(`Webhook signature verification failed:`, err);
+      return res.status(400).send(`Webhook Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
 
-    console.log('Received Stripe webhook event:', event.type);
+    console.log('Processing Stripe webhook event:', event.type);
 
     // Handle the event
     switch (event.type) {
       case 'checkout.session.completed': {
-        const session = event.data.object;
-        // Update subscription status in database
-        const { metadata } = session;
-        if (metadata?.userId && metadata?.planId) {
-          await db.insert(subscriptions).values({
-            userId: parseInt(metadata.userId),
-            planId: parseInt(metadata.planId),
-            stripeCustomerId: session.customer as string,
-            stripeSubscriptionId: session.subscription as string,
-            status: 'active',
-            currentPeriodStart: new Date(session.created * 1000),
-            currentPeriodEnd: new Date((session.created + 30 * 24 * 60 * 60) * 1000), // 30 days from creation
-            cancelAtPeriodEnd: false,
-          });
+        const session = event.data.object as Stripe.Checkout.Session;
+        const metadata = session.metadata;
+
+        if (!metadata?.userId || !metadata?.planId) {
+          console.error('Missing metadata in session:', session.id);
+          return res.status(400).send('Missing required metadata');
         }
+
+        await db.insert(subscriptions).values({
+          userId: parseInt(metadata.userId),
+          planId: parseInt(metadata.planId),
+          stripeCustomerId: session.customer as string,
+          stripeSubscriptionId: session.subscription as string,
+          status: 'active',
+          currentPeriodStart: new Date(session.created * 1000),
+          currentPeriodEnd: new Date((session.created + 30 * 24 * 60 * 60) * 1000),
+          cancelAtPeriodEnd: false,
+        });
         break;
       }
+
       case 'customer.subscription.updated': {
-        const subscription = event.data.object;
-        // Update subscription details
+        const subscription = event.data.object as Stripe.Subscription;
         await db
           .update(subscriptions)
           .set({
@@ -80,9 +84,9 @@ router.post('/webhook', async (req, res) => {
           .where(eq(subscriptions.stripeSubscriptionId, subscription.id));
         break;
       }
+
       case 'customer.subscription.deleted': {
-        const subscription = event.data.object;
-        // Update subscription status to canceled
+        const subscription = event.data.object as Stripe.Subscription;
         await db
           .update(subscriptions)
           .set({
@@ -92,15 +96,18 @@ router.post('/webhook', async (req, res) => {
           .where(eq(subscriptions.stripeSubscriptionId, subscription.id));
         break;
       }
-      default: {
+
+      default:
         console.log(`Unhandled event type: ${event.type}`);
-      }
     }
 
     res.json({ received: true });
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).json({ error: 'Webhook handler failed' });
+  } catch (error) {
+    console.error('Webhook handler failed:', error);
+    res.status(500).json({
+      error: 'Webhook handler failed',
+      details: process.env.NODE_ENV === 'development' ? error : undefined
+    });
   }
 });
 
@@ -126,10 +133,14 @@ router.post('/create-checkout-session', requireAuth, async (req, res) => {
       userEmail: req.user?.email
     });
 
+    if (!planId || !interval) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
     const result = await paymentsAgent.initializeCheckout(
       req.user!,
       planId,
-      interval
+      interval as 'month' | 'year'
     );
 
     if (!result.success) {
@@ -140,7 +151,10 @@ router.post('/create-checkout-session', requireAuth, async (req, res) => {
     res.json({ sessionId: result.sessionId });
   } catch (error) {
     console.error('Error creating checkout session:', error);
-    res.status(500).json({ error: 'Failed to create checkout session' });
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to create checkout session',
+      details: process.env.NODE_ENV === 'development' ? error : undefined
+    });
   }
 });
 
@@ -157,7 +171,6 @@ router.get('/current-subscription', requireAuth, async (req, res) => {
       return res.json(null);
     }
 
-    // Get plan details
     const plan = await db
       .select()
       .from(subscriptionPlans)
