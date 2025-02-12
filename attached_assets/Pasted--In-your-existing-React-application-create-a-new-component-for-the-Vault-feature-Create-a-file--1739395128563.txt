@@ -1,0 +1,111 @@
+# In your existing React application, create a new component for the Vault feature.
+# Create a file at src/components/Vault.js with the following code:
+
+cat > src/components/Vault.js << 'EOF'
+import React, { useState, useEffect } from 'react';
+import { useDropzone } from 'react-dropzone';
+import axios from 'axios';
+
+const Vault = () => {
+  const [filesData, setFilesData] = useState([]);
+  const [sharingPolicy, setSharingPolicy] = useState('workspace');
+  const [stats, setStats] = useState({ accuracy: '', documents: '', fieldExtractions: '' });
+
+  // File upload handler
+  const onDrop = acceptedFiles => {
+    acceptedFiles.forEach(file => {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      axios.post('/api/vault/upload', formData)
+        .then(response => setFilesData(prev => [...prev, response.data]))
+        .catch(err => console.error(err));
+    });
+  };
+
+  const { getRootProps, getInputProps } = useDropzone({ onDrop });
+
+  // Fetch live vault statistics
+  useEffect(() => {
+    axios.get('/api/vault/stats')
+      .then(response => setStats(response.data))
+      .catch(err => console.error(err));
+  }, []);
+
+  // Analysis functions invoking backend AI services
+  const performAnalysis = (analysisType) => {
+    axios.post('/api/vault/analyze', { analysisType })
+      .then(response => alert(`Analysis Result: ${JSON.stringify(response.data)}`))
+      .catch(err => console.error(err));
+  };
+
+  const updateSharing = (e) => {
+    const newPolicy = e.target.value;
+    setSharingPolicy(newPolicy);
+    axios.post('/api/vault/update-sharing', { policy: newPolicy })
+         .catch(err => console.error(err));
+  };
+
+  return (
+    <div style={{ padding: '2rem' }}>
+      <h1>Vault</h1>
+      
+      <div {...getRootProps()} style={{ border: '2px dashed #ccc', padding: '20px', textAlign: 'center', marginBottom: '1rem' }}>
+        <input {...getInputProps()} />
+        <p>Drag & drop files here or click to select files (local, Google Drive, iManage, Sharepoint)</p>
+      </div>
+
+      <div style={{ marginBottom: '1rem' }}>
+        <button onClick={() => performAnalysis('Reps & Warranties')}>Reps & Warranties</button>
+        <button onClick={() => performAnalysis('M&A Deal Points')}>M&A Deal Points</button>
+        <button onClick={() => performAnalysis('Compliant Analysis')}>Compliant Analysis</button>
+      </div>
+
+      <div style={{ marginBottom: '1rem' }}>
+        <label>Project Sharing: </label>
+        <select value={sharingPolicy} onChange={updateSharing}>
+          <option value="workspace">Everyone in workspace</option>
+          <option value="session">Restricted to active session user</option>
+        </select>
+      </div>
+
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={{ border: '1px solid #ddd', padding: '8px' }}>Uploaded File</th>
+            <th style={{ border: '1px solid #ddd', padding: '8px' }}>Document Type</th>
+            <th style={{ border: '1px solid #ddd', padding: '8px' }}>Industry</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filesData.map((file, index) => (
+            <tr key={index}>
+              <td style={{ border: '1px solid #ddd', padding: '8px' }}>{file.name}</td>
+              <td style={{ border: '1px solid #ddd', padding: '8px' }}>{file.documentType}</td>
+              <td style={{ border: '1px solid #ddd', padding: '8px' }}>{file.industry}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-around' }}>
+        <div style={{ textAlign: 'center' }}>
+          <h2>{stats.accuracy || "97%"}</h2>
+          <p>Accuracy on key term extraction</p>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <h2>{stats.documents || "10K+"}</h2>
+          <p>Documents stored per vault</p>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <h2>{stats.fieldExtractions || "50K+"}</h2>
+          <p>Field extractions per document</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Vault;
+EOF
+This command creates your Vault component in the existing application, utilizing your current API base URL (adjusting relative paths for integrated routing).

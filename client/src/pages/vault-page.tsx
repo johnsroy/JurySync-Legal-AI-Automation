@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, FileText, Folder, X, FileArchive, AlertCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Upload, FileText, Folder, AlertCircle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -14,11 +13,32 @@ import { useToast } from "@/hooks/use-toast";
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
 
 export default function VaultPage() {
-  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
-  const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [filesData, setFilesData] = useState([]);
+  const [sharingPolicy, setSharingPolicy] = useState('workspace');
+  const [stats, setStats] = useState({ accuracy: '', documents: '', fieldExtractions: '' });
+  const [selectedDocument, setSelectedDocument] = useState(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+
+  // File upload handler using react-dropzone
+  const onDrop = acceptedFiles => {
+    acceptedFiles.forEach(file => {
+      const formData = new FormData();
+      formData.append('file', file);
+      uploadMutation.mutate(formData);
+    });
+  };
+
+  const { getRootProps, getInputProps } = useDropzone({ 
+    onDrop,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'text/plain': ['.txt']
+    }
+  });
 
   // Fetch documents
   const { data: documentsData, isLoading: isLoadingDocuments } = useQuery({
@@ -32,24 +52,18 @@ export default function VaultPage() {
 
   // Upload mutation
   const uploadMutation = useMutation({
-    mutationFn: async (files: FileList) => {
-      const formData = new FormData();
-      Array.from(files).forEach(file => {
-        formData.append('file', file);
-      });
-
+    mutationFn: async (formData) => {
       const response = await apiRequest('POST', '/api/vault/documents', formData);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: 'Success',
         description: 'Document uploaded successfully',
       });
-      setSelectedFiles(null);
       queryClient.invalidateQueries({ queryKey: ['/api/vault/documents'] });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast({
         title: 'Error',
         description: error.message || 'Failed to upload document',
@@ -58,16 +72,36 @@ export default function VaultPage() {
     }
   });
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files.length > 0) {
-      setSelectedFiles(event.target.files);
+  // Analysis functions
+  const performAnalysis = async (analysisType) => {
+    try {
+      const response = await apiRequest('POST', '/api/vault/analyze', { analysisType });
+      const data = await response.json();
+      toast({
+        title: 'Analysis Complete',
+        description: `Analysis Result: ${data.summary}`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to perform analysis',
+        variant: 'destructive',
+      });
     }
   };
 
-  const handleUpload = () => {
-    if (selectedFiles) {
-      uploadMutation.mutate(selectedFiles);
-    }
+  // Update sharing policy
+  const updateSharing = (e) => {
+    const newPolicy = e.target.value;
+    setSharingPolicy(newPolicy);
+    apiRequest('POST', '/api/vault/update-sharing', { policy: newPolicy })
+      .catch(err => {
+        toast({
+          title: 'Error',
+          description: 'Failed to update sharing policy',
+          variant: 'destructive',
+        });
+      });
   };
 
   const canUpload = user && UPLOAD_ALLOWED_ROLES.includes(user.role);
@@ -82,104 +116,52 @@ export default function VaultPage() {
               <h1 className="text-3xl font-bold text-gray-900">Document Vault</h1>
               <p className="text-gray-600 mt-2">Securely store and manage your legal documents</p>
             </div>
-            {canUpload && (
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button className="bg-green-600 hover:bg-green-700">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Document
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Upload Documents</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div
-                      className={cn(
-                        "border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors",
-                        "hover:border-green-500 hover:bg-green-50",
-                        selectedFiles ? "border-green-500 bg-green-50" : "border-gray-300"
-                      )}
-                      onClick={() => document.querySelector<HTMLInputElement>('input[type="file"]')?.click()}
-                    >
-                      <input
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={handleFileSelect}
-                        accept=".pdf,.doc,.docx,.txt"
-                      />
-                      <FileArchive className="mx-auto h-12 w-12 text-gray-400" />
-                      <p className="mt-2 text-sm text-gray-600">
-                        {selectedFiles ? (
-                          <span className="text-green-600 font-medium">
-                            {selectedFiles.length} file(s) selected
-                          </span>
-                        ) : (
-                          "Click to select files or drag and drop"
-                        )}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Supports: PDF, DOC, DOCX, TXT
-                      </p>
-                    </div>
-
-                    {selectedFiles && (
-                      <ScrollArea className="h-[200px] rounded-md border p-4">
-                        <div className="space-y-2">
-                          {Array.from(selectedFiles).map((file, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center justify-between bg-white p-2 rounded-lg shadow-sm"
-                            >
-                              <div className="flex items-center space-x-2">
-                                <FileText className="h-4 w-4 text-green-600" />
-                                <span className="text-sm text-gray-700 truncate max-w-[200px]">
-                                  {file.name}
-                                </span>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedFiles(null);
-                                }}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    )}
-
-                    <div className="flex justify-end">
-                      <Button
-                        onClick={handleUpload}
-                        disabled={!selectedFiles || uploadMutation.isPending}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        {uploadMutation.isPending ? (
-                          <>
-                            <span className="animate-spin mr-2">⌛</span>
-                            Uploading...
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="h-4 w-4 mr-2" />
-                            Upload
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            )}
           </div>
+        </div>
+
+        {/* Upload Area */}
+        {canUpload && (
+          <div className="mb-8">
+            <div
+              {...getRootProps()}
+              className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors hover:border-green-500 hover:bg-green-50"
+            >
+              <input {...getInputProps()} />
+              <Upload className="mx-auto h-12 w-12 text-gray-400" />
+              <p className="mt-2 text-sm text-gray-600">
+                Drag & drop files here or click to select files
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Supports: PDF, DOC, DOCX, TXT
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Analysis Actions */}
+        <div className="flex gap-4 mb-8">
+          <Button onClick={() => performAnalysis('Reps & Warranties')}>
+            Reps & Warranties
+          </Button>
+          <Button onClick={() => performAnalysis('M&A Deal Points')}>
+            M&A Deal Points
+          </Button>
+          <Button onClick={() => performAnalysis('Compliance Analysis')}>
+            Compliance Analysis
+          </Button>
+        </div>
+
+        {/* Sharing Policy */}
+        <div className="mb-8">
+          <label className="block text-sm font-medium text-gray-700">Project Sharing: </label>
+          <select
+            value={sharingPolicy}
+            onChange={updateSharing}
+            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
+          >
+            <option value="workspace">Everyone in workspace</option>
+            <option value="session">Restricted to active session user</option>
+          </select>
         </div>
 
         {/* Documents Grid */}
@@ -188,30 +170,20 @@ export default function VaultPage() {
             <div className="col-span-full text-center py-12">
               <span className="animate-spin mr-2">⌛</span> Loading documents...
             </div>
-          ) : documentsData?.length === 0 ? (
+          ) : !documentsData?.length ? (
             <div className="col-span-full">
-              <Card className="border-dashed border-2 border-gray-200">
+              <Card className="border-dashed border-2">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <Folder className="h-12 w-12 text-gray-400 mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No Documents Yet</h3>
                   <p className="text-gray-500 text-center mb-4">
                     {canUpload ? 'Upload your first document to get started' : 'No documents available'}
                   </p>
-                  {canUpload && (
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button className="bg-green-600 hover:bg-green-700">
-                          <Upload className="h-4 w-4 mr-2" />
-                          Upload Document
-                        </Button>
-                      </DialogTrigger>
-                    </Dialog>
-                  )}
                 </CardContent>
               </Card>
             </div>
           ) : (
-            documentsData?.map((doc: any) => (
+            documentsData.map((doc) => (
               <Card key={doc.id} className="hover:shadow-lg transition-shadow">
                 <CardContent className="p-4">
                   <div className="flex items-start space-x-4">
@@ -241,6 +213,22 @@ export default function VaultPage() {
               </Card>
             ))
           )}
+        </div>
+
+        {/* Stats Section */}
+        <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold text-gray-900">{stats.accuracy || "97%"}</h2>
+            <p className="text-gray-600">Accuracy on key term extraction</p>
+          </div>
+          <div className="text-center">
+            <h2 className="text-3xl font-bold text-gray-900">{stats.documents || "10K+"}</h2>
+            <p className="text-gray-600">Documents stored per vault</p>
+          </div>
+          <div className="text-center">
+            <h2 className="text-3xl font-bold text-gray-900">{stats.fieldExtractions || "50K+"}</h2>
+            <p className="text-gray-600">Field extractions per document</p>
+          </div>
         </div>
 
         {/* AI Insights Modal */}
