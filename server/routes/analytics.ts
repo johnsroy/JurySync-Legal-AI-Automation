@@ -37,59 +37,53 @@ router.get("/", async (req, res) => {
       );
 
     // Process document activity data
-    const documentActivity = documentsData.reduce((acc, doc) => {
+    const documentActivityByDate = documentsData.reduce((acc, doc) => {
       const date = doc.startTime.toISOString().split('T')[0];
-      const template = doc.metadata?.templateUsed || 'Custom';
-      const category = doc.metadata?.templateCategory || 'None';
 
       if (!acc[date]) {
         acc[date] = {
           date,
           processed: 0,
-          uploaded: 0,
-          byTemplate: {} as Record<string, number>,
-          byCategory: {} as Record<string, number>
+          uploaded: 0
         };
       }
 
       acc[date].processed += doc.successful ? 1 : 0;
       acc[date].uploaded += 1;
-      acc[date].byTemplate[template] = (acc[date].byTemplate[template] || 0) + 1;
-      acc[date].byCategory[category] = (acc[date].byCategory[category] || 0) + 1;
 
       return acc;
     }, {} as Record<string, any>);
 
-    // Convert to array and calculate percentages
-    const documentActivityArray = Object.values(documentActivity).map(day => ({
-      date: day.date,
-      processed: day.processed,
-      uploaded: day.uploaded,
-      templates: Object.entries(day.byTemplate).map(([name, count]) => ({
-        name,
-        value: Math.round((count as number / day.uploaded) * 100)
-      })),
-      categories: Object.entries(day.byCategory).map(([name, count]) => ({
-        name,
-        value: Math.round((count as number / day.uploaded) * 100)
-      }))
+    // Convert to array format for charts
+    const documentActivity = Object.values(documentActivityByDate);
+
+    // Calculate risk distribution
+    const riskDistribution = documentsData.reduce((acc, doc) => {
+      const riskScore = doc.metadata?.riskScore || 0;
+      let category;
+
+      if (riskScore < 0.3) category = 'Low';
+      else if (riskScore < 0.7) category = 'Medium';
+      else category = 'High';
+
+      if (!acc[category]) acc[category] = 0;
+      acc[category]++;
+
+      return acc;
+    }, {} as Record<string, number>);
+
+    const riskDistributionData = Object.entries(riskDistribution).map(([name, value]) => ({
+      name,
+      value
     }));
 
-    // Get metrics from metricsCollector
-    const metrics = await metricsCollector.collectMetrics({
-      start: startDate,
-      end: new Date()
-    });
-
-    // Get workflow metrics with enhanced details
+    // Get workflow efficiency data
     const workflowData = await db
       .select({
-        id: workflowMetrics.id,
         workflowType: workflowMetrics.workflowType,
-        status: workflowMetrics.status,
-        metadata: workflowMetrics.metadata,
         processingTimeMs: workflowMetrics.processingTimeMs,
-        successful: workflowMetrics.successful
+        successful: workflowMetrics.successful,
+        metadata: workflowMetrics.metadata
       })
       .from(workflowMetrics)
       .where(
@@ -99,55 +93,47 @@ router.get("/", async (req, res) => {
         )
       );
 
-    // Process workflow efficiency data
+    // Calculate workflow efficiency
     const workflowEfficiency = workflowData.reduce((acc, workflow) => {
       const type = workflow.workflowType;
       if (!acc[type]) {
         acc[type] = {
-          name: type,
-          successRate: 0,
-          avgProcessingTime: 0,
-          totalRuns: 0,
-          templates: {} as Record<string, number>,
-          categories: {} as Record<string, number>
+          total: 0,
+          successful: 0,
+          totalTime: 0
         };
       }
 
-      acc[type].totalRuns++;
-      acc[type].successRate += workflow.successful ? 1 : 0;
-      acc[type].avgProcessingTime += workflow.processingTimeMs || 0;
-
-      const template = workflow.metadata?.templateUsed || 'Custom';
-      const category = workflow.metadata?.templateCategory || 'None';
-
-      acc[type].templates[template] = (acc[type].templates[template] || 0) + 1;
-      acc[type].categories[category] = (acc[type].categories[category] || 0) + 1;
+      acc[type].total++;
+      acc[type].successful += workflow.successful ? 1 : 0;
+      acc[type].totalTime += workflow.processingTimeMs || 0;
 
       return acc;
     }, {} as Record<string, any>);
 
-    // Calculate final percentages and averages
-    const workflowEfficiencyArray = Object.values(workflowEfficiency).map(wf => ({
-      name: wf.name,
-      successRate: Math.round((wf.successRate / wf.totalRuns) * 100),
-      avgProcessingTime: Math.round(wf.avgProcessingTime / wf.totalRuns),
-      templates: Object.entries(wf.templates).map(([name, count]) => ({
-        name,
-        value: Math.round((count as number / wf.totalRuns) * 100)
-      })),
-      categories: Object.entries(wf.categories).map(([name, count]) => ({
-        name,
-        value: Math.round((count as number / wf.totalRuns) * 100)
-      }))
+    const workflowEfficiencyData = Object.entries(workflowEfficiency).map(([type, data]) => ({
+      name: type,
+      successRate: Math.round((data.successful / data.total) * 100),
+      avgProcessingTime: Math.round(data.totalTime / data.total)
     }));
 
+    // Get model metrics
+    const metrics = await metricsCollector.collectMetrics({
+      start: startDate,
+      end: new Date()
+    });
+
     const response = {
-      documentActivity: documentActivityArray,
-      modelPerformance: metrics.modelPerformance,
+      documentActivity,
+      riskDistribution: riskDistributionData,
+      modelPerformance: metrics.modelPerformance || [],
       automationMetrics: metrics.automationMetrics,
-      workflowEfficiency: workflowEfficiencyArray,
-      modelDistribution: metrics.modelDistribution,
-      costEfficiency: metrics.costEfficiency,
+      workflowEfficiency: workflowEfficiencyData,
+      modelDistribution: Object.entries(metrics.modelDistribution || {}).map(([model, value]) => ({
+        name: model,
+        value
+      })),
+      costEfficiency: metrics.costEfficiency || [],
       taskSuccess: [
         { taskType: "Document Analysis", successRate: metrics.documentAnalysisSuccessRate },
         { taskType: "Code Review", successRate: metrics.codeReviewSuccessRate },
