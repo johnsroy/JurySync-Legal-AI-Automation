@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +21,7 @@ import { apiRequest } from '@/lib/queryClient';
 if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
   throw new Error('VITE_STRIPE_PUBLIC_KEY must be set');
 }
+
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
 type Plan = {
@@ -49,6 +50,24 @@ export default function SubscriptionPage() {
       return response.json();
     },
   });
+
+  // Handle return from Stripe Checkout
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('success')) {
+      toast({
+        title: 'Success!',
+        description: 'Your subscription has been activated.',
+      });
+    }
+    if (query.get('canceled')) {
+      toast({
+        title: 'Subscription Canceled',
+        description: 'Your subscription setup was canceled.',
+        variant: 'destructive',
+      });
+    }
+  }, [toast]);
 
   const handleSubscribe = async (plan: Plan) => {
     try {
@@ -80,13 +99,12 @@ export default function SubscriptionPage() {
         interval: billingInterval,
       });
 
-      const responseData = await response.json();
-
       if (!response.ok) {
-        throw new Error(responseData.error || 'Failed to initialize payment');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to initialize payment');
       }
 
-      const { sessionId } = responseData;
+      const { sessionId } = await response.json();
       if (!sessionId) {
         throw new Error('No session ID returned from server');
       }
@@ -172,17 +190,15 @@ export default function SubscriptionPage() {
               <Button
                 className="w-full"
                 onClick={() => handleSubscribe(plan)}
-                disabled={isLoading || plan.isEnterprise || processingPlanId === plan.id}
+                disabled={isLoading || processingPlanId === plan.id}
               >
                 {isLoading && processingPlanId === plan.id ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                     Processing...
                   </>
-                ) : plan.isEnterprise ? (
-                  'Contact Sales'
                 ) : (
-                  'Subscribe Now'
+                  plan.isStudent ? 'Start Your Free Trial' : 'Subscribe Now'
                 )}
               </Button>
             </CardContent>

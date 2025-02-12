@@ -66,7 +66,6 @@ export class StripeService {
           }
         } catch (error) {
           console.error('Error retrieving customer:', error);
-          // Continue to create new customer if retrieval fails
         }
       }
 
@@ -138,53 +137,17 @@ export class StripeService {
           planId: planId.toString()
         },
         success_url: successUrl,
-        cancel_url: cancelUrl
+        cancel_url: cancelUrl,
+        automatic_tax: { enabled: true },
+        client_reference_id: userId.toString(),
+        ui_mode: 'embedded',
+        return_url: successUrl
       });
 
       console.log('Checkout session created:', session.id);
       return session;
     } catch (error) {
       console.error('Error creating checkout session:', error);
-      throw error;
-    }
-  }
-
-  async updateSubscription(subscriptionId: string, priceId: string) {
-    try {
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-      return await stripe.subscriptions.update(subscriptionId, {
-        cancel_at_period_end: false,
-        proration_behavior: 'create_prorations',
-        items: [{
-          id: subscription.items.data[0].id,
-          price: priceId
-        }]
-      });
-    } catch (error) {
-      console.error('Error updating subscription:', error);
-      throw error;
-    }
-  }
-
-  async cancelSubscription(subscriptionId: string) {
-    try {
-      return await stripe.subscriptions.update(subscriptionId, {
-        cancel_at_period_end: true
-      });
-    } catch (error) {
-      console.error('Error canceling subscription:', error);
-      throw error;
-    }
-  }
-
-  async getSubscriptionDetails(subscriptionId: string) {
-    try {
-      return await stripe.subscriptions.retrieve(subscriptionId, {
-        expand: ['latest_invoice', 'customer']
-      });
-    } catch (error) {
-      console.error('Error retrieving subscription:', error);
       throw error;
     }
   }

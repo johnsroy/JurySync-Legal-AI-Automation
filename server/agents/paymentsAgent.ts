@@ -56,9 +56,9 @@ export class PaymentsAgent {
     error?: string; 
   }> {
     try {
-      // Validate user and subscription requirements
-      if (!user) {
-        return { success: false, error: 'User not authenticated' };
+      const validation = await this.validateUserForSubscription(user, planId);
+      if (!validation.isValid) {
+        return { success: false, error: validation.error };
       }
 
       // Get the plan details
@@ -71,23 +71,6 @@ export class PaymentsAgent {
       }
 
       const selectedPlan = plan[0];
-
-      // Verify student status if needed
-      if (selectedPlan.isStudent) {
-        const isValidStudent = await stripeService.verifyStudentEmail(user.email);
-        if (!isValidStudent) {
-          return { success: false, error: 'Invalid student email. Must be a .edu email address' };
-        }
-      }
-
-      // Check if user already has an active subscription
-      const existingSubscription = await db.select().from(subscriptions)
-        .where(eq(subscriptions.userId, user.id))
-        .limit(1);
-
-      if (existingSubscription && existingSubscription.length > 0 && !existingSubscription[0].cancelAtPeriodEnd) {
-        return { success: false, error: 'User already has an active subscription' };
-      }
 
       // Create or get customer
       const customerId = await stripeService.getOrCreateCustomer(
@@ -108,7 +91,7 @@ export class PaymentsAgent {
         userId: user.id,
         planId: selectedPlan.id,
         isTrial: selectedPlan.isStudent,
-        successUrl: `${process.env.APP_URL}/subscription-management?success=true`,
+        successUrl: `${process.env.APP_URL}/subscription?success=true`,
         cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`
       });
 
@@ -124,7 +107,9 @@ export class PaymentsAgent {
     error?: string; 
   }> {
     try {
-      const subscription = await db.select().from(subscriptions)
+      const subscription = await db
+        .select()
+        .from(subscriptions)
         .where(eq(subscriptions.userId, user.id))
         .limit(1);
 
@@ -132,8 +117,12 @@ export class PaymentsAgent {
         return { success: false, error: 'No active subscription found' };
       }
 
-      await stripeService.cancelSubscription(subscription[0].stripeSubscriptionId);
+      // Cancel the subscription in Stripe
+      await stripe.subscriptions.update(subscription[0].stripeSubscriptionId, {
+        cancel_at_period_end: true
+      });
 
+      // Update local database
       await db
         .update(subscriptions)
         .set({ cancelAtPeriodEnd: true })
@@ -142,7 +131,7 @@ export class PaymentsAgent {
       return { success: true };
     } catch (error) {
       console.error('Cancellation error:', error);
-      return { success: false, error: 'Failed to cancel subscription' };
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to cancel subscription' };
     }
   }
 
@@ -174,7 +163,9 @@ export class PaymentsAgent {
     error?: string;
   }> {
     try {
-      const subscription = await db.select().from(subscriptions)
+      const subscription = await db
+        .select()
+        .from(subscriptions)
         .where(eq(subscriptions.userId, user.id))
         .limit(1);
 
@@ -182,7 +173,15 @@ export class PaymentsAgent {
         return { success: true, subscription: null };
       }
 
-      const stripeSubscription = await stripeService.getSubscriptionDetails(
+      // Get plan details
+      const plan = await db
+        .select()
+        .from(subscriptionPlans)
+        .where(eq(subscriptionPlans.id, subscription[0].planId))
+        .limit(1);
+
+      // Get subscription details from Stripe
+      const stripeSubscription = await stripe.subscriptions.retrieve(
         subscription[0].stripeSubscriptionId
       );
 
@@ -190,12 +189,13 @@ export class PaymentsAgent {
         success: true, 
         subscription: {
           ...subscription[0],
+          plan: plan[0],
           stripeSubscription
         }
       };
     } catch (error) {
       console.error('Subscription status error:', error);
-      return { success: false, error: 'Failed to fetch subscription status' };
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to fetch subscription status' };
     }
   }
 }
