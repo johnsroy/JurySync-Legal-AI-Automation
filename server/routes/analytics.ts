@@ -11,6 +11,10 @@ const router = Router();
 // Get analytics data with enhanced compliance metrics
 router.get("/", async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const { timeRange = "7d" } = req.query;
     const startDate = subDays(new Date(), parseInt(timeRange.toString()));
 
@@ -20,14 +24,14 @@ router.get("/", async (req, res) => {
       .from(documentMetrics)
       .where(
         and(
-          eq(documentMetrics.userId, req.user!.id),
+          eq(documentMetrics.userId, req.user.id),
           gte(documentMetrics.startTime, startDate)
         )
       );
 
     // Process document activity data
     const documentActivity = documentsData.map(d => ({
-      date: d.startTime,
+      date: d.startTime.toISOString().split('T')[0],
       processed: d.successful ? 1 : 0,
       uploaded: 1,
     }));
@@ -49,17 +53,56 @@ router.get("/", async (req, res) => {
       .from(workflowMetrics)
       .where(
         and(
-          eq(workflowMetrics.userId, req.user!.id),
+          eq(workflowMetrics.userId, req.user.id),
           gte(workflowMetrics.startTime, startDate)
         )
       );
 
-    const complianceMetrics = workflowData
-      .filter(w => w.workflowType === 'COMPLIANCE_CHECK')
-      .map(workflow => ({
-        name: workflow.status,
-        value: workflow.metadata?.efficiency || 0
-      }));
+    // Get model usage metrics
+    const modelData = await db
+      .select()
+      .from(modelMetrics)
+      .where(
+        and(
+          eq(modelMetrics.userId, req.user.id),
+          gte(modelMetrics.timestamp, startDate)
+        )
+      );
+
+    // Calculate model efficiency
+    const modelEfficiency = modelData.reduce((acc, metric) => {
+      const model = metric.modelUsed;
+      if (!acc[model]) {
+        acc[model] = {
+          totalTime: 0,
+          totalTokens: 0,
+          successCount: 0,
+          totalCalls: 0
+        };
+      }
+      acc[model].totalTime += metric.processingTimeMs;
+      acc[model].totalTokens += metric.tokenCount;
+      acc[model].totalCalls += 1;
+      if (metric.errorRate === 0 || !metric.errorRate) {
+        acc[model].successCount += 1;
+      }
+      return acc;
+    }, {} as Record<string, { totalTime: number, totalTokens: number, successCount: number, totalCalls: number }>);
+
+    const modelPerformance = Object.entries(modelEfficiency).map(([model, stats]) => ({
+      model,
+      avgProcessingTime: stats.totalTime / stats.totalCalls,
+      successRate: (stats.successCount / stats.totalCalls) * 100,
+      tokenThroughput: stats.totalTokens / stats.totalCalls
+    }));
+
+    // Calculate automation metrics
+    const automationMetrics = {
+      automationPercentage: workflowData.filter(w => w.successful).length / workflowData.length * 100,
+      processingTimeReduction: workflowData.reduce((acc, w) => acc + (w.processingTimeMs || 0), 0) / workflowData.length,
+      laborCostSavings: workflowData.reduce((acc, w) => acc + (w.metadata?.costSavings || 0), 0),
+      errorReduction: workflowData.filter(w => w.successful).length / workflowData.length * 100
+    };
 
     const response = {
       documentActivity,
@@ -67,7 +110,12 @@ router.get("/", async (req, res) => {
         name: name.charAt(0).toUpperCase() + name.slice(1),
         value
       })),
-      complianceMetrics
+      modelPerformance,
+      automationMetrics,
+      workflowEfficiency: workflowData.map(w => ({
+        name: w.workflowType,
+        value: w.metadata?.efficiency || 0
+      }))
     };
 
     res.json(response);
@@ -80,10 +128,15 @@ router.get("/", async (req, res) => {
 // Get model performance metrics
 router.get("/metrics/models", async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const { timeRange = "7d" } = req.query;
     const metrics = await metricsCollector.collectMetrics({
       start: subDays(new Date(), parseInt(timeRange.toString())),
-      end: new Date()
+      end: new Date(),
+      userId: req.user.id
     });
 
     const response = {
@@ -124,6 +177,10 @@ router.get("/metrics/models", async (req, res) => {
 // Get reports
 router.get("/reports", async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const { type = "all" } = req.query;
     const query = db.select().from(reports);
 
@@ -139,33 +196,6 @@ router.get("/reports", async (req, res) => {
   } catch (error) {
     console.error("Reports fetch error:", error);
     res.status(500).json({ error: "Failed to fetch reports" });
-  }
-});
-
-// Generate a new report
-router.post("/reports", async (req, res) => {
-  try {
-    const { title, type, config } = req.body;
-
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const [report] = await db
-      .insert(reports)
-      .values({
-        type: type.toUpperCase(),
-        userId: req.user.id,
-        status: "GENERATING",
-        config: config || {},
-        title: title || `Report ${new Date().toISOString()}`
-      })
-      .returning();
-
-    res.json(report);
-  } catch (error) {
-    console.error("Report creation error:", error);
-    res.status(500).json({ error: "Failed to create report" });
   }
 });
 
