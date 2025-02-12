@@ -10,11 +10,16 @@ export default function Reports() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const { data: documents } = useQuery({
+  // Fetch documents specific to workflows
+  const { data: documents, isLoading } = useQuery({
     queryKey: ['/api/compliance/documents'],
     queryFn: async () => {
       const response = await apiRequest('GET', '/api/compliance/documents');
-      return response.json();
+      if (!response.ok) {
+        throw new Error('Failed to fetch documents');
+      }
+      const data = await response.json();
+      return data;
     }
   });
 
@@ -51,7 +56,7 @@ export default function Reports() {
     title: doc.title,
     status: doc.status,
     riskScore: doc.riskScore,
-    lastScanned: new Date(doc.lastScanned).toLocaleDateString()
+    lastScanned: doc.lastScanned ? new Date(doc.lastScanned).toLocaleDateString() : 'Not scanned'
   })) || [];
 
   return (
@@ -70,7 +75,7 @@ export default function Reports() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <Card 
           className="cursor-pointer transition-all hover:shadow-lg hover:border-primary"
-          onClick={() => setLocation("/reports-dashboard")}
+          onClick={() => setLocation("/analytics")}
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -95,7 +100,11 @@ export default function Reports() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {recentDocuments.length > 0 ? (
+            {isLoading ? (
+              <p className="text-muted-foreground text-center py-8">
+                Loading documents...
+              </p>
+            ) : recentDocuments.length > 0 ? (
               <div className="space-y-4">
                 {recentDocuments.map((doc, idx) => (
                   <div key={idx} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
