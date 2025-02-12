@@ -8,7 +8,9 @@ if (!process.env.OPENAI_API_KEY) {
   throw new Error("OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.");
 }
 
-const openai = new OpenAI();
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 export class RiskAssessmentService {
   private async analyzeDocument(content: string): Promise<RiskAssessment[]> {

@@ -14,7 +14,9 @@ if (!process.env.OPENAI_API_KEY) {
   throw new Error("OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.");
 }
 
-const openai = new OpenAI();
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 interface AnalysisResult {
   analysis: {
@@ -131,9 +133,9 @@ Respond in this format:
         analysisResult = JSON.parse(response.choices[0].message.content);
         log('Successfully parsed OpenAI response', 'debug', { analysisResult });
       } catch (parseError) {
-        log('Failed to parse OpenAI response', 'error', { 
+        log('Failed to parse OpenAI response', 'error', {
           response: response.choices[0].message.content,
-          error: parseError 
+          error: parseError
         });
         throw new Error("Failed to parse analysis results");
       }
