@@ -54,7 +54,6 @@ export const SUBSCRIPTION_PLANS = {
 };
 
 export class StripeService {
-  // Create or retrieve a customer
   async getOrCreateCustomer(
     email: string,
     stripeCustomerId?: string | null,
@@ -63,8 +62,10 @@ export class StripeService {
     try {
       if (stripeCustomerId) {
         // Verify the customer still exists
-        await stripe.customers.retrieve(stripeCustomerId);
-        return stripeCustomerId;
+        const customer = await stripe.customers.retrieve(stripeCustomerId);
+        if (!customer.deleted) {
+          return stripeCustomerId;
+        }
       }
 
       const customer = await stripe.customers.create({
@@ -82,7 +83,6 @@ export class StripeService {
     }
   }
 
-  // Create a checkout session for subscription
   async createCheckoutSession({
     customerId,
     priceId,
@@ -101,8 +101,9 @@ export class StripeService {
     isTrial?: boolean;
   }) {
     try {
-      const session = await stripe.checkout.sessions.create({
+      const sessionConfig: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
+        billing_address_collection: 'auto',
         payment_method_types: ['card'],
         line_items: [
           {
@@ -111,17 +112,19 @@ export class StripeService {
           }
         ],
         mode: 'subscription',
+        allow_promotion_codes: true,
         subscription_data: isTrial ? {
           trial_period_days: SUBSCRIPTION_PLANS.STUDENT.trial_days
         } : undefined,
-        success_url: successUrl,
-        cancel_url: cancelUrl,
         metadata: {
           userId: userId.toString(),
           planId: planId.toString()
-        }
-      });
+        },
+        success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: cancelUrl
+      };
 
+      const session = await stripe.checkout.sessions.create(sessionConfig);
       return session;
     } catch (error) {
       console.error('Error creating checkout session:', error);
@@ -129,7 +132,6 @@ export class StripeService {
     }
   }
 
-  // Update subscription
   async updateSubscription(subscriptionId: string, priceId: string) {
     try {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -148,7 +150,6 @@ export class StripeService {
     }
   }
 
-  // Cancel subscription
   async cancelSubscription(subscriptionId: string) {
     try {
       return await stripe.subscriptions.update(subscriptionId, {
@@ -160,7 +161,6 @@ export class StripeService {
     }
   }
 
-  // Get subscription details
   async getSubscriptionDetails(subscriptionId: string) {
     try {
       return await stripe.subscriptions.retrieve(subscriptionId, {
@@ -172,12 +172,10 @@ export class StripeService {
     }
   }
 
-  // Verify student email
   async verifyStudentEmail(email: string): Promise<boolean> {
     return email.toLowerCase().endsWith('.edu');
   }
 
-  // Get billing history
   async getBillingHistory(customerId: string) {
     try {
       const invoices = await stripe.invoices.list({
