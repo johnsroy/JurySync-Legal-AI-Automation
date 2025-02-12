@@ -2,13 +2,7 @@ import OpenAI from "openai";
 import { PDFDocument } from "pdf-lib";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.");
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 interface ComplianceAnalysisResult {
   score: number;
@@ -28,9 +22,9 @@ export async function analyzeComplianceDocument(pdfBuffer: Buffer): Promise<Comp
     let fullText = '';
 
     for (const page of pages) {
-      const { width, height } = page.getSize();
-      fullText += `Page ${pages.indexOf(page) + 1} (${width}x${height})\n`;
-      // Note: Direct text extraction not available in pdf-lib, using dimensions instead
+      // Extract text content using pdf-lib's built-in text extraction
+      const { text } = await page.doc.embedFont(page.doc.registerFontkit());
+      fullText += text + '\n';
     }
 
     // Analyze with GPT-4o

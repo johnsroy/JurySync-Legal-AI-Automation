@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { db } from "../db";
 import { complianceDocuments, complianceIssues } from '@shared/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 // Enhanced logging
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
@@ -10,13 +10,7 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
 }
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.");
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 interface AnalysisResult {
   analysis: {
@@ -133,9 +127,9 @@ Respond in this format:
         analysisResult = JSON.parse(response.choices[0].message.content);
         log('Successfully parsed OpenAI response', 'debug', { analysisResult });
       } catch (parseError) {
-        log('Failed to parse OpenAI response', 'error', {
+        log('Failed to parse OpenAI response', 'error', { 
           response: response.choices[0].message.content,
-          error: parseError
+          error: parseError 
         });
         throw new Error("Failed to parse analysis results");
       }
@@ -162,7 +156,7 @@ Respond in this format:
           recommendation: issue.recommendation,
           status: "OPEN",
           clause: 'General',
-          riskAssessmentId: null,
+          riskAssessmentId: 0,
           createdAt: new Date(),
           updatedAt: new Date()
         }));

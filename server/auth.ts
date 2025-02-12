@@ -8,7 +8,6 @@ import { storage } from "./storage";
 import { User as SelectUser, insertUserSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
-import helmet from 'helmet';
 
 declare global {
   namespace Express {
@@ -32,19 +31,6 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
-  // Configure security headers
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'", "https://api.openai.com", "https://api.anthropic.com"],
-      },
-    },
-  }));
-
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID!,
     resave: false,
@@ -65,21 +51,6 @@ export function setupAuth(app: Express) {
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
-
-  // Add session check middleware
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/api') && 
-        !req.path.startsWith('/api/login') && 
-        !req.path.startsWith('/api/register') && 
-        !req.path.startsWith('/api/webhook') && 
-        !req.isAuthenticated()) {
-      return res.status(401).json({
-        message: "Not authenticated",
-        code: "NOT_AUTHENTICATED"
-      });
-    }
-    next();
-  });
 
   passport.use(
     new LocalStrategy(async (username, password, done) => {

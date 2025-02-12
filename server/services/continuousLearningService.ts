@@ -16,13 +16,7 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
 }
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.");
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export class ContinuousLearningService {
   private static instance: ContinuousLearningService;
@@ -41,24 +35,19 @@ export class ContinuousLearningService {
   }
 
   async startContinuousLearning() {
-    try {
-      if (this.updateInterval) {
-        clearInterval(this.updateInterval);
-      }
-
-      // Initial update
-      await this.performUpdate();
-
-      // Schedule regular updates
-      this.updateInterval = setInterval(async () => {
-        await this.performUpdate();
-      }, this.UPDATE_INTERVAL);
-
-      log('Continuous learning system started');
-    } catch (error) {
-      log('Failed to start continuous learning service', 'error', error);
-      throw error;
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
     }
+
+    // Initial update
+    await this.performUpdate();
+
+    // Schedule regular updates
+    this.updateInterval = setInterval(async () => {
+      await this.performUpdate();
+    }, this.UPDATE_INTERVAL);
+
+    log('Continuous learning system started');
   }
 
   private async performUpdate() {

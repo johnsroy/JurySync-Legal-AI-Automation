@@ -14,13 +14,6 @@ import contractAnalysisRouter from "./routes/contract-analysis";
 import reportsRouter from "./routes/reports";
 import cors from 'cors';
 import { json } from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import express from 'express';
-
-// ES modules dirname configuration
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 export function registerRoutes(app: Express): Server {
   // Enable CORS for all routes
@@ -38,15 +31,29 @@ export function registerRoutes(app: Express): Server {
     handleWebhook
   );
 
-  // API Routes
+  // Add the legal research router
   app.use("/api/legal", legalResearchRouter);
-  app.use("/api/compliance", complianceRouter);
-  app.use("/api/metrics", metricsRouter);
-  app.use("/api", reportsRouter);
-  app.use("/api/monitoring", predictiveMonitoringRouter);
-  app.use("/api/orchestrator", orchestratorRouter);
-  app.use("/api/contract-analysis", contractAnalysisRouter);
+
+  // Register the documents router
   app.use(documentsRouter);
+
+  // Add compliance routes
+  app.use("/api/compliance", complianceRouter);
+
+  // Add metrics routes
+  app.use("/api/metrics", metricsRouter);
+
+  // Add reports routes
+  app.use("/api", reportsRouter);
+
+  // Add predictive monitoring routes
+  app.use("/api/monitoring", predictiveMonitoringRouter);
+
+  // Add orchestrator routes
+  app.use("/api/orchestrator", orchestratorRouter);
+
+  // Add contract analysis routes
+  app.use("/api/contract-analysis", contractAnalysisRouter);
 
   // Add Stripe payment endpoints
   app.post("/api/checkout", async (req, res) => {
@@ -67,22 +74,6 @@ export function registerRoutes(app: Express): Server {
       });
     }
     await createPortalSession(req, res);
-  });
-
-  // Serve static files in production
-  if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../dist')));
-  }
-
-  // Handle client-side routing - must be after API routes
-  app.get('*', (req, res) => {
-    // Don't handle API routes here
-    if (req.path.startsWith('/api')) {
-      return res.status(404).json({ error: 'API endpoint not found' });
-    }
-
-    // Serve index.html for client routes
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
   });
 
   return server;
