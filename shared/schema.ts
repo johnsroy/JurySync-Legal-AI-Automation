@@ -700,32 +700,8 @@ export type InsertResearchQuery = typeof researchQueries.$inferInsert;
 
 
 // Add this after the legal research types
-// Analytics data schema for metrics collection
-export const analyticsDataSchema = z.object({
-  modelUsage: z.record(z.number()),
-  processingTimes: z.record(z.number()),
-  errorRates: z.record(z.number()),
-  costSavings: z.number(),
-  automationMetrics: z.object({
-    automationPercentage: z.string(),
-    processingTimeReduction: z.string(),
-    laborCostSavings: z.string(),
-    errorReduction: z.string()
-  })
-});
+// Analytics data schema for metrics collection (This section is removed because it's duplicated)
 
-export const analyticsData = pgTable('analytics_data', {
-  id: serial('id').primaryKey(),
-  timestamp: timestamp('timestamp').defaultNow(),
-  metrics: jsonb('metrics').$type<z.infer<typeof analyticsDataSchema>>(),
-  period: text('period').notNull(), // daily, weekly, monthly
-});
-
-export type AnalyticsData = typeof analyticsData.$inferSelect;
-export type InsertAnalyticsData = typeof analyticsData.$inferInsert;
-
-// Create insert schema
-export const insertAnalyticsDataSchema = createInsertSchema(analyticsData);
 
 // Add after existing schemas
 export const RegulatoryUpdateType = z.enum([
@@ -826,3 +802,20 @@ export type InsertContinuousLearningUpdate = z.infer<typeof insertContinuousLear
 export interface CaseLawUpdateWithFullText extends CaseLawUpdate {
   full_text: string;
 }
+
+// Add metrics events table to track AI and automation usage
+export const metricsEvents = pgTable("metrics_events", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  modelId: text("model_id").notNull(),
+  taskType: text("task_type").notNull(),
+  processingTimeMs: integer("processing_time_ms").notNull(),
+  successful: boolean("successful").notNull(),
+  costSavingEstimate: integer("cost_saving_estimate"),
+  timestamp: timestamp("timestamp").defaultNow(),
+});
+
+export type MetricsEvent = typeof metricsEvents.$inferSelect;
+export type InsertMetricsEvent = typeof metricsEvents.$inferInsert;
+
+export const insertMetricsEventSchema = createInsertSchema(metricsEvents);

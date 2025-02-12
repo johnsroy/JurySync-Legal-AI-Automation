@@ -1,14 +1,12 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
-import { complianceDocuments } from "@shared/schema";
+import { complianceDocuments, metricsEvents } from "@shared/schema";
 import { complianceAuditService } from "../services/complianceAuditService";
 import { riskAssessmentService } from "../services/riskAssessment";
 import { modelRouter } from "../services/modelRouter";
 import { monitorDocument, generateWeeklyAnalytics } from "../services/complianceMonitor";
-import { eq } from "drizzle-orm";
-
-const router = Router();
+import { eq, and, sql } from "drizzle-orm";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -31,6 +29,26 @@ const upload = multer({
     }
   }
 }).single('file');
+
+async function trackMetrics(userId: number, event: {
+  modelId: string,
+  taskType: string,
+  processingTimeMs: number,
+  successful: boolean,
+  costSavingEstimate: number
+}) {
+  await db.insert(metricsEvents).values({
+    userId,
+    modelId: event.modelId,
+    taskType: event.taskType,
+    processingTimeMs: event.processingTimeMs,
+    successful: event.successful,
+    costSavingEstimate: event.costSavingEstimate,
+    timestamp: new Date()
+  });
+}
+
+const router = Router();
 
 // Handle document upload
 router.post('/upload', async (req, res) => {
@@ -67,10 +85,36 @@ router.post('/upload', async (req, res) => {
       })
       .returning();
 
+    const startTime = Date.now();
+
+    // Analyze the task and select the appropriate model
+    const analysis = await modelRouter['analyzeTask'](document.content);
+    const selectedModel = await modelRouter.getSelectedModel(analysis);
+
     // Start analysis in background
     complianceAuditService
       .analyzeDocument(document.id, document.content)
-      .catch(error => console.error('Analysis failed:', error));
+      .then(async (result) => {
+        const processingTime = Date.now() - startTime;
+        await trackMetrics(userId, {
+          modelId: selectedModel.id,
+          taskType: 'document_analysis',
+          processingTimeMs: processingTime,
+          successful: true,
+          costSavingEstimate: processingTime * selectedModel.costSavingFactor
+        });
+      })
+      .catch(async error => {
+        const processingTime = Date.now() - startTime;
+        await trackMetrics(userId, {
+          modelId: selectedModel.id,
+          taskType: 'document_analysis',
+          processingTimeMs: processingTime,
+          successful: false,
+          costSavingEstimate: 0
+        });
+        console.error('Analysis failed:', error);
+      });
 
     return res.json({
       success: true,
@@ -170,7 +214,7 @@ router.get('/document/:documentId', async (req, res) => {
   }
 });
 
-// Add model metrics endpoint
+// Add metrics endpoint
 router.get('/metrics', async (req, res) => {
   try {
     const userId = (req as any).user?.id;
@@ -178,8 +222,84 @@ router.get('/metrics', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const metrics = await modelRouter.getMetrics();
-    res.json(metrics);
+    const timeRange = req.query.timeRange as string || '7d';
+    const daysAgo = timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 7;
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysAgo);
+
+    // Get basic metrics
+    const metrics = await db
+      .select({
+        totalTasks: sql<number>`count(*)`,
+        successfulTasks: sql<number>`sum(case when successful then 1 else 0 end)`,
+        avgProcessingTime: sql<number>`avg(processing_time_ms)`,
+        totalCostSavings: sql<number>`sum(cost_saving_estimate)`,
+      })
+      .from(metricsEvents)
+      .where(
+        and(
+          eq(metricsEvents.userId, userId),
+          sql`timestamp >= ${startDate}`
+        )
+      );
+
+    // Get model distribution
+    const modelDistribution = await db
+      .select({
+        modelId: metricsEvents.modelId,
+        count: sql<number>`count(*)`,
+      })
+      .from(metricsEvents)
+      .where(
+        and(
+          eq(metricsEvents.userId, userId),
+          sql`timestamp >= ${startDate}`
+        )
+      )
+      .groupBy(metricsEvents.modelId);
+
+    // Get model performance
+    const modelPerformance = await db
+      .select({
+        modelId: metricsEvents.modelId,
+        avgProcessingTime: sql<number>`avg(processing_time_ms)`,
+        errorRate: sql<number>`(sum(case when not successful then 1 else 0 end) * 100.0 / count(*))`,
+      })
+      .from(metricsEvents)
+      .where(
+        and(
+          eq(metricsEvents.userId, userId),
+          sql`timestamp >= ${startDate}`
+        )
+      )
+      .groupBy(metricsEvents.modelId);
+
+    const [baseMetrics] = metrics;
+    const total = baseMetrics.totalTasks || 0;
+    const successful = baseMetrics.successfulTasks || 0;
+
+    res.json({
+      automationMetrics: {
+        automationPercentage: total ? `${((successful / total) * 100).toFixed(1)}%` : '0%',
+        processingTimeReduction: baseMetrics.avgProcessingTime ? `${((1 - (baseMetrics.avgProcessingTime / 3600000)) * 100).toFixed(1)}%` : '0%',
+        laborCostSavings: baseMetrics.totalCostSavings ? `${((baseMetrics.totalCostSavings / 1000) * 100).toFixed(1)}%` : '0%',
+        errorReduction: total ? `${((1 - ((total - successful) / total)) * 100).toFixed(1)}%` : '0%'
+      },
+      modelDistribution: modelDistribution.map(m => ({
+        name: m.modelId,
+        value: m.count
+      })),
+      modelPerformance: modelPerformance.map(m => ({
+        model: m.modelId,
+        avgProcessingTime: Math.round(m.avgProcessingTime),
+        errorRate: parseFloat(m.errorRate.toFixed(1))
+      })),
+      taskSuccess: [
+        { taskType: 'Document Analysis', successRate: total ? (successful / total) * 100 : 0 },
+        // Add other task types as needed
+      ]
+    });
   } catch (error: unknown) {
     const err = error as Error;
     console.error('Metrics fetch error:', err);

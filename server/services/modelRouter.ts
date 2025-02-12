@@ -19,7 +19,8 @@ const MODELS = {
       math: true,
       contextLength: 200000,
       costPer1kTokens: 0.015
-    }
+    },
+    costSavingFactor: 2.5 // Higher efficiency for complex tasks
   },
   GPT4O: {
     id: "gpt-4o",
@@ -29,7 +30,8 @@ const MODELS = {
       analysis: true,
       contextLength: 128000,
       costPer1kTokens: 0.01
-    }
+    },
+    costSavingFactor: 2.0 // Good balance for research tasks
   },
   O3_MINI: {
     id: "claude-3-sonnet-20240229",
@@ -38,7 +40,8 @@ const MODELS = {
       routineCode: true,
       contextLength: 100000,
       costPer1kTokens: 0.003
-    }
+    },
+    costSavingFactor: 1.5 // Efficient for routine tasks
   },
   O1: {
     id: "claude-instant-1.2",
@@ -48,9 +51,13 @@ const MODELS = {
       simpleCode: true,
       contextLength: 100000,
       costPer1kTokens: 0.0008
-    }
+    },
+    costSavingFactor: 1.0 // Baseline efficiency
   }
 } as const;
+
+export type ModelConfig = typeof MODELS[keyof typeof MODELS];
+export type ModelId = ModelConfig['id'];
 
 interface TaskAnalysis {
   complexity: number; // 0-1 score
@@ -62,7 +69,7 @@ interface TaskAnalysis {
 }
 
 interface ModelRoutingResult {
-  modelUsed: string;
+  modelUsed: ModelId;
   processingTimeMs: number;
   qualityScore: number;
   output: string;
@@ -110,29 +117,29 @@ export class ModelRouter {
     }
   }
 
-  private selectModel(analysis: TaskAnalysis): string {
+  public async getSelectedModel(analysis: TaskAnalysis): Promise<ModelConfig> {
     // Complex code or math tasks -> O3_HIGH
     if (analysis.complexity > 0.7 && (analysis.requiresCode || analysis.requiresMath)) {
-      return MODELS.O3_HIGH.id;
+      return MODELS.O3_HIGH;
     }
 
     // Research and analysis tasks -> GPT4O
     if (analysis.complexity > 0.5 || analysis.keywords.some(k => 
       ['research', 'analyze', 'summarize', 'compare'].includes(k.toLowerCase()))) {
-      return MODELS.GPT4O.id;
+      return MODELS.GPT4O;
     }
 
     // Routine coding tasks -> O3_MINI
     if (analysis.requiresCode && analysis.complexity <= 0.7) {
-      return MODELS.O3_MINI.id;
+      return MODELS.O3_MINI;
     }
 
     // Basic math and simple operations -> O1
-    return MODELS.O1.id;
+    return MODELS.O1;
   }
 
   private async processWithModel(
-    model: string,
+    model: ModelId,
     content: string,
     systemPrompt: string
   ): Promise<string> {
@@ -152,7 +159,6 @@ export class ModelRouter {
         }]
       });
 
-      // Fix the TextBlock type error by checking content type
       const textContent = response.content[0];
       if (textContent.type === 'text') {
         return textContent.text;
@@ -172,7 +178,7 @@ export class ModelRouter {
 
   private async logMetrics(
     taskId: string,
-    modelUsed: string,
+    modelUsed: ModelId,
     taskType: string,
     processingTimeMs: number,
     tokenCount: number,
@@ -209,10 +215,10 @@ export class ModelRouter {
       const analysis = await this.analyzeTask(content);
 
       // Select appropriate model
-      const selectedModel = this.selectModel(analysis);
+      const selectedModel = await this.getSelectedModel(analysis);
 
       // Process with selected model
-      const output = await this.processWithModel(selectedModel, content, systemPrompt);
+      const output = await this.processWithModel(selectedModel.id, content, systemPrompt);
 
       const processingTimeMs = Math.round(performance.now() - startTime);
 
@@ -225,7 +231,7 @@ export class ModelRouter {
       // Log metrics
       await this.logMetrics(
         taskId,
-        selectedModel,
+        selectedModel.id,
         taskType,
         processingTimeMs,
         analysis.predictedTokens,
@@ -233,12 +239,12 @@ export class ModelRouter {
         errorRate,
         {
           analysis,
-          modelDetails: MODELS[selectedModel as keyof typeof MODELS]
+          modelDetails: selectedModel
         }
       );
 
       return {
-        modelUsed: selectedModel,
+        modelUsed: selectedModel.id,
         processingTimeMs,
         qualityScore,
         output,
@@ -246,7 +252,7 @@ export class ModelRouter {
         metadata: {
           analysis,
           tokenUsage: analysis.predictedTokens,
-          modelCapabilities: MODELS[selectedModel as keyof typeof MODELS].capabilities
+          modelCapabilities: selectedModel.capabilities
         }
       };
     } catch (error) {
@@ -338,7 +344,7 @@ export class ModelRouter {
       const baselineErrorRate = 0.4; // 40% baseline error rate
       const errorReduction = ((baselineErrorRate - avgErrorRate) / baselineErrorRate) * 100;
 
-      // Calculate labor cost savings
+      // Calculate labor cost savings based on automation rate and efficiency
       const laborCostSavings = (automationRate * 0.5); // Conservative estimate
 
       return {
