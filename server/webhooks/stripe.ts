@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { stripe } from '../services/stripe';
 import { db } from '../db';
-import { subscriptions } from '@shared/schema/subscriptions';
+import { subscriptions, subscriptionPlans } from '@shared/schema/subscriptions';
+import { eq } from 'drizzle-orm';
 
 export const handleStripeWebhook = async (req: Request, res: Response) => {
   try {
@@ -33,13 +34,12 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
       case 'checkout.session.completed':
         const session = event.data.object;
 
-        console.log('Checkout session completed:', {
+        console.log('Payment completed:', {
           customerId: session.customer,
-          subscriptionId: session.subscription,
-          amount: session.amount_total
+          metadata: session.metadata
         });
 
-        // For now, we'll just acknowledge the payment without complex subscription logic
+        // Acknowledge the webhook
         return res.json({ received: true });
 
       default:

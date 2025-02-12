@@ -5,7 +5,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
+  apiVersion: '2025-01-27.acacia',
   typescript: true,
 });
 
@@ -23,6 +23,13 @@ export class StripeService {
             quantity: 1,
           },
         ],
+        after_completion: { 
+          type: 'redirect',
+          redirect: { url: `${process.env.APP_URL}/subscription?success=true` }
+        },
+        metadata: {
+          priceId: priceId
+        }
       });
 
       return { success: true, url: paymentLink.url };
