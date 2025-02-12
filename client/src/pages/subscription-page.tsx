@@ -17,6 +17,10 @@ import { Loader2, CheckCircle } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 import { apiRequest } from '@/lib/queryClient';
 
+// Initialize Stripe and check for environment variable
+if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
+  throw new Error('VITE_STRIPE_PUBLIC_KEY must be set');
+}
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
 type Plan = {
@@ -38,8 +42,12 @@ export default function SubscriptionPage() {
   const [processingPlanId, setProcessingPlanId] = useState<number | null>(null);
 
   const { data: plans, isLoading: isLoadingPlans } = useQuery({
-    queryKey: ['plans'],
-    queryFn: () => apiRequest('GET', '/api/payments/plans').then(res => res.json())
+    queryKey: ['/api/payments/plans'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/payments/plans');
+      if (!response.ok) throw new Error('Failed to fetch plans');
+      return response.json();
+    },
   });
 
   const handleSubscribe = async (plan: Plan) => {
@@ -68,7 +76,8 @@ export default function SubscriptionPage() {
         });
 
         if (!verifyResponse.ok) {
-          throw new Error('Please use a valid .edu email address for student plans');
+          const error = await verifyResponse.json();
+          throw new Error(error.error || 'Please use a valid .edu email address for student plans');
         }
       }
 
@@ -112,18 +121,13 @@ export default function SubscriptionPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div className="container mx-auto px-4 py-8">
       <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold mb-4">Choose Your Plan</h1>
-        <p className="text-xl text-muted-foreground">
-          Select the perfect plan for your needs
-        </p>
+        <h1 className="text-3xl font-bold">Choose Your Plan</h1>
+        <p className="text-gray-500">Real-time insights and performance metrics</p>
 
         <div className="flex justify-center items-center gap-4 mt-8">
-          <Select
-            value={billingInterval}
-            onValueChange={(value: 'month' | 'year') => setBillingInterval(value)}
-          >
+          <Select value={billingInterval} onValueChange={(value: 'month' | 'year') => setBillingInterval(value)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Select billing interval" />
             </SelectTrigger>
@@ -138,7 +142,7 @@ export default function SubscriptionPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {plans?.map((plan: Plan) => (
           <Card key={plan.id} className="relative overflow-hidden">
             <CardHeader>
@@ -147,11 +151,9 @@ export default function SubscriptionPage() {
             </CardHeader>
             <CardContent>
               <div className="mb-4">
-                <p className="text-3xl font-bold">
+                <p className="text-2xl font-bold">
                   ${billingInterval === 'month' ? plan.priceMonthly : plan.priceYearly}
-                  <span className="text-sm font-normal">
-                    /{billingInterval}
-                  </span>
+                  <span className="text-sm font-normal">/{billingInterval}</span>
                 </p>
                 {plan.isStudent && (
                   <p className="text-sm text-muted-foreground mt-1">

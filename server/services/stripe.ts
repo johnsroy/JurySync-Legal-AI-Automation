@@ -60,19 +60,26 @@ export class StripeService {
     stripeCustomerId?: string | null,
     name?: string
   ): Promise<string> {
-    if (stripeCustomerId) {
-      return stripeCustomerId;
-    }
-
-    const customer = await stripe.customers.create({
-      email,
-      name,
-      metadata: {
-        createdAt: new Date().toISOString()
+    try {
+      if (stripeCustomerId) {
+        // Verify the customer still exists
+        await stripe.customers.retrieve(stripeCustomerId);
+        return stripeCustomerId;
       }
-    });
 
-    return customer.id;
+      const customer = await stripe.customers.create({
+        email,
+        name,
+        metadata: {
+          createdAt: new Date().toISOString()
+        }
+      });
+
+      return customer.id;
+    } catch (error) {
+      console.error('Error in getOrCreateCustomer:', error);
+      throw error;
+    }
   }
 
   // Create a checkout session for subscription
@@ -104,9 +111,9 @@ export class StripeService {
           }
         ],
         mode: 'subscription',
-        subscription_data: {
-          trial_period_days: isTrial ? SUBSCRIPTION_PLANS.STUDENT.trial_days : undefined
-        },
+        subscription_data: isTrial ? {
+          trial_period_days: SUBSCRIPTION_PLANS.STUDENT.trial_days
+        } : undefined,
         success_url: successUrl,
         cancel_url: cancelUrl,
         metadata: {
@@ -156,7 +163,9 @@ export class StripeService {
   // Get subscription details
   async getSubscriptionDetails(subscriptionId: string) {
     try {
-      return await stripe.subscriptions.retrieve(subscriptionId);
+      return await stripe.subscriptions.retrieve(subscriptionId, {
+        expand: ['latest_invoice', 'customer']
+      });
     } catch (error) {
       console.error('Error retrieving subscription:', error);
       throw error;
@@ -173,7 +182,8 @@ export class StripeService {
     try {
       const invoices = await stripe.invoices.list({
         customer: customerId,
-        limit: 24
+        limit: 24,
+        expand: ['data.subscription']
       });
       return invoices.data;
     } catch (error) {

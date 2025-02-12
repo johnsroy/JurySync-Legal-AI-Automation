@@ -20,16 +20,14 @@ export class PaymentsAgent {
         return { isValid: false, error: 'User not authenticated' };
       }
 
-      const plan = await db.query.subscriptionPlans.findFirst({
-        where: eq(subscriptionPlans.id, planId)
-      });
+      const plan = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, planId)).limit(1);
 
-      if (!plan) {
+      if (!plan || plan.length === 0) {
         return { isValid: false, error: 'Invalid subscription plan' };
       }
 
       // Verify student status if needed
-      if (plan.isStudent) {
+      if (plan[0].isStudent) {
         const isValidStudent = await stripeService.verifyStudentEmail(user.email);
         if (!isValidStudent) {
           return { isValid: false, error: 'Invalid student email. Must be a .edu email address' };
@@ -37,11 +35,11 @@ export class PaymentsAgent {
       }
 
       // Check if user already has an active subscription
-      const existingSubscription = await db.query.subscriptions.findFirst({
-        where: eq(subscriptions.userId, user.id)
-      });
+      const existingSubscription = await db.select().from(subscriptions)
+        .where(eq(subscriptions.userId, user.id))
+        .limit(1);
 
-      if (existingSubscription && !existingSubscription.cancelAtPeriodEnd) {
+      if (existingSubscription && existingSubscription.length > 0 && !existingSubscription[0].cancelAtPeriodEnd) {
         return { isValid: false, error: 'User already has an active subscription' };
       }
 
@@ -64,28 +62,27 @@ export class PaymentsAgent {
         return { success: false, error: validation.error };
       }
 
-      const plan = await db.query.subscriptionPlans.findFirst({
-        where: eq(subscriptionPlans.id, planId)
-      });
+      const plan = await db.select().from(subscriptionPlans)
+        .where(eq(subscriptionPlans.id, planId))
+        .limit(1);
 
-      if (!plan) {
+      if (!plan || plan.length === 0) {
         return { success: false, error: 'Plan not found' };
       }
 
       // Create or get customer
       const customerId = await stripeService.getOrCreateCustomer(
         user.email,
-        user.stripeCustomerId,
-        user.name
+        user.stripeCustomerId
       );
 
       // Create checkout session
       const session = await stripeService.createCheckoutSession({
         customerId,
-        priceId: interval === 'year' ? plan.stripePriceIdYearly : plan.stripePriceIdMonthly,
+        priceId: interval === 'year' ? plan[0].stripePriceIdYearly : plan[0].stripePriceIdMonthly,
         userId: user.id,
-        planId: plan.id,
-        isTrial: plan.isStudent,
+        planId: plan[0].id,
+        isTrial: plan[0].isStudent,
         successUrl: `${process.env.APP_URL}/subscription-management?success=true`,
         cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`
       });
@@ -102,20 +99,20 @@ export class PaymentsAgent {
     error?: string; 
   }> {
     try {
-      const subscription = await db.query.subscriptions.findFirst({
-        where: eq(subscriptions.userId, user.id)
-      });
+      const subscription = await db.select().from(subscriptions)
+        .where(eq(subscriptions.userId, user.id))
+        .limit(1);
 
-      if (!subscription) {
+      if (!subscription || subscription.length === 0) {
         return { success: false, error: 'No active subscription found' };
       }
 
-      await stripeService.cancelSubscription(subscription.stripeSubscriptionId);
+      await stripeService.cancelSubscription(subscription[0].stripeSubscriptionId);
 
       await db
         .update(subscriptions)
         .set({ cancelAtPeriodEnd: true })
-        .where(eq(subscriptions.id, subscription.id));
+        .where(eq(subscriptions.id, subscription[0].id));
 
       return { success: true };
     } catch (error) {
@@ -130,15 +127,15 @@ export class PaymentsAgent {
     error?: string; 
   }> {
     try {
-      const subscription = await db.query.subscriptions.findFirst({
-        where: eq(subscriptions.userId, user.id)
-      });
+      const subscription = await db.select().from(subscriptions)
+        .where(eq(subscriptions.userId, user.id))
+        .limit(1);
 
-      if (!subscription) {
+      if (!subscription || subscription.length === 0) {
         return { success: true, invoices: [] };
       }
 
-      const invoices = await stripeService.getBillingHistory(subscription.stripeCustomerId);
+      const invoices = await stripeService.getBillingHistory(subscription[0].stripeCustomerId);
       return { success: true, invoices };
     } catch (error) {
       console.error('Billing history error:', error);
@@ -152,25 +149,22 @@ export class PaymentsAgent {
     error?: string;
   }> {
     try {
-      const subscription = await db.query.subscriptions.findFirst({
-        where: eq(subscriptions.userId, user.id),
-        with: {
-          plan: true
-        }
-      });
+      const subscription = await db.select().from(subscriptions)
+        .where(eq(subscriptions.userId, user.id))
+        .limit(1);
 
-      if (!subscription) {
+      if (!subscription || subscription.length === 0) {
         return { success: true, subscription: null };
       }
 
       const stripeSubscription = await stripeService.getSubscriptionDetails(
-        subscription.stripeSubscriptionId
+        subscription[0].stripeSubscriptionId
       );
 
       return { 
         success: true, 
         subscription: {
-          ...subscription,
+          ...subscription[0],
           stripeSubscription
         }
       };
