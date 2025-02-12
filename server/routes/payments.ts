@@ -1,13 +1,19 @@
 import { Router } from 'express';
-import { stripeService, SUBSCRIPTION_PLANS } from '../services/stripe';
+import { stripe, stripeService } from '../services/stripe';
 import { db } from '../db';
-import { subscriptionPlans, subscriptions, studentEmailSchema } from '@shared/schema/subscriptions';
 import { eq } from 'drizzle-orm';
-import Stripe from 'stripe';
+import { subscriptions, subscriptionPlans } from '@shared/schema/subscriptions';
+import { z } from 'zod';
 
 const router = Router();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+// Middleware to ensure user is authenticated
+const requireAuth = (req: any, res: any, next: any) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+};
 
 // Get subscription plans
 router.get('/plans', async (req, res) => {
@@ -16,17 +22,13 @@ router.get('/plans', async (req, res) => {
     res.json(plans);
   } catch (error) {
     console.error('Error fetching plans:', error);
-    res.status(500).json({ error: 'Failed to fetch subscription plans' });
+    res.status(500).json({ error: 'Failed to fetch plans' });
   }
 });
 
 // Create checkout session
-router.post('/create-checkout-session', async (req, res) => {
+router.post('/create-checkout-session', requireAuth, async (req, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     const { planId, interval } = req.body;
 
     const plan = await db.query.subscriptionPlans.findFirst({
@@ -46,12 +48,13 @@ router.post('/create-checkout-session', async (req, res) => {
     }
 
     // Create or get customer
-    const customerId = await stripeService.createOrRetrieveCustomer(
-      req.user.id,
+    const customerId = await stripeService.getOrCreateCustomer(
       req.user.email,
+      req.user.stripeCustomerId,
       req.user.name
     );
 
+    // Create checkout session
     const session = await stripeService.createCheckoutSession({
       customerId,
       priceId: interval === 'year' ? plan.stripePriceIdYearly : plan.stripePriceIdMonthly,
@@ -59,7 +62,7 @@ router.post('/create-checkout-session', async (req, res) => {
       planId: plan.id,
       isTrial: plan.isStudent,
       successUrl: `${process.env.APP_URL}/subscription-management?success=true`,
-      cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`,
+      cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`
     });
 
     res.json({ sessionId: session.id });
@@ -70,12 +73,8 @@ router.post('/create-checkout-session', async (req, res) => {
 });
 
 // Get current subscription
-router.get('/current-subscription', async (req, res) => {
+router.get('/current-subscription', requireAuth, async (req, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     const subscription = await db.query.subscriptions.findFirst({
       where: eq(subscriptions.userId, req.user.id),
       with: {
@@ -87,7 +86,9 @@ router.get('/current-subscription', async (req, res) => {
       return res.json(null);
     }
 
-    const stripeSubscription = await stripeService.getSubscriptionDetails(subscription.stripeSubscriptionId);
+    const stripeSubscription = await stripeService.getSubscriptionDetails(
+      subscription.stripeSubscriptionId
+    );
 
     res.json({
       ...subscription,
@@ -99,69 +100,57 @@ router.get('/current-subscription', async (req, res) => {
   }
 });
 
-// Update subscription
-router.post('/update-subscription', async (req, res) => {
+// Cancel subscription
+router.post('/cancel-subscription', requireAuth, async (req, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { subscriptionId, planId, interval } = req.body;
-
-    const plan = await db.query.subscriptionPlans.findFirst({
-      where: eq(subscriptionPlans.id, planId)
+    const subscription = await db.query.subscriptions.findFirst({
+      where: eq(subscriptions.userId, req.user.id)
     });
 
-    if (!plan) {
-      return res.status(404).json({ error: 'Plan not found' });
+    if (!subscription) {
+      return res.status(404).json({ error: 'No active subscription found' });
     }
 
-    // If upgrading to student plan, verify email
-    if (plan.isStudent) {
-      const isValidStudent = await stripeService.verifyStudentEmail(req.user.email);
-      if (!isValidStudent) {
-        return res.status(403).json({ error: 'Invalid student email' });
-      }
-    }
-
-    const updatedSubscription = await stripeService.updateSubscription(
-      subscriptionId,
-      interval === 'year' ? plan.stripePriceIdYearly : plan.stripePriceIdMonthly
+    const updatedSubscription = await stripeService.cancelSubscription(
+      subscription.stripeSubscriptionId
     );
 
+    await db
+      .update(subscriptions)
+      .set({ cancelAtPeriodEnd: true })
+      .where(eq(subscriptions.id, subscription.id));
+
     res.json(updatedSubscription);
-  } catch (error) {
-    console.error('Error updating subscription:', error);
-    res.status(500).json({ error: 'Failed to update subscription' });
-  }
-});
-
-// Cancel subscription
-router.post('/cancel-subscription', async (req, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { subscriptionId } = req.body;
-
-    const subscription = await db.query.subscriptions.findFirst({
-      where: eq(subscriptions.stripeSubscriptionId, subscriptionId)
-    });
-
-    if (!subscription || subscription.userId !== req.user.id) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
-    const canceledSubscription = await stripeService.cancelSubscription(subscriptionId);
-    res.json(canceledSubscription);
   } catch (error) {
     console.error('Error canceling subscription:', error);
     res.status(500).json({ error: 'Failed to cancel subscription' });
   }
 });
 
+// Get billing history
+router.get('/billing-history', requireAuth, async (req, res) => {
+  try {
+    const subscription = await db.query.subscriptions.findFirst({
+      where: eq(subscriptions.userId, req.user.id)
+    });
+
+    if (!subscription) {
+      return res.json([]);
+    }
+
+    const invoices = await stripeService.getBillingHistory(subscription.stripeCustomerId);
+    res.json(invoices);
+  } catch (error) {
+    console.error('Error fetching billing history:', error);
+    res.status(500).json({ error: 'Failed to fetch billing history' });
+  }
+});
+
 // Verify student email
+const studentEmailSchema = z.object({
+  email: z.string().email().endsWith('.edu')
+});
+
 router.post('/verify-student', async (req, res) => {
   try {
     const { email } = req.body;
@@ -179,13 +168,11 @@ router.post('/verify-student', async (req, res) => {
   }
 });
 
-// Stripe webhook
+// Stripe webhook handler
+const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
 router.post('/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
-
-  if (!sig || !endpointSecret) {
-    return res.status(400).json({ error: 'Missing signature or endpoint secret' });
-  }
 
   try {
     const event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
@@ -217,8 +204,7 @@ router.post('/webhook', async (req, res) => {
             status: subscription.status,
             currentPeriodStart: new Date(subscription.current_period_start * 1000),
             currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-            cancelAtPeriodEnd: subscription.cancel_at_period_end,
-            updatedAt: new Date()
+            cancelAtPeriodEnd: subscription.cancel_at_period_end
           })
           .where(eq(subscriptions.stripeSubscriptionId, subscription.id));
         break;
@@ -228,7 +214,7 @@ router.post('/webhook', async (req, res) => {
     res.json({ received: true });
   } catch (error) {
     console.error('Webhook error:', error);
-    res.status(400).json({ error: 'Webhook error' });
+    res.status(400).send(`Webhook Error: ${error.message}`);
   }
 });
 

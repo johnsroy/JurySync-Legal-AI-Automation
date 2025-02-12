@@ -1,101 +1,97 @@
 import Stripe from 'stripe';
 import { db } from '../db';
-import { subscriptionPlans, subscriptions } from '@shared/schema/subscriptions';
-import { eq } from 'drizzle-orm';
+import { subscriptions } from '@shared/schema/subscriptions';
 
 if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY is not set');
+  throw new Error('STRIPE_SECRET_KEY must be set');
 }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2023-10-16'
 });
 
 export const SUBSCRIPTION_PLANS = {
   STUDENT: {
     name: 'Student',
+    description: 'Perfect for law students and academic research',
     priceMonthly: 24,
-    priceYearly: 240, // 2 months free
+    priceYearly: 240,
+    trial_days: 1,
     features: [
-      'Basic document analysis',
-      'Standard templates',
-      'Email support',
-      'Limited API access'
-    ],
-    trial_days: 1
+      'Access to basic legal research tools',
+      'Document analysis',
+      'Basic AI assistance',
+      'Student community access'
+    ]
   },
   PROFESSIONAL: {
     name: 'Professional',
+    description: 'Ideal for legal professionals and small firms',
     priceMonthly: 194,
-    priceYearly: 1940, // 2 months free
+    priceYearly: 1940,
     features: [
-      'Advanced document analysis',
-      'Custom templates',
-      'Priority support',
-      'Full API access',
-      'Team collaboration'
+      'Advanced legal research tools',
+      'Priority AI processing',
+      'Custom document templates',
+      'Advanced analytics',
+      'Priority support'
     ]
   },
   ENTERPRISE: {
     name: 'Enterprise',
-    priceMonthly: null, // Custom pricing
+    description: 'Custom solutions for large organizations',
+    priceMonthly: null,
     priceYearly: null,
     features: [
-      'Custom document workflows',
-      'Dedicated support',
-      'Advanced security features',
+      'Custom AI model training',
+      'Dedicated account manager',
       'Custom integrations',
-      'Volume discounts'
+      'Advanced security features',
+      'SLA guarantees',
+      'On-premise deployment options'
     ]
   }
-} as const;
+};
 
 export class StripeService {
-  // Create or retrieve a Stripe customer
-  async createOrRetrieveCustomer(userId: number, email: string, name?: string): Promise<string> {
-    try {
-      // Check if customer already exists in our database
-      const existingSubscription = await db.query.subscriptions.findFirst({
-        where: eq(subscriptions.userId, userId)
-      });
-
-      if (existingSubscription?.stripeCustomerId) {
-        return existingSubscription.stripeCustomerId;
-      }
-
-      // Create new customer in Stripe
-      const customer = await stripe.customers.create({
-        email,
-        name,
-        metadata: {
-          userId: userId.toString()
-        }
-      });
-
-      return customer.id;
-    } catch (error) {
-      console.error('Error in createOrRetrieveCustomer:', error);
-      throw new Error('Failed to create or retrieve customer');
+  // Create or retrieve a customer
+  async getOrCreateCustomer(
+    email: string,
+    stripeCustomerId?: string | null,
+    name?: string
+  ): Promise<string> {
+    if (stripeCustomerId) {
+      return stripeCustomerId;
     }
+
+    const customer = await stripe.customers.create({
+      email,
+      name,
+      metadata: {
+        createdAt: new Date().toISOString()
+      }
+    });
+
+    return customer.id;
   }
 
-  // Create a checkout session
+  // Create a checkout session for subscription
   async createCheckoutSession({
     customerId,
     priceId,
     userId,
     planId,
-    isTrial = false,
     successUrl,
-    cancelUrl
+    cancelUrl,
+    isTrial = false
   }: {
     customerId: string;
     priceId: string;
     userId: number;
     planId: number;
-    isTrial?: boolean;
     successUrl: string;
     cancelUrl: string;
+    isTrial?: boolean;
   }) {
     try {
       const session = await stripe.checkout.sessions.create({
@@ -104,15 +100,19 @@ export class StripeService {
         line_items: [
           {
             price: priceId,
-            quantity: 1,
-          },
+            quantity: 1
+          }
         ],
         mode: 'subscription',
         subscription_data: {
-          trial_period_days: isTrial ? SUBSCRIPTION_PLANS.STUDENT.trial_days : undefined,
+          trial_period_days: isTrial ? SUBSCRIPTION_PLANS.STUDENT.trial_days : undefined
         },
         success_url: successUrl,
         cancel_url: cancelUrl,
+        metadata: {
+          userId: userId.toString(),
+          planId: planId.toString()
+        }
       });
 
       return session;
@@ -132,12 +132,12 @@ export class StripeService {
         proration_behavior: 'create_prorations',
         items: [{
           id: subscription.items.data[0].id,
-          price: priceId,
-        }],
+          price: priceId
+        }]
       });
     } catch (error) {
-      console.error('Error in updateSubscription:', error);
-      throw new Error('Failed to update subscription');
+      console.error('Error updating subscription:', error);
+      throw error;
     }
   }
 
@@ -148,8 +148,18 @@ export class StripeService {
         cancel_at_period_end: true
       });
     } catch (error) {
-      console.error('Error in cancelSubscription:', error);
-      throw new Error('Failed to cancel subscription');
+      console.error('Error canceling subscription:', error);
+      throw error;
+    }
+  }
+
+  // Get subscription details
+  async getSubscriptionDetails(subscriptionId: string) {
+    try {
+      return await stripe.subscriptions.retrieve(subscriptionId);
+    } catch (error) {
+      console.error('Error retrieving subscription:', error);
+      throw error;
     }
   }
 
@@ -158,28 +168,17 @@ export class StripeService {
     return email.toLowerCase().endsWith('.edu');
   }
 
-  // Get subscription details
-  async getSubscriptionDetails(subscriptionId: string) {
+  // Get billing history
+  async getBillingHistory(customerId: string) {
     try {
-      return await stripe.subscriptions.retrieve(subscriptionId, {
-        expand: ['customer', 'default_payment_method']
-      });
-    } catch (error) {
-      console.error('Error in getSubscriptionDetails:', error);
-      throw new Error('Failed to get subscription details');
-    }
-  }
-
-  // Get customer payment methods
-  async getCustomerPaymentMethods(customerId: string) {
-    try {
-      return await stripe.paymentMethods.list({
+      const invoices = await stripe.invoices.list({
         customer: customerId,
-        type: 'card'
+        limit: 24
       });
+      return invoices.data;
     } catch (error) {
-      console.error('Error in getCustomerPaymentMethods:', error);
-      throw new Error('Failed to get payment methods');
+      console.error('Error retrieving billing history:', error);
+      throw error;
     }
   }
 }

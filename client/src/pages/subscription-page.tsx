@@ -3,21 +3,23 @@ import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { apiRequest } from '@/lib/queryClient';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, CheckCircle } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
+import { apiRequest } from '@/lib/queryClient';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
-interface Plan {
+type Plan = {
   id: number;
   name: string;
   description: string;
@@ -26,7 +28,7 @@ interface Plan {
   features: string[];
   isStudent: boolean;
   isEnterprise: boolean;
-}
+};
 
 export default function SubscriptionPage() {
   const { user } = useAuth();
@@ -35,25 +37,24 @@ export default function SubscriptionPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const { data: plans, isLoading: isLoadingPlans } = useQuery({
-    queryKey: ['/api/payments/plans'],
-    queryFn: async () => {
-      const response = await apiRequest('GET', '/api/payments/plans');
-      if (!response.ok) throw new Error('Failed to fetch plans');
-      return response.json();
-    },
+    queryKey: ['plans'],
+    queryFn: () => apiRequest('GET', '/api/payments/plans')
   });
 
-  if (!user) return null;
-
   const handleSubscribe = async (plan: Plan) => {
-    if (plan.isEnterprise) {
-      window.location.href = 'mailto:enterprise@jurysync.io?subject=Enterprise Plan Inquiry';
+    if (!user) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please sign in to subscribe',
+        variant: 'destructive',
+      });
       return;
     }
 
-    try {
-      setIsLoading(true);
+    setIsLoading(true);
 
+    try {
+      // Verify student email if student plan
       if (plan.isStudent) {
         const verifyResponse = await apiRequest('POST', '/api/payments/verify-student', {
           email: user.email
@@ -85,9 +86,7 @@ export default function SubscriptionPage() {
         sessionId
       });
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      if (error) throw error;
     } catch (error) {
       console.error('Payment error:', error);
       toast({
@@ -109,73 +108,79 @@ export default function SubscriptionPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-5xl mx-auto">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">Choose Your Plan</h1>
-          <p className="text-muted-foreground">
-            Select the plan that best fits your needs
-          </p>
+    <div className="container mx-auto py-8 px-4">
+      <div className="text-center mb-8">
+        <h1 className="text-4xl font-bold mb-4">Choose Your Plan</h1>
+        <p className="text-xl text-muted-foreground">
+          Select the perfect plan for your needs
+        </p>
 
-          <div className="flex items-center justify-center mt-8 space-x-4">
-            <Select
-              value={billingInterval}
-              onValueChange={(value) => setBillingInterval(value as 'month' | 'year')}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select billing interval" />
-              </SelectTrigger>
-              <SelectContent>
+        <div className="flex justify-center items-center gap-4 mt-8">
+          <Select
+            value={billingInterval}
+            onValueChange={(value: 'month' | 'year') => setBillingInterval(value)}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Select billing interval" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel>Billing Interval</SelectLabel>
                 <SelectItem value="month">Monthly Billing</SelectItem>
                 <SelectItem value="year">Annual Billing (Save 20%)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {plans?.map((plan: Plan) => (
-            <Card key={plan.id} className="relative overflow-hidden">
-              <CardHeader>
-                <CardTitle>{plan.name}</CardTitle>
-                <CardDescription>{plan.description}</CardDescription>
-                <div className="mt-4">
-                  <span className="text-3xl font-bold">
-                    ${billingInterval === 'month' ? plan.priceMonthly : plan.priceYearly}
-                  </span>
-                  <span className="text-muted-foreground">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {plans?.map((plan: Plan) => (
+          <Card key={plan.id} className="relative overflow-hidden">
+            <CardHeader>
+              <CardTitle>{plan.name}</CardTitle>
+              <CardDescription>{plan.description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4">
+                <p className="text-3xl font-bold">
+                  ${billingInterval === 'month' ? plan.priceMonthly : plan.priceYearly}
+                  <span className="text-sm font-normal">
                     /{billingInterval}
                   </span>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-4">
-                  {plan.features.map((feature, index) => (
-                    <li key={index} className="flex items-center">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  className="w-full mt-6"
-                  onClick={() => handleSubscribe(plan)}
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  {plan.isEnterprise ? 'Contact Sales' : 'Subscribe Now'}
-                </Button>
+                </p>
                 {plan.isStudent && (
-                  <p className="text-sm text-muted-foreground mt-4 text-center">
-                    * Requires valid .edu email
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Includes 1-day free trial
                   </p>
                 )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+              </div>
+
+              <ul className="space-y-2 mb-6">
+                {plan.features.map((feature, index) => (
+                  <li key={index} className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-primary" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <Button
+                className="w-full"
+                onClick={() => handleSubscribe(plan)}
+                disabled={isLoading || plan.isEnterprise}
+              >
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : plan.isEnterprise ? (
+                  'Contact Sales'
+                ) : (
+                  'Subscribe Now'
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );
