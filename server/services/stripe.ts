@@ -1,6 +1,5 @@
 import Stripe from 'stripe';
 import { db } from '../db';
-import { subscriptions } from '@shared/schema/subscriptions';
 
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY must be set');
@@ -56,21 +55,19 @@ export const SUBSCRIPTION_PLANS = {
 export class StripeService {
   async getOrCreateCustomer(
     email: string,
-    stripeCustomerId?: string | null,
-    name?: string
+    stripeCustomerId?: string | null
   ): Promise<string> {
     try {
       if (stripeCustomerId) {
-        // Verify the customer still exists
         const customer = await stripe.customers.retrieve(stripeCustomerId);
         if (!customer.deleted) {
           return stripeCustomerId;
         }
       }
 
+      console.log('Creating new Stripe customer:', { email });
       const customer = await stripe.customers.create({
         email,
-        name,
         metadata: {
           createdAt: new Date().toISOString()
         }
@@ -101,9 +98,17 @@ export class StripeService {
     isTrial?: boolean;
   }) {
     try {
+      console.log('Creating checkout session:', {
+        customerId,
+        priceId,
+        userId,
+        planId,
+        isTrial
+      });
+
       const sessionConfig: Stripe.Checkout.SessionCreateParams = {
+        mode: 'subscription',
         customer: customerId,
-        billing_address_collection: 'auto',
         payment_method_types: ['card'],
         line_items: [
           {
@@ -111,20 +116,19 @@ export class StripeService {
             quantity: 1
           }
         ],
-        mode: 'subscription',
-        allow_promotion_codes: true,
         subscription_data: isTrial ? {
-          trial_period_days: SUBSCRIPTION_PLANS.STUDENT.trial_days
+          trial_period_days: 1 // 1-day trial for student plans
         } : undefined,
+        success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: cancelUrl,
         metadata: {
           userId: userId.toString(),
           planId: planId.toString()
-        },
-        success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: cancelUrl
+        }
       };
 
       const session = await stripe.checkout.sessions.create(sessionConfig);
+      console.log('Checkout session created:', session.id);
       return session;
     } catch (error) {
       console.error('Error creating checkout session:', error);
