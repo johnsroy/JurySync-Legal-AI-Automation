@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { db } from "../db";
 import { complianceDocuments, complianceIssues } from '@shared/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 
 // Enhanced logging
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
@@ -10,7 +10,11 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
 }
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error("OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.");
+}
+
+const openai = new OpenAI();
 
 interface AnalysisResult {
   analysis: {
@@ -156,7 +160,7 @@ Respond in this format:
           recommendation: issue.recommendation,
           status: "OPEN",
           clause: 'General',
-          riskAssessmentId: 0,
+          riskAssessmentId: null,
           createdAt: new Date(),
           updatedAt: new Date()
         }));

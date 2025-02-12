@@ -1,9 +1,13 @@
 import { db } from "../db";
-import { riskAssessments, complianceIssues, type RiskAssessment } from "@shared/schema";
+import { riskAssessments, complianceIssues } from "@shared/schema";
 import OpenAI from "openai";
 import { eq } from "drizzle-orm";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error("OpenAI API key is not configured. Please set OPENAI_API_KEY environment variable.");
+}
+
 const openai = new OpenAI();
 
 export class RiskAssessmentService {
@@ -140,10 +144,11 @@ ${sanitizedContent}`
       console.log(`Retrieved ${risks.length} risks with enhanced metrics for document ${documentId}`);
 
       // Store results with additional metrics
+      const storedRisks = [];
       for (const risk of risks) {
         console.log(`Processing enhanced risk: ${risk.category} - ${risk.severity}`);
 
-        const [assessment] = await db
+        const assessment = await db
           .insert(riskAssessments)
           .values({
             documentId,
@@ -156,32 +161,37 @@ ${sanitizedContent}`
             references: risk.references || [],
             context: risk.context || "Document-wide",
             confidence: risk.confidence || 80,
-            detectedAt: new Date().toISOString(),
             riskFactors: risk.riskFactors,
             trendIndicator: risk.trendIndicator,
             timeToMitigate: risk.timeToMitigate,
-            potentialCost: risk.potentialCost
+            potentialCost: risk.potentialCost,
+            createdAt: new Date(),
+            updatedAt: new Date()
           })
           .returning();
 
-        console.log(`Stored enhanced risk assessment with ID: ${assessment.id}`);
+        storedRisks.push(assessment[0]);
+
+        console.log(`Stored enhanced risk assessment with ID: ${assessment[0].id}`);
 
         // Create corresponding compliance issue
         await db.insert(complianceIssues).values({
           documentId,
-          riskAssessmentId: assessment.id,
+          riskAssessmentId: assessment[0].id,
           clause: risk.context || "Document-wide",
           description: risk.description,
           severity: risk.severity,
           recommendation: risk.mitigation,
           reference: risk.references?.[0] || null,
           status: "OPEN",
+          createdAt: new Date(),
+          updatedAt: new Date()
         });
 
-        console.log(`Created compliance issue for enhanced risk assessment ${assessment.id}`);
+        console.log(`Created compliance issue for enhanced risk assessment ${assessment[0].id}`);
       }
 
-      return await this.getDocumentRisks(documentId);
+      return storedRisks;
     } catch (error: any) {
       console.error("Error in enhanced risk assessment:", error);
       throw error;

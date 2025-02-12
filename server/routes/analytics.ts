@@ -25,21 +25,16 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/record/model-metrics", async (req, res) => {
+router.post("/record", async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const success = await analyticsService.recordModelMetrics(req.body);
-
-    if (success) {
-      res.json({ message: "Metrics recorded successfully" });
-    } else {
-      res.status(500).json({ error: "Failed to record metrics" });
-    }
+    const metrics = await analyticsService.recordMetrics(req.body);
+    res.json({ success: true, metrics });
   } catch (error) {
-    console.error("Failed to record model metrics:", error);
+    console.error("Failed to record metrics:", error);
     res.status(500).json({ error: "Failed to record metrics" });
   }
 });
