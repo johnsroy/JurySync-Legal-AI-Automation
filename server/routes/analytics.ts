@@ -18,7 +18,7 @@ router.get("/", async (req, res) => {
     const { timeRange = "7d" } = req.query;
     const startDate = subDays(new Date(), parseInt(timeRange.toString()));
 
-    // Get document metrics with template info
+    // Get document metrics
     const documentsData = await db
       .select({
         id: documentMetrics.id,
@@ -62,9 +62,9 @@ router.get("/", async (req, res) => {
       const riskScore = doc.metadata?.riskScore || 0;
       let category;
 
-      if (riskScore < 0.3) category = 'Low';
-      else if (riskScore < 0.7) category = 'Medium';
-      else category = 'High';
+      if (riskScore < 0.3) category = 'Low Risk';
+      else if (riskScore < 0.7) category = 'Medium Risk';
+      else category = 'High Risk';
 
       if (!acc[category]) acc[category] = 0;
       acc[category]++;
@@ -117,7 +117,7 @@ router.get("/", async (req, res) => {
       avgProcessingTime: Math.round(data.totalTime / data.total)
     }));
 
-    // Get model metrics
+    // Get metrics from metricsCollector
     const metrics = await metricsCollector.collectMetrics({
       start: startDate,
       end: new Date()

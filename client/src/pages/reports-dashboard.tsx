@@ -14,8 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BarChart,
@@ -34,45 +32,21 @@ import {
 } from "recharts";
 import { 
   Loader2, 
-  FileText, 
-  PieChart as PieChartIcon, 
-  BarChart as BarChartIcon,
-  Clock,
   TrendingUp,
+  Clock,
   DollarSign,
-  Info
+  AlertCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import {
-  Tooltip as UITooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
-function ModelTooltip({ modelId }: { modelId: string }) {
-  return (
-    <TooltipProvider>
-      <UITooltip>
-        <TooltipTrigger>
-          <Info className="h-4 w-4 ml-1" />
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{modelId}</p>
-        </TooltipContent>
-      </UITooltip>
-    </TooltipProvider>
-  );
-}
-
-function ReportsDashboard() {
+export default function ReportsDashboard() {
   const { user } = useAuth();
   const [timeRange, setTimeRange] = useState("7d");
 
-  const { data: analyticsData, isLoading: isLoadingAnalytics } = useQuery({
+  const { data: analytics, isLoading: isLoadingAnalytics } = useQuery({
     queryKey: ['/api/analytics', timeRange],
     queryFn: async () => {
       const response = await apiRequest("GET", `/api/analytics?timeRange=${timeRange}`);
@@ -81,18 +55,9 @@ function ReportsDashboard() {
     },
   });
 
-  const { data: modelMetrics, isLoading: isLoadingMetrics } = useQuery({
-    queryKey: ['/api/metrics/models', timeRange],
-    queryFn: async () => {
-      const response = await apiRequest("GET", `/api/metrics/models?timeRange=${timeRange}`);
-      if (!response.ok) throw new Error('Failed to fetch metrics');
-      return response.json();
-    },
-  });
-
   if (!user) return null;
 
-  if (isLoadingAnalytics || isLoadingMetrics) {
+  if (isLoadingAnalytics) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -100,7 +65,7 @@ function ReportsDashboard() {
     );
   }
 
-  const automationMetrics = analyticsData?.automationMetrics || {
+  const metrics = analytics?.automationMetrics || {
     automationPercentage: '0%',
     processingTimeReduction: '0%',
     laborCostSavings: '0%',
@@ -112,36 +77,30 @@ function ReportsDashboard() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
-          <p className="text-gray-500">Monitor your legal document metrics and insights</p>
+          <p className="text-gray-500">Real-time insights and performance metrics</p>
         </div>
-        <div className="flex gap-4">
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select time range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d">Last 7 days</SelectItem>
-              <SelectItem value="30d">Last 30 days</SelectItem>
-              <SelectItem value="90d">Last 90 days</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Select value={timeRange} onValueChange={setTimeRange}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Select time range" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="7d">Last 7 days</SelectItem>
+            <SelectItem value="30d">Last 30 days</SelectItem>
+            <SelectItem value="90d">Last 90 days</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Model Performance Metrics */}
+      {/* Key Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Automation Rate</CardTitle>
+            <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {automationMetrics.automationPercentage}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Tasks automated successfully
-            </p>
+            <div className="text-2xl font-bold">{metrics.automationPercentage}</div>
+            <p className="text-xs text-muted-foreground">Overall workflow success rate</p>
           </CardContent>
         </Card>
 
@@ -151,42 +110,30 @@ function ReportsDashboard() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {automationMetrics.processingTimeReduction}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Time reduction vs. baseline
-            </p>
+            <div className="text-2xl font-bold">{metrics.processingTimeReduction}</div>
+            <p className="text-xs text-muted-foreground">Average time reduction</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Cost Savings</CardTitle>
+            <CardTitle className="text-sm font-medium">Cost Efficiency</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {automationMetrics.laborCostSavings}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Estimated cost reduction
-            </p>
+            <div className="text-2xl font-bold">{metrics.laborCostSavings}</div>
+            <p className="text-xs text-muted-foreground">Cost savings achieved</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Error Reduction</CardTitle>
-            <BarChartIcon className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Error Rate</CardTitle>
+            <AlertCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {automationMetrics.errorReduction}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Error rate improvement
-            </p>
+            <div className="text-2xl font-bold">{metrics.errorReduction}</div>
+            <p className="text-xs text-muted-foreground">Reduction in errors</p>
           </CardContent>
         </Card>
       </div>
@@ -194,35 +141,36 @@ function ReportsDashboard() {
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="models">Model Usage</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
+          <TabsTrigger value="workflows">Workflows</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+        <TabsContent value="overview">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Document Activity Chart */}
             <Card className="col-span-2">
               <CardHeader>
-                <CardTitle>Document Activity</CardTitle>
-                <CardDescription>Document processing over time</CardDescription>
+                <CardTitle>Document Processing Activity</CardTitle>
+                <CardDescription>Documents processed over time</CardDescription>
               </CardHeader>
               <CardContent className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={analyticsData?.documentActivity || []}>
+                  <LineChart data={analytics?.documentActivity || []}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="date" />
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="processed"
-                      stroke="#8884d8"
+                    <Line 
+                      type="monotone" 
+                      dataKey="processed" 
+                      stroke="#8884d8" 
                       name="Processed"
                     />
-                    <Line
-                      type="monotone"
-                      dataKey="uploaded"
-                      stroke="#82ca9d"
+                    <Line 
+                      type="monotone" 
+                      dataKey="uploaded" 
+                      stroke="#82ca9d" 
                       name="Uploaded"
                     />
                   </LineChart>
@@ -230,25 +178,26 @@ function ReportsDashboard() {
               </CardContent>
             </Card>
 
+            {/* Risk Distribution */}
             <Card>
               <CardHeader>
                 <CardTitle>Risk Distribution</CardTitle>
-                <CardDescription>Risk levels across documents</CardDescription>
+                <CardDescription>Document risk levels</CardDescription>
               </CardHeader>
               <CardContent className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={analyticsData?.riskDistribution || []}
+                      data={analytics?.riskDistribution || []}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, value }) => `${name} ${value}%`}
+                      label={({ name, value }) => `${name}: ${value}`}
                       outerRadius={80}
                       fill="#8884d8"
                       dataKey="value"
                     >
-                      {analyticsData?.riskDistribution?.map((_: any, index: number) => (
+                      {analytics?.riskDistribution?.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
@@ -258,115 +207,131 @@ function ReportsDashboard() {
               </CardContent>
             </Card>
 
+            {/* Model Performance */}
             <Card>
               <CardHeader>
-                <CardTitle>Workflow Efficiency</CardTitle>
-                <CardDescription>Success rates by workflow type</CardDescription>
+                <CardTitle>Model Performance</CardTitle>
+                <CardDescription>Success rates by model</CardDescription>
               </CardHeader>
               <CardContent className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={analyticsData?.workflowEfficiency || []}>
+                  <BarChart data={analytics?.modelPerformance || []}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="model" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="successRate" name="Success Rate %" fill="#8884d8" />
+                    <Bar dataKey="errorRate" name="Error Rate %" fill="#82ca9d" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="performance">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Processing Time by Model */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Processing Time by Model</CardTitle>
+                <CardDescription>Average processing time per model</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analytics?.modelPerformance || []}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="model" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar 
+                      dataKey="avgProcessingTime" 
+                      name="Avg Processing Time (ms)" 
+                      fill="#8884d8" 
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Cost Efficiency */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Cost Efficiency</CardTitle>
+                <CardDescription>Cost savings by model</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analytics?.costEfficiency || []}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="model" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar 
+                      dataKey="costSavings" 
+                      name="Cost Savings %" 
+                      fill="#82ca9d" 
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="workflows">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Workflow Efficiency */}
+            <Card className="col-span-2">
+              <CardHeader>
+                <CardTitle>Workflow Efficiency</CardTitle>
+                <CardDescription>Performance metrics by workflow type</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analytics?.workflowEfficiency || []}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="successRate" name="Success Rate (%)" fill="#8884d8" />
-                    <Bar dataKey="avgProcessingTime" name="Avg. Processing Time (ms)" fill="#82ca9d" />
+                    <Bar 
+                      dataKey="successRate" 
+                      name="Success Rate %" 
+                      fill="#8884d8" 
+                    />
+                    <Bar 
+                      dataKey="avgProcessingTime" 
+                      name="Avg Processing Time (ms)" 
+                      fill="#82ca9d" 
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
-          </div>
-        </TabsContent>
 
-        <TabsContent value="models" className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Card>
+            {/* Task Success Rates */}
+            <Card className="col-span-2">
               <CardHeader>
-                <CardTitle>Model Distribution</CardTitle>
-                <CardDescription>Task distribution across AI models</CardDescription>
+                <CardTitle>Task Success Rates</CardTitle>
+                <CardDescription>Success rates by task type</CardDescription>
               </CardHeader>
               <CardContent className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={modelMetrics?.modelDistribution || []}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name} (${value}%)`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {modelMetrics?.modelDistribution?.map((_: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Task Success Rate</CardTitle>
-                <CardDescription>Success rate by task type</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={modelMetrics?.taskSuccess || []}>
+                  <BarChart data={analytics?.taskSuccess || []}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="taskType" />
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="successRate" name="Success Rate (%)" fill="#82ca9d" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="performance" className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Model Performance</CardTitle>
-                <CardDescription>Processing time and error rates by model</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={modelMetrics?.modelPerformance || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="model" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="avgProcessingTime" name="Avg. Processing Time (ms)" fill="#8884d8" />
-                    <Bar dataKey="errorRate" name="Error Rate (%)" fill="#82ca9d" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Cost Efficiency</CardTitle>
-                <CardDescription>Cost savings by model selection</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={modelMetrics?.costEfficiency || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="model" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="costSavings" name="Cost Savings (%)" fill="#8884d8" />
+                    <Bar 
+                      dataKey="successRate" 
+                      name="Success Rate %" 
+                      fill="#8884d8" 
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -377,5 +342,3 @@ function ReportsDashboard() {
     </div>
   );
 }
-
-export default ReportsDashboard;
