@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import { stripe, stripeService } from '../services/stripe';
-import getRawBody from 'raw-body';
+import { stripeService } from '../services/stripe';
 import { db } from '../db';
-import { subscriptions, subscriptionPlans } from '@shared/schema/subscriptions';
+import { subscriptionPlans } from '@shared/schema/subscriptions';
 import { eq } from 'drizzle-orm';
 
 const router = Router();
@@ -10,7 +9,7 @@ const router = Router();
 // Create checkout session
 router.post('/create-checkout-session', async (req, res) => {
   try {
-    const { planId, interval = 'month' } = req.body;
+    const { planId } = req.body;
 
     if (!req.user) {
       return res.status(401).json({ error: 'User not authenticated' });
@@ -26,19 +25,19 @@ router.post('/create-checkout-session', async (req, res) => {
     }
 
     const selectedPlan = plan[0];
-    const priceId = interval === 'year' ? selectedPlan.stripePriceIdYearly : selectedPlan.stripePriceIdMonthly;
+    const priceId = selectedPlan.stripePriceIdMonthly;
 
     if (!priceId) {
       return res.status(400).json({ error: 'Invalid price configuration' });
     }
 
-    // Create checkout session with Link payment
+    // Create checkout session
     const result = await stripeService.createCheckoutSession({
       email: req.user.email,
       priceId,
       userId: req.user.id,
       planId: selectedPlan.id,
-      successUrl: `${process.env.APP_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+      successUrl: `${process.env.APP_URL}/subscription?success=true&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${process.env.APP_URL}/subscription?canceled=true`
     });
 
@@ -46,10 +45,9 @@ router.post('/create-checkout-session', async (req, res) => {
       return res.status(400).json({ error: result.error });
     }
 
-    // Return the URL for the client to redirect to
-    res.json({ url: result.session.url });
+    res.json({ url: result.url });
   } catch (error) {
-    console.error('Stripe error:', error);
+    console.error('Checkout error:', error);
     res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Failed to create checkout session' 
     });

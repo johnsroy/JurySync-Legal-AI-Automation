@@ -12,15 +12,13 @@ export default function SubscriptionPage() {
   const [location] = useLocation();
   const { user } = useAuth();
 
-  // Extract plan ID and status from URL
+  // Extract success and canceled status from URL
   const params = new URLSearchParams(window.location.search);
-  const planId = params.get('plan');
   const success = params.get('success');
   const canceled = params.get('canceled');
-  const sessionId = params.get('session_id');
 
   useEffect(() => {
-    if (success && sessionId) {
+    if (success) {
       toast({
         title: 'Success!',
         description: 'Your payment method has been authorized. Your free trial starts now!',
@@ -32,7 +30,8 @@ export default function SubscriptionPage() {
         variant: 'destructive',
       });
     }
-  }, [success, canceled, sessionId, toast]);
+  }, [success, canceled, toast]);
+
 
   const handleCheckout = async () => {
     try {
@@ -46,11 +45,9 @@ export default function SubscriptionPage() {
       }
 
       setIsLoading(true);
-      console.log('Initiating checkout...', { planId });
 
-      if (!planId) {
-        throw new Error("Plan ID not provided in URL parameters.");
-      }
+      // Hardcoded student plan ID for now
+      const planId = 1; // Student plan ID
 
       const response = await fetch('/api/payments/create-checkout-session', {
         method: 'POST',
@@ -58,20 +55,14 @@ export default function SubscriptionPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          planId: planId, 
-          interval: 'month',
+          planId: planId
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        const errorMessage = errorData.error || 'Failed to create checkout session';
-        throw new Error(errorMessage);
-      }
-
       const data = await response.json();
-      if (!data.url) {
-        throw new Error('No checkout URL received from the server.');
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to start checkout process');
       }
 
       // Redirect to Stripe Checkout
@@ -79,8 +70,8 @@ export default function SubscriptionPage() {
     } catch (error) {
       console.error('Checkout error:', error);
       toast({
-        title: 'Payment Error',
-        description: error instanceof Error ? error.message : 'Failed to initialize payment',
+        title: 'Checkout Error',
+        description: error instanceof Error ? error.message : 'Failed to start checkout process',
         variant: 'destructive',
       });
     } finally {
@@ -92,30 +83,14 @@ export default function SubscriptionPage() {
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-md mx-auto">
         <Card className="shadow-lg">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl font-bold">Student Plan</CardTitle>
+          <CardHeader>
+            <CardTitle>Student Plan</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
               <div className="text-center">
                 <p className="text-3xl font-bold">$24</p>
                 <p className="text-sm text-gray-500">per month</p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-blue-900">Secure Payment with Stripe</h4>
-                  <p className="text-sm text-blue-700">
-                    Your payment information will be securely stored for future billing.
-                  </p>
-                </div>
-
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-green-900">Free Trial Included</h4>
-                  <p className="text-sm text-green-700">
-                    After authorizing your payment method, enjoy 1 day of free access.
-                  </p>
-                </div>
               </div>
 
               <Button 
