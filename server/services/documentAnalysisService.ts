@@ -41,20 +41,35 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `Analyze this legal document content and provide a detailed analysis. Pay special attention to:
-        1. Document Type (e.g., SOC 3 Report, Contract, NDA, etc.)
-        2. Industry Classification (e.g., Technology, Financial Services, Healthcare)
-        3. Compliance Status (if applicable)
+        content: `Analyze this legal document content and provide a detailed analysis. Here are specific examples of how to classify different document types:
+
+        Examples:
+        1. For SOC Reports:
+           - Document Type: "SOC 3 Report" (if it's a SOC 3 report)
+           - Industry: "Technology" (for tech companies like Google)
+           - Compliance Status: "PASSED" (if controls are effective)
+
+        2. For Legal Agreements:
+           - Document Type: "Service Agreement", "NDA", etc.
+           - Industry: Based on document context
+           - Compliance Status: Based on risk assessment
+
+        Pay special attention to:
+        1. Document Type (e.g., "SOC 3 Report", "Contract", "NDA", etc.)
+        2. Industry Classification (e.g., "Technology", "Financial Services", "Healthcare")
+        3. Compliance Status
+           - For SOC reports: PASSED if controls are effective
+           - For contracts: Based on risk assessment
         4. Key entities mentioned
         5. Risk assessment
         6. Keywords
         7. Recommendations
 
-        For SOC reports specifically, identify:
-        - Type of SOC report (SOC 1, 2, or 3)
-        - Compliance period
-        - Service organization name
-        - Key controls assessed
+        For SOC reports specifically:
+        - Identify report type (SOC 1, 2, or 3)
+        - Note compliance period
+        - Extract service organization name
+        - List key controls assessed
 
         Respond in JSON format with these keys: 
         {
@@ -86,7 +101,7 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       messages: [
         {
           role: "system",
-          content: "You are a legal document analysis expert. Provide a concise but comprehensive summary of the document, focusing on key legal implications, risks, and important clauses.",
+          content: "You are an expert legal document analyst. Provide a concise but comprehensive summary focusing on key legal implications, risks, and important clauses. For SOC reports, highlight the effectiveness of controls and compliance status.",
         },
         {
           role: "user",
