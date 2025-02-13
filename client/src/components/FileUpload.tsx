@@ -3,8 +3,9 @@ import { useDropzone } from "react-dropzone";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { FileText, File, AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
+import { FileText, AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface FileUploadProps {
   onFileProcessed: (result: { text: string; documentId: string }) => void;
@@ -15,11 +16,10 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 3;
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
-
+  const processFile = async (file: File, attempt: number = 0): Promise<void> => {
     setIsProcessing(true);
     setError(null);
     setUploadProgress(0);
@@ -71,14 +71,35 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
         text: cleanedText,
         documentId: result.documentId
       });
+
+      // Reset retry count on success
+      setRetryCount(0);
+      setError(null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to process file";
-      setError(errorMessage);
+
+      // Implement retry logic
+      if (attempt < MAX_RETRIES) {
+        setRetryCount(attempt + 1);
+        setError(`Upload attempt ${attempt + 1} failed. Retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+        return processFile(file, attempt + 1);
+      }
+
+      setError(`${errorMessage} (After ${MAX_RETRIES} attempts)`);
       onError(errorMessage);
     } finally {
-      setIsProcessing(false);
+      if (attempt === MAX_RETRIES || !error) {
+        setIsProcessing(false);
+      }
     }
-  }, [onFileProcessed, onError]);
+  };
+
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (!file) return;
+    await processFile(file);
+  }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -89,6 +110,13 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
     },
     multiple: false
   });
+
+  const handleRetry = useCallback(() => {
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    if (fileInput?.files?.length) {
+      processFile(fileInput.files[0]);
+    }
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -123,7 +151,9 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm font-medium">Processing document...</span>
+                <span className="text-sm font-medium">
+                  Processing document... {retryCount > 0 ? `(Attempt ${retryCount}/${MAX_RETRIES})` : ''}
+                </span>
               </div>
               <span className="text-sm text-gray-500">{uploadProgress}%</span>
             </div>
@@ -136,7 +166,19 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Upload Failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{error}</p>
+            {retryCount >= MAX_RETRIES && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleRetry}
+                className="mt-2"
+              >
+                Try Again
+              </Button>
+            )}
+          </AlertDescription>
         </Alert>
       )}
     </div>
