@@ -34,51 +34,50 @@ interface DocumentAnalysis {
 
 export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
   try {
-    console.log("Starting document analysis with content length:", content.length);
-
     // Use Claude for initial analysis and classification
     const claudeResponse = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: [
-          {
-            type: "text",
-            text: `You are a SOC compliance expert. Analyze this document and provide a JSON response with the following structure exactly:
-{
-  "documentType": "Google Workspace SOC 3 Report",
-  "industry": "Technology",
-  "confidence": 0.95,
-  "entities": ["Google LLC", "Google Workspace"],
-  "keywords": ["SOC 3", "compliance", "Google Workspace"],
-  "riskLevel": "LOW",
-  "recommendations": ["Review scope of services"],
-  "complianceStatus": {
-    "status": "PASSED",
-    "details": "Unqualified opinion provided for the audit period"
-  }
-}
+        content: `You are a specialized compliance document analyzer. Analyze this legal/compliance document content with special attention to SOC compliance reports and provide:
 
-Do not include any other text in your response, only valid JSON. Determine if this is a SOC report and set appropriate values.
+1. Document Type: Identify specific document types, especially:
+   - SOC reports (SOC 1, SOC 2, SOC 3)
+   - Compliance certifications
+   - Audit reports
+   - Privacy policies
+   - Terms of service
+
+2. Industry Classification:
+   - Technology
+   - Financial Services
+   - Healthcare
+   - Other regulated industries
+
+3. Compliance Status Analysis:
+   - For SOC reports: Determine if the audit opinion is unqualified (PASSED) or qualified (FAILED)
+   - For other compliance docs: Check if requirements are met (PASSED) or have gaps (FAILED)
+   - If not a compliance document: Mark as NOT_APPLICABLE
+
+Include a confidence score (0-1), key entities, keywords, risk level (LOW/MEDIUM/HIGH), and key recommendations.
+
+Respond in JSON format with these keys: documentType, industry, confidence, entities, keywords, riskLevel, recommendations, complianceStatus (object with status and details).
 
 Content to analyze:
 ${content.substring(0, 8000)}`
-          }
-        ]
       }],
     });
 
     const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
-    console.log("Claude analysis completed:", claudeAnalysis);
 
-    // Use GPT-4 for summary
+    // Use GPT-4 for detailed summary
     const gptResponse = await openai.chat.completions.create({
       model: GPT_MODEL,
       messages: [
         {
           role: "system",
-          content: "You are a SOC compliance expert specializing in Google Workspace and cloud service audits. Provide a concise summary focusing on compliance status and key findings.",
+          content: "You are a legal document analysis expert specializing in SOC compliance reports and regulatory documents. Provide a concise but comprehensive summary focusing on compliance status, key findings, and critical implications.",
         },
         {
           role: "user",
@@ -88,7 +87,6 @@ ${content.substring(0, 8000)}`
     });
 
     const summary = gptResponse.choices[0].message.content || "";
-    console.log("GPT summary completed");
 
     return {
       summary,

@@ -322,25 +322,27 @@ router.get('/documents', async (req, res) => {
     const allDocs = [
       ...vaultDocs.map(doc => ({
         ...doc,
-        source: 'vault'
+        source: 'vault',
+        metadata: {
+          ...doc.metadata,
+          documentType: doc.metadata?.documentType || doc.documentType || 'Unknown',
+          industry: doc.metadata?.industry || 'Unknown'
+        }
       })),
       ...workflowDocs.map(doc => ({
         ...doc,
         source: 'workflow',
-        metadata: doc.analysis || {}, // Convert workflow analysis to metadata format
-        documentType: doc.analysis?.documentType || 'Unknown',
-        industry: doc.analysis?.industry || 'Unknown',
-        aiSummary: doc.analysis?.summary || ''
+        metadata: {
+          ...doc.metadata,
+          documentType: doc.metadata?.documentType || doc.documentType || 'Unknown',
+          industry: doc.metadata?.industry || 'Unknown'
+        }
       }))
     ];
 
-    // Remove duplicates based on content hash or title
+    // Remove duplicates based on content hash or ID
     const uniqueDocs = Array.from(
-      new Map(allDocs.map(doc => [
-        // Use combination of title and content hash as unique key
-        `${doc.title}-${doc.content?.slice(0, 100)}`,
-        doc
-      ])).values()
+      new Map(allDocs.map(doc => [doc.id, doc])).values()
     );
 
     console.log(`Returning ${uniqueDocs.length} unique documents`);
@@ -352,14 +354,11 @@ router.get('/documents', async (req, res) => {
         createdAt: doc.createdAt,
         metadata: doc.metadata,
         source: doc.source,
-        documentType: doc.documentType || doc.metadata?.documentType || 'Unknown',
-        industry: doc.industry || doc.metadata?.industry || 'Unknown',
+        documentType: doc.metadata?.documentType || 'Unknown',
+        industry: doc.metadata?.industry || 'Unknown',
+        content: doc.content,
         aiSummary: doc.aiSummary,
-        analysis: doc.analysis,
-        complianceStatus: doc.metadata?.complianceStatus || doc.analysis?.complianceStatus || {
-          status: 'NOT_APPLICABLE',
-          details: 'Compliance status not available'
-        }
+        processingStatus: doc.processingStatus
       }))
     });
   } catch (error: any) {
