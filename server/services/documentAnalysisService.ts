@@ -26,6 +26,11 @@ interface DocumentAnalysis {
   riskLevel: string;
   recommendations: string[];
   documentType: string;
+  complianceStatus?: {
+    status: 'PASSED' | 'FAILED' | 'PENDING';
+    details: string;
+    lastChecked: string;
+  };
 }
 
 export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
@@ -36,21 +41,40 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `Analyze this legal document content and provide: 
-        1. A classification (e.g., CONTRACT, BRIEF, CASE_LAW, LEGISLATION, CORRESPONDENCE, OTHER)
-        2. Industry classification (e.g., FINANCIAL, TECHNOLOGY, HEALTHCARE, etc.)
-        3. A confidence score (0-1) for the classification
-        4. Key entities mentioned (companies, individuals, organizations)
-        5. Important keywords
-        6. Risk level assessment (LOW, MEDIUM, HIGH)
-        7. Key recommendations based on content analysis
-        8. Document type (e.g., Agreement, Contract, NDA, SLA, etc.)
+        content: `Analyze this legal document content and provide a detailed analysis. Pay special attention to:
+        1. Document Type (e.g., SOC 3 Report, Contract, NDA, etc.)
+        2. Industry Classification (e.g., Technology, Financial Services, Healthcare)
+        3. Compliance Status (if applicable)
+        4. Key entities mentioned
+        5. Risk assessment
+        6. Keywords
+        7. Recommendations
 
-        Respond in JSON format with these keys: classification, industry, confidence, entities, keywords, riskLevel, recommendations, documentType
+        For SOC reports specifically, identify:
+        - Type of SOC report (SOC 1, 2, or 3)
+        - Compliance period
+        - Service organization name
+        - Key controls assessed
+
+        Respond in JSON format with these keys: 
+        {
+          "classification": "string",
+          "industry": "string",
+          "confidence": number,
+          "entities": string[],
+          "keywords": string[],
+          "riskLevel": "LOW|MEDIUM|HIGH",
+          "recommendations": string[],
+          "documentType": "string",
+          "complianceStatus": {
+            "status": "PASSED|FAILED|PENDING",
+            "details": "string",
+            "lastChecked": "ISO date string"
+          }
+        }
 
         Document content:
-        ${content.substring(0, 8000)} // Limit content length
-        `
+        ${content.substring(0, 8000)}`
       }],
     });
 
@@ -66,7 +90,7 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
         },
         {
           role: "user",
-          content: content.substring(0, 8000), // Limit content length
+          content: content.substring(0, 8000),
         },
       ],
     });
@@ -83,6 +107,7 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       riskLevel: claudeAnalysis.riskLevel,
       recommendations: claudeAnalysis.recommendations,
       documentType: claudeAnalysis.documentType,
+      complianceStatus: claudeAnalysis.complianceStatus
     };
   } catch (error) {
     console.error("Document analysis error:", error);

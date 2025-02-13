@@ -80,6 +80,26 @@ export default function VaultPage() {
 
   const canUpload = user && UPLOAD_ALLOWED_ROLES.includes(user.role);
 
+  // Function to render compliance status
+  const renderComplianceStatus = (doc: any) => {
+    const status = doc.analysis?.complianceStatus?.status || doc.metadata?.complianceStatus?.status;
+    if (!status) return null;
+
+    const statusColors = {
+      PASSED: 'text-green-600 bg-green-50',
+      FAILED: 'text-red-600 bg-red-50',
+      PENDING: 'text-yellow-600 bg-yellow-50'
+    };
+
+    const statusColor = statusColors[status] || 'text-gray-600 bg-gray-50';
+
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs ${statusColor}`}>
+        {status.charAt(0) + status.slice(1).toLowerCase()}
+      </span>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
       <div className="container mx-auto px-4 py-8">
@@ -123,19 +143,20 @@ export default function VaultPage() {
                     <TableHead>File</TableHead>
                     <TableHead>Document Type</TableHead>
                     <TableHead>Industry</TableHead>
+                    <TableHead>Compliance Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoadingDocuments ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-4">
+                      <TableCell colSpan={5} className="text-center py-4">
                         <span className="animate-spin mr-2">⌛</span> Loading documents...
                       </TableCell>
                     </TableRow>
                   ) : !documentsData?.length ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-4">
+                      <TableCell colSpan={5} className="text-center py-4">
                         <div className="flex flex-col items-center justify-center">
                           <Folder className="h-12 w-12 text-gray-400 mb-4" />
                           <h3 className="text-lg font-medium text-gray-900 mb-2">No Documents Yet</h3>
@@ -164,6 +185,9 @@ export default function VaultPage() {
                         </TableCell>
                         <TableCell>
                           {doc.analysis?.industry || doc.metadata?.industry || "Unknown"}
+                        </TableCell>
+                        <TableCell>
+                          {renderComplianceStatus(doc)}
                         </TableCell>
                         <TableCell>
                           <Button
@@ -204,6 +228,20 @@ export default function VaultPage() {
                     {selectedDocument.analysis?.industry || selectedDocument.metadata?.industry || "Unknown"}
                   </p>
                 </div>
+                {selectedDocument.analysis?.complianceStatus && (
+                  <div>
+                    <h4 className="font-medium text-sm text-gray-900">Compliance Status</h4>
+                    <div className="mt-1">
+                      {renderComplianceStatus(selectedDocument)}
+                      <p className="text-sm text-gray-600 mt-2">
+                        {selectedDocument.analysis.complianceStatus.details}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Last checked: {new Date(selectedDocument.analysis.complianceStatus.lastChecked).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {(selectedDocument.analysis?.keywords || selectedDocument.metadata?.keywords) && (
                   <div>
                     <h4 className="font-medium text-sm text-gray-900">Keywords</h4>
