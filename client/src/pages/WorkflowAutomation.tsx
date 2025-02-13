@@ -75,15 +75,6 @@ export default function WorkflowAutomation() {
     return null;
   }
 
-  // Workflow stages definition
-  const workflowStages = [
-    { id: 'draft', name: 'Draft Generation', icon: FileText },
-    { id: 'compliance', name: 'Compliance Auditing', icon: Scale },
-    { id: 'research', name: 'Legal Research & Summarization', icon: BookCheck },
-    { id: 'approval', name: 'Approval & Execution', icon: BadgeCheck },
-    { id: 'audit', name: 'Periodic Audit', icon: History }
-  ];
-
   // Document upload handler
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
@@ -543,9 +534,6 @@ export default function WorkflowAutomation() {
                   </div>
                 </Card>
               </div>
-
-              {/* Analysis Results Table - Add after workflow completion */}
-              {taskData.status === 'completed' && renderAnalysisTable()}
 
               {/* Report Download Section */}
               <div className="mt-12 border-t border-slate-700 pt-8">
