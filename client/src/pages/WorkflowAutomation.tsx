@@ -222,40 +222,63 @@ export default function WorkflowAutomation() {
     { name: 'Week 4', tasks: 60, time: 85 }
   ];
 
-  // Add renderAnalysisTable function
+  // Update the renderAnalysisTable function
   const renderAnalysisTable = () => {
     if (!taskData?.documentAnalysis) return null;
 
     const analysis = taskData.documentAnalysis;
+
     return (
       <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
-        <h3 className="text-xl font-semibold mb-4 text-white">Document Analysis Results</h3>
+        <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+          <FileCheck className="h-5 w-5 text-green-400" />
+          Document Analysis Results
+        </h3>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-slate-300">Attribute</TableHead>
+              <TableHead className="text-slate-300 w-1/3">Attribute</TableHead>
               <TableHead className="text-slate-300">Value</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell className="text-slate-300 font-medium">Document Type</TableCell>
-              <TableCell className="text-slate-300">{analysis.documentType || "SOC 3 Report"}</TableCell>
+              <TableCell className="text-slate-300">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-400" />
+                  {analysis.documentType}
+                </div>
+              </TableCell>
             </TableRow>
             <TableRow>
               <TableCell className="text-slate-300 font-medium">Industry</TableCell>
-              <TableCell className="text-slate-300">{analysis.industry || "Technology"}</TableCell>
+              <TableCell className="text-slate-300">
+                <div className="flex items-center gap-2">
+                  <BrainCircuit className="h-4 w-4 text-violet-400" />
+                  {analysis.industry}
+                </div>
+              </TableCell>
             </TableRow>
             <TableRow>
               <TableCell className="text-slate-300 font-medium">Compliance Status</TableCell>
               <TableCell>
-                <span className={`px-2 py-1 rounded-full text-xs ${
-                  analysis.complianceStatus.status === 'PASSED' ? 'bg-green-500/20 text-green-400' :
-                    analysis.complianceStatus.status === 'FAILED' ? 'bg-red-500/20 text-red-400' :
-                      'bg-yellow-500/20 text-yellow-400'
+                <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
+                  analysis.complianceStatus.status === 'PASSED'
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-red-500/20 text-red-400'
                 }`}>
-                  {analysis.complianceStatus.status === 'PASSED' ? 'Compliant' :
-                    analysis.complianceStatus.status.charAt(0) + analysis.complianceStatus.status.slice(1).toLowerCase()}
+                  {analysis.complianceStatus.status === 'PASSED' ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Compliant
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-3 w-3" />
+                      Non-Compliant
+                    </>
+                  )}
                 </span>
               </TableCell>
             </TableRow>
