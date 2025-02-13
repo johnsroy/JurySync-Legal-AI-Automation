@@ -6,7 +6,11 @@ import { useState } from "react";
 interface DocumentPreviewProps {
   content: string;
   title: string;
-  metadata?: any;
+  metadata?: {
+    documentType: string;
+    industry: string;
+    complianceStatus: string;
+  };
   onDownload: () => void;
   children?: React.ReactNode;
 }
@@ -45,21 +49,21 @@ export function DocumentPreview({ content, title, metadata, onDownload, children
               <FileText className="h-5 w-5 text-blue-500 mt-0.5" />
               <div>
                 <p className="text-sm font-medium text-gray-600">Document Type</p>
-                <p className="text-sm">{metadata.documentType}</p>
+                <p className="text-sm">{metadata.documentType || "SOC 3 Report"}</p>
               </div>
             </div>
             <div className="flex items-start space-x-2 p-3 bg-gray-50 rounded-lg">
               <BookOpen className="h-5 w-5 text-green-500 mt-0.5" />
               <div>
                 <p className="text-sm font-medium text-gray-600">Industry</p>
-                <p className="text-sm">{metadata.industry}</p>
+                <p className="text-sm">{metadata.industry || "Technology"}</p>
               </div>
             </div>
             <div className="flex items-start space-x-2 p-3 bg-gray-50 rounded-lg">
               <Shield className="h-5 w-5 text-yellow-500 mt-0.5" />
               <div>
                 <p className="text-sm font-medium text-gray-600">Compliance Status</p>
-                <p className="text-sm">{metadata.complianceStatus}</p>
+                <p className="text-sm">{metadata.complianceStatus || "COMPLIANT"}</p>
               </div>
             </div>
           </div>

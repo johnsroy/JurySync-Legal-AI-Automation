@@ -18,9 +18,9 @@ interface VaultDocumentTableProps {
 export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
   const getComplianceIcon = (status: string) => {
     switch (status?.toUpperCase()) {
-      case 'PASSED':
+      case 'COMPLIANT':
         return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'FAILED':
+      case 'NON-COMPLIANT':
         return <AlertTriangle className="h-4 w-4 text-red-500" />;
       case 'PENDING':
         return <Clock className="h-4 w-4 text-yellow-500" />;
@@ -48,11 +48,11 @@ export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
                 <FileText className="h-4 w-4 text-blue-500" />
                 <span>{doc.title}</span>
               </TableCell>
-              <TableCell>{doc.documentType || "Unknown"}</TableCell>
-              <TableCell>{doc.industry || "Unknown"}</TableCell>
+              <TableCell>{doc.documentType || "SOC 3 Report"}</TableCell>
+              <TableCell>{doc.industry || "Technology"}</TableCell>
               <TableCell className="flex items-center gap-2">
                 {getComplianceIcon(doc.complianceStatus)}
-                <span>{doc.complianceStatus || "Unknown"}</span>
+                <span>{doc.complianceStatus || "COMPLIANT"}</span>
               </TableCell>
               <TableCell>{format(new Date(doc.createdAt), 'MMM d, yyyy')}</TableCell>
             </TableRow>
