@@ -1,7 +1,6 @@
 import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { relations } from "drizzle-orm";
 
 // Define user roles for LegalAI
 export const UserRole = z.enum([
@@ -751,7 +750,7 @@ export const caseLawUpdates = pgTable("case_law_updates", {
   caseNumber: text("case_number").notNull(),
   title: text("title").notNull(),
   summary: text("summary").notNull(),
-  full_text: text("full_text").notNull(),
+  full_text: text("full_text").notNull(), 
   court: text("court").notNull(),
   jurisdiction: text("jurisdiction").notNull(),
   category: text("category").notNull(),
@@ -833,7 +832,6 @@ export const VaultDocumentType = z.enum([
 
 export type VaultDocumentType = z.infer<typeof VaultDocumentType>;
 
-// Update vault documents schema to handle compliance documents
 export const vaultDocuments = pgTable("vault_documents", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
@@ -845,36 +843,16 @@ export const vaultDocuments = pgTable("vault_documents", {
   aiSummary: text("ai_summary"),
   aiClassification: text("ai_classification"),
   vectorId: text("vector_id"),
-  sourceSystem: text("source_system").notNull().default("VAULT"), // New field
-  complianceDocumentId: integer("compliance_document_id"), // Reference to compliance document if any
   metadata: jsonb("metadata").$type<{
     keywords?: string[];
     relevance?: number;
     confidence?: number;
     entities?: string[];
-    complianceScore?: number;
-    riskLevel?: string;
-    recommendations?: string[];
-    automationMetrics?: {
-      processingTimeMs: number;
-      modelUsed: string;
-      confidenceScore: number;
-      laborSavings: number;
-    };
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Add relations between compliance and vault documents
-export const documentRelations = relations(vaultDocuments, ({ one }) => ({
-  complianceDocument: one(complianceDocuments, {
-    fields: [vaultDocuments.complianceDocumentId],
-    references: [complianceDocuments.id],
-  }),
-}));
-
-export type VaultDocument = typeof vaultDocuments.$inferSelect;
 export const insertVaultDocumentSchema = createInsertSchema(vaultDocuments)
   .pick({
     title: true,
@@ -888,4 +866,5 @@ export const insertVaultDocumentSchema = createInsertSchema(vaultDocuments)
     documentType: VaultDocumentType,
   });
 
+export type VaultDocument = typeof vaultDocuments.$inferSelect;
 export type InsertVaultDocument = z.infer<typeof insertVaultDocumentSchema>;
