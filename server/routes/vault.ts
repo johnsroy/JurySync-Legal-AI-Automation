@@ -5,6 +5,7 @@ import { vaultDocuments, type VaultDocument } from "@shared/schema";
 import { rbacMiddleware } from "../middleware/rbac";
 import { analyzeDocument } from "../services/documentAnalysisService";
 import { eq, count, avg } from "drizzle-orm";
+import { legalDocumentService } from "../services/legalDocumentService";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -238,6 +239,64 @@ router.get('/stats', async (req, res) => {
   } catch (error: any) {
     console.error('Stats error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Get example documents for a category
+router.get('/examples/:category', async (req, res) => {
+  try {
+    const { category } = req.params;
+    const examples = await legalDocumentService.getExampleDocuments(category);
+    res.json(examples);
+  } catch (error: any) {
+    console.error('Example documents fetch error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Upload document with category
+router.post('/upload-with-category', async (req, res) => {
+  try {
+    await new Promise((resolve, reject) => {
+      upload(req, res, (err) => {
+        if (err) reject(err);
+        else resolve(true);
+      });
+    });
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const content = req.file.buffer.toString('utf-8');
+    const preferredCategory = req.body.category;
+
+    const document = await legalDocumentService.uploadAndCategorize(
+      content,
+      userId,
+      preferredCategory
+    );
+
+    return res.json({
+      success: true,
+      document: {
+        id: document.id,
+        title: document.title,
+        category: document.metadata.category,
+        aiSummary: document.aiSummary,
+        createdAt: document.createdAt,
+        metadata: document.metadata
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Category upload error:', error);
+    return res.status(500).json({ error: error.message });
   }
 });
 
