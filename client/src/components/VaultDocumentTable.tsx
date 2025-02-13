@@ -1,15 +1,11 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { FileText, CheckCircle } from "lucide-react";
-
-interface VaultDocument {
-  id: number;
-  fileName: string;
-  fileDate: string;
-}
+import { FileText, CheckCircle, AlertTriangle } from "lucide-react";
+import type { VaultDocumentAnalysis } from "@shared/schema";
+import { format } from "date-fns";
 
 interface VaultDocumentTableProps {
-  documents: VaultDocument[];
+  documents: VaultDocumentAnalysis[];
 }
 
 export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
@@ -32,15 +28,22 @@ export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
                 <FileText className="h-4 w-4 text-blue-500" />
                 {doc.fileName}
               </TableCell>
-              <TableCell>Audit</TableCell>
-              <TableCell>Technology</TableCell>
+              <TableCell>{doc.documentType}</TableCell>
+              <TableCell>{doc.industry}</TableCell>
               <TableCell>
-                <Badge variant="default" className="bg-green-500 text-white flex items-center gap-1">
-                  <CheckCircle className="h-3 w-3" />
-                  Compliant
-                </Badge>
+                {doc.complianceStatus === 'Compliant' ? (
+                  <Badge variant="default" className="bg-green-500 text-white flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3" />
+                    Compliant
+                  </Badge>
+                ) : (
+                  <Badge variant="destructive" className="flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    {doc.complianceStatus}
+                  </Badge>
+                )}
               </TableCell>
-              <TableCell>{doc.fileDate}</TableCell>
+              <TableCell>{format(new Date(doc.fileDate), 'MMM d, yyyy')}</TableCell>
             </TableRow>
           ))}
         </TableBody>
