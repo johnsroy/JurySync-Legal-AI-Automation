@@ -1,13 +1,10 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileText, CheckCircle, AlertTriangle, HelpCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { FileText, CheckCircle } from "lucide-react";
 
 interface VaultDocument {
   id: number;
   fileName: string;
-  documentType: string;
-  industry: string;
-  complianceStatus: string;
   fileDate: string;
 }
 
@@ -16,32 +13,6 @@ interface VaultDocumentTableProps {
 }
 
 export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
-  const getComplianceBadge = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'compliant':
-        return (
-          <Badge variant="default" className="bg-green-500 text-white flex items-center gap-1">
-            <CheckCircle className="h-3 w-3" />
-            Compliant
-          </Badge>
-        );
-      case 'non-compliant':
-        return (
-          <Badge variant="destructive" className="flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" />
-            Non-Compliant
-          </Badge>
-        );
-      default:
-        return (
-          <Badge variant="outline" className="flex items-center gap-1">
-            <HelpCircle className="h-3 w-3" />
-            {status}
-          </Badge>
-        );
-    }
-  };
-
   return (
     <div className="rounded-md border">
       <Table>
@@ -64,7 +35,10 @@ export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
               <TableCell>Audit</TableCell>
               <TableCell>Technology</TableCell>
               <TableCell>
-                {getComplianceBadge(doc.complianceStatus)}
+                <Badge variant="default" className="bg-green-500 text-white flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3" />
+                  Compliant
+                </Badge>
               </TableCell>
               <TableCell>{doc.fileDate}</TableCell>
             </TableRow>
