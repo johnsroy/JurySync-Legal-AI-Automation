@@ -8,34 +8,35 @@ interface VaultDocumentTableProps {
   documents: VaultDocumentAnalysis[];
 }
 
-// Define type-safe mappings
-const INDUSTRY_COLORS: Record<string, string> = {
-  'TECHNOLOGY': "bg-blue-500",
-  'HEALTHCARE': "bg-green-500",
-  'FINANCIAL': "bg-purple-500",
-  'MANUFACTURING': "bg-orange-500",
-  'RETAIL': "bg-yellow-500"
-};
-
-const DOCUMENT_TYPE_ICONS = {
-  'SOC Report': <ScrollText className="h-4 w-4 text-purple-500" />,
-  'Contract Agreement': <FileText className="h-4 w-4 text-blue-500" />,
-  'Policy Document': <BookOpen className="h-4 w-4 text-green-500" />,
-  'Compliance Report': <FileCode className="h-4 w-4 text-orange-500" />
-};
-
 export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
   const getDocumentTypeIcon = (type: string) => {
-    return DOCUMENT_TYPE_ICONS[type] || <FileTextIcon className="h-4 w-4 text-gray-500" />;
+    switch (type.toUpperCase()) {
+      case 'AUDIT':
+        return <ScrollText className="h-4 w-4 text-purple-500" />;
+      case 'CONTRACT':
+        return <FileText className="h-4 w-4 text-blue-500" />;
+      case 'POLICY':
+        return <BookOpen className="h-4 w-4 text-green-500" />;
+      case 'REPORT':
+        return <FileCode className="h-4 w-4 text-orange-500" />;
+      default:
+        return <FileTextIcon className="h-4 w-4 text-gray-500" />;
+    }
   };
 
   const getIndustryBadge = (industry: string) => {
-    const colorClass = INDUSTRY_COLORS[industry] || "bg-gray-500";
+    const colors = {
+      TECHNOLOGY: "bg-blue-500",
+      HEALTHCARE: "bg-green-500",
+      FINANCIAL: "bg-purple-500",
+      MANUFACTURING: "bg-orange-500",
+      RETAIL: "bg-yellow-500"
+    };
 
     return (
       <Badge 
         variant="default" 
-        className={`${colorClass} text-white`}
+        className={`${colors[industry] || "bg-gray-500"} text-white`}
       >
         {industry}
       </Badge>

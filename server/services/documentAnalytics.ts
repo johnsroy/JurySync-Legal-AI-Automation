@@ -5,63 +5,79 @@ import { eq } from "drizzle-orm";
 import { openai } from "../openai";
 import { anthropic } from "../anthropic";
 
-// Define strict types for standardization
-type StandardIndustry = 'TECHNOLOGY' | 'HEALTHCARE' | 'FINANCIAL' | 'MANUFACTURING' | 'RETAIL';
-type StandardDocumentType = 'SOC Report' | 'Contract Agreement' | 'Policy Document' | 'Compliance Report';
-type ComplianceStatus = 'Compliant' | 'Non-Compliant';
-
-// Industry mapping configuration
-const TECH_COMPANIES = [
-  'google', 'microsoft', 'apple', 'amazon', 'meta', 'ibm', 'oracle', 'salesforce',
-  'alphabet', 'workspace', 'cloud', 'aws', 'azure'
-];
-
-const TECH_KEYWORDS = [
-  'software', 'cloud', 'computing', 'digital', 'tech', 'cyber', 'data',
-  'platform', 'application', 'api', 'service', 'system'
-];
-
 export class DocumentAnalyticsService {
   private async analyzeWithAI(content: string) {
-    const systemPrompt = `You are an expert legal document analyzer. For the given document, identify:
+    const systemPrompt = `You are an expert legal document analyzer specializing in document classification and compliance assessment.
+Given a legal or business document, analyze it and extract the following key information:
 
-1. Document Type: Classify as one of: SOC Report, Contract Agreement, Policy Document, Compliance Report
-2. Industry Context: Look for company names, industry terms, and sector-specific language
-3. Compliance Status: Determine if compliant/non-compliant based on content
+1. Document Type Classification:
+- Identify the specific document type (e.g., Contract Agreement, SOC Report, Audit Report, Policy Document)
+- Note any subtypes or specific frameworks mentioned (e.g., SOC 1, SOC 2, SOC 3)
 
-Respond with a JSON object:
+2. Industry Context:
+- Identify the primary industry sector
+- Detect company names and their industry associations
+- Look for industry-specific terminology and compliance frameworks
+
+3. Compliance Assessment:
+- Determine if the document indicates compliance or non-compliance
+- Look for explicit statements about control effectiveness
+- Check for audit opinions or assessment results
+- Note any significant findings or exceptions
+
+Provide your analysis in the following JSON format:
 {
   "documentType": "string",
+  "documentSubtype": "string",
   "industry": "string",
-  "companyNames": ["string"],
-  "keywords": ["string"],
-  "complianceStatus": "string"
+  "organizations": ["string"],
+  "complianceStatus": "string",
+  "complianceDetails": {
+    "effectiveness": "string",
+    "findings": ["string"],
+    "period": { "start": "string", "end": "string" }
+  },
+  "confidence": number
 }`;
 
     try {
+      // Try OpenAI first
       const completion = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: content }
+          { 
+            role: "user", 
+            content: `Please analyze this document and identify its key characteristics:\n\n${content}`
+          }
         ],
         response_format: { type: "json_object" }
       });
 
       const result = JSON.parse(completion.choices[0].message.content);
-      return this.standardizeResults(result);
+      console.log('OpenAI Analysis:', result);
+      return this.standardizeAnalysis(result);
+
     } catch (error) {
       console.error("OpenAI analysis failed, falling back to Anthropic:", error);
 
       try {
+        // Fallback to Anthropic
         const response = await anthropic.messages.create({
           model: "claude-3-opus-20240229",
           max_tokens: 1024,
-          messages: [{ role: "user", content: `${systemPrompt}\n\n${content}` }]
+          messages: [
+            { 
+              role: "user", 
+              content: `${systemPrompt}\n\nAnalyze this document:\n${content}`
+            }
+          ]
         });
 
         const result = JSON.parse(response.content[0].text);
-        return this.standardizeResults(result);
+        console.log('Anthropic Analysis:', result);
+        return this.standardizeAnalysis(result);
+
       } catch (anthropicError) {
         console.error("Both AI services failed:", anthropicError);
         throw new Error("Document analysis failed");
@@ -69,52 +85,56 @@ Respond with a JSON object:
     }
   }
 
-  private standardizeResults(analysis: any) {
-    // Standardize industry based on companies and keywords
-    const allText = [
-      ...(analysis.companyNames || []),
-      ...(analysis.keywords || []),
-      analysis.industry || ''
-    ].join(' ').toLowerCase();
-
-    // Map to standard industry
-    let industry: StandardIndustry = 'TECHNOLOGY'; // Default to technology
-
-    // Check for tech industry markers first
-    const isTech = TECH_COMPANIES.some(company => allText.includes(company)) ||
-                  TECH_KEYWORDS.some(keyword => allText.includes(keyword));
-
-    if (isTech) {
-      industry = 'TECHNOLOGY';
-    } else if (allText.match(/hospital|medical|health|pharma|biotech/)) {
-      industry = 'HEALTHCARE';
-    } else if (allText.match(/bank|financial|investment|trading|credit/)) {
-      industry = 'FINANCIAL';
-    } else if (allText.match(/manufacturing|industrial|factory|production/)) {
-      industry = 'MANUFACTURING';
-    } else if (allText.match(/retail|store|commerce|consumer|sales/)) {
-      industry = 'RETAIL';
-    }
-
+  private standardizeAnalysis(analysis: any) {
     // Standardize document type
-    let documentType: StandardDocumentType = 'Compliance Report';
-    if (analysis.documentType.toLowerCase().includes('soc')) {
-      documentType = 'SOC Report';
-    } else if (analysis.documentType.toLowerCase().includes('contract')) {
-      documentType = 'Contract Agreement';
-    } else if (analysis.documentType.toLowerCase().includes('policy')) {
-      documentType = 'Policy Document';
+    let documentType = analysis.documentType.toUpperCase();
+    if (documentType.includes('SOC') || documentType.includes('AUDIT')) {
+      documentType = 'AUDIT';
+    } else if (documentType.includes('CONTRACT') || documentType.includes('AGREEMENT')) {
+      documentType = 'CONTRACT';
+    } else if (documentType.includes('POLICY') || documentType.includes('PROCEDURE')) {
+      documentType = 'POLICY';
+    } else {
+      documentType = 'REPORT';
     }
 
-    // Standardize compliance status
-    const complianceStatus: ComplianceStatus = 
-      analysis.complianceStatus.toLowerCase().includes('non') ? 'Non-Compliant' : 'Compliant';
+    // Standardize industry based on organizations and context
+    let industry = analysis.industry.toUpperCase();
+    const orgText = analysis.organizations.join(' ').toLowerCase();
+
+    if (orgText.includes('google') || orgText.includes('microsoft') || 
+        industry.includes('TECH') || industry.includes('SOFTWARE')) {
+      industry = 'TECHNOLOGY';
+    } else if (orgText.includes('hospital') || industry.includes('HEALTH')) {
+      industry = 'HEALTHCARE';
+    } else if (orgText.includes('bank') || industry.includes('FINANCIAL')) {
+      industry = 'FINANCIAL';
+    } else if (industry.includes('MANUFACTURING') || industry.includes('INDUSTRIAL')) {
+      industry = 'MANUFACTURING';
+    } else if (industry.includes('RETAIL') || industry.includes('COMMERCE')) {
+      industry = 'RETAIL';
+    } else {
+      industry = 'TECHNOLOGY'; // Default to technology if unclear
+    }
+
+    // Determine compliance status from detailed analysis
+    const complianceStatus = analysis.complianceDetails?.effectiveness?.toLowerCase().includes('effective') ||
+                           analysis.complianceStatus?.toLowerCase().includes('compliant')
+      ? 'Compliant'
+      : 'Non-Compliant';
 
     return {
       documentType,
+      documentSubtype: analysis.documentSubtype || documentType,
       industry,
+      organizations: analysis.organizations || [],
       complianceStatus,
-      confidence: 0.95
+      complianceDetails: analysis.complianceDetails || {
+        effectiveness: complianceStatus,
+        findings: [],
+        period: { start: '', end: '' }
+      },
+      confidence: analysis.confidence || 0.95
     };
   }
 
@@ -127,21 +147,21 @@ Respond with a JSON object:
         throw new Error("No classification content found");
       }
 
-      const analysis = await this.analyzeWithAI(classificationResult.content);
-      console.log('Document Analysis Results:', analysis);
+      const aiAnalysis = await this.analyzeWithAI(classificationResult.content);
+      console.log('Document Analysis Result:', aiAnalysis);
 
       const metadata: DocumentMetadata = {
-        documentType: analysis.documentType,
-        industry: analysis.industry,
-        complianceStatus: analysis.complianceStatus,
+        documentType: aiAnalysis.documentType,
+        industry: aiAnalysis.industry,
+        complianceStatus: aiAnalysis.complianceStatus,
         analysisTimestamp: new Date().toISOString(),
-        confidence: analysis.confidence,
+        confidence: aiAnalysis.confidence,
         classifications: [{
           category: "LEGAL",
-          subCategory: analysis.documentType,
-          tags: [analysis.industry]
+          subCategory: aiAnalysis.documentSubtype,
+          tags: [aiAnalysis.industry, ...aiAnalysis.organizations]
         }],
-        riskScore: analysis.complianceStatus === "Compliant" ? 85 : 45
+        riskScore: aiAnalysis.complianceStatus === "Compliant" ? 85 : 45
       };
 
       return metadata;
@@ -153,16 +173,16 @@ Respond with a JSON object:
 
   async analyzeDocument(documentId: number, content: string): Promise<VaultDocumentAnalysis> {
     try {
-      const analysis = await this.analyzeWithAI(content);
-      console.log('Final Document Analysis:', analysis);
+      const aiAnalysis = await this.analyzeWithAI(content);
+      console.log('Final Document Analysis:', aiAnalysis);
 
       const [result] = await db.insert(vaultDocumentAnalysis).values({
         documentId,
         fileName: `Document_${documentId}.pdf`,
         fileDate: new Date().toISOString(),
-        documentType: analysis.documentType,
-        industry: analysis.industry,
-        complianceStatus: analysis.complianceStatus
+        documentType: aiAnalysis.documentType,
+        industry: aiAnalysis.industry,
+        complianceStatus: aiAnalysis.complianceStatus
       }).returning();
 
       return result;
