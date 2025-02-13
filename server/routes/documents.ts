@@ -1,22 +1,14 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
-import { documents } from "@shared/schema";
+import { documents, vaultDocuments } from "@shared/schema"; 
 import { eq } from 'drizzle-orm';
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
 import PDFDocument from "pdfkit";
 import { approvalAuditService } from "../services/approvalAuditService";
-import { 
-  getAllTemplates, 
-  getTemplate, 
-  getTemplatesByCategory,
-  suggestRequirements,
-  getAutocomplete,
-  getCustomInstructionSuggestions,
-  generateContract 
-} from "../services/templateStore";
 import { analyzeDocument } from "../services/documentAnalysisService";
+import { legalDocumentService } from "../services/legalDocumentService";
 
 const router = Router();
 
@@ -31,13 +23,7 @@ const upload = multer({
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      // Add additional MIME types for better compatibility
-      'application/x-pdf',
-      'application/acrobat',
-      'applications/vnd.pdf',
-      'text/pdf',
-      'application/doc',
-      'application/vnd.ms-word.document.macroEnabled.12'
+      'text/plain'
     ];
 
     if (allowedMimes.includes(file.mimetype)) {
@@ -45,6 +31,36 @@ const upload = multer({
     } else {
       cb(new Error(`Invalid file type: ${file.mimetype}. Only PDF and Word documents are supported.`));
     }
+  }
+});
+
+// Get all documents (combines workflow and vault documents)
+router.get("/api/documents", async (req, res) => {
+  try {
+    const [workflowDocs, vaultDocs] = await Promise.all([
+      db.select().from(documents),
+      db.select().from(vaultDocuments)
+    ]);
+
+    // Combine and format documents
+    const combinedDocs = [
+      ...workflowDocs.map(doc => ({
+        ...doc,
+        source: 'workflow'
+      })),
+      ...vaultDocs.map(doc => ({
+        ...doc,
+        source: 'vault'
+      }))
+    ];
+
+    res.json(combinedDocs);
+  } catch (error: any) {
+    console.error("Error fetching documents:", error);
+    res.status(500).json({
+      error: "Failed to fetch documents",
+      details: error.message
+    });
   }
 });
 
@@ -70,6 +86,8 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
       } else if (req.file.mimetype.includes('word')) {
         const result = await mammoth.extractRawText({ buffer: req.file.buffer });
         content = result.value;
+      } else {
+        content = req.file.buffer.toString('utf-8');
       }
 
       if (!content || !content.trim()) {
@@ -119,6 +137,18 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
         documentType: analysis.documentType,
         industry: analysis.industry
       });
+
+      // Also add to vault documents for unified access
+      await db
+        .insert(vaultDocuments)
+        .values({
+          title: document.title,
+          content: content,
+          userId: document.userId,
+          documentType: analysis.documentType,
+          metadata: document.metadata
+        })
+        .returning();
 
       return res.json({
         documentId: document.id,
