@@ -75,6 +75,15 @@ export default function WorkflowAutomation() {
     return null;
   }
 
+  // Workflow stages definition
+  const workflowStages = [
+    { id: 'draft', name: 'Draft Generation', icon: FileText },
+    { id: 'compliance', name: 'Compliance Check', icon: Scale },
+    { id: 'research', name: 'Legal Research', icon: BookCheck },
+    { id: 'approval', name: 'Approval Process', icon: BadgeCheck },
+    { id: 'audit', name: 'Final Audit', icon: History }
+  ];
+
   // Document upload handler
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
@@ -226,11 +235,8 @@ export default function WorkflowAutomation() {
   // Analysis Results Table Component
   const renderAnalysisTable = () => {
     if (!analysisResults) {
-      console.log("No analysis results to display");
       return null;
     }
-
-    console.log("Rendering analysis table with:", analysisResults);
 
     return (
       <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
@@ -241,31 +247,27 @@ export default function WorkflowAutomation() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-slate-300">Attribute</TableHead>
-              <TableHead className="text-slate-300">Value</TableHead>
+              <TableHead className="text-slate-300">File</TableHead>
+              <TableHead className="text-slate-300">Document Type</TableHead>
+              <TableHead className="text-slate-300">Industry</TableHead>
+              <TableHead className="text-slate-300">Compliance Status</TableHead>
+              <TableHead className="text-slate-300">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow>
-              <TableCell className="text-slate-300 font-medium">Document Type</TableCell>
               <TableCell className="text-slate-300">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-blue-400" />
-                  {analysisResults.documentType}
+                  Document
                 </div>
               </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="text-slate-300 font-medium">Industry</TableCell>
               <TableCell className="text-slate-300">
-                <div className="flex items-center gap-2">
-                  <BrainCircuit className="h-4 w-4 text-violet-400" />
-                  {analysisResults.industry}
-                </div>
+                {analysisResults.documentType}
               </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="text-slate-300 font-medium">Compliance Status</TableCell>
+              <TableCell className="text-slate-300">
+                {analysisResults.industry}
+              </TableCell>
               <TableCell>
                 <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
                   analysisResults.complianceStatus.status === 'PASSED'
@@ -284,6 +286,16 @@ export default function WorkflowAutomation() {
                     </>
                   )}
                 </span>
+              </TableCell>
+              <TableCell>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-slate-400 hover:text-slate-300"
+                >
+                  <FileDown className="h-4 w-4 mr-1" />
+                  Download
+                </Button>
               </TableCell>
             </TableRow>
           </TableBody>
@@ -334,8 +346,9 @@ export default function WorkflowAutomation() {
           </div>
         </Card>
 
-        {/* Analysis Results - Add immediately after upload section */}
+        {/* Analysis Results Table */}
         {analysisResults && renderAnalysisTable()}
+
 
         {/* Workflow Progress */}
         {activeTaskId && taskData && (
