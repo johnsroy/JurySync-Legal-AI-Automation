@@ -16,6 +16,7 @@ import {
   getCustomInstructionSuggestions,
   generateContract 
 } from "../services/templateStore";
+import { analyzeDocument } from "../services/documentAnalysisService";
 
 const router = Router();
 
@@ -81,11 +82,14 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
         .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
         .replace(/[\u0000-\u001F]/g, ' ')
         .replace(/\s+/g, ' ')
-        .replace(/<!DOCTYPE[^>]*>/g, '') // Remove DOCTYPE declarations
-        .replace(/<\/?[^>]+(>|$)/g, '') // Remove any HTML tags
+        .replace(/<!DOCTYPE[^>]*>/g, '')
+        .replace(/<\/?[^>]+(>|$)/g, '')
         .trim();
 
-      // Create document record in database
+      // Analyze document using our enhanced service
+      const analysis = await analyzeDocument(content);
+
+      // Create document record in database that will be visible in both workflow and vault
       const [document] = await db
         .insert(documents)
         .values({
@@ -93,20 +97,38 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
           content: content,
           userId: req.user?.id || 1,
           processingStatus: "COMPLETED",
-          agentType: "LEGAL_RESEARCH"
+          agentType: "LEGAL_RESEARCH",
+          metadata: {
+            documentType: analysis.documentType,
+            industry: analysis.industry,
+            classification: analysis.classification,
+            keywords: analysis.keywords,
+            entities: analysis.entities,
+            confidence: analysis.confidence,
+            riskLevel: analysis.riskLevel,
+            recommendations: analysis.recommendations,
+            source: "workflow-automation"
+          }
         })
         .returning();
 
       console.log("Document uploaded successfully:", {
         id: document.id,
         title: document.title,
-        contentLength: content.length
+        contentLength: content.length,
+        documentType: analysis.documentType,
+        industry: analysis.industry
       });
 
       return res.json({
         documentId: document.id,
         title: document.title,
         text: content,
+        analysis: {
+          documentType: analysis.documentType,
+          industry: analysis.industry,
+          classification: analysis.classification
+        },
         status: "COMPLETED"
       });
 

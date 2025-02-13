@@ -5,9 +5,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Upload, FileText, Folder, AlertCircle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // Define allowed roles that can upload documents
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
@@ -40,13 +42,23 @@ export default function VaultPage() {
     }
   });
 
-  // Fetch documents
+  // Fetch documents from both vault and workflow
   const { data: documentsData, isLoading: isLoadingDocuments } = useQuery({
     queryKey: ['/api/vault/documents'],
     queryFn: async () => {
-      const response = await apiRequest('GET', '/api/vault/documents');
-      const data = await response.json();
-      return data.documents;
+      const [vaultResponse, workflowResponse] = await Promise.all([
+        apiRequest('GET', '/api/vault/documents'),
+        apiRequest('GET', '/api/workflow/documents')
+      ]);
+
+      const vaultDocs = await vaultResponse.json();
+      const workflowDocs = await workflowResponse.json();
+
+      // Combine and deduplicate documents by ID
+      const allDocs = [...vaultDocs.documents, ...workflowDocs.documents];
+      const uniqueDocs = Array.from(new Map(allDocs.map(doc => [doc.id, doc])).values());
+
+      return uniqueDocs;
     }
   });
 
@@ -151,69 +163,76 @@ export default function VaultPage() {
           </Button>
         </div>
 
-        {/* Sharing Policy */}
-        <div className="mb-8">
-          <label className="block text-sm font-medium text-gray-700">Project Sharing: </label>
-          <select
-            value={sharingPolicy}
-            onChange={updateSharing}
-            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
-          >
-            <option value="workspace">Everyone in workspace</option>
-            <option value="session">Restricted to active session user</option>
-          </select>
-        </div>
-
-        {/* Documents Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {isLoadingDocuments ? (
-            <div className="col-span-full text-center py-12">
-              <span className="animate-spin mr-2">⌛</span> Loading documents...
-            </div>
-          ) : !documentsData?.length ? (
-            <div className="col-span-full">
-              <Card className="border-dashed border-2">
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <Folder className="h-12 w-12 text-gray-400 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Documents Yet</h3>
-                  <p className="text-gray-500 text-center mb-4">
-                    {canUpload ? 'Upload your first document to get started' : 'No documents available'}
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            documentsData.map((doc) => (
-              <Card key={doc.id} className="hover:shadow-lg transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-start space-x-4">
-                    <FileText className="h-8 w-8 text-green-600 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-medium text-gray-900 truncate">
-                        {doc.title}
-                      </h3>
-                      <p className="text-xs text-gray-500">
-                        {new Date(doc.createdAt).toLocaleDateString()}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Type: {doc.documentType}
-                      </p>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => setSelectedDocument(doc)}
-                      >
-                        <AlertCircle className="h-4 w-4 mr-2" />
-                        View AI Insights
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
+        {/* Documents Table */}
+        <Card className="mb-8">
+          <CardContent className="p-6">
+            <ScrollArea className="h-[500px]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>File</TableHead>
+                    <TableHead>Document Type</TableHead>
+                    <TableHead>Industry</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isLoadingDocuments ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-4">
+                        <span className="animate-spin mr-2">⌛</span> Loading documents...
+                      </TableCell>
+                    </TableRow>
+                  ) : !documentsData?.length ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-4">
+                        <div className="flex flex-col items-center justify-center">
+                          <Folder className="h-12 w-12 text-gray-400 mb-4" />
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">No Documents Yet</h3>
+                          <p className="text-gray-500">
+                            {canUpload ? 'Upload your first document to get started' : 'No documents available'}
+                          </p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    documentsData.map((doc) => (
+                      <TableRow key={doc.id}>
+                        <TableCell>
+                          <div className="flex items-center space-x-3">
+                            <FileText className="h-5 w-5 text-green-600 flex-shrink-0" />
+                            <div>
+                              <p className="font-medium text-sm">{doc.title}</p>
+                              <p className="text-xs text-gray-500">
+                                {new Date(doc.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {doc.metadata?.documentType || "Unknown"}
+                        </TableCell>
+                        <TableCell>
+                          {doc.metadata?.industry || "Unknown"}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedDocument(doc)}
+                          >
+                            <AlertCircle className="h-4 w-4 mr-2" />
+                            View Details
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </CardContent>
+        </Card>
 
         {/* Stats Section */}
         <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8">

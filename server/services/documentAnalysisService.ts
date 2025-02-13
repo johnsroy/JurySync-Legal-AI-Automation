@@ -25,6 +25,7 @@ interface DocumentAnalysis {
   entities: string[];
   riskLevel: string;
   recommendations: string[];
+  documentType: string;
 }
 
 export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
@@ -43,8 +44,9 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
         5. Important keywords
         6. Risk level assessment (LOW, MEDIUM, HIGH)
         7. Key recommendations based on content analysis
+        8. Document type (e.g., Agreement, Contract, NDA, SLA, etc.)
 
-        Respond in JSON format with these keys: classification, industry, confidence, entities, keywords, riskLevel, recommendations
+        Respond in JSON format with these keys: classification, industry, confidence, entities, keywords, riskLevel, recommendations, documentType
 
         Document content:
         ${content.substring(0, 8000)} // Limit content length
@@ -80,6 +82,7 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       entities: claudeAnalysis.entities,
       riskLevel: claudeAnalysis.riskLevel,
       recommendations: claudeAnalysis.recommendations,
+      documentType: claudeAnalysis.documentType,
     };
   } catch (error) {
     console.error("Document analysis error:", error);
