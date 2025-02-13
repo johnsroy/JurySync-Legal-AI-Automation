@@ -59,7 +59,6 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
         content = req.file.buffer.toString('utf8');
       }
 
-
       if (!content || !content.trim()) {
         throw new Error('Failed to extract content from document');
       }
@@ -70,12 +69,13 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
         .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
         .replace(/[\u0000-\u001F]/g, ' ')
         .replace(/\s+/g, ' ')
-        .replace(/<!DOCTYPE[^>]*>/g, '')
-        .replace(/<\/?[^>]+(>|$)/g, '')
         .trim();
+
+      console.log("Content extracted, analyzing document...");
 
       // Analyze document using our enhanced service
       const analysis = await analyzeDocument(content);
+      console.log("Document analysis completed:", analysis.documentType);
 
       // Create document record in database
       const [document] = await db.insert(documents).values({
@@ -93,6 +93,7 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
           confidence: analysis.confidence,
           riskLevel: analysis.riskLevel,
           recommendations: analysis.recommendations,
+          complianceStatus: analysis.complianceStatus,
           source: "workflow-automation"
         }
       }).returning();
@@ -112,7 +113,8 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
         analysis: {
           documentType: analysis.documentType,
           industry: analysis.industry,
-          classification: analysis.classification
+          classification: analysis.classification,
+          complianceStatus: analysis.complianceStatus
         },
         status: "COMPLETED"
       });

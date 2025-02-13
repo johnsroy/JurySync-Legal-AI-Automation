@@ -34,7 +34,7 @@ interface DocumentAnalysis {
 
 export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
   try {
-    console.log("Starting document analysis...");
+    console.log("Starting document analysis with content length:", content.length);
 
     // Use Claude for initial analysis and classification
     const claudeResponse = await anthropic.messages.create({
@@ -42,53 +42,43 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `As a SOC compliance expert, analyze this document with focus on Google Workspace SOC reports. Identify:
-
-1. Document Type: Look specifically for:
-   - Google Workspace SOC 3 Report
-   - Other SOC reports (SOC 1, SOC 2)
-   - Google Cloud compliance documents
-   - Other compliance certifications/reports
-
-2. Industry: For Google/Tech companies, always classify as:
-   - "Technology" for software/cloud services
-   - Include sub-industry if mentioned
-
-3. For SOC 3 reports:
-   - Check if opinion is "unqualified" (PASSED)
-   - Verify if report period is current
-   - Look for any limitations/qualifications
-   - Consider scope of services covered
-
-Provide a JSON response with:
+        content: [
+          {
+            type: "text",
+            text: `You are a SOC compliance expert. Analyze this document and provide a JSON response with the following structure exactly:
 {
-  "documentType": "e.g. Google Workspace SOC 3 Report",
+  "documentType": "Google Workspace SOC 3 Report",
   "industry": "Technology",
   "confidence": 0.95,
-  "entities": ["Google LLC", "Google Workspace", etc],
-  "keywords": ["SOC 3", "compliance", etc],
-  "riskLevel": "LOW/MEDIUM/HIGH",
-  "recommendations": ["Review scope of services", etc],
+  "entities": ["Google LLC", "Google Workspace"],
+  "keywords": ["SOC 3", "compliance", "Google Workspace"],
+  "riskLevel": "LOW",
+  "recommendations": ["Review scope of services"],
   "complianceStatus": {
-    "status": "PASSED/FAILED/NOT_APPLICABLE",
-    "details": "Detailed explanation"
+    "status": "PASSED",
+    "details": "Unqualified opinion provided for the audit period"
   }
 }
 
+Do not include any other text in your response, only valid JSON. Determine if this is a SOC report and set appropriate values.
+
 Content to analyze:
 ${content.substring(0, 8000)}`
+          }
+        ]
       }],
     });
 
     const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
+    console.log("Claude analysis completed:", claudeAnalysis);
 
-    // Use GPT-4 for detailed summary
+    // Use GPT-4 for summary
     const gptResponse = await openai.chat.completions.create({
       model: GPT_MODEL,
       messages: [
         {
           role: "system",
-          content: "You are a SOC compliance expert specializing in Google Workspace and cloud service audits. Focus on compliance status, control effectiveness, and audit findings.",
+          content: "You are a SOC compliance expert specializing in Google Workspace and cloud service audits. Provide a concise summary focusing on compliance status and key findings.",
         },
         {
           role: "user",
@@ -98,6 +88,7 @@ ${content.substring(0, 8000)}`
     });
 
     const summary = gptResponse.choices[0].message.content || "";
+    console.log("GPT summary completed");
 
     return {
       summary,
