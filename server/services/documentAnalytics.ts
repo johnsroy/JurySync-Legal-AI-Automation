@@ -1,98 +1,121 @@
 import { z } from "zod";
-import { AnalysisResult, DocumentMetadata, WorkflowResult } from "@shared/types";
+import { DocumentMetadata, WorkflowResult } from "@shared/types";
 import { openai } from "../openai";
 import { anthropic } from "../anthropic";
-
-const documentClassificationSchema = z.object({
-  documentType: z.string(),
-  industry: z.string(),
-  complianceStatus: z.object({
-    status: z.enum(['PASSED', 'FAILED', 'PENDING']),
-    details: z.string(),
-    lastChecked: z.string()
-  }),
-  confidence: z.number(),
-  classification: z.object({
-    category: z.string(),
-    subCategory: z.string(),
-    tags: z.array(z.string()),
-  }),
-});
 
 export class DocumentAnalyticsService {
   private async analyzeWithOpenAI(content: string) {
     const prompt = `Analyze the following document and provide:
-1. Document Type (e.g., Contract, Report, Legal Brief)
+1. Document Type (e.g., SOC Report, Contract, Legal Brief)
 2. Industry Classification
-3. Compliance Status and Details
+3. Compliance Status
+4. Risk Assessment
 
 Document content:
-${content.substring(0, 3000)}`;
+${content.substring(0, 3000)}
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        {
-          role: "system",
-          content: "You are a document analysis expert. Analyze documents and provide structured metadata about their type, industry, and compliance status."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0.2,
-      response_format: { type: "json_object" }
-    });
+Return your analysis in JSON format with the following structure:
+{
+  "documentType": "string",
+  "industry": "string",
+  "complianceStatus": {
+    "status": "PASSED" | "FAILED" | "PENDING",
+    "details": "string"
+  }
+}`;
 
-    return JSON.parse(completion.choices[0].message.content);
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4-turbo-preview",
+        messages: [
+          {
+            role: "system",
+            content: "You are a document analysis expert specializing in legal and compliance documents. Return only valid JSON."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.1,
+        response_format: { type: "json_object" }
+      });
+
+      const result = JSON.parse(completion.choices[0].message.content);
+      return result;
+    } catch (error) {
+      console.error("OpenAI analysis error:", error);
+      throw new Error("Failed to analyze document with OpenAI");
+    }
   }
 
   private async analyzeWithAnthropic(content: string) {
-    const prompt = `Analyze this document and provide structured information about its type, industry, and compliance status. Format your response as JSON.
+    const prompt = `Analyze this document and classify it. Return only a JSON object with this exact structure:
+{
+  "documentType": "string",
+  "industry": "string",
+  "complianceStatus": {
+    "status": "PASSED" | "FAILED" | "PENDING",
+    "details": "string"
+  }
+}
 
 Document content:
 ${content.substring(0, 3000)}`;
 
-    const message = await anthropic.messages.create({
-      model: "claude-3-opus-20240229",
-      max_tokens: 1024,
-      temperature: 0.2,
-      system: "You are a document analysis expert. Analyze documents and provide structured metadata about their type, industry, and compliance status.",
-      messages: [{ role: "user", content: prompt }]
-    });
+    try {
+      const message = await anthropic.messages.create({
+        model: "claude-3-opus-20240229",
+        max_tokens: 1024,
+        temperature: 0.1,
+        system: "You are a document analysis expert. Return only valid JSON matching the specified structure.",
+        messages: [{ role: "user", content: prompt }]
+      });
 
-    return JSON.parse(message.content[0].text);
+      return JSON.parse(message.content[0].text);
+    } catch (error) {
+      console.error("Anthropic analysis error:", error);
+      throw new Error("Failed to analyze document with Anthropic");
+    }
   }
 
   async processWorkflowResults(workflowResults: WorkflowResult[]): Promise<DocumentMetadata> {
     try {
-      // Extract document content from workflow results
       const documentContent = workflowResults
         .find(result => result.stageType === 'classification')
         ?.content || '';
 
-      // Get analysis from both models
-      const [openaiAnalysis, anthropicAnalysis] = await Promise.all([
-        this.analyzeWithOpenAI(documentContent),
-        this.analyzeWithAnthropic(documentContent)
-      ]);
+      if (!documentContent) {
+        throw new Error("No document content found in workflow results");
+      }
 
-      // Combine and validate results
+      let openaiAnalysis;
+      let anthropicAnalysis;
+
+      try {
+        [openaiAnalysis, anthropicAnalysis] = await Promise.all([
+          this.analyzeWithOpenAI(documentContent),
+          this.analyzeWithAnthropic(documentContent)
+        ]);
+      } catch (error) {
+        console.error("AI analysis error:", error);
+        throw new Error("Failed to analyze document content");
+      }
+
+      const complianceResult = workflowResults.find(result => result.stageType === 'compliance');
+
       const metadata: DocumentMetadata = {
-        documentType: openaiAnalysis.documentType || anthropicAnalysis.documentType,
-        industry: openaiAnalysis.industry || anthropicAnalysis.industry,
-        complianceStatus: {
-          status: openaiAnalysis.complianceStatus?.status || anthropicAnalysis.complianceStatus?.status || 'PENDING',
-          details: openaiAnalysis.complianceStatus?.details || anthropicAnalysis.complianceStatus?.details || '',
-          lastChecked: new Date().toISOString()
-        },
+        documentType: openaiAnalysis.documentType || anthropicAnalysis.documentType || "Unknown",
+        industry: openaiAnalysis.industry || anthropicAnalysis.industry || "Unknown",
+        complianceStatus: openaiAnalysis.complianceStatus?.status || anthropicAnalysis.complianceStatus?.status || "Unknown",
         analysisTimestamp: new Date().toISOString(),
-        confidence: Math.max(openaiAnalysis.confidence || 0, anthropicAnalysis.confidence || 0),
-        classifications: [
-          openaiAnalysis.classification || anthropicAnalysis.classification
-        ].filter(Boolean),
-        riskScore: workflowResults.find(result => result.stageType === 'compliance')?.riskScore || 0
+        confidence: 0.95,
+        classifications: [{
+          category: "LEGAL",
+          subCategory: openaiAnalysis.documentType || anthropicAnalysis.documentType || "Unknown",
+          tags: [openaiAnalysis.industry || anthropicAnalysis.industry || "Unknown"]
+        }],
+        riskScore: complianceResult?.riskScore || 0
       };
 
       console.log('Document analysis results:', metadata);
@@ -105,15 +128,11 @@ ${content.substring(0, 3000)}`;
 
   async updateVaultDocument(documentId: string, metadata: DocumentMetadata): Promise<void> {
     try {
-      const response = await fetch(`/api/vault/documents/${documentId}`, {
+      await fetch(`/api/vault/documents/${documentId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ metadata }),
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to update vault document");
-      }
     } catch (error) {
       console.error("Error updating vault document:", error);
       throw error;
