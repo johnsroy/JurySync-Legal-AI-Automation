@@ -37,29 +37,26 @@ export class LegalDocumentService {
           2. Specific representations and warranties
           3. Common industry contexts
           4. Key legal implications
-          5. Example clauses and language
-
-          Format the response as a JSON array with objects containing title, content, category, and metadata.metadata should include industry, jurisdiction, and risk_level.`;
+          
+          Format the response as a JSON array with objects containing title, content, category, and metadata fields.`;
           break;
         case 'M&A Deal Points':
           prompt = `Generate 5 detailed examples of M&A Deal Points from different types of merger and acquisition agreements. For each example, include:
           1. Type of M&A transaction
-          2. Key deal terms and conditions
-          3. Specific price and payment structures
-          4. Risk considerations and mitigation strategies
-          5. Example clauses and language
-
-          Format the response as a JSON array with objects containing title, content, category, and metadata. metadata should include deal_size, transaction_type, and complexity_level.`;
+          2. Key deal terms
+          3. Specific conditions and requirements
+          4. Risk considerations
+          
+          Format the response as a JSON array with objects containing title, content, category, and metadata fields.`;
           break;
         case 'Compliance Analysis':
           prompt = `Generate 5 detailed examples of compliance requirements and analysis for different industries. For each example, include:
-          1. Industry sector and jurisdiction
-          2. Regulatory framework and requirements
-          3. Compliance obligations and deadlines
+          1. Industry sector
+          2. Regulatory framework
+          3. Compliance requirements
           4. Risk assessment points
-          5. Example compliance documentation
-
-          Format the response as a JSON array with objects containing title, content, category, and metadata. metadata should include regulatory_body, compliance_deadline, and risk_rating.`;
+          
+          Format the response as a JSON array with objects containing title, content, category, and metadata fields.`;
           break;
         default:
           throw new Error('Invalid category');
@@ -85,10 +82,11 @@ export class LegalDocumentService {
         })
       ]);
 
+      // Combine and process responses
       const claudeExamples = JSON.parse(claudeResponse.content[0].text);
       const gptExamples = JSON.parse(gptResponse.choices[0].message.content);
-
-      return [...claudeExamples.examples, ...gptExamples.examples].map(example => ({
+      
+      return [...claudeExamples, ...gptExamples].map(example => ({
         ...example,
         source: 'AI Generated Example',
         category
@@ -105,7 +103,7 @@ export class LegalDocumentService {
     content: string,
     userId: number,
     preferredCategory?: string
-  ) {
+  ): Promise<any> {
     try {
       // Analyze document using existing service
       const analysis = await analyzeDocument(content);
@@ -119,15 +117,16 @@ export class LegalDocumentService {
         .values({
           title: categoryAnalysis.title,
           content,
-          userId,
-          documentType: analysis.documentType,
+          documentType: analysis.classification,
+          aiSummary: analysis.summary,
+          aiClassification: categoryAnalysis.category,
           metadata: {
             ...analysis,
             categorySpecificAnalysis: categoryAnalysis.analysis,
             confidence: categoryAnalysis.confidence,
-            category: preferredCategory || categoryAnalysis.category,
-            source: 'user-upload'
-          }
+            category: preferredCategory || categoryAnalysis.category
+          },
+          userId
         })
         .returning();
 
@@ -143,13 +142,12 @@ export class LegalDocumentService {
     const prompt = `Analyze this legal document and determine:
     1. The most appropriate category (Reps & Warranties, M&A Deal Points, or Compliance Analysis)
     2. Key elements specific to the category
-    3. Confidence score for the categorization (0-1)
+    3. Confidence score for the categorization
     4. Suggested title based on content
-    5. Detailed analysis of document structure and key points
-
+    
     Document content:
     ${content.substring(0, 8000)}
-
+    
     Respond in JSON format with keys: category, analysis, confidence, title`;
 
     const response = await anthropic.messages.create({
