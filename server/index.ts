@@ -10,6 +10,7 @@ import { continuousLearningService } from './services/continuousLearningService'
 import cors from 'cors';
 import { createServer } from 'net';
 import { handleStripeWebhook } from "./webhooks/stripe";
+import documentAnalyticsRouter from './routes/document-analytics';
 
 async function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -92,6 +93,9 @@ app.use(session({
 
 // Setup auth
 setupAuth(app);
+
+// Register document analytics route
+app.use('/api/document-analytics', documentAnalyticsRouter);
 
 (async () => {
   try {

@@ -1,15 +1,17 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Eye } from "lucide-react";
+import { Download, Eye, FileText, BookOpen, Shield } from "lucide-react";
 import { useState } from "react";
 
 interface DocumentPreviewProps {
   content: string;
   title: string;
+  metadata?: any;
   onDownload: () => void;
+  children?: React.ReactNode;
 }
 
-export function DocumentPreview({ content, title, onDownload }: DocumentPreviewProps) {
+export function DocumentPreview({ content, title, metadata, onDownload, children }: DocumentPreviewProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -36,12 +38,40 @@ export function DocumentPreview({ content, title, onDownload }: DocumentPreviewP
             </Button>
           </div>
         </div>
-        
+
+        {metadata && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="flex items-start space-x-2 p-3 bg-gray-50 rounded-lg">
+              <FileText className="h-5 w-5 text-blue-500 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-gray-600">Document Type</p>
+                <p className="text-sm">{metadata.documentType}</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-2 p-3 bg-gray-50 rounded-lg">
+              <BookOpen className="h-5 w-5 text-green-500 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-gray-600">Industry</p>
+                <p className="text-sm">{metadata.industry}</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-2 p-3 bg-gray-50 rounded-lg">
+              <Shield className="h-5 w-5 text-yellow-500 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-gray-600">Compliance Status</p>
+                <p className="text-sm">{metadata.complianceStatus}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {isExpanded && (
           <div className="mt-4 p-4 bg-gray-50 rounded-lg max-h-96 overflow-y-auto">
             <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: content }} />
           </div>
         )}
+
+        {children}
       </CardContent>
     </Card>
   );

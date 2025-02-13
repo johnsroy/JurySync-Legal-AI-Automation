@@ -30,6 +30,7 @@ import html2canvas from "html2canvas";
 import { FileUpload } from "@/components/FileUpload";
 import { approvalAuditService } from "@/lib/approval-audit";
 import { ApprovalForm } from "@/components/ApprovalForm";
+import { documentAnalyticsService } from "@/services/documentAnalytics";
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -149,6 +150,7 @@ interface StageResult {
   content: string;
   title: string;
   downloadUrl?: string;
+  metadata?: any;
 }
 
 interface WorkflowStageState {
@@ -157,6 +159,7 @@ interface WorkflowStageState {
   result?: StageResult;
   approvers?: Approver[];
   isApproved?: boolean;
+  metadata?: any;
 }
 
 interface KeyFinding {
@@ -291,9 +294,25 @@ export const WorkflowAutomation: React.FC = () => {
             <p>${documentText.substring(0, 200)}...</p>
           `;
 
+          // Add document analysis
+          const metadata = await documentAnalyticsService.processWorkflowResults([{
+            stageType: "classification",
+            content: documentText
+          }]);
+
+          // Update UI with analysis results
+          setStageStates(prev => ({
+            ...prev,
+            0: {
+              ...prev[0],
+              metadata
+            }
+          }));
+
           return {
             content: draftContent,
-            title: "Generated Legal Draft"
+            title: "Generated Legal Draft",
+            metadata
           };
         }
       },
@@ -315,9 +334,26 @@ export const WorkflowAutomation: React.FC = () => {
             <p>2. Include breach notification procedures</p>
           `;
 
+          // Add compliance analysis
+          const metadata = await documentAnalyticsService.processWorkflowResults([{
+            stageType: "compliance",
+            content: documentText,
+            status: "COMPLIANT", // This will be determined by actual compliance check
+            riskScore: 85
+          }]);
+
+          setStageStates(prev => ({
+            ...prev,
+            1: {
+              ...prev[1],
+              metadata
+            }
+          }));
+
           return {
             content: complianceContent,
-            title: "Compliance Analysis Report"
+            title: "Compliance Analysis Report",
+            metadata
           };
         }
       },
@@ -345,9 +381,23 @@ export const WorkflowAutomation: React.FC = () => {
             </ul>
           `;
 
+          const metadata = await documentAnalyticsService.processWorkflowResults([{
+            stageType: "research",
+            content: documentText
+          }]);
+
+          setStageStates(prev => ({
+            ...prev,
+            2: {
+              ...prev[2],
+              metadata
+            }
+          }));
+
           return {
             content: researchContent,
-            title: "Legal Research Report"
+            title: "Legal Research Report",
+            metadata
           };
         }
       },
@@ -753,6 +803,7 @@ export const WorkflowAutomation: React.FC = () => {
                       <DocumentPreview
                         content={state.result.content}
                         title={state.result.title}
+                        metadata={state.result.metadata}
                         onDownload={() => generatePDF(state.result!.content, state.result!.title)}
                       >
                         {currentStage === 3 && !state.isApproved && (
