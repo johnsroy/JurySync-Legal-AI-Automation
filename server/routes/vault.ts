@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
-import { vaultDocuments, type VaultDocument } from "@shared/schema";
+import { vaultDocuments, documents, type VaultDocument } from "@shared/schema";
 import { rbacMiddleware } from "../middleware/rbac";
 import { analyzeDocument } from "../services/documentAnalysisService";
 import { eq, count, avg } from "drizzle-orm";
@@ -297,6 +297,73 @@ router.post('/upload-with-category', async (req, res) => {
   } catch (error: any) {
     console.error('Category upload error:', error);
     return res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all documents from both vault and workflow
+router.get('/documents', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    console.log('Fetching documents from both vault and workflow...');
+
+    // Fetch documents from both collections with proper type handling
+    const [vaultDocs, workflowDocs] = await Promise.all([
+      db.select().from(vaultDocuments).where(eq(vaultDocuments.userId, userId)),
+      db.select().from(documents).where(eq(documents.userId, userId))
+    ]);
+
+    console.log(`Found ${vaultDocs.length} vault documents and ${workflowDocs.length} workflow documents`);
+
+    // Combine documents with proper source tracking and metadata handling
+    const allDocs = [
+      ...vaultDocs.map(doc => ({
+        ...doc,
+        source: 'vault',
+        metadata: {
+          ...doc.metadata,
+          documentType: doc.metadata?.documentType || doc.documentType || 'Unknown',
+          industry: doc.metadata?.industry || 'Unknown'
+        }
+      })),
+      ...workflowDocs.map(doc => ({
+        ...doc,
+        source: 'workflow',
+        metadata: {
+          ...doc.metadata,
+          documentType: doc.metadata?.documentType || doc.documentType || 'Unknown',
+          industry: doc.metadata?.industry || 'Unknown'
+        }
+      }))
+    ];
+
+    // Remove duplicates based on content hash or ID
+    const uniqueDocs = Array.from(
+      new Map(allDocs.map(doc => [doc.id, doc])).values()
+    );
+
+    console.log(`Returning ${uniqueDocs.length} unique documents`);
+
+    res.json({
+      documents: uniqueDocs.map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        createdAt: doc.createdAt,
+        metadata: doc.metadata,
+        source: doc.source,
+        documentType: doc.metadata?.documentType || 'Unknown',
+        industry: doc.metadata?.industry || 'Unknown',
+        content: doc.content,
+        aiSummary: doc.aiSummary,
+        processingStatus: doc.processingStatus
+      }))
+    });
+  } catch (error: any) {
+    console.error('Documents fetch error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
