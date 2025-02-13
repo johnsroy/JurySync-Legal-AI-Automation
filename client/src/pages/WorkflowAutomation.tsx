@@ -28,19 +28,40 @@ import {
   ChevronDown,
   FileDown
 } from "lucide-react";
-import { 
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface ErrorLog {
   timestamp: string;
   stage: string;
   message: string;
   details?: string;
+}
+
+interface DocumentAnalysis {
+  documentType: string;
+  industry: string;
+  complianceStatus: {
+    status: 'PASSED' | 'FAILED' | 'PENDING';
+    details: string;
+    lastChecked: string;
+  };
+}
+
+// Add DocumentAnalysis to TaskData interface
+interface TaskData {
+  status: 'processing' | 'completed' | 'failed';
+  progress: number;
+  currentStepDetails?: {
+    description: string;
+  };
+  documentAnalysis?: DocumentAnalysis;
 }
 
 export default function WorkflowAutomation() {
@@ -201,6 +222,55 @@ export default function WorkflowAutomation() {
     { name: 'Week 4', tasks: 60, time: 85 }
   ];
 
+  // Add renderAnalysisTable function
+  const renderAnalysisTable = () => {
+    if (!taskData?.documentAnalysis) return null;
+
+    const analysis = taskData.documentAnalysis;
+    return (
+      <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
+        <h3 className="text-xl font-semibold mb-4 text-white">Document Analysis Results</h3>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-slate-300">Attribute</TableHead>
+              <TableHead className="text-slate-300">Value</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Document Type</TableCell>
+              <TableCell className="text-slate-300">{analysis.documentType || "SOC 3 Report"}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Industry</TableCell>
+              <TableCell className="text-slate-300">{analysis.industry || "Technology"}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Compliance Status</TableCell>
+              <TableCell>
+                <span className={`px-2 py-1 rounded-full text-xs ${
+                  analysis.complianceStatus.status === 'PASSED' ? 'bg-green-500/20 text-green-400' :
+                    analysis.complianceStatus.status === 'FAILED' ? 'bg-red-500/20 text-red-400' :
+                      'bg-yellow-500/20 text-yellow-400'
+                }`}>
+                  {analysis.complianceStatus.status === 'PASSED' ? 'Compliant' :
+                    analysis.complianceStatus.status.charAt(0) + analysis.complianceStatus.status.slice(1).toLowerCase()}
+                </span>
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Last Checked</TableCell>
+              <TableCell className="text-slate-300">
+                {new Date(analysis.complianceStatus.lastChecked).toLocaleString()}
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Card>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       {/* Header Section */}
@@ -245,229 +315,234 @@ export default function WorkflowAutomation() {
 
         {/* Workflow Progress */}
         {activeTaskId && taskData && (
-          <Card className="p-12 mb-12 bg-slate-800 border-slate-700">
+          <>
             {/* Stage Timeline */}
-            <div className="relative mb-12">
-              <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-700 -translate-y-1/2" />
-              <div className="relative flex justify-between">
-                {workflowStages.map((stage, index) => {
-                  const currentStage = getCurrentStage(taskData.progress);
-                  const Icon = stage.icon;
-                  const isCompleted = index < currentStage;
-                  const isCurrent = index === currentStage;
-                  const isError = taskData.status === 'failed' && isCurrent;
+            <Card className="p-12 mb-12 bg-slate-800 border-slate-700">
+              <div className="relative mb-12">
+                <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-700 -translate-y-1/2" />
+                <div className="relative flex justify-between">
+                  {workflowStages.map((stage, index) => {
+                    const currentStage = getCurrentStage(taskData.progress);
+                    const Icon = stage.icon;
+                    const isCompleted = index < currentStage;
+                    const isCurrent = index === currentStage;
+                    const isError = taskData.status === 'failed' && isCurrent;
 
-                  return (
-                    <div key={stage.id} className="flex flex-col items-center">
-                      <div
-                        className={`w-12 h-12 rounded-full flex items-center justify-center relative z-10 transition-all duration-300
+                    return (
+                      <div key={stage.id} className="flex flex-col items-center">
+                        <div
+                          className={`w-12 h-12 rounded-full flex items-center justify-center relative z-10 transition-all duration-300
                           ${isCompleted ? 'bg-green-500 scale-105' :
-                            isError ? 'bg-red-500 scale-105' :
-                              isCurrent ? 'bg-blue-500/20 border-2 border-blue-400 scale-110' :
-                                'bg-slate-700'}`}
-                      >
-                        {isCompleted ? (
-                          <CheckCircle2 className="h-6 w-6 text-white" />
-                        ) : isError ? (
-                          <AlertTriangle className="h-6 w-6 text-white" />
-                        ) : isCurrent ? (
-                          <Clock className="h-6 w-6 text-blue-400 animate-spin" />
-                        ) : (
-                          <Icon className="h-6 w-6 text-slate-400" />
-                        )}
-                      </div>
-                      <div className="mt-4 text-sm font-medium text-center">
-                        <span className={`transition-colors ${
-                          isCompleted ? 'text-green-400' :
-                            isError ? 'text-red-400' :
-                              isCurrent ? 'text-blue-400' :
-                                'text-slate-400'
-                        }`}>
-                          {stage.name}
-                        </span>
-                        {isError && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => retryMutation.mutate(stage.id)}
-                            disabled={retryMutation.isPending}
-                            className="mt-2 text-red-400 hover:text-red-300"
-                          >
-                            <RefreshCcw className="h-3 w-3 mr-1" />
-                            Retry Stage
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Status and Actions */}
-            <div className="flex justify-between items-center mb-8">
-              <div>
-                <div className="flex items-center space-x-2 mb-2">
-                  {taskData.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-400" />}
-                  {taskData.status === 'processing' && <Clock className="h-5 w-5 text-blue-400 animate-spin" />}
-                  {taskData.status === 'failed' && <AlertCircle className="h-5 w-5 text-red-400" />}
-                  <h3 className="text-2xl font-semibold">Workflow Progress</h3>
-                </div>
-                <p className="text-slate-400">
-                  {taskData.currentStepDetails?.description || 'Processing your document...'}
-                </p>
-              </div>
-
-              <div className="flex items-center space-x-4">
-                {taskData.status === 'failed' && (
-                  <Button
-                    variant="outline"
-                    onClick={() => retryMutation.mutate()}
-                    disabled={retryMutation.isPending}
-                    className="border-slate-600 hover:bg-slate-700"
-                  >
-                    <RefreshCcw className="h-4 w-4 mr-2" />
-                    Retry Process
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Progress Bar */}
-            <Progress
-              value={taskData.progress}
-              className="h-2 mb-6 bg-slate-700"
-            />
-
-            {/* Error Log Section */}
-            {errorLogs.length > 0 && (
-              <Collapsible className="mb-8">
-                <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-red-500/10 rounded-lg border border-red-500/20 transition-colors hover:bg-red-500/20">
-                  <div className="flex items-center space-x-2">
-                    <AlertTriangle className="h-5 w-5 text-red-400" />
-                    <span className="font-medium text-red-400">Error Log</span>
-                  </div>
-                  <ChevronDown className="h-4 w-4 text-red-400" />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <ScrollArea className="h-[200px] mt-4">
-                    <div className="space-y-4">
-                      {errorLogs.map((log, index) => (
-                        <div key={index} className="p-4 bg-red-500/5 rounded border border-red-500/10">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-red-400 font-medium">{log.stage}</span>
-                            <span className="text-sm text-slate-500">
-                              {new Date(log.timestamp).toLocaleString()}
-                            </span>
-                          </div>
-                          <p className="text-slate-300">{log.message}</p>
-                          {log.details && (
-                            <p className="mt-2 text-sm text-slate-400">{log.details}</p>
+                              isError ? 'bg-red-500 scale-105' :
+                                isCurrent ? 'bg-blue-500/20 border-2 border-blue-400 scale-110' :
+                                  'bg-slate-700'}`}
+                        >
+                          {isCompleted ? (
+                            <CheckCircle2 className="h-6 w-6 text-white" />
+                          ) : isError ? (
+                            <AlertTriangle className="h-6 w-6 text-white" />
+                          ) : isCurrent ? (
+                            <Clock className="h-6 w-6 text-blue-400 animate-spin" />
+                          ) : (
+                            <Icon className="h-6 w-6 text-slate-400" />
                           )}
                         </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </CollapsibleContent>
-              </Collapsible>
-            )}
-
-            {/* Metrics Dashboard */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
-              {/* Performance Metrics */}
-              <Card className="bg-slate-700/50 border-none p-6">
-                <h4 className="text-lg font-semibold mb-6">Performance Metrics</h4>
-                <div className="space-y-4">
-                  {metricsData.map((metric, index) => (
-                    <div key={index} className="relative pt-1">
-                      <div className="flex mb-2 items-center justify-between">
-                        <div>
-                          <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-500/20 text-blue-400">
-                            {metric.name}
+                        <div className="mt-4 text-sm font-medium text-center">
+                          <span className={`transition-colors ${
+                            isCompleted ? 'text-green-400' :
+                              isError ? 'text-red-400' :
+                                isCurrent ? 'text-blue-400' :
+                                  'text-slate-400'
+                          }`}>
+                            {stage.name}
                           </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-xs font-semibold inline-block text-blue-400">
-                            {metric.value}%
-                          </span>
+                          {isError && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => retryMutation.mutate(stage.id)}
+                              disabled={retryMutation.isPending}
+                              className="mt-2 text-red-400 hover:text-red-300"
+                            >
+                              <RefreshCcw className="h-3 w-3 mr-1" />
+                              Retry Stage
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-600">
-                        <div
-                          style={{ width: `${metric.value}%` }}
-                          className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              {/* Processing Timeline */}
-              <Card className="bg-slate-700/50 border-none p-6">
-                <h4 className="text-lg font-semibold mb-6">Processing Timeline</h4>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={timelineData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-                      <XAxis dataKey="name" stroke="#94a3b8" />
-                      <YAxis stroke="#94a3b8" />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#1e293b',
-                          border: 'none',
-                          borderRadius: '0.5rem',
-                          color: '#f8fafc'
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="tasks"
-                        stroke="#3b82f6"
-                        strokeWidth={2}
-                        dot={{ fill: '#3b82f6' }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="time"
-                        stroke="#22c55e"
-                        strokeWidth={2}
-                        dot={{ fill: '#22c55e' }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-            </div>
-
-            {/* Report Download Section */}
-            <div className="mt-12 border-t border-slate-700 pt-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-lg font-semibold mb-2">Download Report</h4>
-                  <p className="text-slate-400">Export workflow results and metrics in your preferred format</p>
-                </div>
-                <div className="flex gap-4">
-                  <Button
-                    variant="outline"
-                    onClick={handleDownloadPDF}
-                    className="border-slate-600 hover:bg-slate-700 transition-colors"
-                  >
-                    <FileDown className="h-4 w-4 mr-2" />
-                    PDF Report
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleDownloadCSV}
-                    className="border-slate-600 hover:bg-slate-700 transition-colors"
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    CSV Data
-                  </Button>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
-          </Card>
+
+              {/* Status and Actions */}
+              <div className="flex justify-between items-center mb-8">
+                <div>
+                  <div className="flex items-center space-x-2 mb-2">
+                    {taskData.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-400" />}
+                    {taskData.status === 'processing' && <Clock className="h-5 w-5 text-blue-400 animate-spin" />}
+                    {taskData.status === 'failed' && <AlertCircle className="h-5 w-5 text-red-400" />}
+                    <h3 className="text-2xl font-semibold">Workflow Progress</h3>
+                  </div>
+                  <p className="text-slate-400">
+                    {taskData.currentStepDetails?.description || 'Processing your document...'}
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-4">
+                  {taskData.status === 'failed' && (
+                    <Button
+                      variant="outline"
+                      onClick={() => retryMutation.mutate()}
+                      disabled={retryMutation.isPending}
+                      className="border-slate-600 hover:bg-slate-700"
+                    >
+                      <RefreshCcw className="h-4 w-4 mr-2" />
+                      Retry Process
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <Progress
+                value={taskData.progress}
+                className="h-2 mb-6 bg-slate-700"
+              />
+
+              {/* Error Log Section */}
+              {errorLogs.length > 0 && (
+                <Collapsible className="mb-8">
+                  <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-red-500/10 rounded-lg border border-red-500/20 transition-colors hover:bg-red-500/20">
+                    <div className="flex items-center space-x-2">
+                      <AlertTriangle className="h-5 w-5 text-red-400" />
+                      <span className="font-medium text-red-400">Error Log</span>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-red-400" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <ScrollArea className="h-[200px] mt-4">
+                      <div className="space-y-4">
+                        {errorLogs.map((log, index) => (
+                          <div key={index} className="p-4 bg-red-500/5 rounded border border-red-500/10">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-red-400 font-medium">{log.stage}</span>
+                              <span className="text-sm text-slate-500">
+                                {new Date(log.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-slate-300">{log.message}</p>
+                            {log.details && (
+                              <p className="mt-2 text-sm text-slate-400">{log.details}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+
+              {/* Metrics Dashboard */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
+                {/* Performance Metrics */}
+                <Card className="bg-slate-700/50 border-none p-6">
+                  <h4 className="text-lg font-semibold mb-6">Performance Metrics</h4>
+                  <div className="space-y-4">
+                    {metricsData.map((metric, index) => (
+                      <div key={index} className="relative pt-1">
+                        <div className="flex mb-2 items-center justify-between">
+                          <div>
+                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-500/20 text-blue-400">
+                              {metric.name}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold inline-block text-blue-400">
+                              {metric.value}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-600">
+                          <div
+                            style={{ width: `${metric.value}%` }}
+                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {/* Processing Timeline */}
+                <Card className="bg-slate-700/50 border-none p-6">
+                  <h4 className="text-lg font-semibold mb-6">Processing Timeline</h4>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={timelineData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                        <XAxis dataKey="name" stroke="#94a3b8" />
+                        <YAxis stroke="#94a3b8" />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#1e293b',
+                            border: 'none',
+                            borderRadius: '0.5rem',
+                            color: '#f8fafc'
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="tasks"
+                          stroke="#3b82f6"
+                          strokeWidth={2}
+                          dot={{ fill: '#3b82f6' }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="time"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          dot={{ fill: '#22c55e' }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Analysis Results Table - Add after workflow completion */}
+              {taskData.status === 'completed' && renderAnalysisTable()}
+
+              {/* Report Download Section */}
+              <div className="mt-12 border-t border-slate-700 pt-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-lg font-semibold mb-2">Download Report</h4>
+                    <p className="text-slate-400">Export workflow results and metrics in your preferred format</p>
+                  </div>
+                  <div className="flex gap-4">
+                    <Button
+                      variant="outline"
+                      onClick={handleDownloadPDF}
+                      className="border-slate-600 hover:bg-slate-700 transition-colors"
+                    >
+                      <FileDown className="h-4 w-4 mr-2" />
+                      PDF Report
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleDownloadCSV}
+                      className="border-slate-600 hover:bg-slate-700 transition-colors"
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      CSV Data
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </>
         )}
       </main>
     </div>
