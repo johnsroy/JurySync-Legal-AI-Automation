@@ -19,13 +19,17 @@ const GPT_MODEL = "gpt-4o";
 interface DocumentAnalysis {
   summary: string;
   classification: string;
+  documentType: string;
   industry: string;
   keywords: string[];
   confidence: number;
   entities: string[];
   riskLevel: string;
   recommendations: string[];
-  documentType: string;
+  complianceStatus: {
+    status: 'PASSED' | 'FAILED' | 'NOT_APPLICABLE';
+    details: string;
+  };
 }
 
 export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
@@ -37,20 +41,19 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       messages: [{
         role: "user",
         content: `Analyze this legal document content and provide: 
-        1. A classification (e.g., CONTRACT, BRIEF, CASE_LAW, LEGISLATION, CORRESPONDENCE, OTHER)
-        2. Industry classification (e.g., FINANCIAL, TECHNOLOGY, HEALTHCARE, etc.)
+        1. A specific document type (e.g., SOC 2 Report, SOC 3 Compliance, Privacy Policy, Terms of Service, etc.)
+        2. Precise industry classification (e.g., Technology, Healthcare, Financial Services, etc.)
         3. A confidence score (0-1) for the classification
         4. Key entities mentioned (companies, individuals, organizations)
         5. Important keywords
         6. Risk level assessment (LOW, MEDIUM, HIGH)
         7. Key recommendations based on content analysis
-        8. Document type (e.g., Agreement, Contract, NDA, SLA, etc.)
+        8. Compliance status (PASSED/FAILED/NOT_APPLICABLE) with explanation
 
-        Respond in JSON format with these keys: classification, industry, confidence, entities, keywords, riskLevel, recommendations, documentType
+        Respond in JSON format with these keys: documentType, industry, confidence, entities, keywords, riskLevel, recommendations, complianceStatus
 
-        Document content:
-        ${content.substring(0, 8000)} // Limit content length
-        `
+        Content to analyze:
+        ${content.substring(0, 8000)}`
       }],
     });
 
@@ -66,7 +69,7 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
         },
         {
           role: "user",
-          content: content.substring(0, 8000), // Limit content length
+          content: content.substring(0, 8000),
         },
       ],
     });
@@ -75,14 +78,15 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
 
     return {
       summary,
-      classification: claudeAnalysis.classification,
+      classification: claudeAnalysis.documentType, 
+      documentType: claudeAnalysis.documentType,
       industry: claudeAnalysis.industry,
       keywords: claudeAnalysis.keywords,
       confidence: claudeAnalysis.confidence,
       entities: claudeAnalysis.entities,
       riskLevel: claudeAnalysis.riskLevel,
       recommendations: claudeAnalysis.recommendations,
-      documentType: claudeAnalysis.documentType,
+      complianceStatus: claudeAnalysis.complianceStatus,
     };
   } catch (error) {
     console.error("Document analysis error:", error);
