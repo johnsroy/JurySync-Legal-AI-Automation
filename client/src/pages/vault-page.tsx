@@ -273,7 +273,8 @@ export default function VaultPage() {
                               variant="ghost"
                               size="sm"
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation(); // Prevent event bubbling
                                 if (window.confirm('Are you sure you want to delete this document?')) {
                                   deleteMutation.mutate(doc.id);
                                 }

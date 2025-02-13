@@ -35,61 +35,78 @@ interface DocumentAnalysis {
 
 export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
   try {
+    console.log("Starting document analysis...");
+
     // Use Claude for initial analysis and classification
     const claudeResponse = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `Analyze this legal document content and provide a detailed analysis. Follow these precise guidelines for classification:
+        content: `Analyze this legal document and provide detailed JSON output. Follow these STRICT classification rules:
 
-        Document Type Classification Examples:
-        - For SOC Reports: Classify exactly as "SOC 3 Report", "SOC 2 Report", or "SOC 1 Report"
-        - For NDAs: Classify as "Non-Disclosure Agreement"
-        - For Service Agreements: Classify as "Service Agreement"
-        - For License Applications: Classify as "License Application"
+SOC Report Identification:
+1. If the document mentions "System and Organization Controls (SOC)" or "SOC":
+   - Look for "SOC 1", "SOC 2", or "SOC 3" mentions
+   - Document Type MUST be exactly "SOC 1 Report", "SOC 2 Report", or "SOC 3 Report"
+   - Industry should be based on the service organization (e.g., "Technology" for cloud/software providers)
+   - Compliance: Check for phrases like "controls were effective" or "no material weaknesses"
 
-        Industry Classification Examples:
-        - Technology: For software, IT services, cloud providers
-        - Financial Services: For banking, insurance, investment firms
-        - Healthcare: For medical, pharmaceutical, healthcare providers
+Other Document Types:
+- NDAs: Classify as "Non-Disclosure Agreement"
+- Service Agreements: Classify as "Service Agreement"
+- License Applications: Classify as "License Application"
 
-        Compliance Status Rules:
-        - SOC Reports: "PASSED" if controls are effective, "FAILED" if significant deficiencies
-        - Licenses: "PENDING" during application, "PASSED" when approved
-        - Contracts: Based on risk assessment and completeness
+Industry Classifications:
+- Technology: For software, IT, cloud services
+- Financial Services: For banking, insurance
+- Healthcare: For medical, pharmaceutical
 
-        Special Rules for SOC Documents:
-        1. Always check if document mentions:
-           - "System and Organization Controls (SOC)"
-           - Audit periods
-           - Service organization details
-        2. Look for effectiveness statements about controls
-        3. Identify the specific type (SOC 1, 2, or 3)
+Required JSON Structure:
+{
+  "documentType": "string (MUST follow exact format for SOC reports)",
+  "industry": "string (Technology, Financial Services, Healthcare, etc.)",
+  "classification": "string",
+  "confidence": number,
+  "entities": string[],
+  "keywords": string[],
+  "riskLevel": "LOW|MEDIUM|HIGH",
+  "recommendations": string[],
+  "complianceStatus": {
+    "status": "PASSED|FAILED|PENDING",
+    "details": "string",
+    "lastChecked": "ISO date string"
+  }
+}
 
-        Document content to analyze:
-        ${content.substring(0, 8000)}`
+Document to analyze:
+${content.substring(0, 8000)}`
       }],
     });
 
+    console.log("Claude analysis completed, parsing response...");
     const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
 
-    // Use GPT-4 for detailed summary with enhanced prompt
+    // Use GPT-4 for summary
     const gptResponse = await openai.chat.completions.create({
       model: GPT_MODEL,
       messages: [
         {
           role: "system",
-          content: "You are an expert legal document analyst specializing in SOC reports and compliance documents. For SOC reports, pay special attention to control effectiveness and compliance status. Provide specific details about the type of SOC report and the audit findings."
+          content: "You are an expert legal document analyst specializing in SOC reports and compliance documents. Focus on identifying document type and compliance status."
         },
         {
           role: "user",
-          content: `Analyze this document with focus on compliance status and technical details:\n${content.substring(0, 8000)}`
+          content: `Analyze this document and provide a clear summary, focusing on document type and compliance status:\n${content.substring(0, 8000)}`
         }
       ],
     });
 
     const summary = gptResponse.choices[0].message.content || "";
+    console.log("Document analysis completed:", {
+      documentType: claudeAnalysis.documentType,
+      industry: claudeAnalysis.industry
+    });
 
     return {
       summary,
