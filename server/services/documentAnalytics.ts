@@ -5,10 +5,11 @@ import { anthropic } from "../anthropic";
 
 export class DocumentAnalyticsService {
   private async analyzeWithOpenAI(content: string) {
-    const prompt = `Analyze this document and provide:
-1. Document Type (e.g., SOC 3 Report, Contract, Legal Brief)
-2. Industry Classification
+    const prompt = `Analyze the following document and provide:
+1. Document Type (e.g., SOC 3 Report, Google Workspace Report, Contract, Legal Brief)
+2. Industry Classification (e.g., Technology, Healthcare, Finance)
 3. Compliance Status
+4. Risk Assessment
 
 Document content:
 ${content.substring(0, 3000)}
@@ -19,12 +20,7 @@ Return your analysis in JSON format with the following structure:
   "industry": "string",
   "complianceStatus": {
     "status": "PASSED" | "FAILED" | "PENDING",
-    "details": "string",
-    "lastChecked": "string",
-    "reportPeriod": {
-      "start": "string",
-      "end": "string"
-    }
+    "details": "string"
   }
 }`;
 
@@ -34,7 +30,7 @@ Return your analysis in JSON format with the following structure:
         messages: [
           {
             role: "system",
-            content: "You are a document analysis expert specializing in SOC reports and compliance documents. For Google Workspace documents, ensure to identify them specifically as 'SOC 3 Report' and industry as 'Technology'. Return only valid JSON."
+            content: "You are a document analysis expert specializing in legal and compliance documents. For SOC reports, ensure to identify them specifically as 'SOC 3 Report' or similar. Return only valid JSON."
           },
           {
             role: "user",
@@ -54,22 +50,17 @@ Return your analysis in JSON format with the following structure:
   }
 
   private async analyzeWithAnthropic(content: string) {
-    const prompt = `Analyze this document and provide its metadata. Return only a JSON object with this exact structure:
+    const prompt = `Analyze this document and classify it. Return only a JSON object with this exact structure:
 {
   "documentType": "string",
   "industry": "string",
   "complianceStatus": {
     "status": "PASSED" | "FAILED" | "PENDING",
-    "details": "string",
-    "lastChecked": "string",
-    "reportPeriod": {
-      "start": "string",
-      "end": "string"
-    }
+    "details": "string"
   }
 }
 
-If this is a Google Workspace document, ensure to identify it as a 'SOC 3 Report' and industry as 'Technology'.
+For SOC reports, ensure to identify them specifically as 'SOC 3 Report' or similar.
 
 Document content:
 ${content.substring(0, 3000)}`;
@@ -79,7 +70,7 @@ ${content.substring(0, 3000)}`;
         model: "claude-3-opus-20240229",
         max_tokens: 1024,
         temperature: 0.1,
-        system: "You are a document analysis expert specializing in SOC reports and compliance documents. Always identify Google Workspace documents as SOC 3 Reports in the Technology industry.",
+        system: "You are a document analysis expert specializing in SOC reports and compliance documents. Return only valid JSON matching the specified structure.",
         messages: [{ role: "user", content: prompt }]
       });
 
