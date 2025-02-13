@@ -40,62 +40,44 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `You are a specialized SOC compliance document analyzer. Analyze this document with extreme attention to detail and provide:
+        content: `You are a specialized compliance document analyzer. Analyze this legal/compliance document content with special attention to SOC compliance reports and provide:
 
-1. Document Type Classification:
-   - If it's a SOC report, specify exact type (SOC 1, SOC 2, SOC 3)
-   - For SOC 3 reports, identify if it's for specific services (e.g., Google Workspace, AWS, etc.)
-   - If not SOC, categorize as: Compliance Certification, Audit Report, Privacy Policy, Terms of Service, or Other
+1. Document Type: Identify specific document types, especially:
+   - SOC reports (SOC 1, SOC 2, SOC 3)
+   - Compliance certifications
+   - Audit reports
+   - Privacy policies
+   - Terms of service
 
-2. Industry Classification (be specific):
-   - Technology (specify: Cloud Services, SaaS, Infrastructure, etc.)
+2. Industry Classification:
+   - Technology
    - Financial Services
    - Healthcare
    - Other regulated industries
 
-3. Detailed Compliance Analysis:
-   - For SOC reports: Check if audit opinion is unqualified (PASSED) or qualified (FAILED)
-   - Look for phrases like "successfully completed", "meets criteria", "no exceptions noted"
-   - Check for control failures or exceptions
-   - Identify validity period and scope
+3. Compliance Status Analysis:
+   - For SOC reports: Determine if the audit opinion is unqualified (PASSED) or qualified (FAILED)
+   - For other compliance docs: Check if requirements are met (PASSED) or have gaps (FAILED)
    - If not a compliance document: Mark as NOT_APPLICABLE
 
-4. Additional Analysis:
-   - Confidence score (0-1)
-   - Key entities (companies, services, auditors)
-   - Critical keywords
-   - Risk level (LOW/MEDIUM/HIGH)
-   - Key recommendations
+Include a confidence score (0-1), key entities, keywords, risk level (LOW/MEDIUM/HIGH), and key recommendations.
 
-Respond in JSON format with these keys:
-{
-  "documentType": string,
-  "industry": string,
-  "confidence": number,
-  "entities": string[],
-  "keywords": string[],
-  "riskLevel": string,
-  "recommendations": string[],
-  "complianceStatus": {
-    "status": "PASSED" | "FAILED" | "NOT_APPLICABLE",
-    "details": string
-  }
-}
+Respond in JSON format with these keys: documentType, industry, confidence, entities, keywords, riskLevel, recommendations, complianceStatus (object with status and details).
 
-Document to analyze:
+Content to analyze:
 ${content.substring(0, 8000)}`
       }],
     });
 
     const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
 
-    // Use GPT-4 for detailed summary with focus on compliance
+    // Use GPT-4 for detailed summary
     const gptResponse = await openai.chat.completions.create({
       model: GPT_MODEL,
       messages: [
         {
           role: "system",
-          content: "You are a SOC compliance expert. Provide a concise but comprehensive summary focusing on compliance status, key findings, and critical implications. Pay special attention to audit opinions, control effectiveness, and any exceptions or qualifications.",
+          content: "You are a legal document analysis expert specializing in SOC compliance reports and regulatory documents. Provide a concise but comprehensive summary focusing on compliance status, key findings, and critical implications.",
         },
         {
           role: "user",
