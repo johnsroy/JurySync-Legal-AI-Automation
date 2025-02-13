@@ -34,70 +34,50 @@ interface DocumentAnalysis {
 
 export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
   try {
-    // First pass with Claude for detailed analysis
+    // Use Claude for initial analysis and classification
     const claudeResponse = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `You are a specialized compliance document analyzer. Your task is to analyze this document with extremely high accuracy, especially for SOC compliance reports.
+        content: `You are a specialized compliance document analyzer. Analyze this legal/compliance document content with special attention to SOC compliance reports and provide:
 
-Analyze for:
+1. Document Type: Identify specific document types, especially:
+   - SOC reports (SOC 1, SOC 2, SOC 3)
+   - Compliance certifications
+   - Audit reports
+   - Privacy policies
+   - Terms of service
 
-1. Document Type - Be very specific:
-   - For SOC reports: Specify exact type (SOC 1 Type I/II, SOC 2 Type I/II, SOC 3)
-   - For other compliance docs: Specify standard (ISO 27001, HIPAA, etc.)
-   - Include version/year if present
+2. Industry Classification:
+   - Technology
+   - Financial Services
+   - Healthcare
+   - Other regulated industries
 
-2. Industry - Be specific:
-   - Primary industry (e.g., Cloud Technology, Financial Services)
-   - Sub-industry if applicable (e.g., SaaS, Payment Processing)
-   - Regulatory context if relevant
+3. Compliance Status Analysis:
+   - For SOC reports: Determine if the audit opinion is unqualified (PASSED) or qualified (FAILED)
+   - For other compliance docs: Check if requirements are met (PASSED) or have gaps (FAILED)
+   - If not a compliance document: Mark as NOT_APPLICABLE
 
-3. Compliance Status:
-   - For SOC reports: 
-     - PASSED if unqualified opinion / no exceptions
-     - FAILED if qualified opinion / exceptions found
-     - Include specific criteria met/unmet
-   - For other compliance docs:
-     - PASSED if fully compliant
-     - FAILED if gaps exist
-   - Details must explain the status
+Include a confidence score (0-1), key entities, keywords, risk level (LOW/MEDIUM/HIGH), and key recommendations.
 
-4. Additional Analysis:
-   - Confidence score (0-1)
-   - Key entities (companies, standards bodies)
-   - Critical keywords
-   - Risk level (LOW/MEDIUM/HIGH)
-   - Specific recommendations
-
-Respond in JSON format with these fields:
-{
-  "documentType": "string (be very specific)",
-  "industry": "string (primary and sub-industry)",
-  "complianceStatus": {
-    "status": "PASSED/FAILED/NOT_APPLICABLE",
-    "details": "string (specific explanation)"
-  },
-  "confidence": number,
-  "entities": string[],
-  "keywords": string[],
-  "riskLevel": "string",
-  "recommendations": string[]
-}
+Respond in JSON format with these keys: documentType, industry, confidence, entities, keywords, riskLevel, recommendations, complianceStatus (object with status and details).
 
 Content to analyze:
 ${content.substring(0, 8000)}`
       }],
     });
 
-    // Second pass with GPT-4 for verification and summary
+    const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
+
+    // Use GPT-4 for detailed summary
     const gptResponse = await openai.chat.completions.create({
       model: GPT_MODEL,
       messages: [
         {
           role: "system",
-          content: "You are a SOC compliance and audit expert. Analyze this document focusing on compliance status, control objectives, and critical implications. Pay special attention to audit opinions and control effectiveness statements.",
+          content: "You are a legal document analysis expert specializing in SOC compliance reports and regulatory documents. Provide a concise but comprehensive summary focusing on compliance status, key findings, and critical implications.",
         },
         {
           role: "user",
@@ -107,7 +87,6 @@ ${content.substring(0, 8000)}`
     });
 
     const summary = gptResponse.choices[0].message.content || "";
-    const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
 
     return {
       summary,
