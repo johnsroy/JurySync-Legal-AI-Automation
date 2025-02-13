@@ -292,14 +292,6 @@ export default function WorkflowAutomation() {
     );
   };
 
-  const workflowStages = [
-    { id: 'stage1', name: 'Document Upload', icon: Upload },
-    { id: 'stage2', name: 'Data Extraction', icon: FileText },
-    { id: 'stage3', name: 'Compliance Check', icon: BadgeCheck },
-    { id: 'stage4', name: 'Report Generation', icon: FileDown },
-    { id: 'stage5', name: 'Completion', icon: CheckCircle2 }
-  ];
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       {/* Header Section */}
@@ -342,7 +334,7 @@ export default function WorkflowAutomation() {
           </div>
         </Card>
 
-        {/* Analysis Results Table */}
+        {/* Analysis Results - Add immediately after upload section */}
         {analysisResults && renderAnalysisTable()}
 
         {/* Workflow Progress */}
