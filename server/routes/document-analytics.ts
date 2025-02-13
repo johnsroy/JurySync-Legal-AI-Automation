@@ -1,9 +1,13 @@
-import { Router } from 'express';
+import { Router } from "express";
+import { documentAnalyticsService } from "../services/documentAnalytics";
+import { db } from "../db";
+import { vaultDocuments, vaultDocumentAnalysis } from "@shared/schema";
 import { z } from 'zod';
 import { DocumentAnalyticsService } from '../services/documentAnalytics';
 
 const router = Router();
-const documentAnalyticsService = new DocumentAnalyticsService();
+const documentAnalyticsServiceInstance = new DocumentAnalyticsService(); // Instance creation
+
 
 // Validation schema for workflow results
 const workflowResultSchema = z.array(z.object({
@@ -21,7 +25,7 @@ router.post('/process', async (req, res) => {
     const validatedResults = workflowResultSchema.parse(workflowResults);
     
     // Process the workflow results
-    const metadata = await documentAnalyticsService.processWorkflowResults(validatedResults);
+    const metadata = await documentAnalyticsServiceInstance.processWorkflowResults(validatedResults);
     
     res.json(metadata);
   } catch (error) {
@@ -30,6 +34,56 @@ router.post('/process', async (req, res) => {
       error: 'Failed to process document analytics',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
+  }
+});
+
+// Get analysis for all documents in vault
+router.get("/vault/analysis", async (req, res) => {
+  try {
+    const analysis = await db
+      .select()
+      .from(vaultDocumentAnalysis)
+      .orderBy(vaultDocumentAnalysis.createdAt);
+
+    res.json(analysis);
+  } catch (error) {
+    console.error("Error fetching vault analysis:", error);
+    res.status(500).json({ error: "Failed to fetch vault analysis" });
+  }
+});
+
+// Get analysis for a specific document
+router.get("/vault/analysis/:documentId", async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.documentId);
+    const analysis = await documentAnalyticsServiceInstance.getDocumentAnalysis(documentId);
+
+    if (!analysis) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    res.json(analysis);
+  } catch (error) {
+    console.error("Error fetching document analysis:", error);
+    res.status(500).json({ error: "Failed to fetch document analysis" });
+  }
+});
+
+// Analyze a document
+router.post("/vault/analyze/:documentId", async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.documentId);
+    const { content } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ error: "Document content is required" });
+    }
+
+    const analysis = await documentAnalyticsServiceInstance.analyzeDocument(documentId, content);
+    res.json(analysis);
+  } catch (error) {
+    console.error("Error analyzing document:", error);
+    res.status(500).json({ error: "Failed to analyze document" });
   }
 });
 

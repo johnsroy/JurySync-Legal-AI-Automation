@@ -1,7 +1,7 @@
 import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { relations } from 'drizzle-orm';
+import { relations, type InferModel } from 'drizzle-orm';
 
 // Define user roles for LegalAI
 export const UserRole = z.enum([
@@ -200,6 +200,55 @@ export const PredictionConfidence = z.enum([
 ]);
 
 export type PredictionConfidence = z.infer<typeof PredictionConfidence>;
+
+// Add after existing document types
+export const VaultDocumentType = z.enum([
+  "CONTRACT",
+  "BRIEF",
+  "CASE_LAW",
+  "LEGISLATION",
+  "CORRESPONDENCE",
+  "OTHER"
+]);
+
+export type VaultDocumentType = z.infer<typeof VaultDocumentType>;
+
+export const vaultDocuments = pgTable("vault_documents", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  documentType: text("document_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  mimeType: text("mime_type").notNull(),
+  aiSummary: text("ai_summary"),
+  aiClassification: text("ai_classification"),
+  vectorId: text("vector_id"),
+  metadata: jsonb("metadata").$type<{
+    keywords?: string[];
+    relevance?: number;
+    confidence?: number;
+    entities?: string[];
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertVaultDocumentSchema = createInsertSchema(vaultDocuments)
+  .pick({
+    title: true,
+    content: true,
+    documentType: true,
+    fileSize: true,
+    mimeType: true,
+  })
+  .extend({
+    title: z.string().min(1, "Title is required"),
+    documentType: VaultDocumentType,
+  });
+
+export type VaultDocument = typeof vaultDocuments.$inferSelect;
+export type InsertVaultDocument = z.infer<typeof insertVaultDocumentSchema>;
 
 // Only updating the complianceDocuments table definition
 export const complianceDocuments = pgTable("compliance_documents", {
@@ -821,55 +870,6 @@ export type InsertMetricsEvent = typeof metricsEvents.$inferInsert;
 
 export const insertMetricsEventSchema = createInsertSchema(metricsEvents);
 
-// Add after existing document types
-export const VaultDocumentType = z.enum([
-  "CONTRACT",
-  "BRIEF",
-  "CASE_LAW",
-  "LEGISLATION",
-  "CORRESPONDENCE",
-  "OTHER"
-]);
-
-export type VaultDocumentType = z.infer<typeof VaultDocumentType>;
-
-export const vaultDocuments = pgTable("vault_documents", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  documentType: text("document_type").notNull(),
-  fileSize: integer("file_size").notNull(),
-  mimeType: text("mime_type").notNull(),
-  aiSummary: text("ai_summary"),
-  aiClassification: text("ai_classification"),
-  vectorId: text("vector_id"),
-  metadata: jsonb("metadata").$type<{
-    keywords?: string[];
-    relevance?: number;
-    confidence?: number;
-    entities?: string[];
-  }>(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-export const insertVaultDocumentSchema = createInsertSchema(vaultDocuments)
-  .pick({
-    title: true,
-    content: true,
-    documentType: true,
-    fileSize: true,
-    mimeType: true,
-  })
-  .extend({
-    title: z.string().min(1, "Title is required"),
-    documentType: VaultDocumentType,
-  });
-
-export type VaultDocument = typeof vaultDocuments.$inferSelect;
-export type InsertVaultDocument = z.infer<typeof insertVaultDocumentSchema>;
-
 // Add after existing document schema
 export const documentAnalysis = pgTable("document_analysis", {
   id: serial("id").primaryKey(),
@@ -895,3 +895,28 @@ export const documentAnalysisRelations = relations(documentAnalysis, ({ one }) =
     references: [documents.id],
   }),
 }));
+
+// Remove duplicate table definitions and ensure only one instance of vaultDocumentAnalysis exists
+export const vaultDocumentAnalysis = pgTable("vault_documentanalysis", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document__id").notNull(),
+  fileName: text("file_name").notNull(),
+  fileDate: text("file_date").notNull(),
+  documentType: text("document_type").notNull().default("Audit"),
+  industry: text("industry").notNull().default("Technology"),
+  complianceStatus: text("compliance_status").notNull().default("Compliant"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Add relations
+export const vaultDocumentAnalysisRelations = relations(vaultDocumentAnalysis, ({ one }) => ({
+  document: one(vaultDocuments, {
+    fields: [vaultDocumentAnalysis.documentId],
+    references: [vaultDocuments.id],
+  }),
+}));
+
+export type VaultDocumentAnalysis = typeof vaultDocumentAnalysis.$inferSelect;
+export const insertVaultDocumentAnalysisSchema = createInsertSchema(vaultDocumentAnalysis);
+export type InsertVaultDocumentAnalysis = z.infer<typeof insertVaultDocumentAnalysisSchema>;

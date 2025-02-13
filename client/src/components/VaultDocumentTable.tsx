@@ -1,14 +1,14 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileText, AlertTriangle, CheckCircle, Clock } from "lucide-react";
-import { format } from "date-fns";
+import { FileText, CheckCircle, AlertTriangle, HelpCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface VaultDocument {
   id: number;
-  title: string;
+  fileName: string;
   documentType: string;
   industry: string;
   complianceStatus: string;
-  createdAt: string;
+  fileDate: string;
 }
 
 interface VaultDocumentTableProps {
@@ -16,17 +16,22 @@ interface VaultDocumentTableProps {
 }
 
 export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
-  const getComplianceIcon = (status: string) => {
-    switch (status?.toUpperCase()) {
-      case 'COMPLIANT':
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'NON-COMPLIANT':
-        return <AlertTriangle className="h-4 w-4 text-red-500" />;
-      case 'PENDING':
-        return <Clock className="h-4 w-4 text-yellow-500" />;
-      default:
-        return <AlertTriangle className="h-4 w-4 text-gray-500" />;
-    }
+  const getComplianceBadge = (status: string) => {
+    const statusMap = {
+      'Compliant': { icon: CheckCircle, variant: 'success', color: 'bg-green-500' },
+      'Non-Compliant': { icon: AlertTriangle, variant: 'destructive', color: 'bg-red-500' },
+      'Review Required': { icon: HelpCircle, variant: 'warning', color: 'bg-yellow-500' }
+    };
+
+    const defaultStatus = { icon: HelpCircle, variant: 'secondary', color: 'bg-gray-500' };
+    const { icon: Icon, color } = statusMap[status] || defaultStatus;
+
+    return (
+      <Badge variant="default" className={`${color} text-white flex items-center gap-1`}>
+        <Icon className="h-3 w-3" />
+        {status}
+      </Badge>
+    );
   };
 
   return (
@@ -34,11 +39,10 @@ export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>File</TableHead>
+            <TableHead>File Name</TableHead>
             <TableHead>Document Type</TableHead>
             <TableHead>Industry</TableHead>
             <TableHead>Compliance Status</TableHead>
-            <TableHead>Upload Date</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -46,15 +50,16 @@ export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
             <TableRow key={doc.id}>
               <TableCell className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-blue-500" />
-                <span>{doc.title}</span>
+                <div>
+                  <span className="font-medium">{doc.fileName}</span>
+                  <span className="text-sm text-gray-500 ml-2">{doc.fileDate}</span>
+                </div>
               </TableCell>
-              <TableCell>{doc.documentType || "SOC 3 Report"}</TableCell>
-              <TableCell>{doc.industry || "Technology"}</TableCell>
-              <TableCell className="flex items-center gap-2">
-                {getComplianceIcon(doc.complianceStatus)}
-                <span>{doc.complianceStatus || "COMPLIANT"}</span>
+              <TableCell>{doc.documentType}</TableCell>
+              <TableCell>{doc.industry}</TableCell>
+              <TableCell>
+                {getComplianceBadge(doc.complianceStatus)}
               </TableCell>
-              <TableCell>{format(new Date(doc.createdAt), 'MMM d, yyyy')}</TableCell>
             </TableRow>
           ))}
         </TableBody>
