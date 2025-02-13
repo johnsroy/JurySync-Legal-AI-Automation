@@ -15,9 +15,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
 
 export default function VaultPage() {
-  const [filesData, setFilesData] = useState([]);
-  const [sharingPolicy, setSharingPolicy] = useState('workspace');
-  const [stats, setStats] = useState({ accuracy: '', documents: '', fieldExtractions: '' });
   const [selectedDocument, setSelectedDocument] = useState(null);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -46,19 +43,16 @@ export default function VaultPage() {
   const { data: documentsData, isLoading: isLoadingDocuments } = useQuery({
     queryKey: ['/api/vault/documents'],
     queryFn: async () => {
-      const [vaultResponse, workflowResponse] = await Promise.all([
-        apiRequest('GET', '/api/vault/documents'),
-        apiRequest('GET', '/api/workflow/documents')
-      ]);
-
-      const vaultDocs = await vaultResponse.json();
-      const workflowDocs = await workflowResponse.json();
-
-      // Combine and deduplicate documents by ID
-      const allDocs = [...vaultDocs.documents, ...workflowDocs.documents];
-      const uniqueDocs = Array.from(new Map(allDocs.map(doc => [doc.id, doc])).values());
-
-      return uniqueDocs;
+      try {
+        console.log('Fetching documents...');
+        const response = await apiRequest('GET', '/api/vault/documents');
+        const data = await response.json();
+        console.log('Fetched documents:', data);
+        return data.documents;
+      } catch (error) {
+        console.error('Error fetching documents:', error);
+        throw error;
+      }
     }
   });
 
@@ -83,38 +77,6 @@ export default function VaultPage() {
       });
     }
   });
-
-  // Analysis functions
-  const performAnalysis = async (analysisType) => {
-    try {
-      const response = await apiRequest('POST', '/api/vault/analyze', { analysisType });
-      const data = await response.json();
-      toast({
-        title: 'Analysis Complete',
-        description: `Analysis Result: ${data.summary}`,
-      });
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to perform analysis',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  // Update sharing policy
-  const updateSharing = (e) => {
-    const newPolicy = e.target.value;
-    setSharingPolicy(newPolicy);
-    apiRequest('POST', '/api/vault/update-sharing', { policy: newPolicy })
-      .catch(err => {
-        toast({
-          title: 'Error',
-          description: 'Failed to update sharing policy',
-          variant: 'destructive',
-        });
-      });
-  };
 
   const canUpload = user && UPLOAD_ALLOWED_ROLES.includes(user.role);
 
@@ -150,18 +112,6 @@ export default function VaultPage() {
           </div>
         )}
 
-        {/* Analysis Actions */}
-        <div className="flex gap-4 mb-8">
-          <Button onClick={() => performAnalysis('Reps & Warranties')}>
-            Reps & Warranties
-          </Button>
-          <Button onClick={() => performAnalysis('M&A Deal Points')}>
-            M&A Deal Points
-          </Button>
-          <Button onClick={() => performAnalysis('Compliance Analysis')}>
-            Compliance Analysis
-          </Button>
-        </div>
 
         {/* Documents Table */}
         <Card className="mb-8">
@@ -210,10 +160,10 @@ export default function VaultPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {doc.metadata?.documentType || "Unknown"}
+                          {doc.analysis?.documentType || doc.metadata?.documentType || "Unknown"}
                         </TableCell>
                         <TableCell>
-                          {doc.metadata?.industry || "Unknown"}
+                          {doc.analysis?.industry || doc.metadata?.industry || "Unknown"}
                         </TableCell>
                         <TableCell>
                           <Button
@@ -234,43 +184,31 @@ export default function VaultPage() {
           </CardContent>
         </Card>
 
-        {/* Stats Section */}
-        <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900">{stats.accuracy || "97%"}</h2>
-            <p className="text-gray-600">Accuracy on key term extraction</p>
-          </div>
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900">{stats.documents || "10K+"}</h2>
-            <p className="text-gray-600">Documents stored per vault</p>
-          </div>
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900">{stats.fieldExtractions || "50K+"}</h2>
-            <p className="text-gray-600">Field extractions per document</p>
-          </div>
-        </div>
-
-        {/* AI Insights Modal */}
+        {/* Document Details Dialog */}
         {selectedDocument && (
           <Dialog open={!!selectedDocument} onOpenChange={() => setSelectedDocument(null)}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>AI Insights: {selectedDocument.title}</DialogTitle>
+                <DialogTitle>Document Details: {selectedDocument.title}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <h4 className="font-medium text-sm text-gray-900">Document Classification</h4>
-                  <p className="text-sm text-gray-700">{selectedDocument.aiClassification}</p>
+                  <h4 className="font-medium text-sm text-gray-900">Document Type</h4>
+                  <p className="text-sm text-gray-700">
+                    {selectedDocument.analysis?.documentType || selectedDocument.metadata?.documentType || "Unknown"}
+                  </p>
                 </div>
                 <div>
-                  <h4 className="font-medium text-sm text-gray-900">Summary</h4>
-                  <p className="text-sm text-gray-700">{selectedDocument.aiSummary}</p>
+                  <h4 className="font-medium text-sm text-gray-900">Industry</h4>
+                  <p className="text-sm text-gray-700">
+                    {selectedDocument.analysis?.industry || selectedDocument.metadata?.industry || "Unknown"}
+                  </p>
                 </div>
-                {selectedDocument.metadata?.keywords && (
+                {(selectedDocument.analysis?.keywords || selectedDocument.metadata?.keywords) && (
                   <div>
                     <h4 className="font-medium text-sm text-gray-900">Keywords</h4>
                     <div className="flex flex-wrap gap-2">
-                      {selectedDocument.metadata.keywords.map((keyword: string, index: number) => (
+                      {(selectedDocument.analysis?.keywords || selectedDocument.metadata?.keywords).map((keyword, index) => (
                         <span
                           key={index}
                           className="px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs"
@@ -279,6 +217,16 @@ export default function VaultPage() {
                         </span>
                       ))}
                     </div>
+                  </div>
+                )}
+                {(selectedDocument.analysis?.recommendations || selectedDocument.metadata?.recommendations) && (
+                  <div>
+                    <h4 className="font-medium text-sm text-gray-900">Recommendations</h4>
+                    <ul className="list-disc pl-4 text-sm text-gray-700">
+                      {(selectedDocument.analysis?.recommendations || selectedDocument.metadata?.recommendations).map((rec, index) => (
+                        <li key={index}>{rec}</li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>

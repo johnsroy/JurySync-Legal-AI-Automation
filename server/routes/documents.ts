@@ -7,15 +7,6 @@ import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
 import PDFDocument from "pdfkit";
 import { approvalAuditService } from "../services/approvalAuditService";
-import { 
-  getAllTemplates, 
-  getTemplate, 
-  getTemplatesByCategory,
-  suggestRequirements,
-  getAutocomplete,
-  getCustomInstructionSuggestions,
-  generateContract 
-} from "../services/templateStore";
 import { analyzeDocument } from "../services/documentAnalysisService";
 
 const router = Router();
@@ -31,13 +22,7 @@ const upload = multer({
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      // Add additional MIME types for better compatibility
-      'application/x-pdf',
-      'application/acrobat',
-      'applications/vnd.pdf',
-      'text/pdf',
-      'application/doc',
-      'application/vnd.ms-word.document.macroEnabled.12'
+      'text/plain'
     ];
 
     if (allowedMimes.includes(file.mimetype)) {
@@ -70,7 +55,10 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
       } else if (req.file.mimetype.includes('word')) {
         const result = await mammoth.extractRawText({ buffer: req.file.buffer });
         content = result.value;
+      } else if (req.file.mimetype.includes('plain')) {
+        content = req.file.buffer.toString('utf8');
       }
+
 
       if (!content || !content.trim()) {
         throw new Error('Failed to extract content from document');
@@ -89,28 +77,25 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
       // Analyze document using our enhanced service
       const analysis = await analyzeDocument(content);
 
-      // Create document record in database that will be visible in both workflow and vault
-      const [document] = await db
-        .insert(documents)
-        .values({
-          title: req.file.originalname,
-          content: content,
-          userId: req.user?.id || 1,
-          processingStatus: "COMPLETED",
-          agentType: "LEGAL_RESEARCH",
-          metadata: {
-            documentType: analysis.documentType,
-            industry: analysis.industry,
-            classification: analysis.classification,
-            keywords: analysis.keywords,
-            entities: analysis.entities,
-            confidence: analysis.confidence,
-            riskLevel: analysis.riskLevel,
-            recommendations: analysis.recommendations,
-            source: "workflow-automation"
-          }
-        })
-        .returning();
+      // Create document record in database
+      const [document] = await db.insert(documents).values({
+        userId: req.user?.id || 1,
+        title: req.file.originalname,
+        content: content,
+        processingStatus: "COMPLETED",
+        agentType: "LEGAL_RESEARCH",
+        analysis: {
+          documentType: analysis.documentType,
+          industry: analysis.industry,
+          classification: analysis.classification,
+          keywords: analysis.keywords,
+          entities: analysis.entities,
+          confidence: analysis.confidence,
+          riskLevel: analysis.riskLevel,
+          recommendations: analysis.recommendations,
+          source: "workflow-automation"
+        }
+      }).returning();
 
       console.log("Document uploaded successfully:", {
         id: document.id,
