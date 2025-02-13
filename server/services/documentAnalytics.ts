@@ -5,19 +5,37 @@ import { eq } from "drizzle-orm";
 import { openai } from "../openai";
 import { anthropic } from "../anthropic";
 
+// Define strict types for standardization
+type StandardIndustry = 'TECHNOLOGY' | 'HEALTHCARE' | 'FINANCIAL' | 'MANUFACTURING' | 'RETAIL';
+type StandardDocumentType = 'SOC Report' | 'Contract Agreement' | 'Policy Document' | 'Compliance Report';
+type ComplianceStatus = 'Compliant' | 'Non-Compliant';
+
+// Industry mapping configuration
+const TECH_COMPANIES = [
+  'google', 'microsoft', 'apple', 'amazon', 'meta', 'ibm', 'oracle', 'salesforce',
+  'alphabet', 'workspace', 'cloud', 'aws', 'azure'
+];
+
+const TECH_KEYWORDS = [
+  'software', 'cloud', 'computing', 'digital', 'tech', 'cyber', 'data',
+  'platform', 'application', 'api', 'service', 'system'
+];
+
 export class DocumentAnalyticsService {
   private async analyzeWithAI(content: string) {
-    const systemPrompt = `You are an expert legal document analyzer. Given a document, identify:
+    const systemPrompt = `You are an expert legal document analyzer. For the given document, identify:
 
-1. Document Type: What kind of document is this? (e.g. Contract Agreement, SOC Report, Audit Report)
-2. Industry: Based on companies mentioned and content, what industry is this for? (Technology, Healthcare, Financial Services, etc.)
-3. Compliance: Is this document showing compliance or non-compliance?
+1. Document Type: Classify as one of: SOC Report, Contract Agreement, Policy Document, Compliance Report
+2. Industry Context: Look for company names, industry terms, and sector-specific language
+3. Compliance Status: Determine if compliant/non-compliant based on content
 
-Provide a simple JSON response like this:
+Respond with a JSON object:
 {
-  "documentType": "Contract Agreement",
-  "industry": "Technology", 
-  "complianceStatus": "Compliant"
+  "documentType": "string",
+  "industry": "string",
+  "companyNames": ["string"],
+  "keywords": ["string"],
+  "complianceStatus": "string"
 }`;
 
     try {
@@ -25,13 +43,13 @@ Provide a simple JSON response like this:
         model: "gpt-4",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content }
+          { role: "user", content: content }
         ],
         response_format: { type: "json_object" }
       });
 
       const result = JSON.parse(completion.choices[0].message.content);
-      return result;
+      return this.standardizeResults(result);
     } catch (error) {
       console.error("OpenAI analysis failed, falling back to Anthropic:", error);
 
@@ -39,18 +57,65 @@ Provide a simple JSON response like this:
         const response = await anthropic.messages.create({
           model: "claude-3-opus-20240229",
           max_tokens: 1024,
-          messages: [
-            { role: "user", content: `${systemPrompt}\n\n${content}` }
-          ]
+          messages: [{ role: "user", content: `${systemPrompt}\n\n${content}` }]
         });
 
         const result = JSON.parse(response.content[0].text);
-        return result;
+        return this.standardizeResults(result);
       } catch (anthropicError) {
         console.error("Both AI services failed:", anthropicError);
         throw new Error("Document analysis failed");
       }
     }
+  }
+
+  private standardizeResults(analysis: any) {
+    // Standardize industry based on companies and keywords
+    const allText = [
+      ...(analysis.companyNames || []),
+      ...(analysis.keywords || []),
+      analysis.industry || ''
+    ].join(' ').toLowerCase();
+
+    // Map to standard industry
+    let industry: StandardIndustry = 'TECHNOLOGY'; // Default to technology
+
+    // Check for tech industry markers first
+    const isTech = TECH_COMPANIES.some(company => allText.includes(company)) ||
+                  TECH_KEYWORDS.some(keyword => allText.includes(keyword));
+
+    if (isTech) {
+      industry = 'TECHNOLOGY';
+    } else if (allText.match(/hospital|medical|health|pharma|biotech/)) {
+      industry = 'HEALTHCARE';
+    } else if (allText.match(/bank|financial|investment|trading|credit/)) {
+      industry = 'FINANCIAL';
+    } else if (allText.match(/manufacturing|industrial|factory|production/)) {
+      industry = 'MANUFACTURING';
+    } else if (allText.match(/retail|store|commerce|consumer|sales/)) {
+      industry = 'RETAIL';
+    }
+
+    // Standardize document type
+    let documentType: StandardDocumentType = 'Compliance Report';
+    if (analysis.documentType.toLowerCase().includes('soc')) {
+      documentType = 'SOC Report';
+    } else if (analysis.documentType.toLowerCase().includes('contract')) {
+      documentType = 'Contract Agreement';
+    } else if (analysis.documentType.toLowerCase().includes('policy')) {
+      documentType = 'Policy Document';
+    }
+
+    // Standardize compliance status
+    const complianceStatus: ComplianceStatus = 
+      analysis.complianceStatus.toLowerCase().includes('non') ? 'Non-Compliant' : 'Compliant';
+
+    return {
+      documentType,
+      industry,
+      complianceStatus,
+      confidence: 0.95
+    };
   }
 
   async processWorkflowResults(workflowResults: WorkflowResult[]): Promise<DocumentMetadata> {
@@ -63,13 +128,14 @@ Provide a simple JSON response like this:
       }
 
       const analysis = await this.analyzeWithAI(classificationResult.content);
+      console.log('Document Analysis Results:', analysis);
 
       const metadata: DocumentMetadata = {
         documentType: analysis.documentType,
         industry: analysis.industry,
         complianceStatus: analysis.complianceStatus,
         analysisTimestamp: new Date().toISOString(),
-        confidence: 0.95,
+        confidence: analysis.confidence,
         classifications: [{
           category: "LEGAL",
           subCategory: analysis.documentType,
@@ -88,6 +154,7 @@ Provide a simple JSON response like this:
   async analyzeDocument(documentId: number, content: string): Promise<VaultDocumentAnalysis> {
     try {
       const analysis = await this.analyzeWithAI(content);
+      console.log('Final Document Analysis:', analysis);
 
       const [result] = await db.insert(vaultDocumentAnalysis).values({
         documentId,
