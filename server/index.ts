@@ -23,6 +23,14 @@ async function isPortInUse(port: number): Promise<boolean> {
   });
 }
 
+async function findAvailablePort(startPort: number): Promise<number> {
+  let port = startPort;
+  while (await isPortInUse(port)) {
+    port++;
+  }
+  return port;
+}
+
 // Create a separate webhook server
 const webhookServer = express();
 webhookServer.use(cors());
@@ -35,10 +43,6 @@ webhookServer.post('/webhook-test', (req: Request, res: Response) => {
     if (!process.env.STRIPE_WEBHOOK_SECRET) {
       return res.status(500).json({ error: 'Webhook secret not configured' });
     }
-
-    console.log('Headers:', req.headers);
-    console.log('Body:', req.body);
-
     return res.status(200).json({ 
       status: 'success',
       message: 'Webhook endpoint is accessible',
@@ -116,7 +120,6 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
     // API error handling
     app.use((err: any, req: Request, res: Response, next: NextFunction) => {
       console.error(`API Error [${req.method} ${req.path}]:`, err);
-
       if (!res.headersSent) {
         const statusCode = err.status || 500;
         const errorMessage = process.env.NODE_ENV === 'production'
@@ -134,12 +137,11 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
       }
     });
 
-    // Start webhook server first
-    let webhookPort = 5001;
-    while (await isPortInUse(webhookPort)) {
-      console.log(`Port ${webhookPort} is in use, trying ${webhookPort + 1}`);
-      webhookPort++;
-    }
+    // Find available ports for both servers
+    const webhookPort = await findAvailablePort(5001);
+    const mainPort = await findAvailablePort(5000);
+
+    // Start webhook server
     webhookServer.listen(webhookPort, '0.0.0.0', () => {
       console.log(`Webhook server running at http://0.0.0.0:${webhookPort}`);
     });
@@ -153,12 +155,6 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
     }
 
     // Start main application server
-    let mainPort = Number(process.env.PORT) || 5000;
-    while (await isPortInUse(mainPort)) {
-      console.log(`Port ${mainPort} is in use, trying ${mainPort + 1}`);
-      mainPort++;
-    }
-
     app.listen(mainPort, '0.0.0.0', () => {
       console.log(`Main application server running at http://0.0.0.0:${mainPort}`);
     });
