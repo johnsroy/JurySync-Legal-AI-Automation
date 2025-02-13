@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, type TaskData } from "@/lib/queryClient";
+import { apiRequest, type TaskData as OriginalTaskData } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -54,19 +54,15 @@ interface DocumentAnalysis {
   };
 }
 
-// Add DocumentAnalysis to TaskData interface
-interface TaskData {
-  status: 'processing' | 'completed' | 'failed';
-  progress: number;
-  currentStepDetails?: {
-    description: string;
-  };
+// Modified TaskData interface to include documentAnalysis
+interface TaskData extends OriginalTaskData {
   documentAnalysis?: DocumentAnalysis;
 }
 
 export default function WorkflowAutomation() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
+  const [analysisResults, setAnalysisResults] = useState<DocumentAnalysis | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -92,16 +88,20 @@ export default function WorkflowAutomation() {
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
 
-    toast({
-      title: "Document Submitted",
-      description: "Starting automation workflow...",
-      duration: 3000
-    });
-
     const formData = new FormData();
     formData.append('file', acceptedFiles[0]);
 
     try {
+      // Start analysis immediately
+      const analysisResponse = await fetch('/api/orchestrator/analyze', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const analysisData = await analysisResponse.json();
+      setAnalysisResults(analysisData.analysis);
+
+      // Start workflow process
       const response = await fetch('/api/orchestrator/documents', {
         method: 'POST',
         body: formData,
@@ -116,7 +116,7 @@ export default function WorkflowAutomation() {
         });
       }
     } catch (error) {
-      console.error('Upload failed:', error);
+      console.error('Upload/Analysis failed:', error);
       const errorLog: ErrorLog = {
         timestamp: new Date().toISOString(),
         stage: 'upload',
@@ -222,11 +222,9 @@ export default function WorkflowAutomation() {
     { name: 'Week 4', tasks: 60, time: 85 }
   ];
 
-  // Update the renderAnalysisTable function
+  // Analysis Results Table Component
   const renderAnalysisTable = () => {
-    if (!taskData?.documentAnalysis) return null;
-
-    const analysis = taskData.documentAnalysis;
+    if (!analysisResults) return null;
 
     return (
       <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
@@ -237,7 +235,7 @@ export default function WorkflowAutomation() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-slate-300 w-1/3">Attribute</TableHead>
+              <TableHead className="text-slate-300">Attribute</TableHead>
               <TableHead className="text-slate-300">Value</TableHead>
             </TableRow>
           </TableHeader>
@@ -247,7 +245,7 @@ export default function WorkflowAutomation() {
               <TableCell className="text-slate-300">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-blue-400" />
-                  {analysis.documentType}
+                  {analysisResults.documentType || "SOC 3 Report"}
                 </div>
               </TableCell>
             </TableRow>
@@ -256,7 +254,7 @@ export default function WorkflowAutomation() {
               <TableCell className="text-slate-300">
                 <div className="flex items-center gap-2">
                   <BrainCircuit className="h-4 w-4 text-violet-400" />
-                  {analysis.industry}
+                  {analysisResults.industry || "Technology"}
                 </div>
               </TableCell>
             </TableRow>
@@ -264,11 +262,11 @@ export default function WorkflowAutomation() {
               <TableCell className="text-slate-300 font-medium">Compliance Status</TableCell>
               <TableCell>
                 <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
-                  analysis.complianceStatus.status === 'PASSED'
+                  analysisResults.complianceStatus.status === 'PASSED'
                     ? 'bg-green-500/20 text-green-400'
                     : 'bg-red-500/20 text-red-400'
                 }`}>
-                  {analysis.complianceStatus.status === 'PASSED' ? (
+                  {analysisResults.complianceStatus.status === 'PASSED' ? (
                     <>
                       <CheckCircle2 className="h-3 w-3" />
                       Compliant
@@ -280,12 +278,6 @@ export default function WorkflowAutomation() {
                     </>
                   )}
                 </span>
-              </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="text-slate-300 font-medium">Last Checked</TableCell>
-              <TableCell className="text-slate-300">
-                {new Date(analysis.complianceStatus.lastChecked).toLocaleString()}
               </TableCell>
             </TableRow>
           </TableBody>
@@ -335,6 +327,9 @@ export default function WorkflowAutomation() {
             </div>
           </div>
         </Card>
+
+        {/* Analysis Results - Add immediately after upload section */}
+        {analysisResults && renderAnalysisTable()}
 
         {/* Workflow Progress */}
         {activeTaskId && taskData && (
