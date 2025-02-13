@@ -48,11 +48,11 @@ export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
                 <FileText className="h-4 w-4 text-blue-500" />
                 <span>{doc.title}</span>
               </TableCell>
-              <TableCell>{doc.documentType || "Unknown"}</TableCell>
-              <TableCell>{doc.industry || "Unknown"}</TableCell>
+              <TableCell>{doc.documentType}</TableCell>
+              <TableCell>{doc.industry}</TableCell>
               <TableCell className="flex items-center gap-2">
                 {getComplianceIcon(doc.complianceStatus)}
-                <span>{doc.complianceStatus || "Unknown"}</span>
+                <span>{doc.complianceStatus}</span>
               </TableCell>
               <TableCell>{format(new Date(doc.createdAt), 'MMM d, yyyy')}</TableCell>
             </TableRow>

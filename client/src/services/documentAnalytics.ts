@@ -19,22 +19,18 @@ class DocumentAnalyticsService {
     try {
       const response = await apiRequest("/api/document-analytics/process", {
         method: "POST",
-        body: JSON.stringify({ workflowResults }),
+        body: JSON.stringify({ workflowResults })
       });
 
-      return response as DocumentMetadata;
+      if (response.ok) {
+        const data = await response.json();
+        return data as DocumentMetadata;
+      }
+
+      throw new Error('Failed to process workflow results');
     } catch (error) {
       console.error("Error processing workflow results:", error);
-      // Return default values if the API call fails
-      return {
-        documentType: "Unknown",
-        industry: "Unknown",
-        complianceStatus: "Unknown",
-        analysisTimestamp: new Date().toISOString(),
-        confidence: 0,
-        classifications: [],
-        riskScore: 0
-      };
+      throw error;
     }
   }
 }
