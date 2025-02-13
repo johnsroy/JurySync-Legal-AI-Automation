@@ -32,16 +32,9 @@ export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
             Non-Compliant
           </Badge>
         );
-      case 'review required':
-        return (
-          <Badge variant="warning" className="bg-yellow-500 text-white flex items-center gap-1">
-            <HelpCircle className="h-3 w-3" />
-            Review Required
-          </Badge>
-        );
       default:
         return (
-          <Badge variant="secondary" className="flex items-center gap-1">
+          <Badge variant="outline" className="flex items-center gap-1">
             <HelpCircle className="h-3 w-3" />
             {status}
           </Badge>
@@ -66,14 +59,12 @@ export function VaultDocumentTable({ documents }: VaultDocumentTableProps) {
             <TableRow key={doc.id}>
               <TableCell className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-blue-500" />
-                <div>
-                  <span className="font-medium">{doc.fileName}</span>
-                </div>
+                {doc.fileName}
               </TableCell>
-              <TableCell>{doc.documentType || "Audit"}</TableCell>
-              <TableCell>{doc.industry || "Technology"}</TableCell>
+              <TableCell>Audit</TableCell>
+              <TableCell>Technology</TableCell>
               <TableCell>
-                {getComplianceBadge(doc.complianceStatus || "Compliant")}
+                {getComplianceBadge(doc.complianceStatus)}
               </TableCell>
               <TableCell>{doc.fileDate}</TableCell>
             </TableRow>
