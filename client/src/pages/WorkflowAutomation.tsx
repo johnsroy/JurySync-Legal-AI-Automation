@@ -81,7 +81,7 @@ export default function WorkflowAutomation() {
     return null;
   }
 
-  // File upload handler using react-dropzone
+  // Document upload handler
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
 
@@ -90,20 +90,7 @@ export default function WorkflowAutomation() {
 
     setIsAnalyzing(true);
     try {
-      // Start analysis immediately
-      const analysisResponse = await fetch('/api/orchestrator/analyze', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!analysisResponse.ok) {
-        throw new Error('Analysis failed');
-      }
-
-      const analysisData = await analysisResponse.json();
-      setAnalysisResults(analysisData.analysis);
-
-      // Start workflow process
+      // Start workflow process first
       const response = await fetch('/api/orchestrator/documents', {
         method: 'POST',
         body: formData,
@@ -117,6 +104,19 @@ export default function WorkflowAutomation() {
           description: "Your document is being analyzed",
           duration: 5000
         });
+
+        // Start analysis after workflow started
+        const analysisResponse = await fetch('/api/orchestrator/analyze', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!analysisResponse.ok) {
+          throw new Error('Analysis failed');
+        }
+
+        const analysisData = await analysisResponse.json();
+        setAnalysisResults(analysisData.analysis);
       }
     } catch (error) {
       console.error('Upload/Analysis failed:', error);
@@ -138,6 +138,24 @@ export default function WorkflowAutomation() {
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
+
+  // Task progress query
+  const { data: taskData } = useQuery<TaskData>({
+    queryKey: ['/api/orchestrator/tasks', activeTaskId],
+    enabled: !!activeTaskId,
+    refetchInterval: 2000,
+  });
+
+  // Retry mutation
+  const retryMutation = useMutation({
+    mutationFn: async (stageId?: string) => {
+      if (!activeTaskId) return;
+      await apiRequest('POST', `/api/orchestrator/tasks/${activeTaskId}/retry`, { stageId });
+      await queryClient.invalidateQueries({
+        queryKey: ['/api/orchestrator/tasks', activeTaskId]
+      });
+    }
+  });
 
   // Analysis Results Table Component
   const renderAnalysisTable = () => {
@@ -203,23 +221,30 @@ export default function WorkflowAutomation() {
     );
   };
 
-  // Task progress query
-  const { data: taskData } = useQuery<TaskData>({
-    queryKey: ['/api/orchestrator/tasks', activeTaskId],
-    enabled: !!activeTaskId,
-    refetchInterval: 2000,
-  });
+  // Get current stage based on progress
+  const getCurrentStage = (progress: number) => {
+    if (progress <= 20) return 0;
+    if (progress <= 40) return 1;
+    if (progress <= 60) return 2;
+    if (progress <= 80) return 3;
+    return 4;
+  };
 
-  // Retry mutation
-  const retryMutation = useMutation({
-    mutationFn: async (stageId?: string) => {
-      if (!activeTaskId) return;
-      await apiRequest('POST', `/api/orchestrator/tasks/${activeTaskId}/retry`, { stageId });
-      await queryClient.invalidateQueries({
-        queryKey: ['/api/orchestrator/tasks', activeTaskId]
-      });
-    }
-  });
+  // Sample metrics data
+  const metricsData = [
+    { name: 'Tasks Automated', value: 80, label: '80% of routine tasks automated' },
+    { name: 'Processing Speed', value: 70, label: '70% faster processing' },
+    { name: 'Cost Savings', value: 40, label: '40% labor cost savings' },
+    { name: 'Error Reduction', value: 60, label: '60% error reduction' }
+  ];
+
+  // Sample timeline data
+  const timelineData = [
+    { name: 'Week 1', tasks: 45, time: 120 },
+    { name: 'Week 2', tasks: 52, time: 110 },
+    { name: 'Week 3', tasks: 48, time: 90 },
+    { name: 'Week 4', tasks: 60, time: 85 }
+  ];
 
   // Download handlers
   const handleDownloadPDF = async () => {
@@ -265,32 +290,6 @@ export default function WorkflowAutomation() {
       });
     }
   };
-
-  // Get current stage based on progress
-  const getCurrentStage = (progress: number) => {
-    if (progress <= 20) return 0;
-    if (progress <= 40) return 1;
-    if (progress <= 60) return 2;
-    if (progress <= 80) return 3;
-    return 4;
-  };
-
-  // Sample metrics data
-  const metricsData = [
-    { name: 'Tasks Automated', value: 80, label: '80% of routine tasks automated' },
-    { name: 'Processing Speed', value: 70, label: '70% faster processing' },
-    { name: 'Cost Savings', value: 40, label: '40% labor cost savings' },
-    { name: 'Error Reduction', value: 60, label: '60% error reduction' }
-  ];
-
-  // Sample timeline data
-  const timelineData = [
-    { name: 'Week 1', tasks: 45, time: 120 },
-    { name: 'Week 2', tasks: 52, time: 110 },
-    { name: 'Week 3', tasks: 48, time: 90 },
-    { name: 'Week 4', tasks: 60, time: 85 }
-  ];
-
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
@@ -443,110 +442,6 @@ export default function WorkflowAutomation() {
                 className="h-2 mb-6 bg-slate-700"
               />
 
-              {/* Error Log Section */}
-              {errorLogs.length > 0 && (
-                <Collapsible className="mb-8">
-                  <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-red-500/10 rounded-lg border border-red-500/20 transition-colors hover:bg-red-500/20">
-                    <div className="flex items-center space-x-2">
-                      <AlertTriangle className="h-5 w-5 text-red-400" />
-                      <span className="font-medium text-red-400">Error Log</span>
-                    </div>
-                    <ChevronDown className="h-4 w-4 text-red-400" />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <ScrollArea className="h-[200px] mt-4">
-                      <div className="space-y-4">
-                        {errorLogs.map((log, index) => (
-                          <div key={index} className="p-4 bg-red-500/5 rounded border border-red-500/10">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-red-400 font-medium">{log.stage}</span>
-                              <span className="text-sm text-slate-500">
-                                {new Date(log.timestamp).toLocaleString()}
-                              </span>
-                            </div>
-                            <p className="text-slate-300">{log.message}</p>
-                            {log.details && (
-                              <p className="mt-2 text-sm text-slate-400">{log.details}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  </CollapsibleContent>
-                </Collapsible>
-              )}
-
-              {/* Metrics Dashboard */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
-                {/* Performance Metrics */}
-                <Card className="bg-slate-700/50 border-none p-6">
-                  <h4 className="text-lg font-semibold mb-6">Performance Metrics</h4>
-                  <div className="space-y-4">
-                    {metricsData.map((metric, index) => (
-                      <div key={index} className="relative pt-1">
-                        <div className="flex mb-2 items-center justify-between">
-                          <div>
-                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-500/20 text-blue-400">
-                              {metric.name}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-xs font-semibold inline-block text-blue-400">
-                              {metric.value}%
-                            </span>
-                          </div>
-                        </div>
-                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-600">
-                          <div
-                            style={{ width: `${metric.value}%` }}
-                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-
-                {/* Processing Timeline */}
-                <Card className="bg-slate-700/50 border-none p-6">
-                  <h4 className="text-lg font-semibold mb-6">Processing Timeline</h4>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={timelineData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-                        <XAxis dataKey="name" stroke="#94a3b8" />
-                        <YAxis stroke="#94a3b8" />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: '#1e293b',
-                            border: 'none',
-                            borderRadius: '0.5rem',
-                            color: '#f8fafc'
-                          }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="tasks"
-                          stroke="#3b82f6"
-                          strokeWidth={2}
-                          dot={{ fill: '#3b82f6' }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="time"
-                          stroke="#22c55e"
-                          strokeWidth={2}
-                          dot={{ fill: '#22c55e' }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card>
-              </div>
-
-              {/* Analysis Results Table - Add after workflow completion */}
-              {taskData.status === 'completed' && renderAnalysisTable()}
-
               {/* Report Download Section */}
               <div className="mt-12 border-t border-slate-700 pt-8">
                 <div className="flex items-center justify-between">
@@ -583,9 +478,9 @@ export default function WorkflowAutomation() {
 }
 
 const workflowStages = [
-    { id: 'draft', name: 'Draft Generation', icon: FileText },
-    { id: 'compliance', name: 'Compliance Auditing', icon: Scale },
-    { id: 'research', name: 'Legal Research & Summarization', icon: BookCheck },
-    { id: 'approval', name: 'Approval & Execution', icon: BadgeCheck },
-    { id: 'audit', name: 'Periodic Audit', icon: History }
-  ];
+  { id: 'draft', name: 'Draft Generation', icon: FileText },
+  { id: 'compliance', name: 'Compliance Auditing', icon: Scale },
+  { id: 'research', name: 'Legal Research & Summarization', icon: BookCheck },
+  { id: 'approval', name: 'Approval & Execution', icon: BadgeCheck },
+  { id: 'audit', name: 'Periodic Audit', icon: History }
+];
