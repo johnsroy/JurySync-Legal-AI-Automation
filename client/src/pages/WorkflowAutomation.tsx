@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, type TaskData as OriginalTaskData } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -34,8 +34,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
 interface ErrorLog {
   timestamp: string;
@@ -54,8 +54,13 @@ interface DocumentAnalysis {
   };
 }
 
-// Modified TaskData interface to include documentAnalysis
-interface TaskData extends OriginalTaskData {
+interface TaskData {
+  id?: string;
+  status: 'processing' | 'completed' | 'failed';
+  progress: number;
+  currentStepDetails?: {
+    description: string;
+  };
   documentAnalysis?: DocumentAnalysis;
 }
 
@@ -63,6 +68,7 @@ export default function WorkflowAutomation() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
   const [analysisResults, setAnalysisResults] = useState<DocumentAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -75,28 +81,24 @@ export default function WorkflowAutomation() {
     return null;
   }
 
-  // Workflow stages definition
-  const workflowStages = [
-    { id: 'draft', name: 'Draft Generation', icon: FileText },
-    { id: 'compliance', name: 'Compliance Auditing', icon: Scale },
-    { id: 'research', name: 'Legal Research & Summarization', icon: BookCheck },
-    { id: 'approval', name: 'Approval & Execution', icon: BadgeCheck },
-    { id: 'audit', name: 'Periodic Audit', icon: History }
-  ];
-
-  // Document upload handler
+  // File upload handler using react-dropzone
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
 
     const formData = new FormData();
     formData.append('file', acceptedFiles[0]);
 
+    setIsAnalyzing(true);
     try {
       // Start analysis immediately
       const analysisResponse = await fetch('/api/orchestrator/analyze', {
         method: 'POST',
         body: formData,
       });
+
+      if (!analysisResponse.ok) {
+        throw new Error('Analysis failed');
+      }
 
       const analysisData = await analysisResponse.json();
       setAnalysisResults(analysisData.analysis);
@@ -106,6 +108,7 @@ export default function WorkflowAutomation() {
         method: 'POST',
         body: formData,
       });
+
       const data = await response.json();
       if (data.taskId) {
         setActiveTaskId(data.taskId);
@@ -129,10 +132,76 @@ export default function WorkflowAutomation() {
         description: "There was an error uploading your document",
         variant: "destructive"
       });
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
+
+  // Analysis Results Table Component
+  const renderAnalysisTable = () => {
+    if (!analysisResults) return null;
+
+    return (
+      <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
+        <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+          <FileCheck className="h-5 w-5 text-green-400" />
+          Document Analysis Results
+        </h3>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-slate-300">Attribute</TableHead>
+              <TableHead className="text-slate-300">Value</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Document Type</TableCell>
+              <TableCell className="text-slate-300">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-400" />
+                  {analysisResults.documentType}
+                </div>
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Industry</TableCell>
+              <TableCell className="text-slate-300">
+                <div className="flex items-center gap-2">
+                  <BrainCircuit className="h-4 w-4 text-violet-400" />
+                  {analysisResults.industry}
+                </div>
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Compliance Status</TableCell>
+              <TableCell>
+                <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
+                  analysisResults.complianceStatus.status === 'PASSED'
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-red-500/20 text-red-400'
+                }`}>
+                  {analysisResults.complianceStatus.status === 'PASSED' ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Compliant
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-3 w-3" />
+                      Non-Compliant
+                    </>
+                  )}
+                </span>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Card>
+    );
+  };
 
   // Task progress query
   const { data: taskData } = useQuery<TaskData>({
@@ -222,69 +291,6 @@ export default function WorkflowAutomation() {
     { name: 'Week 4', tasks: 60, time: 85 }
   ];
 
-  // Analysis Results Table Component
-  const renderAnalysisTable = () => {
-    if (!analysisResults) return null;
-
-    return (
-      <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
-        <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
-          <FileCheck className="h-5 w-5 text-green-400" />
-          Document Analysis Results
-        </h3>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-slate-300">Attribute</TableHead>
-              <TableHead className="text-slate-300">Value</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow>
-              <TableCell className="text-slate-300 font-medium">Document Type</TableCell>
-              <TableCell className="text-slate-300">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-blue-400" />
-                  {analysisResults.documentType || "SOC 3 Report"}
-                </div>
-              </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="text-slate-300 font-medium">Industry</TableCell>
-              <TableCell className="text-slate-300">
-                <div className="flex items-center gap-2">
-                  <BrainCircuit className="h-4 w-4 text-violet-400" />
-                  {analysisResults.industry || "Technology"}
-                </div>
-              </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="text-slate-300 font-medium">Compliance Status</TableCell>
-              <TableCell>
-                <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
-                  analysisResults.complianceStatus.status === 'PASSED'
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-red-500/20 text-red-400'
-                }`}>
-                  {analysisResults.complianceStatus.status === 'PASSED' ? (
-                    <>
-                      <CheckCircle2 className="h-3 w-3" />
-                      Compliant
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="h-3 w-3" />
-                      Non-Compliant
-                    </>
-                  )}
-                </span>
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </Card>
-    );
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
@@ -328,8 +334,17 @@ export default function WorkflowAutomation() {
           </div>
         </Card>
 
-        {/* Analysis Results - Add immediately after upload section */}
-        {analysisResults && renderAnalysisTable()}
+        {/* Analysis Results Section - Show immediately after upload */}
+        {isAnalyzing ? (
+          <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
+            <div className="flex items-center justify-center py-8">
+              <Clock className="h-8 w-8 animate-spin text-blue-400 mr-3" />
+              <span className="text-lg">Analyzing document...</span>
+            </div>
+          </Card>
+        ) : (
+          analysisResults && renderAnalysisTable()
+        )}
 
         {/* Workflow Progress */}
         {activeTaskId && taskData && (
@@ -566,3 +581,11 @@ export default function WorkflowAutomation() {
     </div>
   );
 }
+
+const workflowStages = [
+    { id: 'draft', name: 'Draft Generation', icon: FileText },
+    { id: 'compliance', name: 'Compliance Auditing', icon: Scale },
+    { id: 'research', name: 'Legal Research & Summarization', icon: BookCheck },
+    { id: 'approval', name: 'Approval & Execution', icon: BadgeCheck },
+    { id: 'audit', name: 'Periodic Audit', icon: History }
+  ];
