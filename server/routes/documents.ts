@@ -199,8 +199,16 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
         .replace(/<\/?[^>]+(>|$)/g, '')
         .trim();
 
+      console.log("Content extracted and cleaned, length:", content.length);
+
       // Analyze document using our enhanced service
       const analysis = await analyzeDocument(content);
+
+      console.log("Document analysis results:", {
+        documentType: analysis.documentType,
+        industry: analysis.industry,
+        complianceStatus: analysis.complianceStatus
+      });
 
       // Create document record in database
       const [document] = await db.insert(documents).values({

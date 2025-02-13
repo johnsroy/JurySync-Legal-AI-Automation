@@ -37,47 +37,42 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
   try {
     console.log("Starting document analysis...");
 
-    // Use Claude for initial analysis and classification
+    // Use Claude for initial analysis and classification with specific examples
     const claudeResponse = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `Analyze this legal document and provide detailed JSON output. Follow these STRICT classification rules:
+        content: `Analyze this legal document and provide detailed JSON output. Follow these examples EXACTLY:
 
-SOC Report Identification:
-1. If the document mentions "System and Organization Controls (SOC)" or "SOC":
-   - Look for "SOC 1", "SOC 2", or "SOC 3" mentions
-   - Document Type MUST be exactly "SOC 1 Report", "SOC 2 Report", or "SOC 3 Report"
-   - Industry should be based on the service organization (e.g., "Technology" for cloud/software providers)
-   - Compliance: Check for phrases like "controls were effective" or "no material weaknesses"
-
-Other Document Types:
-- NDAs: Classify as "Non-Disclosure Agreement"
-- Service Agreements: Classify as "Service Agreement"
-- License Applications: Classify as "License Application"
-
-Industry Classifications:
-- Technology: For software, IT, cloud services
-- Financial Services: For banking, insurance
-- Healthcare: For medical, pharmaceutical
-
-Required JSON Structure:
+Example 1 - SOC Report:
 {
-  "documentType": "string (MUST follow exact format for SOC reports)",
-  "industry": "string (Technology, Financial Services, Healthcare, etc.)",
-  "classification": "string",
-  "confidence": number,
-  "entities": string[],
-  "keywords": string[],
-  "riskLevel": "LOW|MEDIUM|HIGH",
-  "recommendations": string[],
+  "documentType": "SOC 3 Report",
+  "industry": "Technology",
+  "classification": "Compliance Report",
+  "confidence": 0.95,
+  "entities": ["Google", "Service Organization"],
+  "keywords": ["controls", "security", "availability", "confidentiality"],
+  "riskLevel": "LOW",
+  "recommendations": ["Annual control assessment recommended", "Update security protocols"],
   "complianceStatus": {
-    "status": "PASSED|FAILED|PENDING",
-    "details": "string",
-    "lastChecked": "ISO date string"
+    "status": "PASSED",
+    "details": "All controls operating effectively",
+    "lastChecked": "2025-02-13T00:00:00Z"
   }
 }
+
+Classification Rules:
+1. SOC Documents:
+   - If document mentions "System and Organization Controls (SOC)" or "SOC":
+     * Set documentType to EXACTLY "SOC 3 Report", "SOC 2 Report", or "SOC 1 Report"
+     * Set industry to "Technology" for tech companies
+     * Set complianceStatus.status to "PASSED" if controls are effective
+
+2. Industry Classifications:
+   - Technology: For software, cloud services, IT companies
+   - Financial Services: For banking, investment firms
+   - Healthcare: For medical services, pharma
 
 Document to analyze:
 ${content.substring(0, 8000)}`
@@ -87,17 +82,17 @@ ${content.substring(0, 8000)}`
     console.log("Claude analysis completed, parsing response...");
     const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
 
-    // Use GPT-4 for summary
+    // Use GPT-4 for summary focusing on compliance
     const gptResponse = await openai.chat.completions.create({
       model: GPT_MODEL,
       messages: [
         {
           role: "system",
-          content: "You are an expert legal document analyst specializing in SOC reports and compliance documents. Focus on identifying document type and compliance status."
+          content: "You are a compliance expert specializing in SOC reports. Focus on control effectiveness and compliance status."
         },
         {
           role: "user",
-          content: `Analyze this document and provide a clear summary, focusing on document type and compliance status:\n${content.substring(0, 8000)}`
+          content: `Analyze this document and provide a clear summary, focusing on compliance status:\n${content.substring(0, 8000)}`
         }
       ],
     });
@@ -105,7 +100,8 @@ ${content.substring(0, 8000)}`
     const summary = gptResponse.choices[0].message.content || "";
     console.log("Document analysis completed:", {
       documentType: claudeAnalysis.documentType,
-      industry: claudeAnalysis.industry
+      industry: claudeAnalysis.industry,
+      complianceStatus: claudeAnalysis.complianceStatus
     });
 
     return {
