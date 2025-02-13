@@ -6,8 +6,8 @@ import { anthropic } from "../anthropic";
 export class DocumentAnalyticsService {
   private async analyzeWithOpenAI(content: string) {
     const prompt = `Analyze the following document and provide:
-1. Document Type (e.g., SOC Report, Contract, Legal Brief)
-2. Industry Classification
+1. Document Type (e.g., SOC 3 Report, Google Workspace Report, Contract, Legal Brief)
+2. Industry Classification (e.g., Technology, Healthcare, Finance)
 3. Compliance Status
 4. Risk Assessment
 
@@ -30,7 +30,7 @@ Return your analysis in JSON format with the following structure:
         messages: [
           {
             role: "system",
-            content: "You are a document analysis expert specializing in legal and compliance documents. Return only valid JSON."
+            content: "You are a document analysis expert specializing in legal and compliance documents. For SOC reports, ensure to identify them specifically as 'SOC 3 Report' or similar. Return only valid JSON."
           },
           {
             role: "user",
@@ -60,6 +60,8 @@ Return your analysis in JSON format with the following structure:
   }
 }
 
+For SOC reports, ensure to identify them specifically as 'SOC 3 Report' or similar.
+
 Document content:
 ${content.substring(0, 3000)}`;
 
@@ -68,7 +70,7 @@ ${content.substring(0, 3000)}`;
         model: "claude-3-opus-20240229",
         max_tokens: 1024,
         temperature: 0.1,
-        system: "You are a document analysis expert. Return only valid JSON matching the specified structure.",
+        system: "You are a document analysis expert specializing in SOC reports and compliance documents. Return only valid JSON matching the specified structure.",
         messages: [{ role: "user", content: prompt }]
       });
 
