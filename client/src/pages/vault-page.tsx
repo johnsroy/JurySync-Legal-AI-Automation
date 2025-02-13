@@ -87,12 +87,23 @@ export default function VaultPage() {
   const deleteMutation = useMutation({
     mutationFn: async (documentId: number) => {
       try {
-        const response = await apiRequest('DELETE', `/api/vault/documents/${documentId}`);
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Failed to delete document');
+        // Try both endpoints since documents can be in either collection
+        const endpoints = [
+          `/api/workflow/documents/${documentId}`,
+          `/api/vault/documents/${documentId}`
+        ];
+
+        for (const endpoint of endpoints) {
+          try {
+            const response = await apiRequest('DELETE', endpoint);
+            if (response.ok) {
+              return response.json();
+            }
+          } catch (err) {
+            console.log(`Attempt to delete from ${endpoint} failed:`, err);
+          }
         }
-        return response.json();
+        throw new Error('Document not found in any collection');
       } catch (error: any) {
         console.error('Delete operation failed:', error);
         throw error;

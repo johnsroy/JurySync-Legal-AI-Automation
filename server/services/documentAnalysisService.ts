@@ -41,72 +41,51 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `Analyze this legal document content and provide a detailed analysis. Here are specific examples of how to classify different document types:
+        content: `Analyze this legal document content and provide a detailed analysis. Follow these precise guidelines for classification:
 
-        Examples:
-        1. For SOC Reports:
-           - Document Type: "SOC 3 Report" (if it's a SOC 3 report)
-           - Industry: "Technology" (for tech companies like Google)
-           - Compliance Status: "PASSED" (if controls are effective)
+        Document Type Classification Examples:
+        - For SOC Reports: Classify exactly as "SOC 3 Report", "SOC 2 Report", or "SOC 1 Report"
+        - For NDAs: Classify as "Non-Disclosure Agreement"
+        - For Service Agreements: Classify as "Service Agreement"
+        - For License Applications: Classify as "License Application"
 
-        2. For Legal Agreements:
-           - Document Type: "Service Agreement", "NDA", etc.
-           - Industry: Based on document context
-           - Compliance Status: Based on risk assessment
+        Industry Classification Examples:
+        - Technology: For software, IT services, cloud providers
+        - Financial Services: For banking, insurance, investment firms
+        - Healthcare: For medical, pharmaceutical, healthcare providers
 
-        Pay special attention to:
-        1. Document Type (e.g., "SOC 3 Report", "Contract", "NDA", etc.)
-        2. Industry Classification (e.g., "Technology", "Financial Services", "Healthcare")
-        3. Compliance Status
-           - For SOC reports: PASSED if controls are effective
-           - For contracts: Based on risk assessment
-        4. Key entities mentioned
-        5. Risk assessment
-        6. Keywords
-        7. Recommendations
+        Compliance Status Rules:
+        - SOC Reports: "PASSED" if controls are effective, "FAILED" if significant deficiencies
+        - Licenses: "PENDING" during application, "PASSED" when approved
+        - Contracts: Based on risk assessment and completeness
 
-        For SOC reports specifically:
-        - Identify report type (SOC 1, 2, or 3)
-        - Note compliance period
-        - Extract service organization name
-        - List key controls assessed
+        Special Rules for SOC Documents:
+        1. Always check if document mentions:
+           - "System and Organization Controls (SOC)"
+           - Audit periods
+           - Service organization details
+        2. Look for effectiveness statements about controls
+        3. Identify the specific type (SOC 1, 2, or 3)
 
-        Respond in JSON format with these keys: 
-        {
-          "classification": "string",
-          "industry": "string",
-          "confidence": number,
-          "entities": string[],
-          "keywords": string[],
-          "riskLevel": "LOW|MEDIUM|HIGH",
-          "recommendations": string[],
-          "documentType": "string",
-          "complianceStatus": {
-            "status": "PASSED|FAILED|PENDING",
-            "details": "string",
-            "lastChecked": "ISO date string"
-          }
-        }
-
-        Document content:
+        Document content to analyze:
         ${content.substring(0, 8000)}`
       }],
     });
 
     const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
 
-    // Use GPT-4 for detailed summary
+    // Use GPT-4 for detailed summary with enhanced prompt
     const gptResponse = await openai.chat.completions.create({
       model: GPT_MODEL,
       messages: [
         {
           role: "system",
-          content: "You are an expert legal document analyst. Provide a concise but comprehensive summary focusing on key legal implications, risks, and important clauses. For SOC reports, highlight the effectiveness of controls and compliance status.",
+          content: "You are an expert legal document analyst specializing in SOC reports and compliance documents. For SOC reports, pay special attention to control effectiveness and compliance status. Provide specific details about the type of SOC report and the audit findings."
         },
         {
           role: "user",
-          content: content.substring(0, 8000),
-        },
+          content: `Analyze this document with focus on compliance status and technical details:\n${content.substring(0, 8000)}`
+        }
       ],
     });
 

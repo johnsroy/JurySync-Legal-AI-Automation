@@ -218,7 +218,8 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
           confidence: analysis.confidence,
           riskLevel: analysis.riskLevel,
           recommendations: analysis.recommendations,
-          source: "workflow-automation"
+          source: "workflow-automation",
+          complianceStatus: analysis.complianceStatus
         }
       }).returning();
 
@@ -237,7 +238,8 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
         analysis: {
           documentType: analysis.documentType,
           industry: analysis.industry,
-          classification: analysis.classification
+          classification: analysis.classification,
+          complianceStatus: analysis.complianceStatus
         },
         status: "COMPLETED"
       });
@@ -256,6 +258,44 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
       error: "Failed to process document",
       details: error.message
     });
+  }
+});
+
+// Delete document endpoint
+router.delete("/api/workflow/documents/:id", async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    console.log('Attempting to delete document:', {
+      documentId,
+      userId,
+      timestamp: new Date().toISOString()
+    });
+
+    const [deletedDoc] = await db
+      .delete(documents)
+      .where(eq(documents.id, documentId) && eq(documents.userId, userId))
+      .returning();
+
+    if (!deletedDoc) {
+      console.log('No document found to delete');
+      return res.status(404).json({ error: "Document not found or already deleted" });
+    }
+
+    console.log('Document deleted successfully:', {
+      documentId,
+      timestamp: new Date().toISOString()
+    });
+
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error('Document deletion error:', error);
+    return res.status(500).json({ error: error.message });
   }
 });
 
