@@ -34,35 +34,46 @@ interface DocumentAnalysis {
 
 export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
   try {
+    console.log("Starting document analysis...");
+
     // Use Claude for initial analysis and classification
     const claudeResponse = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `You are a specialized compliance document analyzer. Analyze this legal/compliance document content with special attention to SOC compliance reports and provide:
+        content: `As a SOC compliance expert, analyze this document with focus on Google Workspace SOC reports. Identify:
 
-1. Document Type: Identify specific document types, especially:
-   - SOC reports (SOC 1, SOC 2, SOC 3)
-   - Compliance certifications
-   - Audit reports
-   - Privacy policies
-   - Terms of service
+1. Document Type: Look specifically for:
+   - Google Workspace SOC 3 Report
+   - Other SOC reports (SOC 1, SOC 2)
+   - Google Cloud compliance documents
+   - Other compliance certifications/reports
 
-2. Industry Classification:
-   - Technology
-   - Financial Services
-   - Healthcare
-   - Other regulated industries
+2. Industry: For Google/Tech companies, always classify as:
+   - "Technology" for software/cloud services
+   - Include sub-industry if mentioned
 
-3. Compliance Status Analysis:
-   - For SOC reports: Determine if the audit opinion is unqualified (PASSED) or qualified (FAILED)
-   - For other compliance docs: Check if requirements are met (PASSED) or have gaps (FAILED)
-   - If not a compliance document: Mark as NOT_APPLICABLE
+3. For SOC 3 reports:
+   - Check if opinion is "unqualified" (PASSED)
+   - Verify if report period is current
+   - Look for any limitations/qualifications
+   - Consider scope of services covered
 
-Include a confidence score (0-1), key entities, keywords, risk level (LOW/MEDIUM/HIGH), and key recommendations.
-
-Respond in JSON format with these keys: documentType, industry, confidence, entities, keywords, riskLevel, recommendations, complianceStatus (object with status and details).
+Provide a JSON response with:
+{
+  "documentType": "e.g. Google Workspace SOC 3 Report",
+  "industry": "Technology",
+  "confidence": 0.95,
+  "entities": ["Google LLC", "Google Workspace", etc],
+  "keywords": ["SOC 3", "compliance", etc],
+  "riskLevel": "LOW/MEDIUM/HIGH",
+  "recommendations": ["Review scope of services", etc],
+  "complianceStatus": {
+    "status": "PASSED/FAILED/NOT_APPLICABLE",
+    "details": "Detailed explanation"
+  }
+}
 
 Content to analyze:
 ${content.substring(0, 8000)}`
@@ -77,7 +88,7 @@ ${content.substring(0, 8000)}`
       messages: [
         {
           role: "system",
-          content: "You are a legal document analysis expert specializing in SOC compliance reports and regulatory documents. Provide a concise but comprehensive summary focusing on compliance status, key findings, and critical implications.",
+          content: "You are a SOC compliance expert specializing in Google Workspace and cloud service audits. Focus on compliance status, control effectiveness, and audit findings.",
         },
         {
           role: "user",
