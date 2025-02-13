@@ -40,32 +40,20 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
       max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `You are a specialized compliance document analyzer. Analyze this legal/compliance document content with special attention to SOC compliance reports and provide:
+        content: `Analyze this legal document content and provide: 
+        1. A specific document type (e.g., SOC 2 Report, SOC 3 Compliance, Privacy Policy, Terms of Service, etc.)
+        2. Precise industry classification (e.g., Technology, Healthcare, Financial Services, etc.)
+        3. A confidence score (0-1) for the classification
+        4. Key entities mentioned (companies, individuals, organizations)
+        5. Important keywords
+        6. Risk level assessment (LOW, MEDIUM, HIGH)
+        7. Key recommendations based on content analysis
+        8. Compliance status (PASSED/FAILED/NOT_APPLICABLE) with explanation
 
-1. Document Type: Identify specific document types, especially:
-   - SOC reports (SOC 1, SOC 2, SOC 3)
-   - Compliance certifications
-   - Audit reports
-   - Privacy policies
-   - Terms of service
+        Respond in JSON format with these keys: documentType, industry, confidence, entities, keywords, riskLevel, recommendations, complianceStatus
 
-2. Industry Classification:
-   - Technology
-   - Financial Services
-   - Healthcare
-   - Other regulated industries
-
-3. Compliance Status Analysis:
-   - For SOC reports: Determine if the audit opinion is unqualified (PASSED) or qualified (FAILED)
-   - For other compliance docs: Check if requirements are met (PASSED) or have gaps (FAILED)
-   - If not a compliance document: Mark as NOT_APPLICABLE
-
-Include a confidence score (0-1), key entities, keywords, risk level (LOW/MEDIUM/HIGH), and key recommendations.
-
-Respond in JSON format with these keys: documentType, industry, confidence, entities, keywords, riskLevel, recommendations, complianceStatus (object with status and details).
-
-Content to analyze:
-${content.substring(0, 8000)}`
+        Content to analyze:
+        ${content.substring(0, 8000)}`
       }],
     });
 
@@ -77,7 +65,7 @@ ${content.substring(0, 8000)}`
       messages: [
         {
           role: "system",
-          content: "You are a legal document analysis expert specializing in SOC compliance reports and regulatory documents. Provide a concise but comprehensive summary focusing on compliance status, key findings, and critical implications.",
+          content: "You are a legal document analysis expert. Provide a concise but comprehensive summary of the document, focusing on key legal implications, risks, and important clauses.",
         },
         {
           role: "user",
@@ -90,7 +78,7 @@ ${content.substring(0, 8000)}`
 
     return {
       summary,
-      classification: claudeAnalysis.documentType,
+      classification: claudeAnalysis.documentType, 
       documentType: claudeAnalysis.documentType,
       industry: claudeAnalysis.industry,
       keywords: claudeAnalysis.keywords,
