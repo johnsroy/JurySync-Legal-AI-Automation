@@ -1,6 +1,7 @@
 import { pgTable, text, serial, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { relations } from 'drizzle-orm';
 
 // Define user roles for LegalAI
 export const UserRole = z.enum([
@@ -750,7 +751,7 @@ export const caseLawUpdates = pgTable("case_law_updates", {
   caseNumber: text("case_number").notNull(),
   title: text("title").notNull(),
   summary: text("summary").notNull(),
-  full_text: text("full_text").notNull(), 
+  full_text: text("full_text").notNull(),
   court: text("court").notNull(),
   jurisdiction: text("jurisdiction").notNull(),
   category: text("category").notNull(),
@@ -868,3 +869,29 @@ export const insertVaultDocumentSchema = createInsertSchema(vaultDocuments)
 
 export type VaultDocument = typeof vaultDocuments.$inferSelect;
 export type InsertVaultDocument = z.infer<typeof insertVaultDocumentSchema>;
+
+// Add after existing document schema
+export const documentAnalysis = pgTable("document_analysis", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  documentType: text("document_type").notNull(),
+  industry: text("industry").notNull(),
+  complianceStatus: jsonb("compliance_status").notNull().$type<{
+    status: 'PASSED' | 'FAILED' | 'PENDING';
+    details: string;
+    lastChecked: string;
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+export type DocumentAnalysis = typeof documentAnalysis.$inferSelect;
+export type InsertDocumentAnalysis = typeof documentAnalysis.$inferInsert;
+
+// Add relations
+export const documentAnalysisRelations = relations(documentAnalysis, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentAnalysis.documentId],
+    references: [documents.id],
+  }),
+}));

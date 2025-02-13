@@ -93,19 +93,29 @@ export default function WorkflowAutomation() {
 
     try {
       // Start analysis immediately
+      console.log("Starting document analysis...");
       const analysisResponse = await fetch('/api/orchestrator/analyze', {
         method: 'POST',
         body: formData,
       });
 
+      if (!analysisResponse.ok) {
+        throw new Error('Analysis request failed');
+      }
+
       const analysisData = await analysisResponse.json();
-      setAnalysisResults(analysisData.analysis);
+      console.log("Analysis results:", analysisData);
+
+      if (analysisData.analysis) {
+        setAnalysisResults(analysisData.analysis);
+      }
 
       // Start workflow process
       const response = await fetch('/api/orchestrator/documents', {
         method: 'POST',
         body: formData,
       });
+
       const data = await response.json();
       if (data.taskId) {
         setActiveTaskId(data.taskId);
@@ -224,7 +234,12 @@ export default function WorkflowAutomation() {
 
   // Analysis Results Table Component
   const renderAnalysisTable = () => {
-    if (!analysisResults) return null;
+    if (!analysisResults) {
+      console.log("No analysis results to display");
+      return null;
+    }
+
+    console.log("Rendering analysis table with:", analysisResults);
 
     return (
       <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
@@ -245,7 +260,7 @@ export default function WorkflowAutomation() {
               <TableCell className="text-slate-300">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-blue-400" />
-                  {analysisResults.documentType || "SOC 3 Report"}
+                  {analysisResults.documentType}
                 </div>
               </TableCell>
             </TableRow>
@@ -254,7 +269,7 @@ export default function WorkflowAutomation() {
               <TableCell className="text-slate-300">
                 <div className="flex items-center gap-2">
                   <BrainCircuit className="h-4 w-4 text-violet-400" />
-                  {analysisResults.industry || "Technology"}
+                  {analysisResults.industry}
                 </div>
               </TableCell>
             </TableRow>

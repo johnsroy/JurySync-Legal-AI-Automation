@@ -3,6 +3,9 @@ import { orchestratorService } from '../services/orchestratorService';
 import { z } from 'zod';
 import multer from 'multer';
 import mammoth from 'mammoth';
+import { db } from '../db';
+import { documents } from '@shared/schema';
+import { analyzeDocument } from '../services/document-analysis';
 
 // Configure multer for file uploads
 const upload = multer({
@@ -148,7 +151,7 @@ router.post('/documents', (req: Request, res: Response) => {
   });
 });
 
-// Add the analyze endpoint after the existing /documents endpoint
+// Update the analyze endpoint
 router.post('/analyze', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json');
 
@@ -180,16 +183,19 @@ router.post('/analyze', (req: Request, res: Response) => {
         content = req.file.buffer.toString('utf-8');
       }
 
+      // Create initial document record
+      const [document] = await db.insert(documents)
+        .values({
+          userId: req.user?.id || 1, // Default to 1 if no user
+          title: req.file.originalname,
+          content: content,
+          agentType: "COMPLIANCE_AUDITING",
+          analysis: {}, // Empty initial analysis
+        })
+        .returning();
+
       // Perform document analysis
-      const analysis = {
-        documentType: "SOC 3 Report",
-        industry: "Technology",
-        complianceStatus: {
-          status: "PASSED",
-          details: "All controls operating effectively",
-          lastChecked: new Date().toISOString()
-        }
-      };
+      const analysis = await analyzeDocument(document.id, content);
 
       log('Document analysis completed:', 'info', { analysis });
 

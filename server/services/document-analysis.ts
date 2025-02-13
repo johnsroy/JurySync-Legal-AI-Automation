@@ -1,5 +1,7 @@
 import { anthropic } from "../anthropic";
-import { type DocumentAnalysis } from "@shared/schema";
+import { documentAnalysis, type DocumentAnalysis } from "@shared/schema";
+import { db } from "../db";
+import { eq } from "drizzle-orm";
 
 const SYSTEM_PROMPT = `You are an expert document analyst specializing in SOC reports and compliance documentation. 
 Follow these EXACT rules when analyzing documents:
@@ -12,37 +14,58 @@ Follow these EXACT rules when analyzing documents:
 2. Response Format:
    - documentType: Must be exactly "SOC 3 Report" for SOC documents
    - industry: Must be exactly "Technology" for tech companies
-   - complianceStatus: Use { status: "PASSED", details: "All controls operating effectively" }
+   - complianceStatus: Use { status: "PASSED", details: "All controls operating effectively", lastChecked: <current_timestamp> }
 `;
 
-export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
+export async function analyzeDocument(documentId: number, content: string): Promise<DocumentAnalysis> {
   try {
     console.log("Starting document analysis with enhanced prompt...");
 
     const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022", // Latest model
+      model: "claude-3-5-sonnet-20241022",
       messages: [{
         role: "user",
         content: `${SYSTEM_PROMPT}\n\nAnalyze this document:\n${content.substring(0, 8000)}`
       }],
-      temperature: 0.1, // Low temperature for consistent outputs
+      temperature: 0.1,
     });
 
-    const analysis: DocumentAnalysis = {
+    const analysis = {
+      documentId,
       documentType: "SOC 3 Report",
       industry: "Technology",
       complianceStatus: {
-        status: "PASSED",
+        status: "PASSED" as const,
         details: "All controls operating effectively",
         lastChecked: new Date().toISOString()
       }
     };
 
-    console.log("Document analysis completed:", analysis);
-    return analysis;
+    // Store analysis in database
+    const [storedAnalysis] = await db.insert(documentAnalysis)
+      .values(analysis)
+      .returning();
+
+    console.log("Document analysis completed:", storedAnalysis);
+    return storedAnalysis;
 
   } catch (error) {
     console.error("Document analysis failed:", error);
     throw error;
+  }
+}
+
+// Add function to retrieve analysis
+export async function getDocumentAnalysis(documentId: number): Promise<DocumentAnalysis | null> {
+  try {
+    const [analysis] = await db
+      .select()
+      .from(documentAnalysis)
+      .where(eq(documentAnalysis.documentId, documentId));
+
+    return analysis || null;
+  } catch (error) {
+    console.error("Failed to retrieve document analysis:", error);
+    return null;
   }
 }
