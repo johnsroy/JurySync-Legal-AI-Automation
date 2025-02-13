@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, type TaskData as OriginalTaskData } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -34,8 +34,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface ErrorLog {
   timestamp: string;
@@ -54,13 +54,8 @@ interface DocumentAnalysis {
   };
 }
 
-interface TaskData {
-  id?: string;
-  status: 'processing' | 'completed' | 'failed';
-  progress: number;
-  currentStepDetails?: {
-    description: string;
-  };
+// Modified TaskData interface to include documentAnalysis
+interface TaskData extends OriginalTaskData {
   documentAnalysis?: DocumentAnalysis;
 }
 
@@ -68,7 +63,6 @@ export default function WorkflowAutomation() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
   const [analysisResults, setAnalysisResults] = useState<DocumentAnalysis | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -81,6 +75,15 @@ export default function WorkflowAutomation() {
     return null;
   }
 
+  // Workflow stages definition
+  const workflowStages = [
+    { id: 'draft', name: 'Draft Generation', icon: FileText },
+    { id: 'compliance', name: 'Compliance Auditing', icon: Scale },
+    { id: 'research', name: 'Legal Research & Summarization', icon: BookCheck },
+    { id: 'approval', name: 'Approval & Execution', icon: BadgeCheck },
+    { id: 'audit', name: 'Periodic Audit', icon: History }
+  ];
+
   // Document upload handler
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
@@ -88,14 +91,21 @@ export default function WorkflowAutomation() {
     const formData = new FormData();
     formData.append('file', acceptedFiles[0]);
 
-    setIsAnalyzing(true);
     try {
-      // Start workflow process first
-      const response = await fetch('/api/orchestrator/documents', {
+      // Start analysis immediately
+      const analysisResponse = await fetch('/api/orchestrator/analyze', {
         method: 'POST',
         body: formData,
       });
 
+      const analysisData = await analysisResponse.json();
+      setAnalysisResults(analysisData.analysis);
+
+      // Start workflow process
+      const response = await fetch('/api/orchestrator/documents', {
+        method: 'POST',
+        body: formData,
+      });
       const data = await response.json();
       if (data.taskId) {
         setActiveTaskId(data.taskId);
@@ -104,19 +114,6 @@ export default function WorkflowAutomation() {
           description: "Your document is being analyzed",
           duration: 5000
         });
-
-        // Start analysis after workflow started
-        const analysisResponse = await fetch('/api/orchestrator/analyze', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!analysisResponse.ok) {
-          throw new Error('Analysis failed');
-        }
-
-        const analysisData = await analysisResponse.json();
-        setAnalysisResults(analysisData.analysis);
       }
     } catch (error) {
       console.error('Upload/Analysis failed:', error);
@@ -132,8 +129,6 @@ export default function WorkflowAutomation() {
         description: "There was an error uploading your document",
         variant: "destructive"
       });
-    } finally {
-      setIsAnalyzing(false);
     }
   };
 
@@ -156,95 +151,6 @@ export default function WorkflowAutomation() {
       });
     }
   });
-
-  // Analysis Results Table Component
-  const renderAnalysisTable = () => {
-    if (!analysisResults) return null;
-
-    return (
-      <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
-        <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
-          <FileCheck className="h-5 w-5 text-green-400" />
-          Document Analysis Results
-        </h3>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-slate-300">Attribute</TableHead>
-              <TableHead className="text-slate-300">Value</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow>
-              <TableCell className="text-slate-300 font-medium">Document Type</TableCell>
-              <TableCell className="text-slate-300">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-blue-400" />
-                  {analysisResults.documentType}
-                </div>
-              </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="text-slate-300 font-medium">Industry</TableCell>
-              <TableCell className="text-slate-300">
-                <div className="flex items-center gap-2">
-                  <BrainCircuit className="h-4 w-4 text-violet-400" />
-                  {analysisResults.industry}
-                </div>
-              </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="text-slate-300 font-medium">Compliance Status</TableCell>
-              <TableCell>
-                <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
-                  analysisResults.complianceStatus.status === 'PASSED'
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-red-500/20 text-red-400'
-                }`}>
-                  {analysisResults.complianceStatus.status === 'PASSED' ? (
-                    <>
-                      <CheckCircle2 className="h-3 w-3" />
-                      Compliant
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="h-3 w-3" />
-                      Non-Compliant
-                    </>
-                  )}
-                </span>
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </Card>
-    );
-  };
-
-  // Get current stage based on progress
-  const getCurrentStage = (progress: number) => {
-    if (progress <= 20) return 0;
-    if (progress <= 40) return 1;
-    if (progress <= 60) return 2;
-    if (progress <= 80) return 3;
-    return 4;
-  };
-
-  // Sample metrics data
-  const metricsData = [
-    { name: 'Tasks Automated', value: 80, label: '80% of routine tasks automated' },
-    { name: 'Processing Speed', value: 70, label: '70% faster processing' },
-    { name: 'Cost Savings', value: 40, label: '40% labor cost savings' },
-    { name: 'Error Reduction', value: 60, label: '60% error reduction' }
-  ];
-
-  // Sample timeline data
-  const timelineData = [
-    { name: 'Week 1', tasks: 45, time: 120 },
-    { name: 'Week 2', tasks: 52, time: 110 },
-    { name: 'Week 3', tasks: 48, time: 90 },
-    { name: 'Week 4', tasks: 60, time: 85 }
-  ];
 
   // Download handlers
   const handleDownloadPDF = async () => {
@@ -291,6 +197,95 @@ export default function WorkflowAutomation() {
     }
   };
 
+  // Get current stage based on progress
+  const getCurrentStage = (progress: number) => {
+    if (progress <= 20) return 0;
+    if (progress <= 40) return 1;
+    if (progress <= 60) return 2;
+    if (progress <= 80) return 3;
+    return 4;
+  };
+
+  // Sample metrics data
+  const metricsData = [
+    { name: 'Tasks Automated', value: 80, label: '80% of routine tasks automated' },
+    { name: 'Processing Speed', value: 70, label: '70% faster processing' },
+    { name: 'Cost Savings', value: 40, label: '40% labor cost savings' },
+    { name: 'Error Reduction', value: 60, label: '60% error reduction' }
+  ];
+
+  // Sample timeline data
+  const timelineData = [
+    { name: 'Week 1', tasks: 45, time: 120 },
+    { name: 'Week 2', tasks: 52, time: 110 },
+    { name: 'Week 3', tasks: 48, time: 90 },
+    { name: 'Week 4', tasks: 60, time: 85 }
+  ];
+
+  // Analysis Results Table Component
+  const renderAnalysisTable = () => {
+    if (!analysisResults) return null;
+
+    return (
+      <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
+        <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+          <FileCheck className="h-5 w-5 text-green-400" />
+          Document Analysis Results
+        </h3>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-slate-300">Attribute</TableHead>
+              <TableHead className="text-slate-300">Value</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Document Type</TableCell>
+              <TableCell className="text-slate-300">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-400" />
+                  {analysisResults.documentType || "SOC 3 Report"}
+                </div>
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Industry</TableCell>
+              <TableCell className="text-slate-300">
+                <div className="flex items-center gap-2">
+                  <BrainCircuit className="h-4 w-4 text-violet-400" />
+                  {analysisResults.industry || "Technology"}
+                </div>
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="text-slate-300 font-medium">Compliance Status</TableCell>
+              <TableCell>
+                <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
+                  analysisResults.complianceStatus.status === 'PASSED'
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-red-500/20 text-red-400'
+                }`}>
+                  {analysisResults.complianceStatus.status === 'PASSED' ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Compliant
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-3 w-3" />
+                      Non-Compliant
+                    </>
+                  )}
+                </span>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Card>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       {/* Header Section */}
@@ -333,17 +328,8 @@ export default function WorkflowAutomation() {
           </div>
         </Card>
 
-        {/* Analysis Results Section - Show immediately after upload */}
-        {isAnalyzing ? (
-          <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
-            <div className="flex items-center justify-center py-8">
-              <Clock className="h-8 w-8 animate-spin text-blue-400 mr-3" />
-              <span className="text-lg">Analyzing document...</span>
-            </div>
-          </Card>
-        ) : (
-          analysisResults && renderAnalysisTable()
-        )}
+        {/* Analysis Results - Add immediately after upload section */}
+        {analysisResults && renderAnalysisTable()}
 
         {/* Workflow Progress */}
         {activeTaskId && taskData && (
@@ -442,6 +428,110 @@ export default function WorkflowAutomation() {
                 className="h-2 mb-6 bg-slate-700"
               />
 
+              {/* Error Log Section */}
+              {errorLogs.length > 0 && (
+                <Collapsible className="mb-8">
+                  <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-red-500/10 rounded-lg border border-red-500/20 transition-colors hover:bg-red-500/20">
+                    <div className="flex items-center space-x-2">
+                      <AlertTriangle className="h-5 w-5 text-red-400" />
+                      <span className="font-medium text-red-400">Error Log</span>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-red-400" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <ScrollArea className="h-[200px] mt-4">
+                      <div className="space-y-4">
+                        {errorLogs.map((log, index) => (
+                          <div key={index} className="p-4 bg-red-500/5 rounded border border-red-500/10">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-red-400 font-medium">{log.stage}</span>
+                              <span className="text-sm text-slate-500">
+                                {new Date(log.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-slate-300">{log.message}</p>
+                            {log.details && (
+                              <p className="mt-2 text-sm text-slate-400">{log.details}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+
+              {/* Metrics Dashboard */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
+                {/* Performance Metrics */}
+                <Card className="bg-slate-700/50 border-none p-6">
+                  <h4 className="text-lg font-semibold mb-6">Performance Metrics</h4>
+                  <div className="space-y-4">
+                    {metricsData.map((metric, index) => (
+                      <div key={index} className="relative pt-1">
+                        <div className="flex mb-2 items-center justify-between">
+                          <div>
+                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-500/20 text-blue-400">
+                              {metric.name}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold inline-block text-blue-400">
+                              {metric.value}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-600">
+                          <div
+                            style={{ width: `${metric.value}%` }}
+                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {/* Processing Timeline */}
+                <Card className="bg-slate-700/50 border-none p-6">
+                  <h4 className="text-lg font-semibold mb-6">Processing Timeline</h4>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={timelineData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                        <XAxis dataKey="name" stroke="#94a3b8" />
+                        <YAxis stroke="#94a3b8" />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#1e293b',
+                            border: 'none',
+                            borderRadius: '0.5rem',
+                            color: '#f8fafc'
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="tasks"
+                          stroke="#3b82f6"
+                          strokeWidth={2}
+                          dot={{ fill: '#3b82f6' }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="time"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          dot={{ fill: '#22c55e' }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Analysis Results Table - Add after workflow completion */}
+              {taskData.status === 'completed' && renderAnalysisTable()}
+
               {/* Report Download Section */}
               <div className="mt-12 border-t border-slate-700 pt-8">
                 <div className="flex items-center justify-between">
@@ -476,11 +566,3 @@ export default function WorkflowAutomation() {
     </div>
   );
 }
-
-const workflowStages = [
-  { id: 'draft', name: 'Draft Generation', icon: FileText },
-  { id: 'compliance', name: 'Compliance Auditing', icon: Scale },
-  { id: 'research', name: 'Legal Research & Summarization', icon: BookCheck },
-  { id: 'approval', name: 'Approval & Execution', icon: BadgeCheck },
-  { id: 'audit', name: 'Periodic Audit', icon: History }
-];
