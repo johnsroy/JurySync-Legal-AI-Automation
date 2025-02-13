@@ -367,4 +367,27 @@ router.get('/documents', async (req, res) => {
   }
 });
 
+// Add delete endpoint after the existing routes
+router.delete('/documents/:id', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Delete the document from vault storage
+    await db
+      .delete(vaultDocuments)
+      .where(eq(vaultDocuments.id, documentId))
+      .where(eq(vaultDocuments.userId, userId));
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Document deletion error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

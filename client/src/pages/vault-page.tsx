@@ -3,25 +3,52 @@ import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, FileText, Folder, AlertCircle } from "lucide-react";
+import { Upload, FileText, Folder, AlertCircle, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // Define allowed roles that can upload documents
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
 
+interface Document {
+  id: number;
+  title: string;
+  documentType?: string;
+  industry?: string;
+  createdAt: string;
+  analysis?: {
+    documentType?: string;
+    industry?: string;
+    complianceStatus?: {
+      status: 'PASSED' | 'FAILED' | 'PENDING';
+      details: string;
+      lastChecked: string;
+    };
+  };
+  metadata?: {
+    documentType?: string;
+    industry?: string;
+    complianceStatus?: {
+      status: 'PASSED' | 'FAILED' | 'PENDING';
+      details: string;
+      lastChecked: string;
+    };
+  };
+}
+
 export default function VaultPage() {
-  const [selectedDocument, setSelectedDocument] = useState(null);
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
   // File upload handler using react-dropzone
-  const onDrop = acceptedFiles => {
+  const onDrop = (acceptedFiles: File[]) => {
     acceptedFiles.forEach(file => {
       const formData = new FormData();
       formData.append('file', file);
@@ -56,10 +83,32 @@ export default function VaultPage() {
     }
   });
 
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (documentId: number) => {
+      const response = await apiRequest('DELETE', `/api/vault/documents/${documentId}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Success',
+        description: 'Document deleted successfully',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/vault/documents'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete document',
+        variant: 'destructive',
+      });
+    }
+  });
+
   // Upload mutation
   const uploadMutation = useMutation({
-    mutationFn: async (formData) => {
-      const response = await apiRequest('POST', '/api/vault/documents', formData);
+    mutationFn: async (formData: FormData) => {
+      const response = await apiRequest('POST', '/api/vault/upload', formData);
       return response.json();
     },
     onSuccess: (data) => {
@@ -69,7 +118,7 @@ export default function VaultPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['/api/vault/documents'] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: 'Error',
         description: error.message || 'Failed to upload document',
@@ -81,7 +130,7 @@ export default function VaultPage() {
   const canUpload = user && UPLOAD_ALLOWED_ROLES.includes(user.role);
 
   // Function to render compliance status
-  const renderComplianceStatus = (doc: any) => {
+  const renderComplianceStatus = (doc: Document) => {
     const status = doc.analysis?.complianceStatus?.status || doc.metadata?.complianceStatus?.status;
     if (!status) return null;
 
@@ -132,7 +181,6 @@ export default function VaultPage() {
           </div>
         )}
 
-
         {/* Documents Table */}
         <Card className="mb-8">
           <CardContent className="p-6">
@@ -167,7 +215,7 @@ export default function VaultPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    documentsData.map((doc) => (
+                    documentsData.map((doc: Document) => (
                       <TableRow key={doc.id}>
                         <TableCell>
                           <div className="flex items-center space-x-3">
@@ -190,14 +238,24 @@ export default function VaultPage() {
                           {renderComplianceStatus(doc)}
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedDocument(doc)}
-                          >
-                            <AlertCircle className="h-4 w-4 mr-2" />
-                            View Details
-                          </Button>
+                          <div className="flex space-x-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedDocument(doc)}
+                            >
+                              <AlertCircle className="h-4 w-4 mr-2" />
+                              View Details
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => deleteMutation.mutate(doc.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -246,7 +304,7 @@ export default function VaultPage() {
                   <div>
                     <h4 className="font-medium text-sm text-gray-900">Keywords</h4>
                     <div className="flex flex-wrap gap-2">
-                      {(selectedDocument.analysis?.keywords || selectedDocument.metadata?.keywords).map((keyword, index) => (
+                      {(selectedDocument.analysis?.keywords || selectedDocument.metadata?.keywords).map((keyword: string, index: number) => (
                         <span
                           key={index}
                           className="px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs"
@@ -261,7 +319,7 @@ export default function VaultPage() {
                   <div>
                     <h4 className="font-medium text-sm text-gray-900">Recommendations</h4>
                     <ul className="list-disc pl-4 text-sm text-gray-700">
-                      {(selectedDocument.analysis?.recommendations || selectedDocument.metadata?.recommendations).map((rec, index) => (
+                      {(selectedDocument.analysis?.recommendations || selectedDocument.metadata?.recommendations).map((rec: string, index: number) => (
                         <li key={index}>{rec}</li>
                       ))}
                     </ul>
