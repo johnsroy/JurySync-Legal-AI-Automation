@@ -377,11 +377,27 @@ router.delete('/documents/:id', async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
+    console.log('Attempting to delete document:', {
+      documentId,
+      userId,
+      timestamp: new Date().toISOString()
+    });
+
     // Delete the document from vault storage
-    await db
+    const result = await db
       .delete(vaultDocuments)
-      .where(eq(vaultDocuments.id, documentId))
-      .where(eq(vaultDocuments.userId, userId));
+      .where(eq(vaultDocuments.id, documentId) && eq(vaultDocuments.userId, userId))
+      .returning();
+
+    if (!result.length) {
+      console.log('No document found to delete');
+      return res.status(404).json({ error: "Document not found or already deleted" });
+    }
+
+    console.log('Document deleted successfully:', {
+      documentId,
+      timestamp: new Date().toISOString()
+    });
 
     res.json({ success: true });
   } catch (error: any) {
