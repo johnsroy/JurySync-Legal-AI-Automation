@@ -19,11 +19,15 @@ localPort = 5001
 externalPort = 3000
 
 [[ports]]
+localPort = 5002
+externalPort = 3002
+
+[[ports]]
 localPort = 24678
 externalPort = 3001
 
 [workflows]
-runButton = "Project"
+runButton = "Start application"
 
 [[workflows.workflow]]
 name = "Project"

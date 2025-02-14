@@ -23,32 +23,17 @@ async function isPortInUse(port: number): Promise<boolean> {
   });
 }
 
-// Create a separate webhook server
-const webhookServer = express();
-webhookServer.use(cors());
-webhookServer.use(express.raw({ type: 'application/json' }));
-
-// Configure webhook routes
-webhookServer.post('/webhook', handleStripeWebhook);
-webhookServer.post('/webhook-test', (req: Request, res: Response) => {
-  try {
-    if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      return res.status(500).json({ error: 'Webhook secret not configured' });
+async function findAvailablePort(startPort: number): Promise<number> {
+  let port = startPort;
+  while (await isPortInUse(port)) {
+    console.log(`Port ${port} is in use, trying next port`);
+    port++;
+    if (port - startPort > 100) {
+      throw new Error('Unable to find available port after 100 attempts');
     }
-
-    console.log('Headers:', req.headers);
-    console.log('Body:', req.body);
-
-    return res.status(200).json({ 
-      status: 'success',
-      message: 'Webhook endpoint is accessible',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Webhook test error:', error);
-    return res.status(500).json({ error: 'Webhook test failed' });
   }
-});
+  return port;
+}
 
 // Create main application
 const app = express();
@@ -134,33 +119,47 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
       }
     });
 
-    // Start webhook server first
-    let webhookPort = 5001;
-    while (await isPortInUse(webhookPort)) {
-      console.log(`Port ${webhookPort} is in use, trying ${webhookPort + 1}`);
-      webhookPort++;
-    }
-    webhookServer.listen(webhookPort, '0.0.0.0', () => {
-      console.log(`Webhook server running at http://0.0.0.0:${webhookPort}`);
-    });
-
     // Setup Vite or serve static files for main application
     if (process.env.NODE_ENV !== "production") {
-      await setupVite(app);
+      await setupVite(app, server); //Corrected line
       console.log('Vite middleware setup complete');
     } else {
       serveStatic(app);
     }
 
-    // Start main application server
-    let mainPort = Number(process.env.PORT) || 5000;
-    while (await isPortInUse(mainPort)) {
-      console.log(`Port ${mainPort} is in use, trying ${mainPort + 1}`);
-      mainPort++;
-    }
-
-    app.listen(mainPort, '0.0.0.0', () => {
+    // Start main application server with dynamic port finding
+    const mainPort = await findAvailablePort(Number(process.env.PORT) || 5000);
+    const server = app.listen(mainPort, '0.0.0.0', () => {
       console.log(`Main application server running at http://0.0.0.0:${mainPort}`);
+    });
+
+    // Create a separate webhook server with dynamic port finding
+    const webhookServer = express();
+    webhookServer.use(cors());
+    webhookServer.use(express.raw({ type: 'application/json' }));
+
+    // Configure webhook routes
+    webhookServer.post('/webhook', handleStripeWebhook);
+    webhookServer.post('/webhook-test', (req: Request, res: Response) => {
+      try {
+        if (!process.env.STRIPE_WEBHOOK_SECRET) {
+          return res.status(500).json({ error: 'Webhook secret not configured' });
+        }
+
+        return res.status(200).json({ 
+          status: 'success',
+          message: 'Webhook endpoint is accessible',
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error('Webhook test error:', error);
+        return res.status(500).json({ error: 'Webhook test failed' });
+      }
+    });
+
+    const webhookPort = await findAvailablePort(5001);
+    webhookServer.listen(webhookPort, '0.0.0.0', () => {
+      console.log(`Webhook server running at http://0.0.0.0:${webhookPort}`);
     });
 
   } catch (error) {
