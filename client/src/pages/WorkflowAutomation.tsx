@@ -347,7 +347,42 @@ export default function WorkflowAutomation() {
         </Card>
 
         {/* Analysis Results Table */}
-        {analysisResults && renderAnalysisTable()}
+        {analysisResults && (
+  <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
+    <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+      <FileCheck className="h-5 w-5 text-green-400" />
+      Document Analysis Results
+    </h3>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="text-slate-300">File</TableHead>
+          <TableHead className="text-slate-300">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        <TableRow>
+          <TableCell className="text-slate-300">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-blue-400" />
+              Document
+            </div>
+          </TableCell>
+          <TableCell>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-slate-400 hover:text-slate-300"
+            >
+              <FileDown className="h-4 w-4 mr-1" />
+              Download
+            </Button>
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
+  </Card>
+)}
 
 
         {/* Workflow Progress */}
