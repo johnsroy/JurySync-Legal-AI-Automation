@@ -17,8 +17,80 @@ import {
   getCustomInstructionSuggestions,
   generateContract 
 } from "../services/templateStore";
+import { anthropic } from "../anthropic";
 
 const router = Router();
+
+// Add this new endpoint near the top of the file
+router.post("/api/analyze/draft", async (req, res) => {
+  try {
+    const { content } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ 
+        error: "Missing content",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-opus-20240229",
+      max_tokens: 1024,
+      temperature: 0,
+      messages: [
+        {
+          role: "user",
+          content: `Analyze this document comprehensively and provide a detailed structured analysis including:
+
+1. Document Overview
+   - Type of document
+   - Primary purpose
+   - Target audience
+
+2. Structure Analysis
+   - Organization and formatting
+   - Section breakdown
+   - Flow and coherence
+
+3. Content Evaluation
+   - Key sections and their purposes
+   - Critical clauses and implications
+   - Language and terminology used
+
+4. Compliance Assessment
+   - Regulatory alignment
+   - Industry standard adherence
+   - Potential compliance gaps
+
+5. Quality Analysis
+   - Overall document quality
+   - Areas for improvement
+   - Missing or recommended sections
+
+6. Risk Identification
+   - Key risks and exposures
+   - Liability concerns
+   - Mitigation recommendations
+
+Please analyze this content:
+
+${content}`
+        }
+      ]
+    });
+
+    const analysis = response.content[0].text;
+
+    return res.json({ analysis });
+  } catch (error: any) {
+    console.error("[Draft Analysis] Error:", error);
+    return res.status(500).json({ 
+      error: error.message || "Failed to analyze document",
+      code: "ANALYSIS_ERROR"
+    });
+  }
+});
+
 
 // Configure multer for file uploads
 const upload = multer({ 

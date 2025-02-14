@@ -33,6 +33,7 @@ import { approvalAuditService } from "@/lib/approval-audit";
 import { ApprovalForm } from "@/components/ApprovalForm";
 import { documentAnalyticsService } from "@/services/documentAnalytics";
 import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
+import { generateDraftAnalysis } from "@/services/anthropic-service";
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -308,28 +309,7 @@ export function WorkflowAutomation() {
         name: "Draft Generation",
         handler: async () => {
           try {
-            //  Assuming 'anthropic' is available from an import statement.  Add import if needed.
-            const response = await anthropic.messages.create({
-              model: "claude-3-opus-20240229",
-              max_tokens: 1024,
-              temperature: 0,
-              messages: [
-                {
-                  role: "user",
-                  content: `Analyze this document and provide a detailed analysis including:
-                  1. Document structure and formatting
-                  2. Key sections and their purposes
-                  3. Important clauses and their implications
-                  4. Any missing or recommended sections
-                  5. Overall quality assessment
-
-                  Document content:
-                  ${documentText}`
-                }
-              ]
-            });
-
-            const analysis = response.content[0].text;
+            const analysis = await generateDraftAnalysis(documentText);
 
             const draftContent = `
               <h2>Detailed Document Analysis</h2>
