@@ -31,6 +31,7 @@ import { FileUpload } from "@/components/FileUpload";
 import { approvalAuditService } from "@/lib/approval-audit";
 import { ApprovalForm } from "@/components/ApprovalForm";
 import { documentAnalyticsService } from "@/services/documentAnalytics";
+import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -189,6 +190,12 @@ export const WorkflowAutomation: React.FC = () => {
   const [workflowProgress, setWorkflowProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState<number>(0);
   const [stageStates, setStageStates] = useState<Record<number, WorkflowStageState>>({});
+  const [documentAnalysis, setDocumentAnalysis] = useState<{
+    fileName: string;
+    documentType: string;
+    industry: string;
+    complianceStatus: string;
+  } | null>(null);
 
   const handleTextSelect = useCallback(() => {
     const selection = window.getSelection();
@@ -301,6 +308,15 @@ export const WorkflowAutomation: React.FC = () => {
           }]);
 
           // Update UI with analysis results
+          if (metadata?.documentType && metadata?.industry) {
+            setDocumentAnalysis({
+              fileName: metadata.documentId ? `Document_${metadata.documentId}.pdf` : 'Untitled Document',
+              documentType: metadata.documentType,
+              industry: metadata.industry,
+              complianceStatus: metadata.complianceStatus || 'Pending'
+            });
+          }
+
           setStageStates(prev => ({
             ...prev,
             0: {
@@ -623,8 +639,9 @@ export const WorkflowAutomation: React.FC = () => {
     }
   };
 
-  const handleFileProcessed = useCallback(({ text, documentId }: { text: string; documentId: string }) => {
+  const handleFileProcessed = useCallback(({ text, documentId, fileName }: { text: string; documentId: string; fileName: string }) => {
     setDocumentText(text);
+    setDocumentAnalysis(null); // Reset analysis when new file is uploaded
     toast({
       title: "Document Processed",
       description: "The document has been successfully parsed and loaded.",
@@ -806,43 +823,51 @@ export const WorkflowAutomation: React.FC = () => {
                         metadata={state.result.metadata}
                         onDownload={() => generatePDF(state.result!.content, state.result!.title)}
                       >
-                        {currentStage === 3 && !state.isApproved && (
-                          <div className="mt-4">
-                            <ApprovalForm
-                              onApprove={async (approvers) => {
-                                try {
-                                  setStageStates(prev => ({
-                                    ...prev,
-                                    [currentStage]: {
-                                      ...prev[currentStage],
-                                      approvers,
-                                      isApproved: true,
-                                      status: 'completed'
-                                    }
-                                  }));
+                        {currentStage === 3 && (
+                          <Card className="bg-white/80 backdrop-blur-lg mt-4">
+                            <CardHeader>
+                              <CardTitle>Document Approval</CardTitle>
+                              <CardDescription>
+                                Request approval for this document
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                              <ApprovalForm
+                                onApprove={async (approvers) => {
+                                  try {
+                                    setStageStates(prev => ({
+                                      ...prev,
+                                      [currentStage]: {
+                                        ...prev[currentStage],
+                                        approvers,
+                                        isApproved: true,
+                                        status: 'completed'
+                                      }
+                                    }));
 
-                                  // Move to the next stage
-                                  setCurrentStage(prev => prev + 1);
-                                  setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
+                                    // Move to the next stage
+                                    setCurrentStage(prev => prev + 1);
+                                    setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
 
-                                  addStageOutput(currentStage, {
-                                    message: "Document approved",
-                                    details: `Approved by ${approvers.length} reviewer(s)`,
-                                    timestamp: new Date().toISOString(),
-                                    status: 'success'
-                                  });
-                                } catch (error) {
-                                  console.error("Approval error:", error);
-                                  toast({
-                                    title: "Approval Failed",
-                                    description: error instanceof Error ? error.message : "Failed to process approval",
-                                    variant: "destructive"
-                                  });
-                                }
-                              }}
-                              isLoading={state.status === 'processing'}
-                            />
-                          </div>
+                                    addStageOutput(currentStage, {
+                                      message: "Document approved",
+                                      details: `Approved by ${approvers.length} reviewer(s)`,
+                                      timestamp: new Date().toISOString(),
+                                      status: 'success'
+                                    });
+                                  } catch (error) {
+                                    console.error("Approval error:", error);
+                                    toast({
+                                      title: "Approval Failed",
+                                      description: error instanceof Error ? error.message : "Failed to process approval",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                }}
+                                isLoading={stageStates[3]?.status === 'processing'}
+                              />
+                            </CardContent>
+                          </Card>
                         )}
                       </DocumentPreview>
                     )}
@@ -881,6 +906,20 @@ export const WorkflowAutomation: React.FC = () => {
               </Card>
             </div>
           </div>
+          <Card className="bg-white/80 backdrop-blur-lg">
+            <CardHeader>
+              <CardTitle>Document Analysis Results</CardTitle>
+              <CardDescription>
+                Automated classification and compliance assessment
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DocumentAnalysisTable
+                analysis={documentAnalysis}
+                isLoading={stageStates[0]?.status === 'processing'}
+              />
+            </CardContent>
+          </Card>
         </div>
       </main>
     </div>
