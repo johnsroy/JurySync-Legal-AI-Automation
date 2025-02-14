@@ -308,14 +308,12 @@ export const WorkflowAutomation: React.FC = () => {
           }]);
 
           // Update UI with analysis results
-          if (metadata?.documentType && metadata?.industry) {
-            setDocumentAnalysis({
-              fileName: metadata.documentId ? `Document_${metadata.documentId}.pdf` : 'Untitled Document',
-              documentType: metadata.documentType,
-              industry: metadata.industry,
-              complianceStatus: metadata.complianceStatus || 'Pending'
-            });
-          }
+          setDocumentAnalysis({
+            fileName: metadata.documentId ? `Document_${metadata.documentId}.pdf` : uploadedFiles[0]?.name || 'Untitled Document',
+            documentType: metadata.documentType || 'Unknown',
+            industry: metadata.industry || 'Unknown',
+            complianceStatus: metadata.complianceStatus || 'Pending'
+          });
 
           setStageStates(prev => ({
             ...prev,
@@ -641,7 +639,12 @@ export const WorkflowAutomation: React.FC = () => {
 
   const handleFileProcessed = useCallback(({ text, documentId, fileName }: { text: string; documentId: string; fileName: string }) => {
     setDocumentText(text);
-    setDocumentAnalysis(null); // Reset analysis when new file is uploaded
+    setDocumentAnalysis({
+      fileName: fileName,
+      documentType: 'Pending Analysis',
+      industry: 'Analyzing...',
+      complianceStatus: 'Pending'
+    });
     toast({
       title: "Document Processed",
       description: "The document has been successfully parsed and loaded.",
@@ -823,7 +826,7 @@ export const WorkflowAutomation: React.FC = () => {
                         metadata={state.result.metadata}
                         onDownload={() => generatePDF(state.result!.content, state.result!.title)}
                       >
-                        {currentStage === 3 && (
+                        {currentStage === 3 && !stageStates[3]?.isApproved && (
                           <Card className="bg-white/80 backdrop-blur-lg mt-4">
                             <CardHeader>
                               <CardTitle>Document Approval</CardTitle>
