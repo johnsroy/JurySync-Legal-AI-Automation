@@ -2,8 +2,6 @@ import { db } from "../db";
 import { DocumentMetadata, WorkflowResult } from "@shared/types";
 import { vaultDocumentAnalysis } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import { openai } from "../openai";
-import { anthropic } from "../anthropic";
 import { documentClassificationAgent } from "./documentClassificationAgent";
 
 interface StageAnalysis {
@@ -41,16 +39,10 @@ export class DocumentAnalyticsService {
   };
 
   private async analyzeWithAI(content: string, stageResults?: WorkflowResult[]): Promise<StageAnalysis> {
-    const maxLength = 8000;
-    const truncatedContent = content.length > maxLength ?
-      content.slice(0, maxLength) + "..." :
-      content;
+    console.log('Starting enhanced document analysis with AI...');
 
     try {
-      console.log('Starting document analysis with AI...');
-
-      // Use the enhanced document classification agent
-      const classification = await documentClassificationAgent.classifyDocument(truncatedContent);
+      const classification = await documentClassificationAgent.classifyDocument(content);
       console.log('Initial classification result:', classification);
 
       // Map industry using standardized mapping
@@ -62,10 +54,12 @@ export class DocumentAnalyticsService {
         }
       }
 
-      console.log('Mapped industry:', mappedIndustry);
+      // For M&A documents, ensure consistent document type
+      const documentType = classification.documentType.toLowerCase().includes('m&a') ? 
+        'M&A Deal' : classification.documentType;
 
       return {
-        documentType: classification.documentType,
+        documentType,
         industry: mappedIndustry,
         complianceStatus: classification.complianceStatus,
         complianceDetails: {
@@ -76,7 +70,6 @@ export class DocumentAnalyticsService {
           recommendations: []
         }
       };
-
     } catch (error) {
       console.error("Document analysis failed:", error);
       throw new Error("Failed to analyze document: " + (error instanceof Error ? error.message : String(error)));
