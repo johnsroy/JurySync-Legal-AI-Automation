@@ -191,12 +191,12 @@ export function WorkflowAutomation() {
   const [workflowProgress, setWorkflowProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState<number>(0);
   const [stageStates, setStageStates] = useState<Record<number, WorkflowStageState>>({});
-  const [documentAnalysis, setDocumentAnalysis] = useState<{
+  const [documentAnalyses, setDocumentAnalyses] = useState<Array<{
     fileName: string;
     documentType: string;
     industry: string;
     complianceStatus: string;
-  } | null>(null);
+  }>>([]);
 
   // Effect to update document analysis based on workflow completion
   useEffect(() => {
@@ -204,14 +204,14 @@ export function WorkflowAutomation() {
       state => state?.status === 'completed'
     );
 
-    if (isWorkflowComplete && stageStates[4]?.result?.metadata) {
-      const metadata = stageStates[4].result.metadata;
-      setDocumentAnalysis({
-        fileName: uploadedFiles[0]?.name || 'Untitled Document',
+    if (isWorkflowComplete && stageStates[5]?.result?.metadata) {
+      const metadata = stageStates[5].result.metadata;
+      setDocumentAnalyses(prev => [...prev, {
+        fileName: uploadedFiles[uploadedFiles.length - 1]?.name || 'Untitled Document',
         documentType: metadata.documentType,
         industry: metadata.industry,
         complianceStatus: metadata.complianceStatus
-      });
+      }]);
     }
   }, [stageStates, uploadedFiles]);
 
@@ -301,7 +301,7 @@ export function WorkflowAutomation() {
     setCurrentStage(0);
     setWorkflowProgress(0);
     setStageStates({});
-    setDocumentAnalysis(null);
+    setDocumentAnalyses([]); // Reset document analyses
 
     const stages = [
       {
@@ -329,7 +329,9 @@ export function WorkflowAutomation() {
               "Document structure follows standard format",
               "Required legal clauses present",
               "No major compliance issues detected"
-            ]
+            ],
+            documentType: "Contract", // Example document type
+            industry: "Finance" // Example industry
           };
 
           const complianceContent = `
@@ -347,7 +349,9 @@ export function WorkflowAutomation() {
             metadata: {
               complianceStatus: complianceResult.status,
               score: complianceResult.score,
-              findings: complianceResult.findings
+              findings: complianceResult.findings,
+              documentType: complianceResult.documentType,
+              industry: complianceResult.industry
             }
           };
         }
@@ -401,7 +405,6 @@ export function WorkflowAutomation() {
       {
         name: "Document Analysis Results",
         handler: async () => {
-          // Collect results from all stages
           const workflowResults = Object.entries(stageStates).map(([stage, state]) => ({
             stageType: workflowStages[Number(stage)].title.toLowerCase(),
             content: documentText,
@@ -409,16 +412,18 @@ export function WorkflowAutomation() {
             metadata: state.result?.metadata
           }));
 
-          // Process metadata from compliance stage
           const complianceStage = stageStates[1]?.result?.metadata;
-          const documentType = "Compliance Document"; // This would be determined by AI
-          const industry = "TECHNOLOGY"; // This would be determined by AI
+          const currentFile = uploadedFiles[uploadedFiles.length - 1];
+
+          const documentType = complianceStage?.documentType || "Compliance Document";
+          const industry = complianceStage?.industry || "TECHNOLOGY";
 
           const analysisContent = `
             <h2>Final Document Analysis</h2>
             <div class="space-y-4">
               <div>
                 <h3>Document Classification</h3>
+                <p><strong>File:</strong> ${currentFile?.name || 'Untitled Document'}</p>
                 <p><strong>Type:</strong> ${documentType}</p>
                 <p><strong>Industry:</strong> ${industry}</p>
               </div>
@@ -430,12 +435,12 @@ export function WorkflowAutomation() {
             </div>
           `;
 
-          // This metadata will be used to update the DocumentAnalysisTable
           const finalMetadata = {
             documentType,
             industry,
             complianceStatus: complianceStage?.complianceStatus || 'Pending Review',
-            confidence: complianceStage?.score || 0
+            confidence: complianceStage?.score || 0,
+            fileName: currentFile?.name
           };
 
           return {
@@ -473,15 +478,6 @@ export function WorkflowAutomation() {
           // Update progress
           setWorkflowProgress((i + 1) * (100 / stages.length));
 
-          // If this is the final analysis stage, update the document analysis
-          if (i === stages.length - 1 && result.metadata) {
-            setDocumentAnalysis({
-              fileName: uploadedFiles[0]?.name || 'Untitled Document',
-              documentType: result.metadata.documentType,
-              industry: result.metadata.industry,
-              complianceStatus: result.metadata.complianceStatus
-            });
-          }
 
           addStageOutput(i, {
             message: `${stages[i].name} completed`,
@@ -516,15 +512,9 @@ export function WorkflowAutomation() {
 
   const handleFileProcessed = useCallback(({ text, documentId, fileName }: { text: string; documentId: string; fileName: string }) => {
     setDocumentText(text);
-    setDocumentAnalysis({
-      fileName,
-      documentType: 'Analyzing...',
-      industry: 'Analyzing...',
-      complianceStatus: 'In Progress'
-    });
     toast({
       title: "Document Processed",
-      description: "The document has been successfully parsed and loaded.",
+      description: `${fileName} has been successfully parsed and loaded.`,
     });
   }, [toast]);
 
@@ -615,7 +605,7 @@ export function WorkflowAutomation() {
           </div>
 
           {/* Document Analysis Results Card - Only show when workflow is complete */}
-          {documentAnalysis && Object.values(stageStates).every(state => state?.status === 'completed') && (
+          {documentAnalyses.length > 0 && (
             <Card className="bg-white/80 backdrop-blur-lg">
               <CardHeader>
                 <CardTitle>Document Analysis Results</CardTitle>
@@ -624,10 +614,15 @@ export function WorkflowAutomation() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <DocumentAnalysisTable
-                  analysis={documentAnalysis}
-                  isLoading={false}
-                />
+                <div className="space-y-4">
+                  {documentAnalyses.map((analysis, index) => (
+                    <DocumentAnalysisTable
+                      key={index}
+                      analysis={analysis}
+                      isLoading={false}
+                    />
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}
@@ -647,6 +642,8 @@ export function WorkflowAutomation() {
                   <FileUpload
                     onFileProcessed={handleFileProcessed}
                     onError={handleFileError}
+                    multiple={true}
+                    setUploadedFiles={setUploadedFiles}
                   />
                 </CardContent>
               </Card>
@@ -688,10 +685,10 @@ export function WorkflowAutomation() {
                         return (
                           <Icon className={
                             state.status === 'completed' ? 'text-green-500' :
-                            state.status === 'processing' ? 'text-blue-500' :
-                            state.status === 'error' ? 'text-red-500' :
-                            'text-gray-500'
-                          }/>
+                              state.status === 'processing' ? 'text-blue-500' :
+                              state.status === 'error' ? 'text-red-500' :
+                              'text-gray-500'
+                          } />
                         );
                       })()}
                       {workflowStages[Number(stageIndex)].title}
@@ -703,10 +700,10 @@ export function WorkflowAutomation() {
                         key={idx}
                         className={`p-4 rounded-lg border ${
                           output.status === 'error' ? 'border-red-200 bg-red-50' :
-                          output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
-                          output.status === 'success' ? 'border-green-200 bg-green-50' :
-                          'border-blue-200 bg-blue-50'
-                        }`}
+                            output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
+                            output.status === 'success' ? 'border-green-200 bg-green-50' :
+                            'border-blue-200 bg-blue-50'
+                          }`}
                       >
                         <p className="font-medium">{output.message}</p>
                         {output.details && (

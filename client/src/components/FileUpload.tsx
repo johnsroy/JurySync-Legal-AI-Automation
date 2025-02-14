@@ -8,11 +8,13 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 interface FileUploadProps {
-  onFileProcessed: (result: { text: string; documentId: string }) => void;
+  onFileProcessed: (result: { text: string; documentId: string; fileName: string }) => void;
   onError: (error: string) => void;
+  multiple?: boolean;
+  setUploadedFiles?: (files: File[]) => void;
 }
 
-export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
+export function FileUpload({ onFileProcessed, onError, multiple = false, setUploadedFiles }: FileUploadProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +71,8 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
 
       onFileProcessed({
         text: cleanedText,
-        documentId: result.documentId
+        documentId: result.documentId,
+        fileName: file.name
       });
 
       // Reset retry count on success
@@ -96,10 +99,18 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
   };
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
-    await processFile(file);
-  }, []);
+    if (!acceptedFiles.length) return;
+
+    // Update the uploaded files list
+    if (setUploadedFiles) {
+      setUploadedFiles(prev => [...prev, ...acceptedFiles]);
+    }
+
+    // Process each file
+    for (const file of acceptedFiles) {
+      await processFile(file);
+    }
+  }, [setUploadedFiles]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -108,7 +119,7 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt']
     },
-    multiple: false
+    multiple
   });
 
   const handleRetry = useCallback(() => {
@@ -134,9 +145,9 @@ export function FileUpload({ onFileProcessed, onError }: FileUploadProps) {
             <FileText className="h-6 w-6 text-primary" />
           </div>
           <div className="space-y-2">
-            <h3 className="font-semibold">Upload Document</h3>
+            <h3 className="font-semibold">Upload Document{multiple ? 's' : ''}</h3>
             <p className="text-sm text-gray-500">
-              Drag and drop your document here, or click to select
+              Drag and drop your document{multiple ? 's' : ''} here, or click to select
             </p>
             <p className="text-xs text-gray-400">
               Supports PDF, DOCX, and TXT files
