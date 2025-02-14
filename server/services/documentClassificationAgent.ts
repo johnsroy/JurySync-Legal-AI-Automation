@@ -21,7 +21,7 @@ export interface DocumentClassification {
 
 export class DocumentClassificationAgent {
   private static instance: DocumentClassificationAgent;
-  
+
   private documentTypePatterns = {
     merger: {
       patterns: ['merger', 'acquisition', 'stock purchase', 'asset purchase', 'm&a'],
@@ -89,7 +89,7 @@ export class DocumentClassificationAgent {
           1. For M&A documents, use specific types like "M&A Agreement - Merger", "M&A Agreement - Stock Purchase"
           2. For compliance documents, specify the standard (e.g., "SOC 2 Report", "SOC 3 Report")
           3. For legal agreements, be specific about agreement type
-          
+
           Return a JSON object with:
           {
             "documentType": "specific document type",
@@ -110,7 +110,7 @@ export class DocumentClassificationAgent {
       ]
     });
 
-    return JSON.parse(completion.choices[0].message.content);
+    return JSON.parse(completion.choices[0].message.content || "{}");
   }
 
   private async classifyWithAnthropic(content: string): Promise<DocumentClassification> {
@@ -119,13 +119,13 @@ export class DocumentClassificationAgent {
       max_tokens: 1000,
       messages: [
         {
-          role: "system",
+          role: "user",
           content: `You are an expert document classifier. When analyzing documents, be very specific about document types.
           Pay special attention to:
           1. M&A documents - Classify as specific type of M&A agreement
           2. Compliance reports - Specify exact standard/framework
           3. Legal agreements - Use precise agreement types
-          
+
           Return only a JSON object with:
           {
             "documentType": "specific document type",
@@ -137,11 +137,9 @@ export class DocumentClassificationAgent {
               "regulatoryFramework": "relevant framework if applicable",
               "businessContext": "business context"
             }
-          }`
-        },
-        {
-          role: "user",
-          content: `Classify this document:\n\n${content.substring(0, 4000)}`
+          }
+
+          Classify this document:\n\n${content.substring(0, 4000)}`
         }
       ]
     });
@@ -152,7 +150,7 @@ export class DocumentClassificationAgent {
 
   public refineClassification(rawClassification: DocumentClassification): DocumentClassification {
     const lowerContent = rawClassification.documentType.toLowerCase();
-    
+
     // Check for specific document types
     for (const [category, info] of Object.entries(this.documentTypePatterns)) {
       for (const pattern of info.patterns) {
@@ -167,7 +165,7 @@ export class DocumentClassificationAgent {
               };
             }
           }
-          
+
           // If no specific subtype found, use general category
           return {
             ...rawClassification,

@@ -15,29 +15,28 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 // Define allowed roles that can upload documents
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
 
+interface DocumentAnalysis {
+  documentType: string;
+  industry: string;
+  complianceStatus?: string;
+  confidence?: number;
+  details?: {
+    findings: string[];
+    scope: string | null;
+    keyTerms: string[];
+    recommendations: string[];
+  };
+}
+
 interface Document {
   id: number;
   title: string;
-  documentType?: string;
-  industry?: string;
   createdAt: string;
-  analysis?: {
-    documentType?: string;
-    industry?: string;
-    complianceStatus?: {
-      status: 'PASSED' | 'FAILED' | 'PENDING';
-      details: string;
-      lastChecked: string;
-    };
-  };
+  analysis?: DocumentAnalysis;
   metadata?: {
     documentType?: string;
     industry?: string;
-    complianceStatus?: {
-      status: 'PASSED' | 'FAILED' | 'PENDING';
-      details: string;
-      lastChecked: string;
-    };
+    complianceStatus?: string;
   };
 }
 
@@ -81,7 +80,7 @@ export default function VaultPage() {
     }
   };
 
-  // Fetch documents from both vault and workflow
+  // Fetch documents from vault
   const { data: documentsData, isLoading: isLoadingDocuments } = useQuery({
     queryKey: ['/api/vault/documents'],
     queryFn: async () => {
@@ -102,23 +101,11 @@ export default function VaultPage() {
   const deleteMutation = useMutation({
     mutationFn: async (documentId: number) => {
       try {
-        // Try both endpoints since documents can be in either collection
-        const endpoints = [
-          `/api/workflow/documents/${documentId}`,
-          `/api/vault/documents/${documentId}`
-        ];
-
-        for (const endpoint of endpoints) {
-          try {
-            const response = await apiRequest('DELETE', endpoint);
-            if (response.ok) {
-              return response.json();
-            }
-          } catch (err) {
-            console.log(`Attempt to delete from ${endpoint} failed:`, err);
-          }
+        const response = await apiRequest('DELETE', `/api/vault/documents/${documentId}`);
+        if (!response.ok) {
+          throw new Error('Failed to delete document');
         }
-        throw new Error('Document not found in any collection');
+        return response.json();
       } catch (error: any) {
         console.error('Delete operation failed:', error);
         throw error;
@@ -129,7 +116,6 @@ export default function VaultPage() {
         title: 'Success',
         description: 'Document deleted successfully',
       });
-      // Refresh the documents list
       queryClient.invalidateQueries({ queryKey: ['/api/vault/documents'] });
     },
     onError: (error: any) => {
@@ -146,12 +132,15 @@ export default function VaultPage() {
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
       const response = await apiRequest('POST', '/api/vault/upload', formData);
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
       return response.json();
     },
     onSuccess: (data) => {
       toast({
         title: 'Success',
-        description: 'Document uploaded successfully',
+        description: 'Document uploaded and analyzed successfully',
       });
       queryClient.invalidateQueries({ queryKey: ['/api/vault/documents'] });
     },
@@ -166,23 +155,30 @@ export default function VaultPage() {
 
   const canUpload = user && UPLOAD_ALLOWED_ROLES.includes(user.role);
 
+  // Function to render document type with proper mapping
+  const renderDocumentType = (doc: Document) => {
+    const type = doc.analysis?.documentType || doc.metadata?.documentType;
+    if (!type) return "Unknown";
+
+    return type;
+  };
+
   // Function to render compliance status
   const renderComplianceStatus = (doc: Document) => {
-    const status = doc.analysis?.complianceStatus?.status || doc.metadata?.complianceStatus?.status;
+    const status = doc.analysis?.complianceStatus || doc.metadata?.complianceStatus;
     if (!status) return null;
 
     const statusColors = {
-      PASSED: 'text-green-600 bg-green-50',
-      FAILED: 'text-red-600 bg-red-50',
-      PENDING: 'text-yellow-600 bg-yellow-50'
+      'Compliant': 'text-green-600 bg-green-50',
+      'Non-Compliant': 'text-red-600 bg-red-50',
+      'Needs Review': 'text-yellow-600 bg-yellow-50'
     };
 
-    const statusColor = statusColors[status] || 'text-gray-600 bg-gray-50';
-    const displayStatus = status === 'PASSED' ? 'Compliant' : status.charAt(0) + status.slice(1).toLowerCase();
+    const statusColor = statusColors[status as keyof typeof statusColors] || 'text-gray-600 bg-gray-50';
 
     return (
       <span className={`px-2 py-1 rounded-full text-xs ${statusColor}`}>
-        {displayStatus}
+        {status}
       </span>
     );
   };
@@ -276,11 +272,9 @@ export default function VaultPage() {
                             </div>
                           </div>
                         </TableCell>
+                        <TableCell>{renderDocumentType(doc)}</TableCell>
                         <TableCell>
-                          {doc.analysis?.documentType || doc.metadata?.documentType || "SOC 3 Report"}
-                        </TableCell>
-                        <TableCell>
-                          {doc.analysis?.industry || doc.metadata?.industry || "Technology"}
+                          {doc.analysis?.industry || doc.metadata?.industry || "Unknown"}
                         </TableCell>
                         <TableCell>
                           {renderComplianceStatus(doc)}
@@ -299,8 +293,7 @@ export default function VaultPage() {
                               variant="ghost"
                               size="sm"
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                              onClick={(e) => {
-                                e.stopPropagation(); // Prevent event bubbling
+                              onClick={() => {
                                 if (window.confirm('Are you sure you want to delete this document?')) {
                                   deleteMutation.mutate(doc.id);
                                 }
@@ -330,43 +323,52 @@ export default function VaultPage() {
                 <div>
                   <h4 className="font-medium text-sm text-gray-900">Document Type</h4>
                   <p className="text-sm text-gray-700">
-                    {selectedDocument.analysis?.documentType || selectedDocument.metadata?.documentType || "SOC 3 Report"}
+                    {renderDocumentType(selectedDocument)}
                   </p>
                 </div>
                 <div>
                   <h4 className="font-medium text-sm text-gray-900">Industry</h4>
                   <p className="text-sm text-gray-700">
-                    {selectedDocument.analysis?.industry || selectedDocument.metadata?.industry || "Technology"}
+                    {selectedDocument.analysis?.industry || selectedDocument.metadata?.industry || "Unknown"}
                   </p>
                 </div>
-                {selectedDocument.analysis?.complianceStatus && (
+                {(selectedDocument.analysis?.complianceStatus || selectedDocument.metadata?.complianceStatus) && (
                   <div>
                     <h4 className="font-medium text-sm text-gray-900">Compliance Status</h4>
                     <div className="mt-1">
                       {renderComplianceStatus(selectedDocument)}
-                      <p className="text-sm text-gray-600 mt-2">
-                        {selectedDocument.analysis.complianceStatus.details || "All controls operating effectively"}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Last checked: {new Date(selectedDocument.analysis.complianceStatus.lastChecked).toLocaleString()}
-                      </p>
                     </div>
                   </div>
                 )}
-                {(selectedDocument.analysis?.keywords || selectedDocument.metadata?.keywords) && (
-                  <div>
-                    <h4 className="font-medium text-sm text-gray-900">Keywords</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {(selectedDocument.analysis?.keywords || selectedDocument.metadata?.keywords).map((keyword: string, index: number) => (
-                        <span
-                          key={index}
-                          className="px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs"
-                        >
-                          {keyword}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                {selectedDocument.analysis?.details && (
+                  <>
+                    {selectedDocument.analysis.details.scope && (
+                      <div>
+                        <h4 className="font-medium text-sm text-gray-900">Scope</h4>
+                        <p className="text-sm text-gray-700">{selectedDocument.analysis.details.scope}</p>
+                      </div>
+                    )}
+                    {selectedDocument.analysis.details.findings.length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-sm text-gray-900">Key Findings</h4>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
+                          {selectedDocument.analysis.details.findings.map((finding, index) => (
+                            <li key={index}>{finding}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {selectedDocument.analysis.details.recommendations.length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-sm text-gray-900">Recommendations</h4>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
+                          {selectedDocument.analysis.details.recommendations.map((rec, index) => (
+                            <li key={index}>{rec}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </DialogContent>
