@@ -101,26 +101,16 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!acceptedFiles.length) return;
 
-    // Update the uploaded files list before processing
+    // Update the uploaded files list
     if (setUploadedFiles) {
       setUploadedFiles(prev => [...prev, ...acceptedFiles]);
     }
 
-    // Process files sequentially to avoid conflicts
+    // Process each file
     for (const file of acceptedFiles) {
-      try {
-        setIsProcessing(true);
-        setError(null);
-        setUploadProgress(0);
-        await processFile(file);
-      } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error);
-        // Continue with next file even if current one fails
-      } finally {
-        setIsProcessing(false);
-      }
+      await processFile(file);
     }
-  }, [setUploadedFiles, processFile]);
+  }, [setUploadedFiles]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -190,9 +180,9 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
           <AlertDescription className="space-y-2">
             <p>{error}</p>
             {retryCount >= MAX_RETRIES && (
-              <Button
-                variant="outline"
-                size="sm"
+              <Button 
+                variant="outline" 
+                size="sm" 
                 onClick={handleRetry}
                 className="mt-2"
               >

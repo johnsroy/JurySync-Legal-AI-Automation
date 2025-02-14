@@ -321,7 +321,7 @@ export function WorkflowAutomation() {
       {
         name: "Compliance Check",
         handler: async () => {
-          // Simplified compliance check with correct industry and document type
+          // Simplified compliance check
           const complianceResult = {
             score: 85,
             status: "COMPLIANT",
@@ -330,15 +330,13 @@ export function WorkflowAutomation() {
               "Required legal clauses present",
               "No major compliance issues detected"
             ],
-            documentType: "Compliance Document",
-            industry: "TECHNOLOGY"
+            documentType: "Contract", // Example document type
+            industry: "Finance" // Example industry
           };
 
           const complianceContent = `
             <h2>Compliance Analysis Report</h2>
             <p><strong>Compliance Score:</strong> ${complianceResult.score}%</p>
-            <p><strong>Document Type:</strong> ${complianceResult.documentType}</p>
-            <p><strong>Industry:</strong> ${complianceResult.industry}</p>
             <h3>Key Findings:</h3>
             <ul>
               ${complianceResult.findings.map(finding => `<li>${finding}</li>`).join('')}
@@ -414,14 +412,11 @@ export function WorkflowAutomation() {
             metadata: state.result?.metadata
           }));
 
-          // Get metadata from compliance check stage
           const complianceStage = stageStates[1]?.result?.metadata;
           const currentFile = uploadedFiles[uploadedFiles.length - 1];
 
-          // Use the values from compliance check
-          const documentType = complianceStage?.documentType || "Unknown";
-          const industry = complianceStage?.industry || "Unknown";
-          const complianceStatus = complianceStage?.complianceStatus || "Unknown";
+          const documentType = complianceStage?.documentType || "Compliance Document";
+          const industry = complianceStage?.industry || "TECHNOLOGY";
 
           const analysisContent = `
             <h2>Final Document Analysis</h2>
@@ -434,7 +429,7 @@ export function WorkflowAutomation() {
               </div>
               <div>
                 <h3>Compliance Assessment</h3>
-                <p><strong>Status:</strong> ${complianceStatus}</p>
+                <p><strong>Status:</strong> ${complianceStage?.complianceStatus || 'Pending'}</p>
                 <p><strong>Score:</strong> ${complianceStage?.score || 0}%</p>
               </div>
             </div>
@@ -443,7 +438,7 @@ export function WorkflowAutomation() {
           const finalMetadata = {
             documentType,
             industry,
-            complianceStatus,
+            complianceStatus: complianceStage?.complianceStatus || 'Pending Review',
             confidence: complianceStage?.score || 0,
             fileName: currentFile?.name
           };
