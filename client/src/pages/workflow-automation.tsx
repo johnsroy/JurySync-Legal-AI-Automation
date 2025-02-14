@@ -2,22 +2,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import {
-  Gavel,
-  LogOut,
-  Loader2,
-  Shield,
-  FileText,
-  Upload,
-  ChevronRight,
-  History,
-  BookOpen,
-  FileCheck,
-  RefreshCcw,
-  AlertTriangle,
-  Clock,
-  BarChart3,
-  CheckCircle2
+import { 
+  Loader2, AlertCircle, CheckCircle2, Terminal, FileText, Scale, 
+  Book, Download, ChevronRight, UploadCloud, BarChart2,
+  Briefcase 
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from 'react-dropzone';
@@ -34,6 +22,8 @@ import { ApprovalForm } from "@/components/ApprovalForm";
 import { documentAnalyticsService } from "@/services/documentAnalytics";
 import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
 import { generateDraftAnalysis } from "@/services/anthropic-service";
+import { LogOut } from "lucide-react";
+
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -125,7 +115,7 @@ const WorkflowStage: React.FC<{
       </div>
       {status === 'completed' && (
         <div className="absolute right-0">
-          <FileCheck className="h-5 w-5 text-green-500" />
+          <CheckCircle2 className="h-5 w-5 text-green-500" />
         </div>
       )}
       {status === 'processing' && (
@@ -571,7 +561,7 @@ export function WorkflowAutomation() {
     {
       title: "Legal Research",
       description: "Context-aware legal research and analysis",
-      icon: BookOpen
+      icon: Book
     },
     {
       title: "Approval Process",
@@ -586,7 +576,7 @@ export function WorkflowAutomation() {
     {
       title: "Document Analysis Results",
       description: "Final analysis of the document",
-      icon: BarChart3
+      icon: BarChart2
     }
   ];
 
@@ -598,8 +588,10 @@ export function WorkflowAutomation() {
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Link href="/dashboard" className="flex items-center space-x-4 hover:text-indigo-600">
-              <Gavel className="h-6 w-6 text-indigo-600" />
-              <h1 className="text-xl font-semibold">JurySync.io</h1>
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white">
+                <Briefcase className="h-5 w-5" />
+              </div>
+              <h1 className="text-xl font-semibold">JurySync</h1>
             </Link>
           </div>
           <div className="flex items-center gap-4">
@@ -631,7 +623,7 @@ export function WorkflowAutomation() {
               Document Workflow Automation
             </h1>
             <p className="mt-2 text-gray-600">
-              Process and analyze legal documents with AI assistance
+              Process and analyze legal documents with JurySync AI assistance
             </p>
           </div>
 
