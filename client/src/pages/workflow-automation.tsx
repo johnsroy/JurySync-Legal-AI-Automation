@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { 
   Loader2, AlertCircle, CheckCircle2, Terminal, FileText, Scale, 
   Book, Download, ChevronRight, UploadCloud, BarChart2,
-  Briefcase 
+  Briefcase, Shield, History, RefreshCcw
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from 'react-dropzone';
@@ -614,230 +614,275 @@ export function WorkflowAutomation() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto space-y-6">
-          {/* Title Section */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Document Workflow Automation
-            </h1>
-            <p className="mt-2 text-gray-600">
-              Process and analyze legal documents with JurySync AI assistance
-            </p>
+      {/* Sidebar Navigation */}
+      <div className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 p-4">
+        <div className="flex items-center space-x-2 mb-8">
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-600 text-white">
+            <Briefcase className="h-6 w-6" />
           </div>
+          <span className="text-xl font-semibold">JurySync</span>
+        </div>
+        <nav className="space-y-2">
+          <Link href="/dashboard">
+            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
+              <span>Dashboard</span>
+            </a>
+          </Link>
+          <Link href="/workflow-automation">
+            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100 bg-indigo-50 text-indigo-600">
+              <span>Workflow Automation</span>
+            </a>
+          </Link>
+          <Link href="/contract-automation">
+            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
+              <span>Contract Automation</span>
+            </a>
+          </Link>
+          <Link href="/juryvault">
+            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
+              <span>JuryVault</span>
+            </a>
+          </Link>
+          <Link href="/history-reports">
+            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
+              <span>History & Reports</span>
+            </a>
+          </Link>
+          <Link href="/settings">
+            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
+              <span>Settings</span>
+            </a>
+          </Link>
+        </nav>
+      </div>
 
-          {/* Document Analysis Results Card */}
-          {documentAnalyses.length > 0 && (
-            <Card className="bg-white/80 backdrop-blur-lg">
-              <CardHeader>
-                <CardTitle>Document Analysis Results</CardTitle>
-                <CardDescription>
-                  Automated classification and compliance assessment
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {documentAnalyses.map((analysis, index) => (
-                    <DocumentAnalysisTable
-                      key={index}
-                      analysis={analysis}
-                      isLoading={false}
-                    />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+      {/* Main Content Area - shifted right to accommodate sidebar */}
+      <div className="ml-64">
+        {/* Main Content */}
+        <main className="container mx-auto px-4 py-8">
+          <div className="max-w-6xl mx-auto space-y-6">
+            {/* Title Section */}
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold text-gray-900">
+                Document Workflow Automation
+              </h1>
+              <p className="mt-2 text-gray-600">
+                Process and analyze legal documents with JurySync AI assistance
+              </p>
+            </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Document Editor Section */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Add FileUpload component */}
+            {/* Document Analysis Results Card */}
+            {documentAnalyses.length > 0 && (
               <Card className="bg-white/80 backdrop-blur-lg">
                 <CardHeader>
-                  <CardTitle>Document Upload</CardTitle>
+                  <CardTitle>Document Analysis Results</CardTitle>
                   <CardDescription>
-                    Upload your document or enter text manually below
+                    Automated classification and compliance assessment
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <FileUpload
-                    onFileProcessed={handleFileProcessed}
-                    onError={handleFileError}
-                    multiple={true}
-                    setUploadedFiles={setUploadedFiles}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card className="bg-white/80 backdrop-blur-lg">
-                <CardHeader>
-                  <CardTitle>Document Editor</CardTitle>
-                  <CardDescription>
-                    Edit your document and select text for suggestions
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <Textarea
-                    placeholder="Enter or paste your document text here..."
-                    className="min-h-[200px] resize-none"
-                    value={documentText}
-                    onChange={(e) => setDocumentText(e.target.value)}
-                    onSelect={handleTextSelect}
-                    onMouseUp={handleTextSelect}
-                    onKeyUp={handleTextSelect}
-                  />
-                  <Button
-                    className="w-full"
-                    onClick={handleSubmit}
-                    disabled={!documentText.trim()}
-                  >
-                    Process Document
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {/* Stage Output Display */}
-              {Object.entries(stageStates).map(([stageIndex, state]) => (
-                <Card key={stageIndex} className="bg-white/80 backdrop-blur-lg">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      {(() => {
-                        const Icon = workflowStages[Number(stageIndex)].icon;
-                        return (
-                          <Icon className={
-                            state.status === 'completed' ? 'text-green-500' :
-                              state.status === 'processing' ? 'text-blue-500' :
-                              state.status === 'error' ? 'text-red-500' :
-                              'text-gray-500'
-                          } />
-                        );
-                      })()}
-                      {workflowStages[Number(stageIndex)].title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {state.outputs.map((output, idx) => (
-                      <div
-                        key={idx}
-                        className={`p-4 rounded-lg border ${
-                          output.status === 'error' ? 'border-red-200 bg-red-50' :
-                            output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
-                            output.status === 'success' ? 'border-green-200 bg-green-50' :
-                            'border-blue-200 bg-blue-50'
-                          }`}
-                      >
-                        <p className="font-medium">{output.message}</p>
-                        {output.details && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {output.details}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground mt-2">
-                          {new Date(output.timestamp).toLocaleTimeString()}
-                        </p>
-                      </div>
-                    ))}
-
-                    {state.result && (
-                      <DocumentPreview
-                        content={state.result.content}
-                        title={state.result.title}
-                        metadata={state.result.metadata}
-                        onDownload={() => generatePDF(state.result.content, state.result.title)}
-                      >
-                        {currentStage === 3 && (
-                          <Card className="bg-white/80 backdrop-blur-lg mt-4">
-                            <CardHeader>
-                              <CardTitle>Document Approval</CardTitle>
-                              <CardDescription>
-                                Request approval for this document
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                              {!stageStates[3]?.isApproved ? (
-                                <ApprovalForm
-                                  onApprove={async (approvers) => {
-                                    try {
-                                      setStageStates(prev => ({
-                                        ...prev,
-                                        [currentStage]: {
-                                          ...prev[currentStage],
-                                          approvers,
-                                          isApproved: true,
-                                          status: 'completed'
-                                        }
-                                      }));
-
-                                      setCurrentStage(prev => prev + 1);
-                                      setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
-
-                                      addStageOutput(currentStage, {
-                                        message: "Document approved",
-                                        details: `Approved by ${approvers.length} reviewer(s)`,
-                                        timestamp: new Date().toISOString(),
-                                        status: 'success'
-                                      });
-                                    } catch (error) {
-                                      console.error("Approval error:", error);
-                                      toast({
-                                        title: "Approval Failed",
-                                        description: error instanceof Error ? error.message : "Failed to process approval",
-                                        variant: "destructive"
-                                      });
-                                    }
-                                  }}
-                                  isLoading={stageStates[3]?.status === 'processing'}
-                                />
-                              ) : (
-                                <div className="text-center text-green-600">
-                                  <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
-                                  <p>Document has been approved</p>
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        )}
-                      </DocumentPreview>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {/* Predictive Suggestions Section */}
-            <div className="space-y-6">
-              <PredictiveSuggestions
-                selectedText={selectedText}
-                onSuggestionSelect={handleSuggestionSelect}
-              />
-              <Card className="bg-white/80 backdrop-blur-lg">
-                <CardHeader>
-                  <CardTitle>Workflow Progress</CardTitle>
-                  <CardDescription>
-                    Track document processing progress
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <Progress value={workflowProgress} className="h-2" />
-                  <div className="space-y-6">
-                    {workflowStages.map((stage, index) => (
-                      <WorkflowStage
+                  <div className="space-y-4">
+                    {documentAnalyses.map((analysis, index) => (
+                      <DocumentAnalysisTable
                         key={index}
-                        icon={stage.icon}
-                        title={stage.title}
-                        description={stage.description}
-                        status={stageStates[index]?.status || 'pending'}
+                        analysis={analysis}
+                        isLoading={false}
                       />
                     ))}
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Document Editor Section */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Add FileUpload component */}
+                <Card className="bg-white/80 backdrop-blur-lg">
+                  <CardHeader>
+                    <CardTitle>Document Upload</CardTitle>
+                    <CardDescription>
+                      Upload your document or enter text manually below
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <FileUpload
+                      onFileProcessed={handleFileProcessed}
+                      onError={handleFileError}
+                      multiple={true}
+                      setUploadedFiles={setUploadedFiles}
+                    />
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white/80 backdrop-blur-lg">
+                  <CardHeader>
+                    <CardTitle>Document Editor</CardTitle>
+                    <CardDescription>
+                      Edit your document and select text for suggestions
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Textarea
+                      placeholder="Enter or paste your document text here..."
+                      className="min-h-[200px] resize-none"
+                      value={documentText}
+                      onChange={(e) => setDocumentText(e.target.value)}
+                      onSelect={handleTextSelect}
+                      onMouseUp={handleTextSelect}
+                      onKeyUp={handleTextSelect}
+                    />
+                    <Button
+                      className="w-full"
+                      onClick={handleSubmit}
+                      disabled={!documentText.trim()}
+                    >
+                      Process Document
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Stage Output Display */}
+                {Object.entries(stageStates).map(([stageIndex, state]) => (
+                  <Card key={stageIndex} className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        {(() => {
+                          const Icon = workflowStages[Number(stageIndex)].icon;
+                          return (
+                            <Icon className={
+                              state.status === 'completed' ? 'text-green-500' :
+                                state.status === 'processing' ? 'text-blue-500' :
+                                state.status === 'error' ? 'text-red-500' :
+                                'text-gray-500'
+                            } />
+                          );
+                        })()}
+                        {workflowStages[Number(stageIndex)].title}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {state.outputs.map((output, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-4 rounded-lg border ${
+                            output.status === 'error' ? 'border-red-200 bg-red-50' :
+                              output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
+                              output.status === 'success' ? 'border-green-200 bg-green-50' :
+                              'border-blue-200 bg-blue-50'
+                            }`}
+                        >
+                          <p className="font-medium">{output.message}</p>
+                          {output.details && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {output.details}
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-2">
+                            {new Date(output.timestamp).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      ))}
+
+                      {state.result && (
+                        <DocumentPreview
+                          content={state.result.content}
+                          title={state.result.title}
+                          metadata={state.result.metadata}
+                          onDownload={() => generatePDF(state.result.content, state.result.title)}
+                        >
+                          {currentStage === 3 && (
+                            <Card className="bg-white/80 backdrop-blur-lg mt-4">
+                              <CardHeader>
+                                <CardTitle>Document Approval</CardTitle>
+                                <CardDescription>
+                                  Request approval for this document
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent>
+                                {!stageStates[3]?.isApproved ? (
+                                  <ApprovalForm
+                                    onApprove={async (approvers) => {
+                                      try {
+                                        setStageStates(prev => ({
+                                          ...prev,
+                                          [currentStage]: {
+                                            ...prev[currentStage],
+                                            approvers,
+                                            isApproved: true,
+                                            status: 'completed'
+                                          }
+                                        }));
+
+                                        setCurrentStage(prev => prev + 1);
+                                        setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
+
+                                        addStageOutput(currentStage, {
+                                          message: "Document approved",
+                                          details: `Approved by ${approvers.length} reviewer(s)`,
+                                          timestamp: new Date().toISOString(),
+                                          status: 'success'
+                                        });
+                                      } catch (error) {
+                                        console.error("Approval error:", error);
+                                        toast({
+                                          title: "Approval Failed",
+                                          description: error instanceof Error ? error.message : "Failed to process approval",
+                                          variant: "destructive"
+                                        });
+                                      }
+                                    }}
+                                    isLoading={stageStates[3]?.status === 'processing'}
+                                  />
+                                ) : (
+                                  <div className="text-center text-green-600">
+                                    <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
+                                    <p>Document has been approved</p>
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          )}
+                        </DocumentPreview>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Predictive Suggestions Section */}
+              <div className="space-y-6">
+                <PredictiveSuggestions
+                  selectedText={selectedText}
+                  onSuggestionSelect={handleSuggestionSelect}
+                />
+                <Card className="bg-white/80 backdrop-blur-lg">
+                  <CardHeader>
+                    <CardTitle>Workflow Progress</CardTitle>
+                    <CardDescription>
+                      Track document processing progress
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <Progress value={workflowProgress} className="h-2" />
+                    <div className="space-y-6">
+                      {workflowStages.map((stage, index) => (
+                        <WorkflowStage
+                          key={index}
+                          icon={stage.icon}
+                          title={stage.title}
+                          description={stage.description}
+                          status={stageStates[index]?.status || 'pending'}
+                        />
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
