@@ -1,8 +1,12 @@
-import { type User } from "@shared/schema";
+import { users, type User } from "@shared/schema";
 import { type InsertUser } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 import session from "express-session";
-import { db, usersCollection } from "./firebase";
-import { FirebaseError } from "firebase-admin";
+import connectPg from "connect-pg-simple";
+import { pool } from "./db";
+
+const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -13,99 +17,25 @@ export interface IStorage {
   sessionStore: session.Store;
 }
 
-// Firebase Session Store implementation
-class FirebaseSessionStore extends session.Store {
-  private collection = db.collection('sessions');
-
-  async get(sid: string, callback: (err: any, session?: any) => void): Promise<void> {
-    try {
-      console.log('Getting session:', sid);
-      const doc = await this.collection.doc(sid).get();
-      if (!doc.exists) {
-        console.log('Session not found:', sid);
-        return callback(null, null);
-      }
-
-      const data = doc.data();
-      if (!data) {
-        console.log('Session data is empty:', sid);
-        return callback(null, null);
-      }
-
-      // Check if session has expired
-      if (data.expires && data.expires.toDate() < new Date()) {
-        console.log('Session expired:', sid);
-        await this.destroy(sid);
-        return callback(null, null);
-      }
-
-      const session = JSON.parse(data.session);
-      console.log('Session retrieved successfully:', sid);
-      callback(null, session);
-    } catch (error) {
-      console.error('Error getting session:', error);
-      callback(error);
-    }
-  }
-
-  async set(sid: string, session: any, callback?: (err?: any) => void): Promise<void> {
-    try {
-      console.log('Setting session:', sid);
-      const sessionStr = JSON.stringify(session);
-      await this.collection.doc(sid).set({
-        session: sessionStr,
-        expires: session.cookie?.expires || new Date(Date.now() + 86400000), // 24h default
-        lastModified: new Date()
-      });
-      console.log('Session set successfully:', sid);
-      callback?.();
-    } catch (error) {
-      console.error('Error setting session:', error);
-      callback?.(error);
-    }
-  }
-
-  async destroy(sid: string, callback?: (err?: any) => void): Promise<void> {
-    try {
-      console.log('Destroying session:', sid);
-      await this.collection.doc(sid).delete();
-      console.log('Session destroyed successfully:', sid);
-      callback?.();
-    } catch (error) {
-      console.error('Error destroying session:', error);
-      callback?.(error);
-    }
-  }
-
-  async touch(sid: string, session: any, callback?: (err?: any) => void): Promise<void> {
-    try {
-      console.log('Touching session:', sid);
-      await this.collection.doc(sid).update({
-        expires: session.cookie?.expires || new Date(Date.now() + 86400000),
-        lastModified: new Date()
-      });
-      console.log('Session touched successfully:', sid);
-      callback?.();
-    } catch (error) {
-      console.error('Error touching session:', error);
-      callback?.(error);
-    }
-  }
-}
-
-export class FirebaseStorage implements IStorage {
+export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new FirebaseSessionStore();
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      tableName: 'session',
+      createTableIfMissing: true,
+    });
   }
 
   async getUser(id: number): Promise<User | undefined> {
     try {
-      const snapshot = await usersCollection.where('id', '==', id).limit(1).get();
-      if (snapshot.empty) return undefined;
-      const userData = snapshot.docs[0].data();
-      return this.convertToUser(userData);
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
+      return user;
     } catch (error) {
       console.error('Error getting user:', error);
       throw error;
@@ -114,10 +44,12 @@ export class FirebaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     try {
-      const snapshot = await usersCollection.where('username', '==', username).limit(1).get();
-      if (snapshot.empty) return undefined;
-      const userData = snapshot.docs[0].data();
-      return this.convertToUser(userData);
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+      return user;
     } catch (error) {
       console.error('Error getting user by username:', error);
       throw error;
@@ -126,10 +58,12 @@ export class FirebaseStorage implements IStorage {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     try {
-      const snapshot = await usersCollection.where('email', '==', email).limit(1).get();
-      if (snapshot.empty) return undefined;
-      const userData = snapshot.docs[0].data();
-      return this.convertToUser(userData);
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+      return user;
     } catch (error) {
       console.error('Error getting user by email:', error);
       throw error;
@@ -139,36 +73,14 @@ export class FirebaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
       console.log('Creating user:', { ...insertUser, password: '[REDACTED]' });
-
-      // Generate a numeric ID for the user
-      const counterDoc = await db.collection('counters').doc('users').get();
-      let nextId = 1;
-
-      if (counterDoc.exists) {
-        nextId = (counterDoc.data()?.value || 0) + 1;
-      }
-
-      await db.collection('counters').doc('users').set({ value: nextId });
-
-      const user: User = {
-        ...insertUser,
-        id: nextId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        lastUploadDate: null,
-        uploadCount: 0,
-        profileImage: null,
-        role: 'USER',
-        firstName: null,
-        lastName: null,
-        subscriptionStatus: 'INACTIVE',
-        subscriptionEndsAt: null,
-        trialUsed: false,
-        stripeCustomerId: null,
-        stripePriceId: null
-      };
-
-      await usersCollection.doc(nextId.toString()).set(user);
+      const [user] = await db
+        .insert(users)
+        .values({
+          ...insertUser,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        .returning();
       console.log('User created successfully:', { id: user.id });
       return user;
     } catch (error) {
@@ -179,48 +91,20 @@ export class FirebaseStorage implements IStorage {
 
   async updateUser(id: number, updates: Partial<User>): Promise<User> {
     try {
-      const userRef = usersCollection.doc(id.toString());
-      const userDoc = await userRef.get();
-
-      if (!userDoc.exists) {
-        throw new Error('User not found');
-      }
-
-      const updatedUser = {
-        ...userDoc.data(),
-        ...updates,
-        updatedAt: new Date()
-      };
-
-      await userRef.update(updatedUser);
-      return this.convertToUser(updatedUser);
+      const [user] = await db
+        .update(users)
+        .set({
+          ...updates,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, id))
+        .returning();
+      return user;
     } catch (error) {
       console.error('Error updating user:', error);
       throw error;
     }
   }
-
-  private convertToUser(data: FirebaseFirestore.DocumentData): User {
-    return {
-      id: data.id,
-      username: data.username,
-      email: data.email,
-      password: data.password,
-      role: data.role || 'USER',
-      firstName: data.firstName || null,
-      lastName: data.lastName || null,
-      profileImage: data.profileImage || null,
-      createdAt: data.createdAt.toDate(),
-      updatedAt: data.updatedAt.toDate(),
-      lastUploadDate: data.lastUploadDate ? data.lastUploadDate.toDate() : null,
-      uploadCount: data.uploadCount || 0,
-      subscriptionStatus: data.subscriptionStatus || 'INACTIVE',
-      subscriptionEndsAt: data.subscriptionEndsAt ? data.subscriptionEndsAt.toDate() : null,
-      trialUsed: data.trialUsed || false,
-      stripeCustomerId: data.stripeCustomerId || null,
-      stripePriceId: data.stripePriceId || null
-    };
-  }
 }
 
-export const storage = new FirebaseStorage();
+export const storage = new DatabaseStorage();

@@ -3,8 +3,10 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic } from "./vite";
 import { setupAuth } from "./auth";
 import session from "express-session";
-import { storage } from "./storage";
-import { initializeFirestore } from './firebase';
+import connectPg from "connect-pg-simple";
+import { db } from "./db";
+import { seedLegalDatabase } from './services/seedData';
+import { continuousLearningService } from './services/continuousLearningService';
 import cors from 'cors';
 import { createServer } from 'net';
 import { handleStripeWebhook } from "./webhooks/stripe";
@@ -21,6 +23,34 @@ async function isPortInUse(port: number): Promise<boolean> {
   });
 }
 
+// Create a separate webhook server
+const webhookServer = express();
+webhookServer.use(cors());
+webhookServer.use(express.raw({ type: 'application/json' }));
+
+// Configure webhook routes
+webhookServer.post('/webhook', handleStripeWebhook);
+webhookServer.post('/webhook-test', (req: Request, res: Response) => {
+  try {
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      return res.status(500).json({ error: 'Webhook secret not configured' });
+    }
+
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+
+    return res.status(200).json({ 
+      status: 'success',
+      message: 'Webhook endpoint is accessible',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Webhook test error:', error);
+    return res.status(500).json({ error: 'Webhook test failed' });
+  }
+});
+
+// Create main application
 const app = express();
 
 // Configure API specific middleware
@@ -39,15 +69,25 @@ app.use((req, res, next) => {
   next();
 });
 
-// Session handling with Firebase session store
+// Session handling
+const PostgresStore = connectPg(session);
+const sessionStore = new PostgresStore({
+  conObject: {
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  },
+  createTableIfMissing: true,
+  pruneSessionInterval: 60
+});
+
 app.use(session({
-  store: storage.sessionStore,
+  store: sessionStore,
   secret: process.env.SESSION_SECRET || 'your-session-secret',
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    maxAge: 30 * 24 * 60 * 60 * 1000
   }
 }));
 
@@ -59,34 +99,19 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
 
 (async () => {
   try {
-    console.log('Initializing Firebase...');
-
-    // Initialize Firebase collections with retries
-    let retries = 3;
-    while (retries > 0) {
-      try {
-        await initializeFirestore();
-        console.log('Firebase collections initialized successfully');
-        break;
-      } catch (error) {
-        retries--;
-        if (retries === 0) {
-          console.error('Failed to initialize Firebase after retries:', error);
-          throw error;
-        }
-        console.log(`Retrying Firebase initialization... (${retries} attempts left)`);
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
-      }
-    }
+    // Database setup
+    await seedLegalDatabase();
+    console.log('Legal database seeded successfully');
 
     try {
-      // Register routes
-      registerRoutes(app);
-      console.log('Routes registered successfully');
+      await continuousLearningService.startContinuousLearning();
+      console.log('Continuous learning service started successfully');
     } catch (error) {
-      console.error('Failed to register routes:', error);
-      throw error;
+      console.error('Failed to start continuous learning service:', error);
     }
+
+    // Register routes
+    registerRoutes(app);
 
     // API error handling
     app.use((err: any, req: Request, res: Response, next: NextFunction) => {
@@ -107,6 +132,16 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
           })
         });
       }
+    });
+
+    // Start webhook server first
+    let webhookPort = 5001;
+    while (await isPortInUse(webhookPort)) {
+      console.log(`Port ${webhookPort} is in use, trying ${webhookPort + 1}`);
+      webhookPort++;
+    }
+    webhookServer.listen(webhookPort, '0.0.0.0', () => {
+      console.log(`Webhook server running at http://0.0.0.0:${webhookPort}`);
     });
 
     // Setup Vite or serve static files for main application

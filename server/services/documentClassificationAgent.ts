@@ -25,16 +25,8 @@ export class DocumentClassificationAgent {
   private mandaKeywords = [
     'merger', 'acquisition', 'stock purchase', 'asset purchase', 'm&a',
     'business combination', 'consolidation', 'takeover', 'share purchase',
-    'amalgamation', 'corporate restructuring', 'merge'
+    'amalgamation', 'corporate restructuring'
   ];
-
-  private industryKeywords = {
-    TECHNOLOGY: ['tech', 'software', 'it', 'digital', 'computer', 'internet', 'saas'],
-    HEALTHCARE: ['health', 'medical', 'pharma', 'biotech', 'hospital'],
-    FINANCIAL: ['bank', 'finance', 'investment', 'insurance', 'fintech'],
-    MANUFACTURING: ['manufacturing', 'industrial', 'production', 'factory'],
-    RETAIL: ['retail', 'commerce', 'sales', 'store', 'ecommerce']
-  };
 
   public static getInstance(): DocumentClassificationAgent {
     if (!DocumentClassificationAgent.instance) {
@@ -69,10 +61,6 @@ export class DocumentClassificationAgent {
         response_format: { type: "json_object" }
       });
 
-      if (!completion.choices[0].message.content) {
-        throw new Error("Empty response from GPT-4");
-      }
-
       const result = JSON.parse(completion.choices[0].message.content);
       return {
         isMA: result.isMA,
@@ -91,24 +79,15 @@ export class DocumentClassificationAgent {
       // First, check if it's an M&A document using GPT-4
       const { isMA, confidence } = await this.detectDocumentType(content);
 
-      // Enhanced M&A detection with keyword matching
-      const lowerContent = content.toLowerCase();
-      const foundMandAKeywords = this.mandaKeywords.filter(keyword => 
-        lowerContent.includes(keyword.toLowerCase())
-      );
-
-      const isStronglyMA = isMA || (foundMandAKeywords.length >= 2 && confidence > 0.6);
-
-      if (isStronglyMA) {
+      if (isMA && confidence > 0.7) {
         console.log("M&A document detected with high confidence");
-        const industry = await this.detectIndustry(content);
         return {
           documentType: "M&A Deal",
           category: "M&A Deal",
           confidence: confidence,
           complianceStatus: "Needs Review",
           metadata: {
-            industry: industry,
+            industry: await this.detectIndustry(content),
             businessContext: "Mergers & Acquisitions"
           }
         };
@@ -141,8 +120,7 @@ export class DocumentClassificationAgent {
         ]
       });
 
-      const response = completion.choices[0].message.content;
-      return response ? response.trim().toUpperCase() : "TECHNOLOGY";
+      return completion.choices[0].message.content.trim().toUpperCase() || "TECHNOLOGY";
     } catch (error) {
       console.error("Industry detection failed:", error);
       return "TECHNOLOGY";
@@ -178,22 +156,11 @@ export class DocumentClassificationAgent {
       response_format: { type: "json_object" }
     });
 
-    if (!completion.choices[0].message.content) {
-      throw new Error("Empty response from GPT-4");
-    }
-
     const result = JSON.parse(completion.choices[0].message.content);
 
-    // Double check for M&A keywords in the document type and content
-    const lowerContent = content.toLowerCase();
+    // Double check for M&A keywords in the document type
     const lowerDocType = result.documentType.toLowerCase();
-
-    const hasMandAKeywords = this.mandaKeywords.some(keyword => 
-      lowerContent.includes(keyword.toLowerCase()) || 
-      lowerDocType.includes(keyword.toLowerCase())
-    );
-
-    if (hasMandAKeywords) {
+    if (this.mandaKeywords.some(keyword => lowerDocType.includes(keyword.toLowerCase()))) {
       result.documentType = "M&A Deal";
       result.category = "M&A Deal";
     }
