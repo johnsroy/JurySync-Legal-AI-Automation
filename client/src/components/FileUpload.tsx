@@ -50,7 +50,6 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
 
       const result = await response.json();
 
-      // Validate the response format
       if (!result.text || typeof result.text !== 'string') {
         throw new Error('Invalid response format: missing or invalid text content');
       }
@@ -79,6 +78,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       setRetryCount(0);
       setError(null);
     } catch (err) {
+      console.error('File processing error:', err);
       const errorMessage = err instanceof Error ? err.message : "Failed to process file";
 
       // Implement retry logic
@@ -101,16 +101,20 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!acceptedFiles.length) return;
 
-    // Update the uploaded files list
+    // Update the uploaded files list if callback provided
     if (setUploadedFiles) {
-      setUploadedFiles(prev => [...prev, ...acceptedFiles]);
+      setUploadedFiles(prevFiles => {
+        // Create a new array with both old and new files
+        const updatedFiles = [...prevFiles, ...acceptedFiles];
+        return updatedFiles;
+      });
     }
 
-    // Process each file
+    // Process each file sequentially
     for (const file of acceptedFiles) {
       await processFile(file);
     }
-  }, [setUploadedFiles]);
+  }, [setUploadedFiles, onFileProcessed, onError]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
