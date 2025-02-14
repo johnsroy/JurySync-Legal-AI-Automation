@@ -19,8 +19,59 @@ interface StageAnalysis {
 }
 
 export class DocumentAnalyticsService {
+  // Enhanced document type classification
+  private documentTypeMap = {
+    // Compliance and Audit Reports
+    'soc 2': 'SOC 2 Compliance Report',
+    'soc2': 'SOC 2 Compliance Report',
+    'soc 3': 'SOC 3 Compliance Report',
+    'soc3': 'SOC 3 Compliance Report',
+    'iso 27001': 'ISO 27001 Certification',
+    'hipaa': 'HIPAA Compliance Report',
+    'gdpr': 'GDPR Compliance Assessment',
+
+    // Legal Agreements
+    'merger': 'M&A Agreement',
+    'acquisition': 'M&A Agreement',
+    'stock purchase': 'M&A Agreement',
+    'asset purchase': 'M&A Agreement',
+    'nda': 'Non-Disclosure Agreement',
+    'msa': 'Master Services Agreement',
+    'sla': 'Service Level Agreement',
+    'dpa': 'Data Processing Agreement',
+
+    // Corporate Documents
+    'bylaws': 'Corporate Bylaws',
+    'operating agreement': 'Operating Agreement',
+    'shareholder': 'Shareholder Agreement',
+    'board resolution': 'Board Resolution',
+
+    // Employment Documents
+    'employment': 'Employment Agreement',
+    'contractor': 'Independent Contractor Agreement',
+    'consulting': 'Consulting Agreement',
+    'compensation': 'Compensation Agreement',
+
+    // IP and Technology
+    'patent': 'Patent Documentation',
+    'trademark': 'Trademark Registration',
+    'copyright': 'Copyright Registration',
+    'license': 'License Agreement',
+    'saas': 'SaaS Agreement',
+
+    // Real Estate
+    'lease': 'Lease Agreement',
+    'property': 'Property Agreement',
+    'real estate': 'Real Estate Contract',
+
+    // Financial
+    'investment': 'Investment Agreement',
+    'financing': 'Financing Agreement',
+    'loan': 'Loan Agreement',
+    'credit': 'Credit Agreement'
+  };
+
   private async analyzeWithAI(content: string, stageResults?: WorkflowResult[]): Promise<StageAnalysis> {
-    // Truncate content if too long
     const maxLength = 8000;
     const truncatedContent = content.length > maxLength ?
       content.slice(0, maxLength) + "..." :
@@ -30,7 +81,7 @@ export class DocumentAnalyticsService {
 Please analyze the document content and provide a response in this exact JSON format:
 {
   "documentType": {
-    "primary": "string - main document type (e.g. 'SOC 2', 'SOC 3', 'Contract', 'Policy')",
+    "primary": "string - main document type (e.g. 'SOC 2', 'SOC 3', 'M&A Agreement')",
     "subtype": "string - specific type if applicable",
     "category": "string - document category (e.g. 'Compliance Report', 'Legal Agreement')"
   },
@@ -45,11 +96,22 @@ Please analyze the document content and provide a response in this exact JSON fo
   }
 }
 
-Be very specific about the document type - if it's a SOC report, specify whether it's SOC 1, SOC 2, or SOC 3.
+Be very specific about document types. Examples:
+- SOC reports should specify SOC 1, SOC 2, or SOC 3
+- M&A documents should specify type (merger agreement, stock purchase, asset purchase)
+- Technology agreements should specify type (SaaS, license, maintenance)
+- Compliance documents should specify the standard/framework
+
+Look for key indicators like:
+- Document headers and titles
+- Standard compliance framework references
+- Legal agreement type declarations
+- Regulatory citations
+- Industry-specific terminology
+
 If you're not completely certain about any field, indicate lower confidence rather than guessing.`;
 
     try {
-      // First try OpenAI
       const completion = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
@@ -71,7 +133,6 @@ If you're not completely certain about any field, indicate lower confidence rath
       console.error("OpenAI analysis failed, falling back to Anthropic:", error);
 
       try {
-        // Fallback to Anthropic with more detailed analysis
         const response = await anthropic.messages.create({
           model: "claude-3-opus-20240229",
           max_tokens: 1024,
@@ -127,6 +188,15 @@ If you're not completely certain about any field, indicate lower confidence rath
       }
     }
 
+    // Use the documentTypeMap for more accurate classification
+    const lowerContent = documentType.toLowerCase();
+    for (const [key, value] of Object.entries(this.documentTypeMap)) {
+      if (lowerContent.includes(key)) {
+        documentType = value;
+        break;
+      }
+    }
+
     // Map industry with extended categories
     const industryMap: { [key: string]: string } = {
       'tech': 'TECHNOLOGY',
@@ -160,7 +230,22 @@ If you're not completely certain about any field, indicate lower confidence rath
     }
 
     if (!industry) {
-      industry = 'TECHNOLOGY'; //default to technology if industry cannot be determined
+      // Look for industry indicators in the document type and key terms
+      const keyTerms = analysis.details?.keyTerms || [];
+      for (const term of keyTerms) {
+        const lowercaseTerm = term.toLowerCase();
+        for (const [key, value] of Object.entries(industryMap)) {
+          if (lowercaseTerm.includes(key)) {
+            industry = value;
+            break;
+          }
+        }
+        if (industry) break;
+      }
+
+      if (!industry) {
+        industry = 'TECHNOLOGY'; //default to technology if industry cannot be determined
+      }
     }
 
     // Validate compliance status
