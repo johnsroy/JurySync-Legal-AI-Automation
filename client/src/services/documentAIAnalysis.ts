@@ -20,74 +20,72 @@ export async function analyzeDocument(content: string): Promise<DocumentAnalysis
     const classificationResponse = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
-      messages: [
-        {
-          role: "user",
-          content: `You are an expert legal document analyzer. Analyze the document and provide detailed classification including:
-            - Document type (be specific about M&A agreements, employment contracts, etc.)
-            - Industry sector
-            - Compliance status
-            - Key findings
-            - Potential risks
-            - Recommendations
+      messages: [{
+        role: "user",
+        content: `Analyze this legal document and provide a structured analysis with:
+          - Document type (be specific, especially for M&A agreements)
+          - Industry sector
+          - Compliance status
+          - Key findings
+          - Risks
+          - Recommendations
 
-            Document content: ${content}
+          Document: ${content}
 
-            Output in JSON format with the following structure:
-            {
-              "documentType": string,
-              "industry": string,
-              "complianceStatus": "COMPLIANT" | "NON_COMPLIANT" | "PARTIALLY_COMPLIANT",
-              "confidence": number (0-100),
-              "details": {
-                "keyFindings": string[],
-                "risks": string[],
-                "recommendations": string[]
-              },
-              "metadata": {}
-            }`
-        }
-      ]
+          Provide the analysis in this exact JSON format:
+          {
+            "documentType": string,
+            "industry": string,
+            "complianceStatus": "COMPLIANT" | "NON_COMPLIANT" | "PARTIALLY_COMPLIANT",
+            "confidence": number,
+            "details": {
+              "keyFindings": string[],
+              "risks": string[],
+              "recommendations": string[]
+            }
+          }`
+      }]
     });
 
-    if (!classificationResponse.content[0]?.text) {
+    // Extract content safely from the response
+    const responseContent = classificationResponse.content[0];
+    if (!('text' in responseContent)) {
       throw new Error("Invalid AI response format");
     }
 
-    const analysis = JSON.parse(classificationResponse.content[0].text);
+    const analysis: DocumentAnalysis = JSON.parse(responseContent.text);
 
     // Second pass: Detailed compliance analysis
     const complianceResponse = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
-      messages: [
-        {
-          role: "user",
-          content: `Based on the previous analysis, perform a detailed compliance check. Consider:
-            - Regulatory requirements
-            - Industry standards
-            - Legal requirements
-            - Best practices
+      messages: [{
+        role: "user",
+        content: `Based on this analysis, provide additional compliance insights.
+          Consider regulatory requirements, industry standards, and legal requirements.
+          Previous analysis: ${JSON.stringify(analysis)}
 
-            Previous analysis: ${JSON.stringify(analysis)}
-
-            Provide additional compliance findings in the same JSON format.`
-        }
-      ]
+          Provide additional findings in the same JSON format.`
+      }]
     });
 
-    if (!complianceResponse.content[0]?.text) {
+    const complianceContent = complianceResponse.content[0];
+    if (!('text' in complianceContent)) {
       throw new Error("Invalid compliance analysis response");
     }
 
-    const complianceDetails = JSON.parse(complianceResponse.content[0].text);
+    const complianceDetails = JSON.parse(complianceContent.text);
 
-    // Merge both analyses
+    // Merge analyses while maintaining type safety
     return {
-      ...analysis,
+      documentType: analysis.documentType,
+      industry: analysis.industry,
+      complianceStatus: analysis.complianceStatus,
+      confidence: analysis.confidence,
       details: {
-        ...analysis.details,
-        ...complianceDetails.details
+        keyFindings: [...analysis.details.keyFindings, ...(complianceDetails.details?.keyFindings || [])],
+        risks: [...analysis.details.risks, ...(complianceDetails.details?.risks || [])],
+        recommendations: [...analysis.details.recommendations, ...(complianceDetails.details?.recommendations || [])]
       },
       metadata: {
         ...analysis.metadata,
