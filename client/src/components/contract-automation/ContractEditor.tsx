@@ -42,6 +42,10 @@ import { format } from "date-fns";
 import { FilePond, registerPlugin } from "react-filepond";
 import FilePondPluginFileValidateType from "filepond-plugin-file-validate-type";
 import "filepond/dist/filepond.min.css";
+import { useInterval } from "@/hooks/use-interval";
+import { Badge } from "@/components/ui/badge";
+import {Loader2} from 'lucide-react';
+
 
 registerPlugin(FilePondPluginFileValidateType);
 
@@ -87,6 +91,14 @@ interface ContractEditorProps {
   onApplySuggestion?: (suggestion: AISuggestion) => void;
 }
 
+interface DocumentState {
+  id: string;
+  title: string;
+  content: string;
+  processingStatus: 'PROCESSING' | 'COMPLETED' | 'ERROR';
+  analysis: DocumentAnalysis;
+}
+
 export const ContractEditor: React.FC<ContractEditorProps> = ({
   documentId,
   content,
@@ -120,7 +132,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   const [selectedSuggestion, setSelectedSuggestion] = useState<AISuggestion | null>(null);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isLoadingApproval, setIsLoadingApproval] = useState(false);
-
+  const [uploadedDocuments, setUploadedDocuments] = useState<DocumentState[]>([]);
 
   const standardRequirements = [
     "Include non-disclosure agreement",
@@ -365,7 +377,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   };
 
   const serverConfig = {
-    process: "/api/contracts/documents",
+    process: "/api/workflow/upload",
     headers: {
       'Accept': 'application/json'
     },
@@ -373,9 +385,22 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
       try {
         const data = JSON.parse(source);
         if (data.documentId) {
+          setUploadedDocuments(prev => [...prev, {
+            id: data.documentId,
+            title: data.title,
+            content: data.text,
+            processingStatus: 'PROCESSING',
+            analysis: data.analysis
+          }]);
+
           setUploadedDocId(data.documentId);
-          queryClient.invalidateQueries({ queryKey: ["/api/contracts/documents"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/workflow/documents"] });
           load(source);
+
+          toast({
+            title: "Upload Successful",
+            description: "Document uploaded and analysis started."
+          });
         } else {
           error('Invalid upload response');
         }
@@ -385,6 +410,38 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
       }
     }
   };
+
+  useInterval(() => {
+    const processingDocs = uploadedDocuments.filter(doc => doc.processingStatus === 'PROCESSING');
+    if (processingDocs.length > 0) {
+      processingDocs.forEach(async (doc) => {
+        try {
+          const response = await apiRequest('GET', `/api/workflow/documents/${doc.id}/status`);
+          const status = await response.json();
+
+          setUploadedDocuments(prev => prev.map(d => 
+            d.id === doc.id ? { ...d, ...status } : d
+          ));
+
+          if (status.processingStatus === 'COMPLETED') {
+            onUpdate();
+            toast({
+              title: "Analysis Complete",
+              description: `Document "${status.title}" has been fully analyzed.`
+            });
+          } else if (status.processingStatus === 'ERROR') {
+            toast({
+              title: "Analysis Failed",
+              description: `Failed to analyze "${status.title}". Please try again.`,
+              variant: "destructive"
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching document status:', error);
+        }
+      });
+    }
+  }, 5000);
 
   const renderHighlightedText = (text: string, edits: SuggestedEdit[]) => {
     let lastIndex = 0;
@@ -469,6 +526,13 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
     initial: { opacity: 0, y: 20 },
     animate: { opacity: 1, y: 0 },
     exit: { opacity: 0, y: -20 }
+  };
+
+  const pondOptions = {
+    allowMultiple: true,
+    maxFiles: 5,
+    instantUpload: true,
+    allowRevert: false
   };
 
   return (
@@ -654,22 +718,66 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
               )}
             </AnimatePresence>
             <div className="mb-6">
-              <h4 className="text-sm font-medium mb-2">Upload Existing Contract</h4>
+              <h4 className="text-sm font-medium mb-2">Upload Documents</h4>
               <FilePond
+                {...pondOptions}
                 files={files}
                 onupdatefiles={setFiles}
-                allowMultiple={false}
-                maxFiles={1}
                 server={serverConfig}
                 acceptedFileTypes={[
                   'application/pdf',
                   'application/msword',
                   'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 ]}
-                labelIdle='Drag & Drop your contract document or <span class="filepond--label-action">Browse</span>'
+                labelIdle='Drag & Drop your documents or <span class="filepond--label-action">Browse</span>'
                 onerror={handleFilePondError}
               />
             </div>
+
+            {uploadedDocuments.length > 0 && (
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">Uploaded Documents</h4>
+                <div className="space-y-2">
+                  {uploadedDocuments.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center justify-between p-3 border rounded-lg"
+                    >
+                      <div className="flex items-center space-x-4">
+                        <FileText className="h-5 w-5 text-muted-foreground" />
+                        <div>
+                          <p className="font-medium">{doc.title}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {doc.analysis.documentType} • {doc.analysis.industry}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Badge
+                          variant={doc.processingStatus === 'COMPLETED' ? 'default' : 
+                                 doc.processingStatus === 'ERROR' ? 'destructive' : 
+                                 'secondary'}
+                        >
+                          {doc.processingStatus === 'PROCESSING' && (
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          )}
+                          {doc.processingStatus}
+                        </Badge>
+                        {doc.processingStatus === 'COMPLETED' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setActiveTab('editor')}
+                          >
+                            View Analysis
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -913,7 +1021,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                     onClick={() => suggestedEdits.forEach(edit => onAcceptEdit?.(edit.id))}
                   >
                     Accept All
-                  </Button                  <Button
+                  </Button>
+                  <Button
                     variant="outline"
                     size="sm"
                     onClick={() => suggestedEdits.forEach(edit => onRejectEdit?.(edit.id))}
