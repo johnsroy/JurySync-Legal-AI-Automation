@@ -33,7 +33,6 @@ import { approvalAuditService } from "@/lib/approval-audit";
 import { ApprovalForm } from "@/components/ApprovalForm";
 import { documentAnalyticsService } from "@/services/documentAnalytics";
 import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
-import { useQuery } from '@tanstack/react-query';
 
 
 // Document cleaning utility
@@ -189,35 +188,33 @@ export function WorkflowAutomation() {
   const { toast } = useToast();
   const [documentText, setDocumentText] = useState("");
   const [selectedText, setSelectedText] = useState("");
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [workflowProgress, setWorkflowProgress] = useState(0);
+  const [currentStage, setCurrentStage] = useState(0);
+  const [stageStates, setStageStates] = useState<Record<number, WorkflowStageState>>({});
+  const [documentAnalyses, setDocumentAnalyses] = useState<Array<{
+    fileName: string;
+    documentType: string;
+    industry: string;
+    complianceStatus: string;
+  }>>([]);
 
-  // Use React Query for persisting uploaded files
-  const { data: uploadedFiles = [], setData: setUploadedFilesQuery } = useQuery({
-    queryKey: ['workflow', 'uploadedFiles'],
-    queryFn: () => [],
-    initialData: []
-  });
-
-  // Use React Query for persisting workflow state
-  const { data: workflowState = {}, setData: setWorkflowStateQuery } = useQuery({
-    queryKey: ['workflow', 'state'],
-    queryFn: () => ({}),
-    initialData: {}
-  });
-
-  const [workflowProgress, setWorkflowProgress] = useState(workflowState.progress || 0);
-  const [currentStage, setCurrentStage] = useState(workflowState.currentStage || 0);
-  const [stageStates, setStageStates] = useState(workflowState.stageStates || {});
-  const [documentAnalyses, setDocumentAnalyses] = useState(workflowState.documentAnalyses || []);
-
-  // Update persisted state whenever it changes
+  // Effect to update document analysis based on workflow completion
   useEffect(() => {
-    setWorkflowStateQuery({
-      progress: workflowProgress,
-      currentStage,
-      stageStates,
-      documentAnalyses
-    });
-  }, [workflowProgress, currentStage, stageStates, documentAnalyses, setWorkflowStateQuery]);
+    const isWorkflowComplete = Object.values(stageStates).every(
+      state => state?.status === 'completed'
+    );
+
+    if (isWorkflowComplete && stageStates[5]?.result?.metadata) {
+      const metadata = stageStates[5].result.metadata;
+      setDocumentAnalyses(prev => [...prev, {
+        fileName: uploadedFiles[uploadedFiles.length - 1]?.name || 'Untitled Document',
+        documentType: metadata.documentType,
+        industry: metadata.industry,
+        complianceStatus: metadata.complianceStatus
+      }]);
+    }
+  }, [stageStates, uploadedFiles]);
 
   const handleTextSelect = useCallback(() => {
     const selection = window.getSelection();
@@ -617,7 +614,7 @@ export function WorkflowAutomation() {
             </p>
           </div>
 
-          {/* Document Analysis Results Card - Only show when workflow is complete */}
+          {/* Document Analysis Results Card */}
           {documentAnalyses.length > 0 && (
             <Card className="bg-white/80 backdrop-blur-lg">
               <CardHeader>
@@ -656,9 +653,7 @@ export function WorkflowAutomation() {
                     onFileProcessed={handleFileProcessed}
                     onError={handleFileError}
                     multiple={true}
-                    setUploadedFiles={files => {
-                      setUploadedFilesQuery(files);
-                    }}
+                    setUploadedFiles={setUploadedFiles}
                   />
                 </CardContent>
               </Card>
