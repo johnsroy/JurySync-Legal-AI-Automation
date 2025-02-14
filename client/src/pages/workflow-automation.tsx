@@ -350,18 +350,36 @@ export function WorkflowAutomation() {
 
             const complianceContent = `
               <h2>Compliance Analysis Report</h2>
-              <p><strong>Document Type:</strong> ${classification.documentType}</p>
-              <p><strong>Industry:</strong> ${classification.industry}</p>
-              <p><strong>Compliance Status:</strong> ${classification.complianceStatus}</p>
-              <p><strong>Confidence Score:</strong> ${classification.confidence}%</p>
-              <h3>Key Findings:</h3>
-              <ul>
-                ${classification.details.keyFindings.map(finding => `<li>${finding}</li>`).join('')}
-              </ul>
-              <h3>Recommendations:</h3>
-              <ul>
-                ${classification.details.recommendations.map(rec => `<li>${rec}</li>`).join('')}
-              </ul>
+              <div class="space-y-4">
+                <div class="p-4 bg-gray-50 rounded-lg">
+                  <h3 class="font-semibold mb-2">Document Classification</h3>
+                  <p><strong>Type:</strong> ${classification.documentType}</p>
+                  <p><strong>Industry:</strong> ${classification.industry}</p>
+                  <p><strong>Compliance Status:</strong> ${classification.complianceStatus}</p>
+                  <p><strong>Confidence Score:</strong> ${classification.confidence}%</p>
+                </div>
+
+                <div class="p-4 bg-gray-50 rounded-lg">
+                  <h3 class="font-semibold mb-2">Key Findings</h3>
+                  <ul class="list-disc pl-4">
+                    ${classification.details.keyFindings.map(finding => `<li>${finding}</li>`).join('')}
+                  </ul>
+                </div>
+
+                <div class="p-4 bg-gray-50 rounded-lg">
+                  <h3 class="font-semibold mb-2">Risk Assessment</h3>
+                  <ul class="list-disc pl-4">
+                    ${classification.details.risks.map(risk => `<li>${risk}</li>`).join('')}
+                  </ul>
+                </div>
+
+                <div class="p-4 bg-gray-50 rounded-lg">
+                  <h3 class="font-semibold mb-2">Recommendations</h3>
+                  <ul class="list-disc pl-4">
+                    ${classification.details.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+                  </ul>
+                </div>
+              </div>
             `;
 
             return {
@@ -372,7 +390,10 @@ export function WorkflowAutomation() {
                 complianceStatus: classification.complianceStatus,
                 score: classification.confidence,
                 documentType: classification.documentType,
-                industry: classification.industry
+                industry: classification.industry,
+                findings: classification.details.keyFindings,
+                risks: classification.details.risks,
+                recommendations: classification.details.recommendations
               }
             };
           } catch (error) {

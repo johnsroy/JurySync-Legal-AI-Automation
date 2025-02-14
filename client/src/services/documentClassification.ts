@@ -1,4 +1,7 @@
 import { apiRequest } from "@/lib/queryClient";
+import { analyzeDocument, detectDocumentType, type DocumentAnalysis } from "./documentAIAnalysis";
+
+export type { DocumentAnalysis };
 
 export interface DocumentClassification {
   documentType: string;
@@ -29,31 +32,19 @@ const documentTypeMap: Record<string, string> = {
   "rental": "Real Estate Agreement",
 };
 
-export async function classifyDocument(content: string): Promise<DocumentClassification> {
+export async function classifyDocument(content: string): Promise<DocumentAnalysis> {
   try {
-    const response = await apiRequest('POST', '/api/analyze/classify', {
-      content: content
-    });
+    // First detect document type through pattern matching
+    const baseDocumentType = detectDocumentType(content);
 
-    const result = await response.json();
-    const classification = result.classification;
+    // Get detailed AI analysis
+    const analysis = await analyzeDocument(content);
 
-    // Normalize document type based on content analysis
-    const lowerContent = content.toLowerCase();
-    let documentType = classification.documentType;
-
-    // Check content against document type patterns
-    for (const [pattern, type] of Object.entries(documentTypeMap)) {
-      if (lowerContent.includes(pattern)) {
-        documentType = type;
-        break;
-      }
-    }
-
-    // Override the document type if needed
+    // Merge pattern-based detection with AI analysis
+    // Prefer pattern detection for document type as it's more reliable for specific cases
     return {
-      ...classification,
-      documentType: documentType
+      ...analysis,
+      documentType: baseDocumentType === "Other Legal Document" ? analysis.documentType : baseDocumentType
     };
   } catch (error) {
     console.error("Document classification error:", error);
