@@ -615,43 +615,41 @@ export function WorkflowAutomation() {
       </header>
 
       {/* Sidebar Navigation */}
-      <div className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 p-4">
-        <div className="flex items-center space-x-2 mb-8">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-600 text-white">
-            <Briefcase className="h-6 w-6" />
-          </div>
-          <span className="text-xl font-semibold">JurySync</span>
+      <div className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-10">
+        <div className="flex items-center gap-2 p-4 mb-6">
+          <Shield className="h-6 w-6 text-primary" />
+          <span className="text-xl font-bold">JurySync</span>
         </div>
-        <nav className="space-y-2">
-          <Link href="/dashboard">
-            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
-              <span>Dashboard</span>
-            </a>
+
+        <nav className="space-y-1 px-2">
+          <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <BarChart2 className="h-5 w-5 text-gray-400" />
+            Dashboard
           </Link>
-          <Link href="/workflow-automation">
-            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100 bg-indigo-50 text-indigo-600">
-              <span>Workflow Automation</span>
-            </a>
+
+          <Link href="/workflow-automation" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md bg-primary/5 text-primary hover:bg-primary/10">
+            <FileText className="h-5 w-5" />
+            Workflow Automation
           </Link>
-          <Link href="/contract-automation">
-            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
-              <span>Contract Automation</span>
-            </a>
+
+          <Link href="/contract-automation" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <Scale className="h-5 w-5 text-gray-400" />
+            Contract Automation
           </Link>
-          <Link href="/juryvault">
-            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
-              <span>JuryVault</span>
-            </a>
+
+          <Link href="/juryvault" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <Shield className="h-5 w-5 text-gray-400" />
+            JuryVault
           </Link>
-          <Link href="/history-reports">
-            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
-              <span>History & Reports</span>
-            </a>
+
+          <Link href="/history-reports" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <History className="h-5 w-5 text-gray-400" />
+            History & Reports
           </Link>
-          <Link href="/settings">
-            <a className="flex items-center space-x-2 px-4 py-2 rounded-lg hover:bg-gray-100">
-              <span>Settings</span>
-            </a>
+
+          <Link href="/settings" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <Terminal className="h-5 w-5 text-gray-400" />
+            Settings
           </Link>
         </nav>
       </div>
