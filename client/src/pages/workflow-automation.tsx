@@ -181,7 +181,7 @@ interface Approver {
   role: string;
 }
 
-export const WorkflowAutomation: React.FC = () => {
+export function WorkflowAutomation() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [documentText, setDocumentText] = useState("");
@@ -687,6 +687,18 @@ export const WorkflowAutomation: React.FC = () => {
     }
   ];
 
+  useEffect(() => {
+    if (stageStates[currentStage]?.status === 'completed' && stageStates[currentStage]?.result?.metadata) {
+      const metadata = stageStates[currentStage].result.metadata;
+      setDocumentAnalysis({
+        fileName: uploadedFiles[0]?.name || 'Untitled Document',
+        documentType: metadata.documentType || 'Unknown',
+        industry: metadata.industry || 'Unknown',
+        complianceStatus: metadata.complianceStatus || 'Pending'
+      });
+    }
+  }, [currentStage, stageStates, uploadedFiles]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
       {/* Header */}
@@ -826,7 +838,7 @@ export const WorkflowAutomation: React.FC = () => {
                         metadata={state.result.metadata}
                         onDownload={() => generatePDF(state.result!.content, state.result!.title)}
                       >
-                        {currentStage === 3 && (
+                        {currentStage === 3 && !stageStates[3]?.isApproved && (
                           <Card className="bg-white/80 backdrop-blur-lg mt-4">
                             <CardHeader>
                               <CardTitle>Document Approval</CardTitle>
@@ -927,18 +939,6 @@ export const WorkflowAutomation: React.FC = () => {
       </main>
     </div>
   );
-};
-
-useEffect(() => {
-  if (stageStates[currentStage]?.status === 'completed' && stageStates[currentStage]?.result?.metadata) {
-    const metadata = stageStates[currentStage].result.metadata;
-    setDocumentAnalysis({
-      fileName: uploadedFiles[0]?.name || 'Untitled Document',
-      documentType: metadata.documentType || 'Unknown',
-      industry: metadata.industry || 'Unknown',
-      complianceStatus: metadata.complianceStatus || 'Pending'
-    });
-  }
-}, [currentStage, stageStates, uploadedFiles]);
+}
 
 export default WorkflowAutomation;
