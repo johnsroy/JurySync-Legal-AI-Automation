@@ -21,6 +21,25 @@ import WorkflowPage from "@/pages/workflow-page";
 import WorkflowAutomation from "@/pages/workflow-automation";
 import VaultPage from "@/pages/vault-page";
 import { ProtectedRoute } from "./lib/protected-route";
+import { ErrorBoundary } from "react-error-boundary";
+
+// Global error boundary fallback
+function ErrorFallback({ error }: { error: Error }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center">
+      <div className="bg-white p-8 rounded-lg shadow-lg max-w-md">
+        <h2 className="text-xl font-semibold text-red-600 mb-4">Something went wrong</h2>
+        <p className="text-gray-600 mb-4">{error.message}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+        >
+          Reload application
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Router() {
   return (
@@ -93,6 +112,7 @@ function Router() {
         </Layout>
       </Route>
 
+      {/* Fallback route */}
       <Route>
         <Layout>
           <NotFound />
@@ -104,11 +124,13 @@ function Router() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <Router />
-        <Toaster />
-      </AuthProvider>
-    </QueryClientProvider>
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <Router />
+          <Toaster />
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
