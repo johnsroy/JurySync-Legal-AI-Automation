@@ -16,7 +16,8 @@ import {
   RefreshCcw,
   AlertTriangle,
   Clock,
-  BarChart3
+  BarChart3,
+  CheckCircle2
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from 'react-dropzone';
@@ -197,6 +198,20 @@ export function WorkflowAutomation() {
     complianceStatus: string;
   } | null>(null);
 
+  // Update document analysis whenever stage state changes
+  useEffect(() => {
+    const currentStageState = stageStates[currentStage];
+    if (currentStageState?.status === 'completed' && currentStageState.result?.metadata) {
+      const metadata = currentStageState.result.metadata;
+      setDocumentAnalysis(prev => ({
+        fileName: uploadedFiles[0]?.name || prev?.fileName || 'Untitled Document',
+        documentType: metadata.documentType || prev?.documentType || 'Unknown',
+        industry: metadata.industry || prev?.industry || 'Unknown',
+        complianceStatus: metadata.complianceStatus || prev?.complianceStatus || 'Pending'
+      }));
+    }
+  }, [currentStage, stageStates, uploadedFiles]);
+
   const handleTextSelect = useCallback(() => {
     const selection = window.getSelection();
     if (selection && selection.toString().trim()) {
@@ -279,7 +294,7 @@ export function WorkflowAutomation() {
       return;
     }
 
-    // Reset progress
+    // Reset states
     setCurrentStage(0);
     setWorkflowProgress(0);
     setStageStates({});
@@ -288,43 +303,20 @@ export function WorkflowAutomation() {
       {
         name: "Draft Generation",
         handler: async () => {
-          // Simulate AI draft generation
-          const draftContent = `
-            <h2>Legal Draft Summary</h2>
-            <p><strong>Document Type:</strong> Contract Agreement</p>
-            <p><strong>Key Points:</strong></p>
-            <ul>
-              <li>Identified main parties and their obligations</li>
-              <li>Structured key terms and conditions</li>
-              <li>Added standard legal clauses and protections</li>
-            </ul>
-            <p>${documentText.substring(0, 200)}...</p>
-          `;
-
-          // Add document analysis
           const metadata = await documentAnalyticsService.processWorkflowResults([{
             stageType: "classification",
             content: documentText
           }]);
 
-          // Update UI with analysis results
-          setDocumentAnalysis({
-            fileName: metadata.documentId ? `Document_${metadata.documentId}.pdf` : uploadedFiles[0]?.name || 'Untitled Document',
+          setDocumentAnalysis(prev => ({
+            fileName: uploadedFiles[0]?.name || prev?.fileName || 'Untitled Document',
             documentType: metadata.documentType || 'Unknown',
             industry: metadata.industry || 'Unknown',
             complianceStatus: metadata.complianceStatus || 'Pending'
-          });
-
-          setStageStates(prev => ({
-            ...prev,
-            0: {
-              ...prev[0],
-              metadata
-            }
           }));
 
           return {
-            content: draftContent,
+            content: `Generated content...`,
             title: "Generated Legal Draft",
             metadata
           };
@@ -600,7 +592,8 @@ export function WorkflowAutomation() {
             [i]: {
               ...prev[i],
               status: 'completed',
-              result
+              result,
+              outputs: [...(prev[i]?.outputs || [])]
             }
           }));
 
@@ -613,6 +606,7 @@ export function WorkflowAutomation() {
             status: 'success'
           });
         } catch (error) {
+          console.error(`Error in stage ${i}:`, error);
           updateStageStatus(i, 'error');
           addStageOutput(i, {
             message: `Error in ${stages[i].name}`,
@@ -640,10 +634,10 @@ export function WorkflowAutomation() {
   const handleFileProcessed = useCallback(({ text, documentId, fileName }: { text: string; documentId: string; fileName: string }) => {
     setDocumentText(text);
     setDocumentAnalysis({
-      fileName: fileName,
-      documentType: 'Pending Analysis',
+      fileName,
+      documentType: 'Analyzing...',
       industry: 'Analyzing...',
-      complianceStatus: 'Pending'
+      complianceStatus: 'In Progress'
     });
     toast({
       title: "Document Processed",
@@ -687,17 +681,6 @@ export function WorkflowAutomation() {
     }
   ];
 
-  useEffect(() => {
-    if (stageStates[currentStage]?.status === 'completed' && stageStates[currentStage]?.result?.metadata) {
-      const metadata = stageStates[currentStage].result.metadata;
-      setDocumentAnalysis({
-        fileName: uploadedFiles[0]?.name || 'Untitled Document',
-        documentType: metadata.documentType || 'Unknown',
-        industry: metadata.industry || 'Unknown',
-        complianceStatus: metadata.complianceStatus || 'Pending'
-      });
-    }
-  }, [currentStage, stageStates, uploadedFiles]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
@@ -742,6 +725,22 @@ export function WorkflowAutomation() {
               Process and analyze legal documents with AI assistance
             </p>
           </div>
+
+          {/* Document Analysis Results Card - Moved to top */}
+          <Card className="bg-white/80 backdrop-blur-lg">
+            <CardHeader>
+              <CardTitle>Document Analysis Results</CardTitle>
+              <CardDescription>
+                Automated classification and compliance assessment
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DocumentAnalysisTable
+                analysis={documentAnalysis}
+                isLoading={!documentAnalysis || documentAnalysis.documentType === 'Analyzing...'}
+              />
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Document Editor Section */}
@@ -836,9 +835,9 @@ export function WorkflowAutomation() {
                         content={state.result.content}
                         title={state.result.title}
                         metadata={state.result.metadata}
-                        onDownload={() => generatePDF(state.result!.content, state.result!.title)}
+                        onDownload={() => generatePDF(state.result.content, state.result.title)}
                       >
-                        {currentStage === 3 && !stageStates[3]?.isApproved && (
+                        {currentStage === 3 && (
                           <Card className="bg-white/80 backdrop-blur-lg mt-4">
                             <CardHeader>
                               <CardTitle>Document Approval</CardTitle>
@@ -847,40 +846,46 @@ export function WorkflowAutomation() {
                               </CardDescription>
                             </CardHeader>
                             <CardContent>
-                              <ApprovalForm
-                                onApprove={async (approvers) => {
-                                  try {
-                                    setStageStates(prev => ({
-                                      ...prev,
-                                      [currentStage]: {
-                                        ...prev[currentStage],
-                                        approvers,
-                                        isApproved: true,
-                                        status: 'completed'
-                                      }
-                                    }));
+                              {!stageStates[3]?.isApproved ? (
+                                <ApprovalForm
+                                  onApprove={async (approvers) => {
+                                    try {
+                                      setStageStates(prev => ({
+                                        ...prev,
+                                        [currentStage]: {
+                                          ...prev[currentStage],
+                                          approvers,
+                                          isApproved: true,
+                                          status: 'completed'
+                                        }
+                                      }));
 
-                                    // Move to the next stage
-                                    setCurrentStage(prev => prev + 1);
-                                    setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
+                                      setCurrentStage(prev => prev + 1);
+                                      setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
 
-                                    addStageOutput(currentStage, {
-                                      message: "Document approved",
-                                      details: `Approved by ${approvers.length} reviewer(s)`,
-                                      timestamp: new Date().toISOString(),
-                                      status: 'success'
-                                    });
-                                  } catch (error) {
-                                    console.error("Approval error:", error);
-                                    toast({
-                                      title: "Approval Failed",
-                                      description: error instanceof Error ? error.message : "Failed to process approval",
-                                      variant: "destructive"
-                                    });
-                                  }
-                                }}
-                                isLoading={stageStates[3]?.status === 'processing'}
-                              />
+                                      addStageOutput(currentStage, {
+                                        message: "Document approved",
+                                        details: `Approved by ${approvers.length} reviewer(s)`,
+                                        timestamp: new Date().toISOString(),
+                                        status: 'success'
+                                      });
+                                    } catch (error) {
+                                      console.error("Approval error:", error);
+                                      toast({
+                                        title: "Approval Failed",
+                                        description: error instanceof Error ? error.message : "Failed to process approval",
+                                        variant: "destructive"
+                                      });
+                                    }
+                                  }}
+                                  isLoading={stageStates[3]?.status === 'processing'}
+                                />
+                              ) : (
+                                <div className="text-center text-green-600">
+                                  <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
+                                  <p>Document has been approved</p>
+                                </div>
+                              )}
                             </CardContent>
                           </Card>
                         )}
@@ -921,20 +926,6 @@ export function WorkflowAutomation() {
               </Card>
             </div>
           </div>
-          <Card className="bg-white/80 backdrop-blur-lg">
-            <CardHeader>
-              <CardTitle>Document Analysis Results</CardTitle>
-              <CardDescription>
-                Automated classification and compliance assessment
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DocumentAnalysisTable
-                analysis={documentAnalysis}
-                isLoading={stageStates[0]?.status === 'processing'}
-              />
-            </CardContent>
-          </Card>
         </div>
       </main>
     </div>
