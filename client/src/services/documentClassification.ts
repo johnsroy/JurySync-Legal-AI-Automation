@@ -1,7 +1,5 @@
 import { apiRequest } from "@/lib/queryClient";
-import { analyzeDocument, detectDocumentType, type DocumentAnalysis } from "./documentAIAnalysis";
-
-export type { DocumentAnalysis };
+import anthropic from "@/lib/anthropic";
 
 export interface DocumentClassification {
   documentType: string;
@@ -18,7 +16,7 @@ export interface DocumentClassification {
 // Document type mapping for accurate classification
 const documentTypeMap: Record<string, string> = {
   "merger agreement": "M&A Agreement",
-  "acquisition agreement": "M&A Agreement",
+  "acquisition agreement": "M&A Agreement", 
   "stock purchase": "M&A Agreement",
   "asset purchase": "M&A Agreement",
   "employment agreement": "Employment Contract",
@@ -32,20 +30,49 @@ const documentTypeMap: Record<string, string> = {
   "rental": "Real Estate Agreement",
 };
 
-export async function classifyDocument(content: string): Promise<DocumentAnalysis> {
+export async function classifyDocument(content: string): Promise<DocumentClassification> {
   try {
-    // First detect document type through pattern matching
-    const baseDocumentType = detectDocumentType(content);
+    // First pass: Document classification
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1000,
+      messages: [{
+        role: "user",
+        content: `Analyze this legal document and provide a structured classification:
+          Document: ${content}
 
-    // Get detailed AI analysis
-    const analysis = await analyzeDocument(content);
+          Provide the analysis in this exact JSON format:
+          {
+            "documentType": string,
+            "industry": string,
+            "complianceStatus": "COMPLIANT" | "NON_COMPLIANT" | "PARTIALLY_COMPLIANT",
+            "confidence": number,
+            "details": {
+              "keyFindings": string[],
+              "recommendations": string[],
+              "riskLevel": string
+            }
+          }`
+      }]
+    });
 
-    // Merge pattern-based detection with AI analysis
-    // Prefer pattern detection for document type as it's more reliable for specific cases
-    return {
-      ...analysis,
-      documentType: baseDocumentType === "Other Legal Document" ? analysis.documentType : baseDocumentType
-    };
+    const responseContent = response.content[0];
+    if (!('text' in responseContent)) {
+      throw new Error("Invalid AI response format");
+    }
+
+    const classification = JSON.parse(responseContent.text);
+
+    // Apply document type mapping if found
+    const lowerContent = content.toLowerCase();
+    for (const [pattern, type] of Object.entries(documentTypeMap)) {
+      if (lowerContent.includes(pattern)) {
+        classification.documentType = type;
+        break;
+      }
+    }
+
+    return classification;
   } catch (error) {
     console.error("Document classification error:", error);
     throw new Error("Failed to classify document");

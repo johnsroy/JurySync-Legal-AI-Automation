@@ -5,7 +5,11 @@ export async function generateDraftAnalysis(content: string): Promise<string> {
     const response = await apiRequest('POST', '/api/analyze/draft', {
       content: content
     });
-    
+
+    if (!response.ok) {
+      throw new Error("Failed to analyze document");
+    }
+
     const result = await response.json();
     return result.analysis;
   } catch (error) {
