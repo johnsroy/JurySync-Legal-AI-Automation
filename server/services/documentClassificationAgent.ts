@@ -2,7 +2,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { openai } from "../openai";
 
 // Initialize Anthropic client
-// the newest Anthropic model is "claude-3-5-sonnet-20241022" which was released October 22, 2024
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -26,13 +25,13 @@ export class DocumentClassificationAgent {
   private documentTypePatterns = {
     merger: {
       patterns: ['merger', 'acquisition', 'stock purchase', 'asset purchase', 'm&a', 'business combination'],
-      category: 'M&A Agreement',
+      category: 'M&A Deal',
       subTypes: {
-        'merger': 'M&A Deal - Merger',
-        'stock purchase': 'M&A Deal - Stock Purchase',
-        'asset purchase': 'M&A Deal - Asset Purchase',
-        'acquisition': 'M&A Deal - Acquisition',
-        'business combination': 'M&A Deal - Business Combination'
+        'merger': 'M&A Deal',
+        'stock purchase': 'M&A Deal',
+        'asset purchase': 'M&A Deal',
+        'acquisition': 'M&A Deal',
+        'business combination': 'M&A Deal'
       }
     },
     compliance: {
@@ -43,15 +42,6 @@ export class DocumentClassificationAgent {
         'soc 3': 'SOC 3 Report',
         'iso 27001': 'ISO 27001 Certification',
         'hipaa': 'HIPAA Compliance Report'
-      }
-    },
-    legal: {
-      patterns: ['agreement', 'contract', 'terms', 'conditions'],
-      category: 'Legal Agreement',
-      subTypes: {
-        'service agreement': 'Service Agreement',
-        'nda': 'Non-Disclosure Agreement',
-        'employment': 'Employment Agreement'
       }
     }
   };
@@ -65,18 +55,18 @@ export class DocumentClassificationAgent {
 
   private constructor() {}
 
-  private async analyzeKeywords(content: string): Promise<string[]> {
+  private async analyzeWithGPT4(content: string): Promise<string[]> {
     try {
       const completion = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
           {
             role: "system",
-            content: `Analyze the document for key identifying terms. Focus on:
-            1. M&A related terms (merger, acquisition, stock purchase, etc.)
-            2. Industry indicators (healthcare, technology, finance)
-            3. Document type indicators (agreement, report, certification)
-            Return only an array of lowercase keywords found, no other text.`
+            content: `Analyze this document and extract key identifying terms, focusing especially on:
+            1. M&A related terms (merger, acquisition, purchase agreement, etc.)
+            2. Industry indicators
+            3. Document type indicators
+            Return only the key terms found as a JSON array of strings.`
           },
           {
             role: "user",
@@ -87,54 +77,47 @@ export class DocumentClassificationAgent {
       });
 
       const result = JSON.parse(completion.choices[0].message.content);
-      return result.keywords || [];
+      return result.terms || [];
     } catch (error) {
-      console.error("Keyword analysis failed:", error);
+      console.error("GPT-4 analysis failed:", error);
       return [];
     }
   }
 
   public async classifyDocument(content: string): Promise<DocumentClassification> {
     try {
-      console.log("Starting document classification...");
+      console.log("Starting document classification with enhanced M&A detection...");
 
-      // First analyze keywords using GPT-4
-      const keywords = await this.analyzeKeywords(content);
-      console.log("Detected keywords:", keywords);
+      // First analyze with GPT-4 to extract key terms
+      const terms = await this.analyzeWithGPT4(content);
+      console.log("Extracted terms:", terms);
 
       // Check for M&A indicators first
-      const isMandA = keywords.some(keyword => 
+      const isMandA = terms.some(term => 
         this.documentTypePatterns.merger.patterns.some(pattern => 
-          keyword.includes(pattern)
+          term.toLowerCase().includes(pattern)
         )
       );
 
       if (isMandA) {
-        console.log("M&A document detected, using specialized classification");
-        const classification = await this.classifyWithOpenAI(content, true);
-        const refinedResult = this.refineClassification(classification, keywords);
-        console.log("Refined M&A classification:", refinedResult);
-        return refinedResult;
+        console.log("M&A document detected, classifying as M&A Deal");
+        return {
+          documentType: "M&A Deal",
+          category: "M&A Deal",
+          confidence: 0.95,
+          complianceStatus: "Needs Review",
+          metadata: {
+            industry: this.detectIndustry(terms),
+            businessContext: "Mergers & Acquisitions"
+          }
+        };
       }
 
-      // Standard classification flow
-      const openAIResult = await this.classifyWithOpenAI(content);
-      console.log("OpenAI Classification Result:", openAIResult);
+      // If not M&A, proceed with standard classification
+      const classification = await this.classifyWithOpenAI(content);
+      console.log("Standard classification result:", classification);
 
-      if (openAIResult.confidence > 0.8) {
-        const refinedResult = this.refineClassification(openAIResult, keywords);
-        console.log("Using OpenAI classification with refinements:", refinedResult);
-        return refinedResult;
-      }
-
-      // Fallback to Anthropic
-      console.log("Falling back to Anthropic for detailed analysis...");
-      const anthropicResult = await this.classifyWithAnthropic(content);
-      console.log("Anthropic Classification Result:", anthropicResult);
-
-      const refinedAnthropicResult = this.refineClassification(anthropicResult, keywords);
-      console.log("Final refined classification:", refinedAnthropicResult);
-      return refinedAnthropicResult;
+      return classification;
 
     } catch (error) {
       console.error("Document classification error:", error);
@@ -142,45 +125,62 @@ export class DocumentClassificationAgent {
     }
   }
 
-  private async classifyWithOpenAI(content: string, isMandA: boolean = false): Promise<DocumentClassification> {
-    const systemPrompt = isMandA ? 
-      `You are an expert M&A document classifier. Analyze this document and classify it as an M&A Deal with the specific type (Merger, Stock Purchase, Asset Purchase, etc.).
-      Be very specific about the type of M&A transaction.` :
-      `You are an expert document classifier specializing in legal and business documents.
-      Analyze the document content and provide detailed classification.`;
+  private detectIndustry(terms: string[]): string {
+    const industryTerms: { [key: string]: string } = {
+      'tech': 'TECHNOLOGY',
+      'software': 'TECHNOLOGY',
+      'healthcare': 'HEALTHCARE',
+      'medical': 'HEALTHCARE',
+      'financial': 'FINANCIAL',
+      'banking': 'FINANCIAL',
+      'manufacturing': 'MANUFACTURING',
+      'retail': 'RETAIL'
+    };
 
+    for (const term of terms) {
+      for (const [key, value] of Object.entries(industryTerms)) {
+        if (term.toLowerCase().includes(key)) {
+          return value;
+        }
+      }
+    }
+
+    return 'TECHNOLOGY'; // Default industry
+  }
+
+  private async classifyWithOpenAI(content: string): Promise<DocumentClassification> {
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [
         {
           role: "system",
-          content: `${systemPrompt}
-
-          Return a JSON object with:
-          {
-            "documentType": "specific document type (prefix with 'M&A Deal - ' for M&A documents)",
-            "category": "broader category (e.g., M&A Agreement, Legal Agreement)",
-            "confidence": number between 0 and 1,
-            "complianceStatus": "Compliant" | "Non-Compliant" | "Needs Review",
-            "metadata": {
-              "industry": "relevant industry",
-              "jurisdiction": "applicable jurisdiction",
-              "regulatoryFramework": "relevant framework if applicable",
-              "businessContext": "business context"
-            }
-          }`
+          content: `You are an expert document classifier.
+          Analyze this document and provide a detailed classification.
+          For M&A documents, always classify as 'M&A Deal'.
+          For all other documents, determine the most appropriate type.
+          Return a JSON object with the classification details.`
         },
         {
           role: "user",
-          content: `Classify this document content:\n\n${content.substring(0, 4000)}`
+          content: content.substring(0, 4000)
         }
       ],
       response_format: { type: "json_object" }
     });
 
-    const result = JSON.parse(completion.choices[0].message.content || "{}");
-    console.log("OpenAI Classification:", result);
-    return result;
+    const result = JSON.parse(completion.choices[0].message.content);
+    return {
+      documentType: result.documentType,
+      category: result.category,
+      confidence: result.confidence || 0.8,
+      complianceStatus: result.complianceStatus || "Needs Review",
+      metadata: {
+        industry: result.metadata?.industry || "TECHNOLOGY",
+        jurisdiction: result.metadata?.jurisdiction,
+        regulatoryFramework: result.metadata?.regulatoryFramework,
+        businessContext: result.metadata?.businessContext
+      }
+    };
   }
 
   private async classifyWithAnthropic(documentText: string): Promise<DocumentClassification> {
@@ -228,72 +228,6 @@ export class DocumentClassificationAgent {
       console.error("Failed to parse Anthropic response:", error);
       throw new Error('Failed to parse AI response');
     }
-  }
-
-  public refineClassification(rawClassification: DocumentClassification, keywords: string[] = []): DocumentClassification {
-    console.log("Starting classification refinement for:", rawClassification.documentType);
-    const lowerContent = rawClassification.documentType.toLowerCase();
-
-    // First, check for M&A documents using keywords
-    const isMandA = keywords.some(keyword => 
-      this.documentTypePatterns.merger.patterns.some(pattern => 
-        keyword.includes(pattern)
-      )
-    );
-
-    if (isMandA) {
-      let mandAType = 'General';
-      // Determine specific M&A type
-      for (const [subPattern, subType] of Object.entries(this.documentTypePatterns.merger.subTypes)) {
-        if (keywords.some(k => k.includes(subPattern))) {
-          mandAType = subType;
-          break;
-        }
-      }
-
-      console.log(`Identified as M&A document: ${mandAType}`);
-      return {
-        ...rawClassification,
-        documentType: mandAType,
-        category: 'M&A Agreement',
-        complianceStatus: rawClassification.complianceStatus || "Needs Review"
-      };
-    }
-
-    // Check for specific document types
-    for (const [category, info] of Object.entries(this.documentTypePatterns)) {
-      for (const pattern of info.patterns) {
-        if (lowerContent.includes(pattern) || keywords.some(k => k.includes(pattern))) {
-          // Check for specific subtypes
-          for (const [subPattern, subType] of Object.entries(info.subTypes)) {
-            if (lowerContent.includes(subPattern) || keywords.some(k => k.includes(subPattern))) {
-              console.log(`Refined classification: ${subType} in category ${info.category}`);
-              return {
-                ...rawClassification,
-                documentType: subType,
-                category: info.category,
-                complianceStatus: rawClassification.complianceStatus || "Needs Review"
-              };
-            }
-          }
-
-          // For other categories, use general category
-          console.log(`Using general category: ${info.category}`);
-          return {
-            ...rawClassification,
-            category: info.category,
-            complianceStatus: rawClassification.complianceStatus || "Needs Review"
-          };
-        }
-      }
-    }
-
-    console.log("No specific refinement found, returning with default values");
-    return {
-      ...rawClassification,
-      complianceStatus: rawClassification.complianceStatus || "Needs Review",
-      category: rawClassification.category || "Unclassified"
-    };
   }
 }
 
