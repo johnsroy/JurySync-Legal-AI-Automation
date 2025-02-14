@@ -76,7 +76,7 @@ Return ONLY a JSON array of suggestion objects.`
       context: z.string()
     })).parse(rawSuggestions);
 
-    console.log(`[TemplateStore] Generated ${suggestions.length} valid suggestions:`, 
+    console.log(`[TemplateStore] Generated ${suggestions.length} valid suggestions:`,
       JSON.stringify(suggestions, null, 2)
     );
 
@@ -494,7 +494,6 @@ This Commercial Lease Agreement (the "Lease") is made as of [EFFECTIVE_DATE] by 
       lastUpdated: "2025-02-07"
     }
   },
-
   "partnership-agreement": {
     id: "partnership-agreement",
     name: "General Partnership Agreement",
@@ -533,7 +532,6 @@ This Partnership Agreement (the "Agreement") is made on [EFFECTIVE_DATE] by and 
       lastUpdated: "2025-02-07"
     }
   },
-
   "consulting-agreement": {
     id: "consulting-agreement",
     name: "Professional Consulting Agreement",
@@ -570,6 +568,155 @@ This Consulting Agreement is entered into on [EFFECTIVE_DATE] between:
       industry: "Professional Services",
       jurisdiction: "United States",
       lastUpdated: "2025-02-07"
+    }
+  },
+  "merger-acquisition-standard": {
+    id: "merger-acquisition-standard",
+    name: "Standard Merger & Acquisition Agreement",
+    description: "Comprehensive agreement for standard merger and acquisition transactions",
+    category: "PARTNERSHIP",
+    baseContent: `
+MERGER AND ACQUISITION AGREEMENT
+
+This Merger and Acquisition Agreement (the "Agreement") is made and entered into as of [EFFECTIVE_DATE], by and between:
+
+[ACQUIRING_COMPANY] ("Acquirer"), a corporation organized under the laws of [ACQUIRER_JURISDICTION]
+
+and
+
+[TARGET_COMPANY] ("Target"), a corporation organized under the laws of [TARGET_JURISDICTION]
+
+1. THE MERGER
+   1.1 The Merger. Upon the terms and subject to the conditions set forth in this Agreement, at the Effective Time, Target shall merge with and into Acquirer (the "Merger").
+   1.2 Effective Time: [EFFECTIVE_TIME]
+   1.3 Effects of the Merger: [MERGER_EFFECTS]
+
+2. CONSIDERATION
+   2.1 Merger Consideration: [MERGER_CONSIDERATION]
+   2.2 Payment Terms: [PAYMENT_TERMS]
+   2.3 Exchange Ratio: [EXCHANGE_RATIO]
+
+3. REPRESENTATIONS AND WARRANTIES
+   3.1 Target Representations: [TARGET_REPRESENTATIONS]
+   3.2 Acquirer Representations: [ACQUIRER_REPRESENTATIONS]
+
+4. CONDITIONS TO CLOSING
+   4.1 Conditions: [CLOSING_CONDITIONS]
+   4.2 Due Diligence: [DUE_DILIGENCE_TERMS]
+
+5. COVENANTS
+   5.1 Conduct of Business: [BUSINESS_CONDUCT]
+   5.2 Regulatory Approvals: [REGULATORY_REQUIREMENTS]
+
+6. TERMINATION
+   6.1 Termination Rights: [TERMINATION_RIGHTS]
+   6.2 Effect of Termination: [TERMINATION_EFFECTS]`,
+    variables: [
+      { name: "EFFECTIVE_DATE", description: "Date of agreement execution", required: true },
+      { name: "ACQUIRING_COMPANY", description: "Legal name of acquiring company", required: true },
+      { name: "TARGET_COMPANY", description: "Legal name of target company", required: true },
+      { name: "MERGER_CONSIDERATION", description: "Total consideration for the merger", required: true },
+      { name: "EXCHANGE_RATIO", description: "Share exchange ratio for stock consideration", required: true }
+    ],
+    metadata: {
+      industry: "All",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-14"
+    }
+  },
+  "asset-purchase-agreement": {
+    id: "asset-purchase-agreement",
+    name: "Asset Purchase Agreement",
+    description: "Template for the purchase of specific assets or business units",
+    category: "PARTNERSHIP",
+    baseContent: `
+ASSET PURCHASE AGREEMENT
+
+This Asset Purchase Agreement (the "Agreement") is made as of [EFFECTIVE_DATE] between:
+
+[SELLER_NAME] ("Seller")
+and
+[BUYER_NAME] ("Buyer")
+
+1. ASSETS TO BE PURCHASED
+   1.1 Purchased Assets: [PURCHASED_ASSETS]
+   1.2 Excluded Assets: [EXCLUDED_ASSETS]
+
+2. PURCHASE PRICE AND PAYMENT
+   2.1 Purchase Price: [PURCHASE_PRICE]
+   2.2 Payment Terms: [PAYMENT_TERMS]
+   2.3 Adjustments: [PRICE_ADJUSTMENTS]
+
+3. LIABILITIES
+   3.1 Assumed Liabilities: [ASSUMED_LIABILITIES]
+   3.2 Excluded Liabilities: [EXCLUDED_LIABILITIES]
+
+4. REPRESENTATIONS AND WARRANTIES
+   4.1 Seller's Representations: [SELLER_REPRESENTATIONS]
+   4.2 Buyer's Representations: [BUYER_REPRESENTATIONS]
+
+5. CLOSING CONDITIONS
+   5.1 Due Diligence: [DUE_DILIGENCE]
+   5.2 Required Approvals: [REQUIRED_APPROVALS]`,
+    variables: [
+      { name: "SELLER_NAME", description: "Legal name of the selling entity", required: true },
+      { name: "BUYER_NAME", description: "Legal name of the buying entity", required: true },
+      { name: "PURCHASED_ASSETS", description: "Detailed description of assets being purchased", required: true },
+      { name: "PURCHASE_PRICE", description: "Total purchase price for the assets", required: true },
+      { name: "PAYMENT_TERMS", description: "Terms and schedule of payment", required: true }
+    ],
+    metadata: {
+      industry: "All",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-14"
+    }
+  },
+  "stock-purchase-agreement": {
+    id: "stock-purchase-agreement",
+    name: "Stock Purchase Agreement",
+    description: "Agreement for the purchase of company stock or equity interests",
+    category: "PARTNERSHIP",
+    baseContent: `
+STOCK PURCHASE AGREEMENT
+
+This Stock Purchase Agreement (the "Agreement") is made as of [EFFECTIVE_DATE] between:
+
+[SELLER_NAME] ("Seller")
+and
+[PURCHASER_NAME] ("Purchaser")
+
+1. STOCK PURCHASE
+   1.1 Shares Being Sold: [SHARES_DESCRIPTION]
+   1.2 Purchase Price: [SHARE_PRICE]
+   1.3 Payment Method: [PAYMENT_METHOD]
+
+2. REPRESENTATIONS AND WARRANTIES
+   2.1 Seller's Representations: [SELLER_REPS]
+   2.2 Company Representations: [COMPANY_REPS]
+   2.3 Purchaser's Representations: [PURCHASER_REPS]
+
+3. CLOSING CONDITIONS
+   3.1 Conditions Precedent: [CONDITIONS_PRECEDENT]
+   3.2 Closing Deliverables: [CLOSING_DELIVERABLES]
+
+4. POST-CLOSING COVENANTS
+   4.1 Non-Compete: [NON_COMPETE_TERMS]
+   4.2 Transition Services: [TRANSITION_SERVICES]
+
+5. INDEMNIFICATION
+   5.1 Seller's Indemnification: [SELLER_INDEMNIFICATION]
+   5.2 Purchaser's Indemnification: [PURCHASER_INDEMNIFICATION]`,
+    variables: [
+      { name: "SELLER_NAME", description: "Name of the selling shareholder(s)", required: true },
+      { name: "PURCHASER_NAME", description: "Name of the stock purchaser", required: true },
+      { name: "SHARES_DESCRIPTION", description: "Description of shares being sold", required: true },
+      { name: "SHARE_PRICE", description: "Price per share or total price", required: true },
+      { name: "CONDITIONS_PRECEDENT", description: "Conditions that must be met before closing", required: true }
+    ],
+    metadata: {
+      industry: "All",
+      jurisdiction: "United States",
+      lastUpdated: "2025-02-14"
     }
   }
 };
