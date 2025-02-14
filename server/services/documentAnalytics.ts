@@ -15,7 +15,7 @@ Given a legal or business document, analyze it and extract the following key inf
 - Note any subtypes or specific frameworks mentioned (e.g., SOC 1, SOC 2, SOC 3)
 
 2. Industry Context:
-- Identify the primary industry sector
+- Identify the primary industry sector as one of: TECHNOLOGY, HEALTHCARE, FINANCIAL, MANUFACTURING, RETAIL
 - Detect company names and their industry associations
 - Look for industry-specific terminology and compliance frameworks
 
@@ -41,7 +41,6 @@ Provide your analysis in the following JSON format:
 }`;
 
     try {
-      // Try OpenAI first
       const completion = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
@@ -62,7 +61,6 @@ Provide your analysis in the following JSON format:
       console.error("OpenAI analysis failed, falling back to Anthropic:", error);
 
       try {
-        // Fallback to Anthropic
         const response = await anthropic.messages.create({
           model: "claude-3-opus-20240229",
           max_tokens: 1024,
@@ -86,38 +84,43 @@ Provide your analysis in the following JSON format:
   }
 
   private standardizeAnalysis(analysis: any) {
-    // Standardize document type
-    let documentType = analysis.documentType.toUpperCase();
-    if (documentType.includes('SOC') || documentType.includes('AUDIT')) {
-      documentType = 'AUDIT';
-    } else if (documentType.includes('CONTRACT') || documentType.includes('AGREEMENT')) {
-      documentType = 'CONTRACT';
-    } else if (documentType.includes('POLICY') || documentType.includes('PROCEDURE')) {
-      documentType = 'POLICY';
-    } else {
-      documentType = 'REPORT';
+    // Standardize document type based on content and keywords
+    let documentType = 'UNKNOWN';
+    if (analysis.documentType) {
+      const type = analysis.documentType.toUpperCase();
+      if (type.includes('SOC') || type.includes('AUDIT')) {
+        documentType = 'AUDIT';
+      } else if (type.includes('CONTRACT') || type.includes('AGREEMENT')) {
+        documentType = 'CONTRACT';
+      } else if (type.includes('POLICY') || type.includes('PROCEDURE')) {
+        documentType = 'POLICY';
+      } else if (type.includes('REPORT') || type.includes('ANALYSIS')) {
+        documentType = 'REPORT';
+      }
     }
 
-    // Standardize industry based on organizations and context
-    let industry = analysis.industry.toUpperCase();
-    const orgText = analysis.organizations.join(' ').toLowerCase();
+    // Standardize industry based on content and company names
+    let industry = 'UNKNOWN';
+    if (analysis.industry || analysis.organizations) {
+      const industryText = [
+        analysis.industry || '',
+        ...(analysis.organizations || [])
+      ].join(' ').toLowerCase();
 
-    if (orgText.includes('google') || orgText.includes('microsoft') || 
-        industry.includes('TECH') || industry.includes('SOFTWARE')) {
-      industry = 'TECHNOLOGY';
-    } else if (orgText.includes('hospital') || industry.includes('HEALTH')) {
-      industry = 'HEALTHCARE';
-    } else if (orgText.includes('bank') || industry.includes('FINANCIAL')) {
-      industry = 'FINANCIAL';
-    } else if (industry.includes('MANUFACTURING') || industry.includes('INDUSTRIAL')) {
-      industry = 'MANUFACTURING';
-    } else if (industry.includes('RETAIL') || industry.includes('COMMERCE')) {
-      industry = 'RETAIL';
-    } else {
-      industry = 'TECHNOLOGY'; // Default to technology if unclear
+      if (industryText.match(/google|microsoft|apple|amazon|meta|software|tech|cloud|cyber|digital/)) {
+        industry = 'TECHNOLOGY';
+      } else if (industryText.match(/hospital|medical|health|pharma|biotech|clinic|patient/)) {
+        industry = 'HEALTHCARE';
+      } else if (industryText.match(/bank|financial|insurance|investment|trading|credit/)) {
+        industry = 'FINANCIAL';
+      } else if (industryText.match(/manufacturing|industrial|factory|production|assembly/)) {
+        industry = 'MANUFACTURING';
+      } else if (industryText.match(/retail|store|shop|consumer|ecommerce|sales/)) {
+        industry = 'RETAIL';
+      }
     }
 
-    // Determine compliance status from detailed analysis
+    // Standardize compliance status based on analysis
     const complianceStatus = analysis.complianceDetails?.effectiveness?.toLowerCase().includes('effective') ||
                            analysis.complianceStatus?.toLowerCase().includes('compliant')
       ? 'Compliant'
@@ -125,15 +128,8 @@ Provide your analysis in the following JSON format:
 
     return {
       documentType,
-      documentSubtype: analysis.documentSubtype || documentType,
       industry,
-      organizations: analysis.organizations || [],
       complianceStatus,
-      complianceDetails: analysis.complianceDetails || {
-        effectiveness: complianceStatus,
-        findings: [],
-        period: { start: '', end: '' }
-      },
       confidence: analysis.confidence || 0.95
     };
   }
@@ -158,8 +154,8 @@ Provide your analysis in the following JSON format:
         confidence: aiAnalysis.confidence,
         classifications: [{
           category: "LEGAL",
-          subCategory: aiAnalysis.documentSubtype,
-          tags: [aiAnalysis.industry, ...aiAnalysis.organizations]
+          subCategory: aiAnalysis.documentType,
+          tags: [aiAnalysis.industry]
         }],
         riskScore: aiAnalysis.complianceStatus === "Compliant" ? 85 : 45
       };
