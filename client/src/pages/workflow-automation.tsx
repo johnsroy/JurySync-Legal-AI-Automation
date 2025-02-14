@@ -198,19 +198,22 @@ export function WorkflowAutomation() {
     complianceStatus: string;
   } | null>(null);
 
-  // Update document analysis whenever stage state changes
+  // Effect to update document analysis based on workflow completion
   useEffect(() => {
-    const currentStageState = stageStates[currentStage];
-    if (currentStageState?.status === 'completed' && currentStageState.result?.metadata) {
-      const metadata = currentStageState.result.metadata;
-      setDocumentAnalysis(prev => ({
-        fileName: uploadedFiles[0]?.name || prev?.fileName || 'Untitled Document',
-        documentType: metadata.documentType || prev?.documentType || 'Unknown',
-        industry: metadata.industry || prev?.industry || 'Unknown',
-        complianceStatus: metadata.complianceStatus || prev?.complianceStatus || 'Pending'
-      }));
+    const isWorkflowComplete = Object.values(stageStates).every(
+      state => state?.status === 'completed'
+    );
+
+    if (isWorkflowComplete && stageStates[4]?.result?.metadata) {
+      const metadata = stageStates[4].result.metadata;
+      setDocumentAnalysis({
+        fileName: uploadedFiles[0]?.name || 'Untitled Document',
+        documentType: metadata.documentType,
+        industry: metadata.industry,
+        complianceStatus: metadata.complianceStatus
+      });
     }
-  }, [currentStage, stageStates, uploadedFiles]);
+  }, [stageStates, uploadedFiles]);
 
   const handleTextSelect = useCallback(() => {
     const selection = window.getSelection();
@@ -298,6 +301,7 @@ export function WorkflowAutomation() {
     setCurrentStage(0);
     setWorkflowProgress(0);
     setStageStates({});
+    setDocumentAnalysis(null);
 
     const stages = [
       {
@@ -307,13 +311,6 @@ export function WorkflowAutomation() {
             stageType: "classification",
             content: documentText
           }]);
-
-          setDocumentAnalysis(prev => ({
-            fileName: uploadedFiles[0]?.name || prev?.fileName || 'Untitled Document',
-            documentType: metadata.documentType || 'Unknown',
-            industry: metadata.industry || 'Unknown',
-            complianceStatus: metadata.complianceStatus || 'Pending'
-          }));
 
           return {
             content: `Generated content...`,
@@ -325,36 +322,20 @@ export function WorkflowAutomation() {
       {
         name: "Compliance Check",
         handler: async () => {
-          // Simulate compliance analysis
-          const complianceContent = `
-            <h2>Compliance Analysis Report</h2>
-            <p><strong>Overall Compliance Score:</strong> 85%</p>
-            <h3>Key Findings:</h3>
-            <ul>
-              <li>✅ GDPR Compliance: Satisfactory</li>
-              <li>⚠️ Data Protection: Minor revisions needed</li>
-              <li>✅ Contract Terms: Compliant with local laws</li>
-            </ul>
-            <h3>Recommendations:</h3>
-            <p>1. Add specific data retention periods</p>
-            <p>2. Include breach notification procedures</p>
-          `;
-
-          // Add compliance analysis
           const metadata = await documentAnalyticsService.processWorkflowResults([{
             stageType: "compliance",
             content: documentText,
-            status: "COMPLIANT", // This will be determined by actual compliance check
-            riskScore: 85
+            status: "COMPLIANT"
           }]);
 
-          setStageStates(prev => ({
-            ...prev,
-            1: {
-              ...prev[1],
-              metadata
-            }
-          }));
+          const complianceContent = `
+            <h2>Compliance Analysis Report</h2>
+            <p><strong>Compliance Score:</strong> ${metadata.confidence}%</p>
+            <h3>Key Findings:</h3>
+            <ul>
+              ${metadata.classifications[0].tags.map(tag => `<li>${tag}</li>`).join('')}
+            </ul>
+          `;
 
           return {
             content: complianceContent,
@@ -391,14 +372,6 @@ export function WorkflowAutomation() {
             stageType: "research",
             content: documentText
           }]);
-
-          setStageStates(prev => ({
-            ...prev,
-            2: {
-              ...prev[2],
-              metadata
-            }
-          }));
 
           return {
             content: researchContent,
@@ -566,7 +539,51 @@ export function WorkflowAutomation() {
 
           return {
             content: auditContent,
-            title: "Final Audit Report"
+            title: "Final Audit Report",
+            metadata: auditReport
+          };
+        }
+      },
+      {
+        name: "Document Analysis Results",
+        handler: async () => {
+          // Collect results from all previous stages
+          const workflowResults = Object.entries(stageStates).map(([stage, state]) => ({
+            stageType: workflowStages[Number(stage)].title.toLowerCase(),
+            content: documentText,
+            status: state.status,
+            metadata: state.result?.metadata
+          }));
+
+          // Perform final analysis
+          const finalAnalysis = await documentAnalyticsService.processWorkflowResults(
+            workflowResults
+          );
+
+          const analysisContent = `
+            <h2>Final Document Analysis</h2>
+            <div class="space-y-4">
+              <div>
+                <h3 class="text-lg font-semibold">Document Classification</h3>
+                <p><strong>Type:</strong> ${finalAnalysis.documentType}</p>
+                <p><strong>Industry:</strong> ${finalAnalysis.industry}</p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold">Compliance Status</h3>
+                <p><strong>Status:</strong> ${finalAnalysis.complianceStatus}</p>
+                <p><strong>Confidence:</strong> ${finalAnalysis.confidence}%</p>
+              </div>
+              <div>
+                <h3 class="text-lg font-semibold">Risk Assessment</h3>
+                <p><strong>Risk Score:</strong> ${finalAnalysis.riskScore}</p>
+              </div>
+            </div>
+          `;
+
+          return {
+            content: analysisContent,
+            title: "Document Analysis Results",
+            metadata: finalAnalysis
           };
         }
       }
@@ -678,6 +695,11 @@ export function WorkflowAutomation() {
       title: "Final Audit",
       description: "Continuous monitoring and compliance updates",
       icon: RefreshCcw
+    },
+    {
+      title: "Document Analysis Results",
+      description: "Final analysis of the document",
+      icon: BarChart3
     }
   ];
 
@@ -726,21 +748,23 @@ export function WorkflowAutomation() {
             </p>
           </div>
 
-          {/* Document Analysis Results Card - Moved to top */}
-          <Card className="bg-white/80 backdrop-blur-lg">
-            <CardHeader>
-              <CardTitle>Document Analysis Results</CardTitle>
-              <CardDescription>
-                Automated classification and compliance assessment
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DocumentAnalysisTable
-                analysis={documentAnalysis}
-                isLoading={!documentAnalysis || documentAnalysis.documentType === 'Analyzing...'}
-              />
-            </CardContent>
-          </Card>
+          {/* Document Analysis Results Card - Only show when workflow is complete */}
+          {documentAnalysis && Object.values(stageStates).every(state => state?.status === 'completed') && (
+            <Card className="bg-white/80 backdrop-blur-lg">
+              <CardHeader>
+                <CardTitle>Document Analysis Results</CardTitle>
+                <CardDescription>
+                  Automated classification and compliance assessment
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <DocumentAnalysisTable
+                  analysis={documentAnalysis}
+                  isLoading={false}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Document Editor Section */}
