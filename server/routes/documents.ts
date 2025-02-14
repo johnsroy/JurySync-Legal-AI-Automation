@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
 import PDFDocument from "pdfkit";
-import { approvalAuditService } from "../services/approvalAuditService";
+import { multiAgentService } from "../services/multiAgentService";
 import { analyzeDocument } from "../services/documentAnalysisService";
 import { 
   getAllTemplates, 
@@ -17,6 +17,7 @@ import {
   getCustomInstructionSuggestions,
   generateContract 
 } from "../services/templateStore";
+import { approvalAuditService } from "../services/approvalAuditService";
 
 const router = Router();
 
@@ -220,6 +221,15 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
       // Analyze the document after saving
       const analysis = await analyzeDocument(content);
 
+      // Generate initial draft using Anthropic
+      const draftResult = await multiAgentService.generateDraft(content);
+
+      // Perform compliance check using OpenAI
+      const complianceResult = await multiAgentService.performComplianceCheck(content);
+
+      // Conduct legal research using Anthropic
+      const researchResult = await multiAgentService.conductLegalResearch(content);
+
       console.log("Document uploaded successfully:", {
         id: document.id,
         title: document.title,
@@ -236,7 +246,11 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
           documentType: analysis.documentType,
           industry: analysis.industry,
           classification: analysis.classification,
-          complianceStatus: analysis.complianceStatus
+          complianceStatus: analysis.complianceStatus,
+          draftSuggestions: draftResult.suggestions,
+          complianceFindings: complianceResult.findings,
+          relatedDocuments: researchResult.relatedDocuments,
+          recommendations: researchResult.recommendations
         },
         status: "COMPLETED"
       });

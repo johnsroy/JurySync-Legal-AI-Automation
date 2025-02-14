@@ -60,6 +60,7 @@ interface SuggestedEdit {
   reason: string;
   startIndex: number;
   endIndex: number;
+  category?: 'LEGAL' | 'COMPLIANCE' | 'BUSINESS';
 }
 
 interface AISuggestion {
@@ -118,6 +119,8 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
   const [selectedEdit, setSelectedEdit] = useState<SuggestedEdit | null>(null);
   const [selectedSuggestion, setSelectedSuggestion] = useState<AISuggestion | null>(null);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [isLoadingApproval, setIsLoadingApproval] = useState(false);
+
 
   const standardRequirements = [
     "Include non-disclosure agreement",
@@ -275,10 +278,17 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
       const response = await apiRequest("POST", `/api/documents/${documentId}/request-review`, {
         approverId: selectedApprover,
         comments: reviewComment,
+        documentType: analysis.documentType,
+        aiAnalysis: {
+          complianceScore: analysis.complianceScore,
+          riskFactors: analysis.riskFactors,
+          suggestedChanges: suggestedEdits,
+        }
       });
 
       if (!response.ok) {
-        throw new Error("Failed to send review request");
+        const error = await response.json();
+        throw new Error(error.message || "Failed to send review request");
       }
 
       queryClient.invalidateQueries({ queryKey: [`/api/documents/${documentId}`] });
@@ -286,7 +296,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
 
       toast({
         title: "Review Requested",
-        description: "Document has been sent for review",
+        description: "Document has been sent for review with AI analysis",
       });
 
       setSelectedApprover("");
@@ -903,8 +913,7 @@ export const ContractEditor: React.FC<ContractEditorProps> = ({
                     onClick={() => suggestedEdits.forEach(edit => onAcceptEdit?.(edit.id))}
                   >
                     Accept All
-                  </Button>
-                  <Button
+                  </Button                  <Button
                     variant="outline"
                     size="sm"
                     onClick={() => suggestedEdits.forEach(edit => onRejectEdit?.(edit.id))}
