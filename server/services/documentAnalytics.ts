@@ -10,8 +10,11 @@ interface StageAnalysis {
   industry?: string;
   complianceStatus?: string;
   complianceDetails?: {
-    score: number;
+    score: number | null;
     findings: string[];
+    scope: string | null;
+    keyTerms: string[];
+    recommendations: string[];
   };
 }
 
@@ -19,22 +22,31 @@ export class DocumentAnalyticsService {
   private async analyzeWithAI(content: string, stageResults?: WorkflowResult[]): Promise<StageAnalysis> {
     // Truncate content if too long
     const maxLength = 8000;
-    const truncatedContent = content.length > maxLength ? 
-      content.slice(0, maxLength) + "..." : 
+    const truncatedContent = content.length > maxLength ?
+      content.slice(0, maxLength) + "..." :
       content;
 
-    const systemPrompt = `You are an expert legal document analyzer specializing in document classification and compliance assessment.
+    const systemPrompt = `You are an expert legal and compliance document analyzer specializing in document classification and assessment.
 Please analyze the document content and provide a response in this exact JSON format:
 {
-  "documentType": "string - document type (e.g. 'Contract', 'SOC 3 Report', 'Policy')",
+  "documentType": {
+    "primary": "string - main document type (e.g. 'SOC 2', 'SOC 3', 'Contract', 'Policy')",
+    "subtype": "string - specific type if applicable",
+    "category": "string - document category (e.g. 'Compliance Report', 'Legal Agreement')"
+  },
   "industry": "string - TECHNOLOGY, HEALTHCARE, FINANCIAL, MANUFACTURING, RETAIL",
   "complianceStatus": "string - Compliant, Non-Compliant, Needs Review",
   "confidence": "number - between 0 and 1",
   "details": {
-    "findings": ["array of string findings"],
-    "recommendations": ["array of string recommendations"]
+    "findings": ["array of detailed findings"],
+    "recommendations": ["array of specific recommendations"],
+    "keyTerms": ["array of important terms found"],
+    "scope": "string - document scope description"
   }
-}`;
+}
+
+Be very specific about the document type - if it's a SOC report, specify whether it's SOC 1, SOC 2, or SOC 3.
+If you're not completely certain about any field, indicate lower confidence rather than guessing.`;
 
     try {
       // First try OpenAI
@@ -42,8 +54,8 @@ Please analyze the document content and provide a response in this exact JSON fo
         model: "gpt-4",
         messages: [
           { role: "system", content: systemPrompt },
-          { 
-            role: "user", 
+          {
+            role: "user",
             content: `Please analyze this document and identify its key characteristics:\n\n${truncatedContent}`
           }
         ],
@@ -59,16 +71,16 @@ Please analyze the document content and provide a response in this exact JSON fo
       console.error("OpenAI analysis failed, falling back to Anthropic:", error);
 
       try {
-        // Fallback to Anthropic
+        // Fallback to Anthropic with more detailed analysis
         const response = await anthropic.messages.create({
           model: "claude-3-opus-20240229",
           max_tokens: 1024,
           temperature: 0,
           system: systemPrompt,
           messages: [
-            { 
-              role: "user", 
-              content: `Analyze this document:\n${truncatedContent}`
+            {
+              role: "user",
+              content: `Please perform a detailed analysis of this document, paying special attention to its type, industry context, and compliance implications:\n\n${truncatedContent}`
             }
           ]
         });
@@ -83,7 +95,6 @@ Please analyze the document content and provide a response in this exact JSON fo
           result = JSON.parse(responseContent);
         } catch (parseError) {
           console.error("Failed to parse Anthropic response:", parseError);
-          // Extract JSON from the response if it's embedded in other text
           const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             result = JSON.parse(jsonMatch[0]);
@@ -97,61 +108,30 @@ Please analyze the document content and provide a response in this exact JSON fo
 
       } catch (anthropicError) {
         console.error("Both AI services failed:", anthropicError);
-        // Return default values instead of throwing
-        return {
-          documentType: "Unknown",
-          industry: "TECHNOLOGY",
-          complianceStatus: "Needs Review",
-          complianceDetails: {
-            score: 50,
-            findings: ["Document analysis failed, manual review required"]
-          }
-        };
+        throw new Error("Document analysis failed with both AI services");
       }
     }
   }
 
   private standardizeAnalysis(analysis: any, stageResults?: WorkflowResult[]): StageAnalysis {
-    // Ensure we have a valid analysis object
     if (!analysis || typeof analysis !== 'object') {
-      analysis = {};
+      throw new Error("Invalid analysis result");
     }
 
-    // Default compliance status
-    let complianceStatus = 'Needs Review';
-    if (stageResults) {
-      const complianceCheck = stageResults.find(r => r.stageType === 'compliance');
-      if (complianceCheck) {
-        complianceStatus = complianceCheck.status || 'Needs Review';
-      }
-    }
-
-    // Map common document types to standardized values
-    const documentTypeMap: { [key: string]: string } = {
-      'soc': 'SOC 3 Report',
-      'soc 3': 'SOC 3 Report',
-      'soc3': 'SOC 3 Report',
-      'contract': 'Contract',
-      'policy': 'Policy Document',
-      'agreement': 'Agreement',
-      'report': 'Report'
-    };
-
+    // Extract document type with detailed handling
     let documentType = 'Unknown';
-    if (analysis.documentType) {
-      const lowercaseType = analysis.documentType.toLowerCase();
-      for (const [key, value] of Object.entries(documentTypeMap)) {
-        if (lowercaseType.includes(key)) {
-          documentType = value;
-          break;
-        }
+    if (analysis.documentType?.primary) {
+      documentType = analysis.documentType.primary;
+      if (analysis.documentType.subtype) {
+        documentType = `${documentType} - ${analysis.documentType.subtype}`;
       }
     }
 
-    // Standardize industry values
+    // Map industry with extended categories
     const industryMap: { [key: string]: string } = {
       'tech': 'TECHNOLOGY',
       'software': 'TECHNOLOGY',
+      'it': 'TECHNOLOGY',
       'digital': 'TECHNOLOGY',
       'health': 'HEALTHCARE',
       'medical': 'HEALTHCARE',
@@ -159,13 +139,16 @@ Please analyze the document content and provide a response in this exact JSON fo
       'bank': 'FINANCIAL',
       'finance': 'FINANCIAL',
       'investment': 'FINANCIAL',
+      'insurance': 'FINANCIAL',
       'manufacturing': 'MANUFACTURING',
       'industrial': 'MANUFACTURING',
+      'production': 'MANUFACTURING',
       'retail': 'RETAIL',
-      'commerce': 'RETAIL'
+      'commerce': 'RETAIL',
+      'sales': 'RETAIL'
     };
 
-    let industry = 'TECHNOLOGY';
+    let industry = null;
     if (analysis.industry) {
       const lowercaseIndustry = analysis.industry.toLowerCase();
       for (const [key, value] of Object.entries(industryMap)) {
@@ -176,13 +159,26 @@ Please analyze the document content and provide a response in this exact JSON fo
       }
     }
 
+    if (!industry) {
+      industry = 'TECHNOLOGY'; //default to technology if industry cannot be determined
+    }
+
+    // Validate compliance status
+    const validComplianceStatuses = ['Compliant', 'Non-Compliant', 'Needs Review'];
+    const complianceStatus = validComplianceStatuses.includes(analysis.complianceStatus)
+      ? analysis.complianceStatus
+      : 'Needs Review';
+
     return {
       documentType,
       industry,
-      complianceStatus: analysis.complianceStatus || complianceStatus,
+      complianceStatus,
       complianceDetails: {
-        score: analysis.confidence ? Math.round(analysis.confidence * 100) : 75,
-        findings: Array.isArray(analysis.details?.findings) ? analysis.details.findings : []
+        score: analysis.confidence ? Math.round(analysis.confidence * 100) : null,
+        findings: Array.isArray(analysis.details?.findings) ? analysis.details.findings : [],
+        scope: analysis.details?.scope || null,
+        keyTerms: Array.isArray(analysis.details?.keyTerms) ? analysis.details.keyTerms : [],
+        recommendations: Array.isArray(analysis.details?.recommendations) ? analysis.details.recommendations : []
       }
     };
   }
@@ -197,9 +193,9 @@ Please analyze the document content and provide a response in this exact JSON fo
         documentId,
         fileName: `Document_${documentId}.pdf`,
         fileDate: new Date().toISOString(),
-        documentType: aiAnalysis.documentType || 'Unknown',
-        industry: aiAnalysis.industry || 'TECHNOLOGY',
-        complianceStatus: aiAnalysis.complianceStatus || 'Needs Review'
+        documentType: aiAnalysis.documentType,
+        industry: aiAnalysis.industry,
+        complianceStatus: aiAnalysis.complianceStatus
       }).returning();
 
       return {
@@ -208,19 +204,7 @@ Please analyze the document content and provide a response in this exact JSON fo
       };
     } catch (error) {
       console.error("Document analysis failed:", error);
-      // Don't throw, return a default analysis
-      return {
-        documentId,
-        fileName: `Document_${documentId}.pdf`,
-        fileDate: new Date().toISOString(),
-        documentType: 'Unknown',
-        industry: 'TECHNOLOGY',
-        complianceStatus: 'Needs Review',
-        details: {
-          score: 50,
-          findings: ['Analysis failed, please try again or review manually']
-        }
-      };
+      throw error;
     }
   }
 
