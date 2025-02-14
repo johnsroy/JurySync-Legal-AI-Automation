@@ -29,27 +29,24 @@ import { DocumentPreview } from "@/components/DocumentPreview";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { FileUpload } from "@/components/FileUpload";
-import { approvalAuditService } from "@/lib/approval-audit";
-import { ApprovalForm } from "@/components/ApprovalForm";
-import { documentAnalyticsService } from "@/services/documentAnalytics";
+import { ErrorBoundary, FallbackProps } from "react-error-boundary";
 import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
 import { generateDraftAnalysis } from "@/services/anthropic-service";
 import { classifyDocument } from "@/services/documentClassification";
-import { ErrorBoundary } from "react-error-boundary";
 
-// Add error fallback component
-function ErrorFallback({ error, resetErrorBoundary }) {
+// Add error fallback component with proper types
+function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center">
       <div className="bg-white p-8 rounded-lg shadow-lg max-w-md">
         <h2 className="text-xl font-semibold text-red-600 mb-4">Something went wrong</h2>
         <p className="text-gray-600 mb-4">{error.message}</p>
-        <button
+        <Button
           onClick={resetErrorBoundary}
           className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
         >
           Try again
-        </button>
+        </Button>
       </div>
     </div>
   );
