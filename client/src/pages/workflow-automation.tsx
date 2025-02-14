@@ -34,6 +34,8 @@ import { ApprovalForm } from "@/components/ApprovalForm";
 import { documentAnalyticsService } from "@/services/documentAnalytics";
 import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
 import { generateDraftAnalysis } from "@/services/anthropic-service";
+import anthropic from "@/lib/anthropic"; // Assuming this import is needed
+
 
 // Document cleaning utility
 const cleanDocumentText = (text: string): string => {
@@ -343,40 +345,68 @@ export function WorkflowAutomation() {
       {
         name: "Compliance Check",
         handler: async () => {
-          // Simplified compliance check
-          const complianceResult = {
-            score: 85,
-            status: "Compliant",
-            findings: [
-              "Document structure follows standard format",
-              "Required legal clauses present",
-              "No major compliance issues detected"
-            ],
-            documentType: "SOC 3 Report",
-            industry: "TECHNOLOGY"
-          };
+          try {
+            const response = await anthropic.messages.create({
+              model: "claude-3-5-sonnet-20241022",
+              max_tokens: 1000,
+              messages: [
+                {
+                  role: "user",
+                  content: `Analyze this document for compliance and classification:
 
-          const complianceContent = `
-            <h2>Compliance Analysis Report</h2>
-            <p><strong>Compliance Score:</strong> ${complianceResult.score}%</p>
-            <h3>Key Findings:</h3>
-            <ul>
-              ${complianceResult.findings.map(finding => `<li>${finding}</li>`).join('')}
-            </ul>
-          `;
+                    Document content: ${documentText}
 
-          return {
-            content: complianceContent,
-            title: "Compliance Analysis Report",
-            metadata: {
-              status: complianceResult.status,
-              complianceStatus: complianceResult.status,
-              score: complianceResult.score,
-              findings: complianceResult.findings,
-              documentType: complianceResult.documentType,
-              industry: complianceResult.industry
-            }
-          };
+                    Provide a detailed analysis including:
+                    1. Document type identification
+                    2. Industry classification
+                    3. Compliance assessment
+                    4. Risk level evaluation`
+                }
+              ]
+            });
+
+            const analysis = response.content[0].text;
+
+            // Extract document metadata using AI
+            const metadataResponse = await anthropic.messages.create({
+              model: "claude-3-5-sonnet-20241022",
+              max_tokens: 500,
+              system: "Extract document metadata in JSON format with keys: documentType, industry, complianceStatus, score",
+              messages: [
+                {
+                  role: "user",
+                  content: `Based on this analysis, provide document metadata:
+                    ${analysis}`
+                }
+              ]
+            });
+
+            const metadata = JSON.parse(metadataResponse.content[0].text);
+
+            const complianceContent = `
+              <h2>Compliance Analysis Report</h2>
+              <p><strong>Document Type:</strong> ${metadata.documentType}</p>
+              <p><strong>Industry:</strong> ${metadata.industry}</p>
+              <p><strong>Compliance Score:</strong> ${metadata.score}%</p>
+              <h3>Analysis Details:</h3>
+              ${analysis}
+            `;
+
+            return {
+              content: complianceContent,
+              title: "Compliance Analysis Report",
+              metadata: {
+                status: metadata.complianceStatus,
+                complianceStatus: metadata.complianceStatus,
+                score: metadata.score,
+                documentType: metadata.documentType,
+                industry: metadata.industry
+              }
+            };
+          } catch (error) {
+            console.error("Compliance check error:", error);
+            throw new Error("Failed to analyze compliance");
+          }
         }
       },
       {
@@ -428,51 +458,55 @@ export function WorkflowAutomation() {
       {
         name: "Document Analysis Results",
         handler: async () => {
-          const workflowResults = Object.entries(stageStates).map(([stage, state]) => ({
-            stageType: workflowStages[Number(stage)].title.toLowerCase(),
-            content: documentText,
-            status: state.status,
-            metadata: state.result?.metadata
-          }));
+          try {
+            const workflowResults = Object.entries(stageStates).map(([stage, state]) => ({
+              stageType: workflowStages[Number(stage)].title.toLowerCase(),
+              content: documentText,
+              status: state.status,
+              metadata: state.result?.metadata
+            }));
 
-          const complianceStage = stageStates[1]?.result?.metadata;
-          const currentFile = uploadedFiles[uploadedFiles.length - 1];
+            // Get metadata from compliance stage
+            const complianceStage = stageStates[1]?.result?.metadata;
 
-          const documentType = complianceStage?.documentType || "Compliance Document";
-          const industry = complianceStage?.industry || "TECHNOLOGY";
-          const complianceStatus = complianceStage?.status || "Compliant"; // Changed default value
+            if (!complianceStage) {
+              throw new Error("Missing compliance analysis data");
+            }
 
-          const analysisContent = `
-            <h2>Final Document Analysis</h2>
-            <div class="space-y-4">
-              <div>
-                <h3>Document Classification</h3>
-                <p><strong>File:</strong> ${currentFile?.name || 'Untitled Document'}</p>
-                <p><strong>Type:</strong> ${documentType}</p>
-                <p><strong>Industry:</strong> ${industry}</p>
+            const currentFile = uploadedFiles[uploadedFiles.length - 1];
+
+            const analysisContent = `
+              <h2>Final Document Analysis</h2>
+              <div class="space-y-4">
+                <div>
+                  <h3>Document Classification</h3>
+                  <p><strong>File:</strong> ${currentFile?.name || 'Untitled Document'}</p>
+                  <p><strong>Type:</strong> ${complianceStage.documentType}</p>
+                  <p><strong>Industry:</strong> ${complianceStage.industry}</p>
+                </div>
+                <div>
+                  <h3>Compliance Assessment</h3>
+                  <p><strong>Status:</strong> ${complianceStage.complianceStatus}</p>
+                  <p><strong>Score:</strong> ${complianceStage.score}%</p>
+                </div>
               </div>
-              <div>
-                <h3>Compliance Assessment</h3>
-                <p><strong>Status:</strong> ${complianceStatus}</p>
-                <p><strong>Score:</strong> ${complianceStage?.score || 0}%</p>
-              </div>
-            </div>
-          `;
+            `;
 
-          // Update metadata to ensure consistency
-          const finalMetadata = {
-            documentType,
-            industry,
-            complianceStatus: complianceStatus, // Use the same value
-            confidence: complianceStage?.score || 0,
-            fileName: currentFile?.name
-          };
-
-          return {
-            content: analysisContent,
-            title: "Document Analysis Results",
-            metadata: finalMetadata
-          };
+            return {
+              content: analysisContent,
+              title: "Document Analysis Results",
+              metadata: {
+                documentType: complianceStage.documentType,
+                industry: complianceStage.industry,
+                complianceStatus: complianceStage.complianceStatus,
+                confidence: complianceStage.score,
+                fileName: currentFile?.name
+              }
+            };
+          } catch (error) {
+            console.error("Analysis results error:", error);
+            throw new Error("Failed to generate analysis results");
+          }
         }
       }
     ];
