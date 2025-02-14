@@ -324,14 +324,14 @@ export function WorkflowAutomation() {
           // Simplified compliance check
           const complianceResult = {
             score: 85,
-            status: "COMPLIANT",
+            status: "Compliant", // Changed from "COMPLIANT" to match display format
             findings: [
               "Document structure follows standard format",
               "Required legal clauses present",
               "No major compliance issues detected"
             ],
-            documentType: "Contract", // Example document type
-            industry: "Finance" // Example industry
+            documentType: "Contract",
+            industry: "Finance"
           };
 
           const complianceContent = `
@@ -417,6 +417,7 @@ export function WorkflowAutomation() {
 
           const documentType = complianceStage?.documentType || "Compliance Document";
           const industry = complianceStage?.industry || "TECHNOLOGY";
+          const complianceStatus = complianceStage?.complianceStatus || "Pending Review";
 
           const analysisContent = `
             <h2>Final Document Analysis</h2>
@@ -429,16 +430,17 @@ export function WorkflowAutomation() {
               </div>
               <div>
                 <h3>Compliance Assessment</h3>
-                <p><strong>Status:</strong> ${complianceStage?.complianceStatus || 'Pending'}</p>
+                <p><strong>Status:</strong> ${complianceStatus}</p>
                 <p><strong>Score:</strong> ${complianceStage?.score || 0}%</p>
               </div>
             </div>
           `;
 
+          // This metadata will be used to update the DocumentAnalysisTable
           const finalMetadata = {
             documentType,
             industry,
-            complianceStatus: complianceStage?.complianceStatus || 'Pending Review',
+            complianceStatus,
             confidence: complianceStage?.score || 0,
             fileName: currentFile?.name
           };
