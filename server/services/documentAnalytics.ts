@@ -53,12 +53,8 @@ export class DocumentAnalyticsService {
       const classification = await documentClassificationAgent.classifyDocument(truncatedContent);
       console.log('Initial classification result:', classification);
 
-      // Refine the classification
-      const refinedClassification = documentClassificationAgent.refineClassification(classification);
-      console.log('Refined classification:', refinedClassification);
-
       // Map industry using standardized mapping
-      let mappedIndustry = refinedClassification.metadata?.industry?.toUpperCase() || 'TECHNOLOGY';
+      let mappedIndustry = classification.metadata?.industry?.toUpperCase() || 'TECHNOLOGY';
       for (const [key, value] of Object.entries(this.industryMap)) {
         if (mappedIndustry.toLowerCase().includes(key)) {
           mappedIndustry = value;
@@ -69,13 +65,13 @@ export class DocumentAnalyticsService {
       console.log('Mapped industry:', mappedIndustry);
 
       return {
-        documentType: refinedClassification.documentType,
+        documentType: classification.documentType,
         industry: mappedIndustry,
-        complianceStatus: refinedClassification.complianceStatus,
+        complianceStatus: classification.complianceStatus,
         complianceDetails: {
-          score: Math.round((refinedClassification.confidence || 0) * 100),
+          score: Math.round((classification.confidence || 0) * 100),
           findings: [],
-          scope: refinedClassification.metadata?.regulatoryFramework || null,
+          scope: classification.metadata?.regulatoryFramework || null,
           keyTerms: [],
           recommendations: []
         }
