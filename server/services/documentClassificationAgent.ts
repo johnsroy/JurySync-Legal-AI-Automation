@@ -61,6 +61,10 @@ export class DocumentClassificationAgent {
         response_format: { type: "json_object" }
       });
 
+      if (!completion.choices[0].message.content) {
+        throw new Error("Empty response from GPT-4");
+      }
+
       const result = JSON.parse(completion.choices[0].message.content);
       return {
         isMA: result.isMA,
@@ -81,13 +85,14 @@ export class DocumentClassificationAgent {
 
       if (isMA && confidence > 0.7) {
         console.log("M&A document detected with high confidence");
+        const industry = await this.detectIndustry(content);
         return {
           documentType: "M&A Deal",
           category: "M&A Deal",
           confidence: confidence,
           complianceStatus: "Needs Review",
           metadata: {
-            industry: await this.detectIndustry(content),
+            industry: industry,
             businessContext: "Mergers & Acquisitions"
           }
         };
@@ -120,7 +125,8 @@ export class DocumentClassificationAgent {
         ]
       });
 
-      return completion.choices[0].message.content.trim().toUpperCase() || "TECHNOLOGY";
+      const response = completion.choices[0].message.content;
+      return response ? response.trim().toUpperCase() : "TECHNOLOGY";
     } catch (error) {
       console.error("Industry detection failed:", error);
       return "TECHNOLOGY";
@@ -155,6 +161,10 @@ export class DocumentClassificationAgent {
       ],
       response_format: { type: "json_object" }
     });
+
+    if (!completion.choices[0].message.content) {
+      throw new Error("Empty response from GPT-4");
+    }
 
     const result = JSON.parse(completion.choices[0].message.content);
 
