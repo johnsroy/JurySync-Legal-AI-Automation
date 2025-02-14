@@ -16,14 +16,19 @@ interface StageAnalysis {
 }
 
 export class DocumentAnalyticsService {
-  private async analyzeWithAI(content: string, stageResults?: WorkflowResult[]) {
-    const systemPrompt = `You are an expert legal document analyzer specializing in document classification and compliance assessment.
-Analyze the document and provide the following key information in JSON format:
+  private async analyzeWithAI(content: string, stageResults?: WorkflowResult[]): Promise<StageAnalysis> {
+    // Truncate content if too long
+    const maxLength = 8000;
+    const truncatedContent = content.length > maxLength ? 
+      content.slice(0, maxLength) + "..." : 
+      content;
 
+    const systemPrompt = `You are an expert legal document analyzer specializing in document classification and compliance assessment.
+Please analyze the document content and provide a response in this exact JSON format:
 {
-  "documentType": "string - document type",
-  "industry": "string - one of: TECHNOLOGY, HEALTHCARE, FINANCIAL, MANUFACTURING, RETAIL",
-  "complianceStatus": "string - one of: Compliant, Non-Compliant, Needs Review",
+  "documentType": "string - document type (e.g. 'Contract', 'SOC 3 Report', 'Policy')",
+  "industry": "string - TECHNOLOGY, HEALTHCARE, FINANCIAL, MANUFACTURING, RETAIL",
+  "complianceStatus": "string - Compliant, Non-Compliant, Needs Review",
   "confidence": "number - between 0 and 1",
   "details": {
     "findings": ["array of string findings"],
@@ -32,16 +37,18 @@ Analyze the document and provide the following key information in JSON format:
 }`;
 
     try {
+      // First try OpenAI
       const completion = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
           { role: "system", content: systemPrompt },
           { 
             role: "user", 
-            content: `Please analyze this document and identify its key characteristics:\n\n${content}`
+            content: `Please analyze this document and identify its key characteristics:\n\n${truncatedContent}`
           }
         ],
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
+        temperature: 0
       });
 
       const result = JSON.parse(completion.choices[0].message.content || "{}");
@@ -52,25 +59,39 @@ Analyze the document and provide the following key information in JSON format:
       console.error("OpenAI analysis failed, falling back to Anthropic:", error);
 
       try {
+        // Fallback to Anthropic
         const response = await anthropic.messages.create({
           model: "claude-3-opus-20240229",
           max_tokens: 1024,
+          temperature: 0,
           system: systemPrompt,
           messages: [
             { 
               role: "user", 
-              content: `Analyze this document:\n${content}`
+              content: `Analyze this document:\n${truncatedContent}`
             }
           ]
         });
 
-        // Ensure we're getting a string response
         const responseContent = response.content.find(c => c.type === 'text')?.text;
         if (!responseContent) {
           throw new Error("No text content in response");
         }
 
-        const result = JSON.parse(responseContent);
+        let result;
+        try {
+          result = JSON.parse(responseContent);
+        } catch (parseError) {
+          console.error("Failed to parse Anthropic response:", parseError);
+          // Extract JSON from the response if it's embedded in other text
+          const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            result = JSON.parse(jsonMatch[0]);
+          } else {
+            throw new Error("Could not extract valid JSON from response");
+          }
+        }
+
         console.log('Anthropic Analysis:', result);
         return this.standardizeAnalysis(result, stageResults);
 
@@ -80,10 +101,10 @@ Analyze the document and provide the following key information in JSON format:
         return {
           documentType: "Unknown",
           industry: "TECHNOLOGY",
-          complianceStatus: "Compliant",
+          complianceStatus: "Needs Review",
           complianceDetails: {
-            score: 85,
-            findings: ["Document analysis failed, using default values"]
+            score: 50,
+            findings: ["Document analysis failed, manual review required"]
           }
         };
       }
@@ -91,18 +112,43 @@ Analyze the document and provide the following key information in JSON format:
   }
 
   private standardizeAnalysis(analysis: any, stageResults?: WorkflowResult[]): StageAnalysis {
-    let complianceStatus = 'Compliant'; // Default to Compliant
+    // Ensure we have a valid analysis object
+    if (!analysis || typeof analysis !== 'object') {
+      analysis = {};
+    }
+
+    // Default compliance status
+    let complianceStatus = 'Needs Review';
     if (stageResults) {
       const complianceCheck = stageResults.find(r => r.stageType === 'compliance');
       if (complianceCheck) {
-        complianceStatus = complianceCheck.status || 'Compliant';
+        complianceStatus = complianceCheck.status || 'Needs Review';
       }
     }
 
-    // Standardize document type based on content and keywords
-    let documentType = analysis.documentType || 'Unknown';
+    // Map common document types to standardized values
+    const documentTypeMap: { [key: string]: string } = {
+      'soc': 'SOC 3 Report',
+      'soc 3': 'SOC 3 Report',
+      'soc3': 'SOC 3 Report',
+      'contract': 'Contract',
+      'policy': 'Policy Document',
+      'agreement': 'Agreement',
+      'report': 'Report'
+    };
 
-    // Standardize industry mapping
+    let documentType = 'Unknown';
+    if (analysis.documentType) {
+      const lowercaseType = analysis.documentType.toLowerCase();
+      for (const [key, value] of Object.entries(documentTypeMap)) {
+        if (lowercaseType.includes(key)) {
+          documentType = value;
+          break;
+        }
+      }
+    }
+
+    // Standardize industry values
     const industryMap: { [key: string]: string } = {
       'tech': 'TECHNOLOGY',
       'software': 'TECHNOLOGY',
@@ -119,7 +165,7 @@ Analyze the document and provide the following key information in JSON format:
       'commerce': 'RETAIL'
     };
 
-    let industry = 'TECHNOLOGY'; // Default to TECHNOLOGY
+    let industry = 'TECHNOLOGY';
     if (analysis.industry) {
       const lowercaseIndustry = analysis.industry.toLowerCase();
       for (const [key, value] of Object.entries(industryMap)) {
@@ -135,49 +181,17 @@ Analyze the document and provide the following key information in JSON format:
       industry,
       complianceStatus: analysis.complianceStatus || complianceStatus,
       complianceDetails: {
-        score: analysis.confidence ? Math.round(analysis.confidence * 100) : 85,
-        findings: analysis.details?.findings || []
+        score: analysis.confidence ? Math.round(analysis.confidence * 100) : 75,
+        findings: Array.isArray(analysis.details?.findings) ? analysis.details.findings : []
       }
     };
   }
 
-  async processWorkflowResults(workflowResults: WorkflowResult[]): Promise<DocumentMetadata> {
-    try {
-      const classificationResult = workflowResults.find(result => 
-        result.stageType === 'classification');
-
-      if (!classificationResult?.content) {
-        throw new Error("No classification content found");
-      }
-
-      const aiAnalysis = await this.analyzeWithAI(classificationResult.content, workflowResults);
-      console.log('Document Analysis Result:', aiAnalysis);
-
-      const metadata: DocumentMetadata = {
-        documentType: aiAnalysis.documentType || 'Unknown',
-        industry: aiAnalysis.industry || 'TECHNOLOGY',
-        complianceStatus: aiAnalysis.complianceStatus || 'Compliant',
-        analysisTimestamp: new Date().toISOString(),
-        confidence: aiAnalysis.complianceDetails?.score || 85,
-        classifications: [{
-          category: "LEGAL",
-          subCategory: aiAnalysis.documentType || 'Unknown',
-          tags: [aiAnalysis.industry || 'TECHNOLOGY']
-        }],
-        riskScore: aiAnalysis.complianceDetails?.score || 85
-      };
-
-      return metadata;
-    } catch (error) {
-      console.error("Error processing workflow results:", error);
-      throw error;
-    }
-  }
-
   async analyzeDocument(documentId: number, content: string, workflowResults?: WorkflowResult[]): Promise<any> {
     try {
+      console.log('Starting document analysis for ID:', documentId);
       const aiAnalysis = await this.analyzeWithAI(content, workflowResults);
-      console.log('Final Document Analysis:', aiAnalysis);
+      console.log('AI Analysis complete:', aiAnalysis);
 
       const [result] = await db.insert(vaultDocumentAnalysis).values({
         documentId,
@@ -185,7 +199,7 @@ Analyze the document and provide the following key information in JSON format:
         fileDate: new Date().toISOString(),
         documentType: aiAnalysis.documentType || 'Unknown',
         industry: aiAnalysis.industry || 'TECHNOLOGY',
-        complianceStatus: aiAnalysis.complianceStatus || 'Compliant'
+        complianceStatus: aiAnalysis.complianceStatus || 'Needs Review'
       }).returning();
 
       return {
@@ -194,9 +208,22 @@ Analyze the document and provide the following key information in JSON format:
       };
     } catch (error) {
       console.error("Document analysis failed:", error);
-      throw error;
+      // Don't throw, return a default analysis
+      return {
+        documentId,
+        fileName: `Document_${documentId}.pdf`,
+        fileDate: new Date().toISOString(),
+        documentType: 'Unknown',
+        industry: 'TECHNOLOGY',
+        complianceStatus: 'Needs Review',
+        details: {
+          score: 50,
+          findings: ['Analysis failed, please try again or review manually']
+        }
+      };
     }
   }
+
   async getDocumentAnalysis(documentId: number): Promise<any> {
     try {
       const [analysis] = await db
