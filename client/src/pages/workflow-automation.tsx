@@ -330,8 +330,8 @@ export function WorkflowAutomation() {
               "Required legal clauses present",
               "No major compliance issues detected"
             ],
-            documentType: "Contract",
-            industry: "Finance"
+            documentType: "SOC 3 Report",
+            industry: "TECHNOLOGY"
           };
 
           const complianceContent = `
