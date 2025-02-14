@@ -46,7 +46,8 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       setUploadProgress(100);
 
       if (!response.ok) {
-        throw new Error(response.statusText || 'Failed to process file');
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.details || response.statusText || 'Failed to process file');
       }
 
       const result = await response.json();
