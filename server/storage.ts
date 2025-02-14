@@ -19,8 +19,28 @@ class FirebaseSessionStore extends session.Store {
 
   async get(sid: string, callback: (err: any, session?: any) => void): Promise<void> {
     try {
+      console.log('Getting session:', sid);
       const doc = await this.collection.doc(sid).get();
-      const session = doc.exists ? JSON.parse(doc.data()!.session) : null;
+      if (!doc.exists) {
+        console.log('Session not found:', sid);
+        return callback(null, null);
+      }
+
+      const data = doc.data();
+      if (!data) {
+        console.log('Session data is empty:', sid);
+        return callback(null, null);
+      }
+
+      // Check if session has expired
+      if (data.expires && data.expires.toDate() < new Date()) {
+        console.log('Session expired:', sid);
+        await this.destroy(sid);
+        return callback(null, null);
+      }
+
+      const session = JSON.parse(data.session);
+      console.log('Session retrieved successfully:', sid);
       callback(null, session);
     } catch (error) {
       console.error('Error getting session:', error);
@@ -30,11 +50,14 @@ class FirebaseSessionStore extends session.Store {
 
   async set(sid: string, session: any, callback?: (err?: any) => void): Promise<void> {
     try {
+      console.log('Setting session:', sid);
       const sessionStr = JSON.stringify(session);
       await this.collection.doc(sid).set({
         session: sessionStr,
-        expires: session.cookie?.expires || new Date(Date.now() + 86400000) // 24h default
+        expires: session.cookie?.expires || new Date(Date.now() + 86400000), // 24h default
+        lastModified: new Date()
       });
+      console.log('Session set successfully:', sid);
       callback?.();
     } catch (error) {
       console.error('Error setting session:', error);
@@ -44,7 +67,9 @@ class FirebaseSessionStore extends session.Store {
 
   async destroy(sid: string, callback?: (err?: any) => void): Promise<void> {
     try {
+      console.log('Destroying session:', sid);
       await this.collection.doc(sid).delete();
+      console.log('Session destroyed successfully:', sid);
       callback?.();
     } catch (error) {
       console.error('Error destroying session:', error);
@@ -54,9 +79,12 @@ class FirebaseSessionStore extends session.Store {
 
   async touch(sid: string, session: any, callback?: (err?: any) => void): Promise<void> {
     try {
+      console.log('Touching session:', sid);
       await this.collection.doc(sid).update({
-        expires: session.cookie?.expires || new Date(Date.now() + 86400000)
+        expires: session.cookie?.expires || new Date(Date.now() + 86400000),
+        lastModified: new Date()
       });
+      console.log('Session touched successfully:', sid);
       callback?.();
     } catch (error) {
       console.error('Error touching session:', error);

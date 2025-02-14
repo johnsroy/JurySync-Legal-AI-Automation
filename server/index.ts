@@ -21,34 +21,6 @@ async function isPortInUse(port: number): Promise<boolean> {
   });
 }
 
-// Create a separate webhook server
-const webhookServer = express();
-webhookServer.use(cors());
-webhookServer.use(express.raw({ type: 'application/json' }));
-
-// Configure webhook routes
-webhookServer.post('/webhook', handleStripeWebhook);
-webhookServer.post('/webhook-test', (req: Request, res: Response) => {
-  try {
-    if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      return res.status(500).json({ error: 'Webhook secret not configured' });
-    }
-
-    console.log('Headers:', req.headers);
-    console.log('Body:', req.body);
-
-    return res.status(200).json({ 
-      status: 'success',
-      message: 'Webhook endpoint is accessible',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Webhook test error:', error);
-    return res.status(500).json({ error: 'Webhook test failed' });
-  }
-});
-
-// Create main application
 const app = express();
 
 // Configure API specific middleware
@@ -87,9 +59,25 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
 
 (async () => {
   try {
-    // Initialize Firebase collections
-    await initializeFirestore();
-    console.log('Firebase collections initialized successfully');
+    console.log('Initializing Firebase...');
+
+    // Initialize Firebase collections with retries
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        await initializeFirestore();
+        console.log('Firebase collections initialized successfully');
+        break;
+      } catch (error) {
+        retries--;
+        if (retries === 0) {
+          console.error('Failed to initialize Firebase after retries:', error);
+          throw error;
+        }
+        console.log(`Retrying Firebase initialization... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+      }
+    }
 
     try {
       // Register routes
@@ -97,6 +85,7 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
       console.log('Routes registered successfully');
     } catch (error) {
       console.error('Failed to register routes:', error);
+      throw error;
     }
 
     // API error handling
@@ -118,16 +107,6 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
           })
         });
       }
-    });
-
-    // Start webhook server first
-    let webhookPort = 5001;
-    while (await isPortInUse(webhookPort)) {
-      console.log(`Port ${webhookPort} is in use, trying ${webhookPort + 1}`);
-      webhookPort++;
-    }
-    webhookServer.listen(webhookPort, '0.0.0.0', () => {
-      console.log(`Webhook server running at http://0.0.0.0:${webhookPort}`);
     });
 
     // Setup Vite or serve static files for main application
