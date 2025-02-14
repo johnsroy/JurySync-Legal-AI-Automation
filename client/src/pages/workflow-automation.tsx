@@ -324,7 +324,7 @@ export function WorkflowAutomation() {
           // Simplified compliance check
           const complianceResult = {
             score: 85,
-            status: "Compliant", // Changed from "COMPLIANT" to match display format
+            status: "Compliant",
             findings: [
               "Document structure follows standard format",
               "Required legal clauses present",
@@ -417,7 +417,7 @@ export function WorkflowAutomation() {
 
           const documentType = complianceStage?.documentType || "Compliance Document";
           const industry = complianceStage?.industry || "TECHNOLOGY";
-          const complianceStatus = complianceStage?.complianceStatus || "Pending Review";
+          const complianceStatus = complianceStage?.status || "Pending Review"; // Corrected line
 
           const analysisContent = `
             <h2>Final Document Analysis</h2>
