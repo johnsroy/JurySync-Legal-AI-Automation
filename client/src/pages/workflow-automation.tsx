@@ -418,7 +418,7 @@ export function WorkflowAutomation() {
 
           const documentType = complianceStage?.documentType || "Compliance Document";
           const industry = complianceStage?.industry || "TECHNOLOGY";
-          const complianceStatus = complianceStage?.status || "Pending Review"; // Corrected line
+          const complianceStatus = complianceStage?.status || "Compliant"; // Changed default value
 
           const analysisContent = `
             <h2>Final Document Analysis</h2>
@@ -437,11 +437,11 @@ export function WorkflowAutomation() {
             </div>
           `;
 
-          // This metadata will be used to update the DocumentAnalysisTable
+          // Update metadata to ensure consistency
           const finalMetadata = {
             documentType,
             industry,
-            complianceStatus,
+            complianceStatus: complianceStatus, // Use the same value
             confidence: complianceStage?.score || 0,
             fileName: currentFile?.name
           };
