@@ -34,7 +34,7 @@ import { ApprovalForm } from "@/components/ApprovalForm";
 import { documentAnalyticsService } from "@/services/documentAnalytics";
 import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
 import { generateDraftAnalysis } from "@/services/anthropic-service";
-import anthropic from "@/lib/anthropic"; // Assuming this import is needed
+import { classifyDocument } from "@/services/documentClassification";
 
 
 // Document cleaning utility
@@ -346,61 +346,33 @@ export function WorkflowAutomation() {
         name: "Compliance Check",
         handler: async () => {
           try {
-            const response = await anthropic.messages.create({
-              model: "claude-3-5-sonnet-20241022",
-              max_tokens: 1000,
-              messages: [
-                {
-                  role: "user",
-                  content: `Analyze this document for compliance and classification:
-
-                    Document content: ${documentText}
-
-                    Provide a detailed analysis including:
-                    1. Document type identification
-                    2. Industry classification
-                    3. Compliance assessment
-                    4. Risk level evaluation`
-                }
-              ]
-            });
-
-            const analysis = response.content[0].text;
-
-            // Extract document metadata using AI
-            const metadataResponse = await anthropic.messages.create({
-              model: "claude-3-5-sonnet-20241022",
-              max_tokens: 500,
-              system: "Extract document metadata in JSON format with keys: documentType, industry, complianceStatus, score",
-              messages: [
-                {
-                  role: "user",
-                  content: `Based on this analysis, provide document metadata:
-                    ${analysis}`
-                }
-              ]
-            });
-
-            const metadata = JSON.parse(metadataResponse.content[0].text);
+            const classification = await classifyDocument(documentText);
 
             const complianceContent = `
               <h2>Compliance Analysis Report</h2>
-              <p><strong>Document Type:</strong> ${metadata.documentType}</p>
-              <p><strong>Industry:</strong> ${metadata.industry}</p>
-              <p><strong>Compliance Score:</strong> ${metadata.score}%</p>
-              <h3>Analysis Details:</h3>
-              ${analysis}
+              <p><strong>Document Type:</strong> ${classification.documentType}</p>
+              <p><strong>Industry:</strong> ${classification.industry}</p>
+              <p><strong>Compliance Status:</strong> ${classification.complianceStatus}</p>
+              <p><strong>Confidence Score:</strong> ${classification.confidence}%</p>
+              <h3>Key Findings:</h3>
+              <ul>
+                ${classification.details.keyFindings.map(finding => `<li>${finding}</li>`).join('')}
+              </ul>
+              <h3>Recommendations:</h3>
+              <ul>
+                ${classification.details.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+              </ul>
             `;
 
             return {
               content: complianceContent,
               title: "Compliance Analysis Report",
               metadata: {
-                status: metadata.complianceStatus,
-                complianceStatus: metadata.complianceStatus,
-                score: metadata.score,
-                documentType: metadata.documentType,
-                industry: metadata.industry
+                status: classification.complianceStatus,
+                complianceStatus: classification.complianceStatus,
+                score: classification.confidence,
+                documentType: classification.documentType,
+                industry: classification.industry
               }
             };
           } catch (error) {
