@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +10,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // Define allowed roles that can upload documents
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
@@ -18,7 +17,7 @@ const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
 interface DocumentAnalysis {
   documentType: string;
   industry: string;
-  complianceStatus?: string;
+  complianceStatus: string;
   confidence?: number;
   details?: {
     findings: string[];
@@ -32,12 +31,7 @@ interface Document {
   id: number;
   title: string;
   createdAt: string;
-  analysis?: DocumentAnalysis;
-  metadata?: {
-    documentType?: string;
-    industry?: string;
-    complianceStatus?: string;
-  };
+  analysis: DocumentAnalysis;
 }
 
 export default function VaultPage() {
@@ -47,13 +41,19 @@ export default function VaultPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // File upload handler using react-dropzone
-  const onDrop = (acceptedFiles: File[]) => {
-    acceptedFiles.forEach(file => {
+  // File upload handler
+  const onDrop = async (acceptedFiles: File[]) => {
+    const promises = acceptedFiles.map(file => {
       const formData = new FormData();
       formData.append('file', file);
-      uploadMutation.mutate(formData);
+      return uploadMutation.mutateAsync(formData);
     });
+
+    try {
+      await Promise.all(promises);
+    } catch (error) {
+      console.error('Upload failed:', error);
+    }
   };
 
   const { getRootProps, getInputProps } = useDropzone({
@@ -80,36 +80,31 @@ export default function VaultPage() {
     }
   };
 
-  // Fetch documents from vault
-  const { data: documentsData, isLoading: isLoadingDocuments } = useQuery({
+  // Fetch documents
+  const { data: documents = [], isLoading } = useQuery({
     queryKey: ['/api/vault/documents'],
     queryFn: async () => {
       try {
-        console.log('Fetching documents...');
         const response = await apiRequest('GET', '/api/vault/documents');
         const data = await response.json();
-        console.log('Fetched documents:', data);
         return data.documents;
       } catch (error) {
         console.error('Error fetching documents:', error);
         throw error;
       }
-    }
+    },
+    staleTime: 1000, // Consider data fresh for 1 second
+    cacheTime: 5 * 60 * 1000, // Keep data in cache for 5 minutes
   });
 
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (documentId: number) => {
-      try {
-        const response = await apiRequest('DELETE', `/api/vault/documents/${documentId}`);
-        if (!response.ok) {
-          throw new Error('Failed to delete document');
-        }
-        return response.json();
-      } catch (error: any) {
-        console.error('Delete operation failed:', error);
-        throw error;
+      const response = await apiRequest('DELETE', `/api/vault/documents/${documentId}`);
+      if (!response.ok) {
+        throw new Error('Failed to delete document');
       }
+      return response.json();
     },
     onSuccess: () => {
       toast({
@@ -119,7 +114,6 @@ export default function VaultPage() {
       queryClient.invalidateQueries({ queryKey: ['/api/vault/documents'] });
     },
     onError: (error: any) => {
-      console.error('Delete mutation error:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to delete document',
@@ -137,7 +131,7 @@ export default function VaultPage() {
       }
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({
         title: 'Success',
         description: 'Document uploaded and analyzed successfully',
@@ -155,18 +149,24 @@ export default function VaultPage() {
 
   const canUpload = user && UPLOAD_ALLOWED_ROLES.includes(user.role);
 
-  // Function to render document type with proper mapping
+  // Function to render document type with proper M&A classification
   const renderDocumentType = (doc: Document) => {
-    const type = doc.analysis?.documentType || doc.metadata?.documentType;
+    const type = doc.analysis?.documentType;
     if (!type) return "Unknown";
+
+    // Special handling for M&A documents to ensure proper display
+    if (type.toLowerCase().includes('m&a') || 
+        type.toLowerCase().includes('merger') || 
+        type.toLowerCase().includes('acquisition')) {
+      return type.startsWith('M&A Agreement') ? type : `M&A Agreement - ${type}`;
+    }
 
     return type;
   };
 
   // Function to render compliance status
   const renderComplianceStatus = (doc: Document) => {
-    const status = doc.analysis?.complianceStatus || doc.metadata?.complianceStatus;
-    if (!status) return null;
+    if (!doc.analysis?.complianceStatus) return null;
 
     const statusColors = {
       'Compliant': 'text-green-600 bg-green-50',
@@ -174,11 +174,11 @@ export default function VaultPage() {
       'Needs Review': 'text-yellow-600 bg-yellow-50'
     };
 
-    const statusColor = statusColors[status as keyof typeof statusColors] || 'text-gray-600 bg-gray-50';
+    const statusColor = statusColors[doc.analysis.complianceStatus as keyof typeof statusColors] || 'text-gray-600 bg-gray-50';
 
     return (
       <span className={`px-2 py-1 rounded-full text-xs ${statusColor}`}>
-        {status}
+        {doc.analysis.complianceStatus}
       </span>
     );
   };
@@ -240,13 +240,13 @@ export default function VaultPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {isLoadingDocuments ? (
+                  {isLoading ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-4">
                         <span className="animate-spin mr-2">⌛</span> Loading documents...
                       </TableCell>
                     </TableRow>
-                  ) : !documentsData?.length ? (
+                  ) : !documents.length ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-4">
                         <div className="flex flex-col items-center justify-center">
@@ -259,7 +259,7 @@ export default function VaultPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    documentsData.map((doc: Document) => (
+                    documents.map((doc: Document) => (
                       <TableRow key={doc.id}>
                         <TableCell>
                           <div className="flex items-center space-x-3">
@@ -274,7 +274,7 @@ export default function VaultPage() {
                         </TableCell>
                         <TableCell>{renderDocumentType(doc)}</TableCell>
                         <TableCell>
-                          {doc.analysis?.industry || doc.metadata?.industry || "Unknown"}
+                          {doc.analysis?.industry || "Unknown"}
                         </TableCell>
                         <TableCell>
                           {renderComplianceStatus(doc)}
@@ -329,10 +329,10 @@ export default function VaultPage() {
                 <div>
                   <h4 className="font-medium text-sm text-gray-900">Industry</h4>
                   <p className="text-sm text-gray-700">
-                    {selectedDocument.analysis?.industry || selectedDocument.metadata?.industry || "Unknown"}
+                    {selectedDocument.analysis?.industry || "Unknown"}
                   </p>
                 </div>
-                {(selectedDocument.analysis?.complianceStatus || selectedDocument.metadata?.complianceStatus) && (
+                {selectedDocument.analysis?.complianceStatus && (
                   <div>
                     <h4 className="font-medium text-sm text-gray-900">Compliance Status</h4>
                     <div className="mt-1">
@@ -348,7 +348,7 @@ export default function VaultPage() {
                         <p className="text-sm text-gray-700">{selectedDocument.analysis.details.scope}</p>
                       </div>
                     )}
-                    {selectedDocument.analysis.details.findings.length > 0 && (
+                    {selectedDocument.analysis.details.findings?.length > 0 && (
                       <div>
                         <h4 className="font-medium text-sm text-gray-900">Key Findings</h4>
                         <ul className="list-disc pl-5 text-sm text-gray-700">
@@ -358,7 +358,7 @@ export default function VaultPage() {
                         </ul>
                       </div>
                     )}
-                    {selectedDocument.analysis.details.recommendations.length > 0 && (
+                    {selectedDocument.analysis.details.recommendations?.length > 0 && (
                       <div>
                         <h4 className="font-medium text-sm text-gray-900">Recommendations</h4>
                         <ul className="list-disc pl-5 text-sm text-gray-700">

@@ -7,9 +7,9 @@ import { anthropic } from "../anthropic";
 import { documentClassificationAgent } from "./documentClassificationAgent";
 
 interface StageAnalysis {
-  documentType?: string;
-  industry?: string;
-  complianceStatus?: string;
+  documentType: string;
+  industry: string;
+  complianceStatus: string;
   complianceDetails?: {
     score: number | null;
     findings: string[];
@@ -20,7 +20,6 @@ interface StageAnalysis {
 }
 
 export class DocumentAnalyticsService {
-  // Map to standardize industry classifications
   private industryMap: { [key: string]: string } = {
     'tech': 'TECHNOLOGY',
     'software': 'TECHNOLOGY',
@@ -48,15 +47,17 @@ export class DocumentAnalyticsService {
       content;
 
     try {
-      // First attempt classification with the specialized agent
-      const classification = await documentClassificationAgent.classifyDocument(truncatedContent);
-      console.log('Initial classification:', classification);
+      console.log('Starting document analysis with AI...');
 
-      // Refine the classification with additional mapping
+      // Use the enhanced document classification agent
+      const classification = await documentClassificationAgent.classifyDocument(truncatedContent);
+      console.log('Initial classification result:', classification);
+
+      // Refine the classification
       const refinedClassification = documentClassificationAgent.refineClassification(classification);
       console.log('Refined classification:', refinedClassification);
 
-      // Map the industry using our standardized mapping
+      // Map industry using standardized mapping
       let mappedIndustry = refinedClassification.metadata?.industry?.toUpperCase() || 'TECHNOLOGY';
       for (const [key, value] of Object.entries(this.industryMap)) {
         if (mappedIndustry.toLowerCase().includes(key)) {
@@ -65,16 +66,12 @@ export class DocumentAnalyticsService {
         }
       }
 
-      // Validate compliance status
-      const validComplianceStatuses = ['Compliant', 'Non-Compliant', 'Needs Review'];
-      const complianceStatus = validComplianceStatuses.includes(refinedClassification.complianceStatus || '')
-        ? refinedClassification.complianceStatus
-        : 'Needs Review';
+      console.log('Mapped industry:', mappedIndustry);
 
       return {
         documentType: refinedClassification.documentType,
         industry: mappedIndustry,
-        complianceStatus,
+        complianceStatus: refinedClassification.complianceStatus,
         complianceDetails: {
           score: Math.round((refinedClassification.confidence || 0) * 100),
           findings: [],
@@ -104,6 +101,8 @@ export class DocumentAnalyticsService {
         industry: aiAnalysis.industry,
         complianceStatus: aiAnalysis.complianceStatus
       }).returning();
+
+      console.log('Analysis stored in database:', result);
 
       return {
         ...result,
