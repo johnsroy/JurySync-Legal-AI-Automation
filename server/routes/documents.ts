@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
 import PDFDocument from "pdfkit";
-import { multiAgentService } from "../services/multiAgentService";
+import { approvalAuditService } from "../services/approvalAuditService";
 import { analyzeDocument } from "../services/documentAnalysisService";
 import { 
   getAllTemplates, 
@@ -17,15 +17,14 @@ import {
   getCustomInstructionSuggestions,
   generateContract 
 } from "../services/templateStore";
-import { approvalAuditService } from "../services/approvalAuditService";
 
 const router = Router();
 
-// Configure multer for file uploads with increased size limit
+// Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 20 * 1024 * 1024 // 20MB limit
+    fileSize: 10 * 1024 * 1024 // 10MB limit
   },
   fileFilter: (_req, file, cb) => {
     const allowedMimes = [
@@ -40,170 +39,6 @@ const upload = multer({
     } else {
       cb(new Error(`Invalid file type: ${file.mimetype}. Only PDF and Word documents are supported.`));
     }
-  }
-});
-
-// Update the document upload endpoint
-router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    console.log("Processing document upload:", {
-      filename: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size
-    });
-
-    let content = '';
-
-    // Extract content based on file type
-    try {
-      if (req.file.mimetype.includes('pdf')) {
-        content = await analyzePDFContent(req.file.buffer, -1);
-      } else if (req.file.mimetype.includes('word')) {
-        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-        content = result.value;
-      } else if (req.file.mimetype.includes('plain')) {
-        content = req.file.buffer.toString('utf8');
-      }
-
-      if (!content || !content.trim()) {
-        throw new Error('Failed to extract content from document');
-      }
-
-      // Clean content
-      content = content
-        .replace(/\u0000/g, '')
-        .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
-        .replace(/[\u0000-\u001F]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .replace(/<!DOCTYPE[^>]*>/g, '')
-        .replace(/<\/?[^>]+(>|$)/g, '')
-        .trim();
-
-      console.log("Content extracted and cleaned, length:", content.length);
-
-      // Quick initial analysis for document type and industry
-      const quickAnalysis = await analyzeDocument(content);
-
-      // Create document record in database with initial metadata
-      const [document] = await db.insert(documents).values({
-        userId: req.user?.id || 1,
-        title: req.file.originalname,
-        content: content,
-        processingStatus: "PROCESSING",
-        agentType: "LEGAL_RESEARCH",
-        analysis: {
-          documentType: quickAnalysis.documentType || "Unknown",
-          industry: quickAnalysis.industry || "TECHNOLOGY",
-          classification: "Analysis in Progress",
-          confidence: 0.75,
-          source: "workflow-automation"
-        }
-      }).returning();
-
-      // Start async processing of AI analysis
-      setTimeout(async () => {
-        try {
-          // Perform comprehensive analysis in background
-          const [draftResult, complianceResult, researchResult] = await Promise.all([
-            multiAgentService.generateDraft(content),
-            multiAgentService.performComplianceCheck(content),
-            multiAgentService.conductLegalResearch(content)
-          ]);
-
-          // Update document with complete analysis
-          await db
-            .update(documents)
-            .set({
-              processingStatus: "COMPLETED",
-              analysis: {
-                ...quickAnalysis,
-                documentType: quickAnalysis.documentType,
-                industry: quickAnalysis.industry,
-                classification: quickAnalysis.classification,
-                complianceStatus: quickAnalysis.complianceStatus,
-                draftSuggestions: draftResult.suggestions,
-                complianceFindings: complianceResult.findings,
-                relatedDocuments: researchResult.relatedDocuments,
-                recommendations: researchResult.recommendations,
-                lastUpdated: new Date().toISOString()
-              }
-            })
-            .where(eq(documents.id, document.id));
-
-          console.log("Background analysis completed for document:", document.id);
-        } catch (error) {
-          console.error("Background analysis error:", error);
-          await db
-            .update(documents)
-            .set({
-              processingStatus: "ERROR",
-              analysis: {
-                ...quickAnalysis,
-                error: error.message
-              }
-            })
-            .where(eq(documents.id, document.id));
-        }
-      }, 0);
-
-      // Return immediate response with document ID and initial metadata
-      return res.json({
-        documentId: document.id,
-        title: document.title,
-        text: content.substring(0, 1000) + "...", // Preview only
-        analysis: {
-          documentType: quickAnalysis.documentType,
-          industry: quickAnalysis.industry,
-          classification: quickAnalysis.classification,
-          status: "PROCESSING"
-        },
-        message: "Document uploaded successfully. Full analysis in progress."
-      });
-
-    } catch (extractError: any) {
-      console.error("Content extraction error:", extractError);
-      return res.status(400).json({
-        error: "Failed to process document content",
-        details: extractError.message
-      });
-    }
-
-  } catch (error: any) {
-    console.error("Document upload error:", error);
-    return res.status(500).json({ 
-      error: "Failed to process document",
-      details: error.message
-    });
-  }
-});
-
-// Get document analysis status
-router.get("/api/workflow/documents/:id/status", async (req, res) => {
-  try {
-    const documentId = parseInt(req.params.id);
-    const [document] = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.id, documentId));
-
-    if (!document) {
-      return res.status(404).json({ error: "Document not found" });
-    }
-
-    return res.json({
-      id: document.id,
-      title: document.title,
-      processingStatus: document.processingStatus,
-      analysis: document.analysis
-    });
-
-  } catch (error: any) {
-    console.error("Error fetching document status:", error);
-    return res.status(500).json({ error: "Failed to fetch document status" });
   }
 });
 
@@ -324,6 +159,104 @@ router.post("/api/documents/generate", async (req, res) => {
   }
 });
 
+// Update the document upload endpoint
+router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    console.log("Processing document upload:", {
+      filename: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    });
+
+    let content = '';
+
+    // Extract content based on file type
+    try {
+      if (req.file.mimetype.includes('pdf')) {
+        content = await analyzePDFContent(req.file.buffer, -1);
+      } else if (req.file.mimetype.includes('word')) {
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        content = result.value;
+      } else if (req.file.mimetype.includes('plain')) {
+        content = req.file.buffer.toString('utf8');
+      }
+
+      if (!content || !content.trim()) {
+        throw new Error('Failed to extract content from document');
+      }
+
+      // Clean content
+      content = content
+        .replace(/\u0000/g, '')
+        .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
+        .replace(/[\u0000-\u001F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/<!DOCTYPE[^>]*>/g, '')
+        .replace(/<\/?[^>]+(>|$)/g, '')
+        .trim();
+
+      console.log("Content extracted and cleaned, length:", content.length);
+
+      // Create document record in database
+      const [document] = await db.insert(documents).values({
+        userId: req.user?.id || 1,
+        title: req.file.originalname,
+        content: content,
+        processingStatus: "COMPLETED",
+        agentType: "LEGAL_RESEARCH",
+        analysis: {
+          documentType: "Unknown",
+          industry: "TECHNOLOGY",
+          classification: "Pending Analysis",
+          confidence: 0.75,
+          source: "workflow-automation"
+        }
+      }).returning();
+
+      // Analyze the document after saving
+      const analysis = await analyzeDocument(content);
+
+      console.log("Document uploaded successfully:", {
+        id: document.id,
+        title: document.title,
+        contentLength: content.length,
+        documentType: analysis.documentType,
+        industry: analysis.industry
+      });
+
+      return res.json({
+        documentId: document.id,
+        title: document.title,
+        text: content,
+        analysis: {
+          documentType: analysis.documentType,
+          industry: analysis.industry,
+          classification: analysis.classification,
+          complianceStatus: analysis.complianceStatus
+        },
+        status: "COMPLETED"
+      });
+
+    } catch (extractError: any) {
+      console.error("Content extraction error:", extractError);
+      return res.status(400).json({
+        error: "Failed to process document content",
+        details: extractError.message
+      });
+    }
+
+  } catch (error: any) {
+    console.error("Document upload error:", error);
+    return res.status(500).json({ 
+      error: "Failed to process document",
+      details: error.message
+    });
+  }
+});
 
 // Delete document endpoint
 router.delete("/api/workflow/documents/:id", async (req, res) => {
@@ -471,6 +404,64 @@ router.get("/api/documents/:id/download/pdf", async (req, res) => {
   }
 });
 
+
+// Get requirement suggestions
+router.post("/api/templates/:id/suggest-requirements", async (req, res) => {
+  try {
+    const templateId = req.params.id;
+    const { currentDescription } = req.body;
+
+    console.log(`[Templates] Generating suggestions for template: ${templateId}`, {
+      templateId,
+      currentDescription
+    });
+
+    const suggestions = await suggestRequirements(templateId, currentDescription);
+
+    console.log(`[Templates] Generated ${suggestions.length} suggestions:`, 
+      JSON.stringify(suggestions, null, 2)
+    );
+
+    return res.json(suggestions);
+  } catch (error: any) {
+    console.error("[Templates] Suggestion error:", error);
+    return res.status(500).json({ 
+      error: "Failed to generate suggestions",
+      code: "SUGGESTION_ERROR",
+      details: error.message 
+    });
+  }
+});
+
+// Get autocomplete suggestions
+router.get("/api/templates/:id/autocomplete", async (req, res) => {
+  try {
+    const templateId = req.params.id;
+    const partialText = req.query.text as string;
+
+    if (!partialText) {
+      return res.status(400).json({
+        error: "Missing partial text",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    console.log(`[Templates] Getting autocomplete for: ${partialText}`);
+
+    const suggestions = await getAutocomplete(templateId, partialText);
+
+    console.log(`[Templates] Generated ${suggestions.suggestions.length} autocomplete suggestions`);
+
+    return res.json(suggestions);
+  } catch (error: any) {
+    console.error("[Templates] Autocomplete error:", error);
+    return res.status(500).json({ 
+      error: "Failed to get autocomplete suggestions",
+      code: "AUTOCOMPLETE_ERROR",
+      details: error.message 
+    });
+  }
+});
 
 // Approval Analysis endpoint
 router.post("/api/workflow/approval-analysis", async (req, res) => {
