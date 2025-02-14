@@ -22,6 +22,8 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
   const MAX_RETRIES = 3;
 
   const processFile = async (file: File, attempt: number = 0): Promise<void> => {
+    if (isProcessing) return;
+
     setIsProcessing(true);
     setError(null);
     setUploadProgress(0);
@@ -33,7 +35,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       // Simulate upload progress
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => Math.min(prev + 10, 90));
-      }, 100);
+      }, 500);
 
       const response = await fetch("/api/workflow/upload", {
         method: "POST",
@@ -44,18 +46,21 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       setUploadProgress(100);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to process file');
+        throw new Error(response.statusText || 'Failed to process file');
       }
 
       const result = await response.json();
 
+      if (!result || typeof result !== 'object') {
+        throw new Error('Invalid response format from server');
+      }
+
       if (!result.text || typeof result.text !== 'string') {
-        throw new Error('Invalid response format: missing or invalid text content');
+        throw new Error('Missing or invalid text content in response');
       }
 
       if (!result.documentId) {
-        throw new Error('Invalid response format: missing document ID');
+        throw new Error('Missing document ID in response');
       }
 
       // Clean the text before passing it back
@@ -65,7 +70,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
         .trim();
 
       if (!cleanedText) {
-        throw new Error('No valid text content could be extracted from the document');
+        throw new Error('No valid text content could be extracted');
       }
 
       onFileProcessed({
@@ -74,27 +79,30 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
         fileName: file.name
       });
 
-      // Reset retry count on success
+      // Reset states on success
       setRetryCount(0);
       setError(null);
+      setIsProcessing(false);
     } catch (err) {
       console.error('File processing error:', err);
       const errorMessage = err instanceof Error ? err.message : "Failed to process file";
 
-      // Implement retry logic
-      if (attempt < MAX_RETRIES) {
+      // Implement retry logic for specific errors
+      if (attempt < MAX_RETRIES && (
+        errorMessage.includes('Failed to process') || 
+        errorMessage.includes('Invalid response') ||
+        errorMessage.includes('Missing')
+      )) {
         setRetryCount(attempt + 1);
         setError(`Upload attempt ${attempt + 1} failed. Retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Exponential backoff
+        setIsProcessing(false);
         return processFile(file, attempt + 1);
       }
 
-      setError(`${errorMessage} (After ${MAX_RETRIES} attempts)`);
+      setError(`${errorMessage} (After ${attempt + 1} attempts)`);
       onError(errorMessage);
-    } finally {
-      if (attempt === MAX_RETRIES || !error) {
-        setIsProcessing(false);
-      }
+      setIsProcessing(false);
     }
   };
 
@@ -103,10 +111,9 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
 
     // Update the uploaded files list if callback provided
     if (setUploadedFiles) {
-      setUploadedFiles(prevFiles => {
+      setUploadedFiles(prev => {
         // Create a new array with both old and new files
-        const updatedFiles = [...prevFiles, ...acceptedFiles];
-        return updatedFiles;
+        return [...(prev || []), ...acceptedFiles];
       });
     }
 
@@ -123,7 +130,8 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt']
     },
-    multiple
+    multiple,
+    disabled: isProcessing
   });
 
   const handleRetry = useCallback(() => {
@@ -138,9 +146,9 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       <div
         {...getRootProps()}
         className={cn(
-          "border-2 border-dashed rounded-lg p-8 transition-colors duration-200 cursor-pointer",
+          "border-2 border-dashed rounded-lg p-8 transition-colors duration-200",
           isDragActive ? "border-primary bg-primary/5" : "border-gray-200",
-          isProcessing && "pointer-events-none opacity-50"
+          isProcessing ? "pointer-events-none opacity-50" : "cursor-pointer"
         )}
       >
         <input {...getInputProps()} />
