@@ -23,6 +23,7 @@ import { documentAnalyticsService } from "@/services/documentAnalytics";
 import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
 import { generateDraftAnalysis } from "@/services/anthropic-service";
 import { LogOut } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 
 // Document cleaning utility
@@ -188,6 +189,7 @@ export function WorkflowAutomation() {
     industry: string;
     complianceStatus: string;
   }>>([]);
+  const [isLogoHovered, setIsLogoHovered] = useState(false);
 
   // Effect to update document analysis based on workflow completion
   useEffect(() => {
@@ -580,6 +582,15 @@ export function WorkflowAutomation() {
     }
   ];
 
+  const logoVariants = {
+    initial: { scale: 1, rotate: 0 },
+    hover: { scale: 1.1, rotate: 360, transition: { duration: 0.6 } }
+  };
+
+  const textVariants = {
+    initial: { x: 0, opacity: 1 },
+    hover: { x: 10, opacity: 0.8, transition: { duration: 0.3 } }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
@@ -616,10 +627,28 @@ export function WorkflowAutomation() {
 
       {/* Sidebar Navigation */}
       <div className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-10">
-        <div className="flex items-center gap-2 p-4 mb-6">
-          <Shield className="h-6 w-6 text-primary" />
-          <span className="text-xl font-bold">JurySync</span>
-        </div>
+        <motion.div 
+          className="flex items-center gap-2 p-4 mb-6 cursor-pointer"
+          onHoverStart={() => setIsLogoHovered(true)}
+          onHoverEnd={() => setIsLogoHovered(false)}
+          onClick={() => setIsLogoHovered(!isLogoHovered)}
+        >
+          <motion.div
+            variants={logoVariants}
+            initial="initial"
+            animate={isLogoHovered ? "hover" : "initial"}
+          >
+            <Shield className="h-6 w-6 text-primary" />
+          </motion.div>
+          <motion.span 
+            className="text-xl font-bold"
+            variants={textVariants}
+            initial="initial"
+            animate={isLogoHovered ? "hover" : "initial"}
+          >
+            JurySync
+          </motion.span>
+        </motion.div>
 
         <nav className="space-y-1 px-2">
           <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
