@@ -1,7 +1,5 @@
-import { db } from "../db";
 import { DocumentMetadata, WorkflowResult } from "@shared/types";
-import { vaultDocumentAnalysis } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { documentsCollection, analysisCollection, db } from "../firebase";
 import { documentClassificationAgent } from "./documentClassificationAgent";
 
 interface StageAnalysis {
@@ -76,42 +74,36 @@ export class DocumentAnalyticsService {
     }
   }
 
-  async analyzeDocument(documentId: number, content: string, workflowResults?: WorkflowResult[]): Promise<any> {
+  async analyzeDocument(documentId: string, content: string, workflowResults?: WorkflowResult[]): Promise<any> {
     try {
       console.log('Starting document analysis for ID:', documentId);
       const aiAnalysis = await this.analyzeWithAI(content, workflowResults);
       console.log('AI Analysis complete:', aiAnalysis);
 
-      const [result] = await db.insert(vaultDocumentAnalysis).values({
+      const analysisData = {
         documentId,
         fileName: `Document_${documentId}.pdf`,
-        fileDate: new Date().toISOString(),
+        fileDate: new Date(),
         documentType: aiAnalysis.documentType,
         industry: aiAnalysis.industry,
-        complianceStatus: aiAnalysis.complianceStatus
-      }).returning();
-
-      console.log('Analysis stored in database:', result);
-
-      return {
-        ...result,
+        complianceStatus: aiAnalysis.complianceStatus,
         details: aiAnalysis.complianceDetails
       };
+
+      await analysisCollection.doc(documentId).set(analysisData);
+      console.log('Analysis stored in database:', analysisData);
+
+      return analysisData;
     } catch (error) {
       console.error("Document analysis failed:", error);
       throw error;
     }
   }
 
-  async getDocumentAnalysis(documentId: number): Promise<any> {
+  async getDocumentAnalysis(documentId: string): Promise<any> {
     try {
-      const [analysis] = await db
-        .select()
-        .from(vaultDocumentAnalysis)
-        .where(eq(vaultDocumentAnalysis.documentId, documentId))
-        .limit(1);
-
-      return analysis || null;
+      const analysisDoc = await analysisCollection.doc(documentId).get();
+      return analysisDoc.exists ? analysisDoc.data() : null;
     } catch (error) {
       console.error("Error fetching document analysis:", error);
       return null;

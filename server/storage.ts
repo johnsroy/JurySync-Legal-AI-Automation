@@ -1,12 +1,8 @@
-import { users, type User } from "@shared/schema";
+import { type User } from "@shared/schema";
 import { type InsertUser } from "@shared/schema";
-import { db } from "./db";
-import { eq } from "drizzle-orm";
 import session from "express-session";
-import connectPg from "connect-pg-simple";
-import { pool } from "./db";
-
-const PostgresSessionStore = connectPg(session);
+import { db, usersCollection } from "./firebase";
+import { FirebaseError } from "firebase-admin";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -17,25 +13,56 @@ export interface IStorage {
   sessionStore: session.Store;
 }
 
-export class DatabaseStorage implements IStorage {
+// Firebase Session Store implementation
+class FirebaseSessionStore extends session.Store {
+  private collection = db.collection('sessions');
+
+  async get(sid: string, callback: (err: any, session?: any) => void): Promise<void> {
+    try {
+      const doc = await this.collection.doc(sid).get();
+      const session = doc.exists ? JSON.parse(doc.data()!.session) : null;
+      callback(null, session);
+    } catch (error) {
+      callback(error);
+    }
+  }
+
+  async set(sid: string, session: any, callback?: (err?: any) => void): Promise<void> {
+    try {
+      const sessionStr = JSON.stringify(session);
+      await this.collection.doc(sid).set({
+        session: sessionStr,
+        expires: new Date(session.cookie.expires)
+      });
+      callback?.();
+    } catch (error) {
+      callback?.(error);
+    }
+  }
+
+  async destroy(sid: string, callback?: (err?: any) => void): Promise<void> {
+    try {
+      await this.collection.doc(sid).delete();
+      callback?.();
+    } catch (error) {
+      callback?.(error);
+    }
+  }
+}
+
+export class FirebaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({
-      pool,
-      tableName: 'session',
-      createTableIfMissing: true,
-    });
+    this.sessionStore = new FirebaseSessionStore();
   }
 
   async getUser(id: number): Promise<User | undefined> {
     try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
-      return user;
+      const snapshot = await usersCollection.where('id', '==', id).limit(1).get();
+      if (snapshot.empty) return undefined;
+      const userData = snapshot.docs[0].data();
+      return this.convertToUser(userData);
     } catch (error) {
       console.error('Error getting user:', error);
       throw error;
@@ -44,12 +71,10 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.username, username))
-        .limit(1);
-      return user;
+      const snapshot = await usersCollection.where('username', '==', username).limit(1).get();
+      if (snapshot.empty) return undefined;
+      const userData = snapshot.docs[0].data();
+      return this.convertToUser(userData);
     } catch (error) {
       console.error('Error getting user by username:', error);
       throw error;
@@ -58,12 +83,10 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
-      return user;
+      const snapshot = await usersCollection.where('email', '==', email).limit(1).get();
+      if (snapshot.empty) return undefined;
+      const userData = snapshot.docs[0].data();
+      return this.convertToUser(userData);
     } catch (error) {
       console.error('Error getting user by email:', error);
       throw error;
@@ -73,14 +96,25 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     try {
       console.log('Creating user:', { ...insertUser, password: '[REDACTED]' });
-      const [user] = await db
-        .insert(users)
-        .values({
-          ...insertUser,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        })
-        .returning();
+
+      // Generate a numeric ID for the user
+      const counterDoc = await db.collection('counters').doc('users').get();
+      let nextId = 1;
+
+      if (counterDoc.exists) {
+        nextId = (counterDoc.data()?.value || 0) + 1;
+      }
+
+      await db.collection('counters').doc('users').set({ value: nextId });
+
+      const user: User = {
+        ...insertUser,
+        id: nextId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await usersCollection.doc(nextId.toString()).set(user);
       console.log('User created successfully:', { id: user.id });
       return user;
     } catch (error) {
@@ -91,20 +125,37 @@ export class DatabaseStorage implements IStorage {
 
   async updateUser(id: number, updates: Partial<User>): Promise<User> {
     try {
-      const [user] = await db
-        .update(users)
-        .set({
-          ...updates,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, id))
-        .returning();
-      return user;
+      const userRef = usersCollection.doc(id.toString());
+      const userDoc = await userRef.get();
+
+      if (!userDoc.exists) {
+        throw new Error('User not found');
+      }
+
+      const updatedUser = {
+        ...userDoc.data(),
+        ...updates,
+        updatedAt: new Date()
+      };
+
+      await userRef.update(updatedUser);
+      return this.convertToUser(updatedUser);
     } catch (error) {
       console.error('Error updating user:', error);
       throw error;
     }
   }
+
+  private convertToUser(data: FirebaseFirestore.DocumentData): User {
+    return {
+      id: data.id,
+      username: data.username,
+      email: data.email,
+      password: data.password,
+      createdAt: data.createdAt.toDate(),
+      updatedAt: data.updatedAt.toDate()
+    };
+  }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = new FirebaseStorage();
