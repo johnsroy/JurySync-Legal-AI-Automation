@@ -347,6 +347,7 @@ export function WorkflowAutomation() {
             content: complianceContent,
             title: "Compliance Analysis Report",
             metadata: {
+              status: complianceResult.status,
               complianceStatus: complianceResult.status,
               score: complianceResult.score,
               findings: complianceResult.findings,
@@ -473,7 +474,13 @@ export function WorkflowAutomation() {
             [i]: {
               ...prev[i],
               status: 'completed',
-              result
+              result: {
+                ...result,
+                metadata: {
+                  ...result.metadata,
+                  complianceStatus: result.metadata?.status || result.metadata?.complianceStatus
+                }
+              }
             }
           }));
 
