@@ -207,23 +207,12 @@ export function WorkflowAutomation() {
 
     if (isWorkflowComplete && stageStates[5]?.result?.metadata) {
       const metadata = stageStates[5].result.metadata;
-      const newAnalysis = {
+      setDocumentAnalyses(prev => [...prev, {
         fileName: uploadedFiles[uploadedFiles.length - 1]?.name || 'Untitled Document',
-        documentType: metadata.documentType || 'Unknown',
-        industry: metadata.industry || 'TECHNOLOGY',
-        complianceStatus: metadata.complianceStatus || 'Needs Review'
-      };
-
-      setDocumentAnalyses(prev => {
-        // Check if this analysis already exists to avoid duplicates
-        const exists = prev.some(a => 
-          a.fileName === newAnalysis.fileName && 
-          a.documentType === newAnalysis.documentType
-        );
-
-        if (exists) return prev;
-        return [...prev, newAnalysis];
-      });
+        documentType: metadata.documentType,
+        industry: metadata.industry,
+        complianceStatus: metadata.complianceStatus
+      }]);
     }
   }, [stageStates, uploadedFiles]);
 
@@ -533,15 +522,11 @@ export function WorkflowAutomation() {
 
   const handleFileProcessed = useCallback(({ text, documentId, fileName }: { text: string; documentId: string; fileName: string }) => {
     setDocumentText(text);
-
-    // Update uploaded files
-    setUploadedFiles(prev => [...prev, new File([text], fileName)]);
-
     toast({
       title: "Document Processed",
       description: `${fileName} has been successfully parsed and loaded.`,
     });
-  }, [toast, setUploadedFiles]);
+  }, [toast]);
 
   const handleFileError = useCallback((error: string) => {
     toast({

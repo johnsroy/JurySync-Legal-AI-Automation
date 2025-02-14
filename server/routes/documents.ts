@@ -217,27 +217,16 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
         }
       }).returning();
 
-      // Analyze the document after saving
-      const analysis = await analyzeDocument(content);
-
       console.log("Document uploaded successfully:", {
         id: document.id,
         title: document.title,
-        contentLength: content.length,
-        documentType: analysis.documentType,
-        industry: analysis.industry
+        contentLength: content.length
       });
 
       return res.json({
         documentId: document.id,
         title: document.title,
         text: content,
-        analysis: {
-          documentType: analysis.documentType,
-          industry: analysis.industry,
-          classification: analysis.classification,
-          complianceStatus: analysis.complianceStatus
-        },
         status: "COMPLETED"
       });
 
