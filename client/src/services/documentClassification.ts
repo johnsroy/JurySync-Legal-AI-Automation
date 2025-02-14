@@ -8,8 +8,8 @@ export interface DocumentClassification {
   confidence: number;
   details: {
     keyFindings: string[];
+    risks: string[];
     recommendations: string[];
-    riskLevel: string;
   };
 }
 
@@ -32,7 +32,6 @@ const documentTypeMap: Record<string, string> = {
 
 export async function classifyDocument(content: string): Promise<DocumentClassification> {
   try {
-    // First pass: Document classification
     const response = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
@@ -49,8 +48,8 @@ export async function classifyDocument(content: string): Promise<DocumentClassif
             "confidence": number,
             "details": {
               "keyFindings": string[],
-              "recommendations": string[],
-              "riskLevel": string
+              "risks": string[],
+              "recommendations": string[]
             }
           }`
       }]
