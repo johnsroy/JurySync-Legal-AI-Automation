@@ -18,7 +18,7 @@ import {
   Clock,
   BarChart3
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from 'react-dropzone';
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -826,7 +826,7 @@ export const WorkflowAutomation: React.FC = () => {
                         metadata={state.result.metadata}
                         onDownload={() => generatePDF(state.result!.content, state.result!.title)}
                       >
-                        {currentStage === 3 && !stageStates[3]?.isApproved && (
+                        {currentStage === 3 && (
                           <Card className="bg-white/80 backdrop-blur-lg mt-4">
                             <CardHeader>
                               <CardTitle>Document Approval</CardTitle>
@@ -928,5 +928,17 @@ export const WorkflowAutomation: React.FC = () => {
     </div>
   );
 };
+
+useEffect(() => {
+  if (stageStates[currentStage]?.status === 'completed' && stageStates[currentStage]?.result?.metadata) {
+    const metadata = stageStates[currentStage].result.metadata;
+    setDocumentAnalysis({
+      fileName: uploadedFiles[0]?.name || 'Untitled Document',
+      documentType: metadata.documentType || 'Unknown',
+      industry: metadata.industry || 'Unknown',
+      complianceStatus: metadata.complianceStatus || 'Pending'
+    });
+  }
+}, [currentStage, stageStates, uploadedFiles]);
 
 export default WorkflowAutomation;
