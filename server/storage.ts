@@ -23,6 +23,7 @@ class FirebaseSessionStore extends session.Store {
       const session = doc.exists ? JSON.parse(doc.data()!.session) : null;
       callback(null, session);
     } catch (error) {
+      console.error('Error getting session:', error);
       callback(error);
     }
   }
@@ -32,10 +33,11 @@ class FirebaseSessionStore extends session.Store {
       const sessionStr = JSON.stringify(session);
       await this.collection.doc(sid).set({
         session: sessionStr,
-        expires: new Date(session.cookie.expires)
+        expires: session.cookie?.expires || new Date(Date.now() + 86400000) // 24h default
       });
       callback?.();
     } catch (error) {
+      console.error('Error setting session:', error);
       callback?.(error);
     }
   }
@@ -45,6 +47,19 @@ class FirebaseSessionStore extends session.Store {
       await this.collection.doc(sid).delete();
       callback?.();
     } catch (error) {
+      console.error('Error destroying session:', error);
+      callback?.(error);
+    }
+  }
+
+  async touch(sid: string, session: any, callback?: (err?: any) => void): Promise<void> {
+    try {
+      await this.collection.doc(sid).update({
+        expires: session.cookie?.expires || new Date(Date.now() + 86400000)
+      });
+      callback?.();
+    } catch (error) {
+      console.error('Error touching session:', error);
       callback?.(error);
     }
   }
@@ -111,7 +126,18 @@ export class FirebaseStorage implements IStorage {
         ...insertUser,
         id: nextId,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        lastUploadDate: null,
+        uploadCount: 0,
+        profileImage: null,
+        role: 'USER',
+        firstName: null,
+        lastName: null,
+        subscriptionStatus: 'INACTIVE',
+        subscriptionEndsAt: null,
+        trialUsed: false,
+        stripeCustomerId: null,
+        stripePriceId: null
       };
 
       await usersCollection.doc(nextId.toString()).set(user);
@@ -152,8 +178,19 @@ export class FirebaseStorage implements IStorage {
       username: data.username,
       email: data.email,
       password: data.password,
+      role: data.role || 'USER',
+      firstName: data.firstName || null,
+      lastName: data.lastName || null,
+      profileImage: data.profileImage || null,
       createdAt: data.createdAt.toDate(),
-      updatedAt: data.updatedAt.toDate()
+      updatedAt: data.updatedAt.toDate(),
+      lastUploadDate: data.lastUploadDate ? data.lastUploadDate.toDate() : null,
+      uploadCount: data.uploadCount || 0,
+      subscriptionStatus: data.subscriptionStatus || 'INACTIVE',
+      subscriptionEndsAt: data.subscriptionEndsAt ? data.subscriptionEndsAt.toDate() : null,
+      trialUsed: data.trialUsed || false,
+      stripeCustomerId: data.stripeCustomerId || null,
+      stripePriceId: data.stripePriceId || null
     };
   }
 }

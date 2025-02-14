@@ -3,10 +3,8 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic } from "./vite";
 import { setupAuth } from "./auth";
 import session from "express-session";
-import connectPg from "connect-pg-simple";
-import { db } from "./db";
-import { seedLegalDatabase } from './services/seedData';
-import { continuousLearningService } from './services/continuousLearningService';
+import { storage } from "./storage";
+import { initializeFirestore } from './firebase';
 import cors from 'cors';
 import { createServer } from 'net';
 import { handleStripeWebhook } from "./webhooks/stripe";
@@ -69,25 +67,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// Session handling
-const PostgresStore = connectPg(session);
-const sessionStore = new PostgresStore({
-  conObject: {
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-  },
-  createTableIfMissing: true,
-  pruneSessionInterval: 60
-});
-
+// Session handling with Firebase session store
 app.use(session({
-  store: sessionStore,
+  store: storage.sessionStore,
   secret: process.env.SESSION_SECRET || 'your-session-secret',
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   }
 }));
 
@@ -99,19 +87,17 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
 
 (async () => {
   try {
-    // Database setup
-    await seedLegalDatabase();
-    console.log('Legal database seeded successfully');
+    // Initialize Firebase collections
+    await initializeFirestore();
+    console.log('Firebase collections initialized successfully');
 
     try {
-      await continuousLearningService.startContinuousLearning();
-      console.log('Continuous learning service started successfully');
+      // Register routes
+      registerRoutes(app);
+      console.log('Routes registered successfully');
     } catch (error) {
-      console.error('Failed to start continuous learning service:', error);
+      console.error('Failed to register routes:', error);
     }
-
-    // Register routes
-    registerRoutes(app);
 
     // API error handling
     app.use((err: any, req: Request, res: Response, next: NextFunction) => {

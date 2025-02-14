@@ -25,8 +25,16 @@ export class DocumentClassificationAgent {
   private mandaKeywords = [
     'merger', 'acquisition', 'stock purchase', 'asset purchase', 'm&a',
     'business combination', 'consolidation', 'takeover', 'share purchase',
-    'amalgamation', 'corporate restructuring'
+    'amalgamation', 'corporate restructuring', 'merge'
   ];
+
+  private industryKeywords = {
+    TECHNOLOGY: ['tech', 'software', 'it', 'digital', 'computer', 'internet', 'saas'],
+    HEALTHCARE: ['health', 'medical', 'pharma', 'biotech', 'hospital'],
+    FINANCIAL: ['bank', 'finance', 'investment', 'insurance', 'fintech'],
+    MANUFACTURING: ['manufacturing', 'industrial', 'production', 'factory'],
+    RETAIL: ['retail', 'commerce', 'sales', 'store', 'ecommerce']
+  };
 
   public static getInstance(): DocumentClassificationAgent {
     if (!DocumentClassificationAgent.instance) {
@@ -83,7 +91,15 @@ export class DocumentClassificationAgent {
       // First, check if it's an M&A document using GPT-4
       const { isMA, confidence } = await this.detectDocumentType(content);
 
-      if (isMA && confidence > 0.7) {
+      // Enhanced M&A detection with keyword matching
+      const lowerContent = content.toLowerCase();
+      const foundMandAKeywords = this.mandaKeywords.filter(keyword => 
+        lowerContent.includes(keyword.toLowerCase())
+      );
+
+      const isStronglyMA = isMA || (foundMandAKeywords.length >= 2 && confidence > 0.6);
+
+      if (isStronglyMA) {
         console.log("M&A document detected with high confidence");
         const industry = await this.detectIndustry(content);
         return {
@@ -168,9 +184,16 @@ export class DocumentClassificationAgent {
 
     const result = JSON.parse(completion.choices[0].message.content);
 
-    // Double check for M&A keywords in the document type
+    // Double check for M&A keywords in the document type and content
+    const lowerContent = content.toLowerCase();
     const lowerDocType = result.documentType.toLowerCase();
-    if (this.mandaKeywords.some(keyword => lowerDocType.includes(keyword.toLowerCase()))) {
+
+    const hasMandAKeywords = this.mandaKeywords.some(keyword => 
+      lowerContent.includes(keyword.toLowerCase()) || 
+      lowerDocType.includes(keyword.toLowerCase())
+    );
+
+    if (hasMandAKeywords) {
       result.documentType = "M&A Deal";
       result.category = "M&A Deal";
     }
