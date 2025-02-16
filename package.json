@@ -111,7 +111,8 @@
     "xlsx": "^0.18.5",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.24.1",
-    "zod-validation-error": "^3.4.0"
+    "zod-validation-error": "^3.4.0",
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",

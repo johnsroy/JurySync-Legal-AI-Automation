@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAnalyticsStore, startMetricsRefresh, stopMetricsRefresh } from '@/lib/analyticsService';
 
 interface ErrorLog {
   timestamp: string;
@@ -59,6 +60,31 @@ interface TaskData extends OriginalTaskData {
   documentAnalysis?: DocumentAnalysis;
 }
 
+// Add these interfaces for analytics
+interface AIModelMetrics {
+  accuracy: number;
+  confidence: number;
+  processingTime: number;
+  successRate: number;
+  errorRate: number;
+  documentsProcessed: number;
+}
+
+interface WorkflowMetrics {
+  totalDocuments: number;
+  averageProcessingTime: number;
+  completionRate: number;
+  automationRate: number;
+  errorReduction: number;
+  costSavings: number;
+  timelineData: Array<{
+    timestamp: string;
+    documentsProcessed: number;
+    processingTime: number;
+    accuracy: number;
+  }>;
+}
+
 export default function WorkflowAutomation() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
@@ -67,6 +93,9 @@ export default function WorkflowAutomation() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+
+  // Replace the existing metrics state and fetching with:
+  const { aiMetrics, workflowMetrics } = useAnalyticsStore();
 
   // Protect the route
   if (!user) {
@@ -304,6 +333,215 @@ export default function WorkflowAutomation() {
     );
   };
 
+  // Add Analytics Dashboard component
+  const AnalyticsDashboard = () => {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
+        {/* AI Model Performance */}
+        <Card className="bg-slate-700/50 border-none p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-lg font-semibold flex items-center gap-2">
+              <BrainCircuit className="h-5 w-5 text-purple-400" />
+              AI Model Performance
+            </h4>
+            <span className="text-sm text-slate-400">
+              Last updated: {new Date().toLocaleTimeString()}
+            </span>
+          </div>
+          <div className="space-y-4">
+            {[
+              { label: 'Model Accuracy', value: aiMetrics.accuracy, color: 'blue' },
+              { label: 'Confidence Score', value: aiMetrics.confidence, color: 'green' },
+              { label: 'Success Rate', value: aiMetrics.successRate, color: 'purple' },
+              { label: 'Error Rate', value: aiMetrics.errorRate, color: 'red' }
+            ].map((metric, index) => (
+              <div key={index} className="relative pt-1">
+                <div className="flex mb-2 items-center justify-between">
+                  <span className={`text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-${metric.color}-500/20 text-${metric.color}-400`}>
+                    {metric.label}
+                  </span>
+                  <span className={`text-${metric.color}-400 text-xs font-semibold`}>
+                    {metric.value.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-600">
+                  <div
+                    style={{ width: `${metric.value}%` }}
+                    className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-${metric.color}-500`}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Workflow Analytics */}
+        <Card className="bg-slate-700/50 border-none p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-lg font-semibold flex items-center gap-2">
+              <ChartBar className="h-5 w-5 text-blue-400" />
+              Workflow Analytics
+            </h4>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-400">
+                Total Documents: {workflowMetrics.totalDocuments}
+              </span>
+            </div>
+          </div>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={workflowMetrics.timelineData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                <XAxis 
+                  dataKey="timestamp" 
+                  stroke="#94a3b8"
+                  tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                />
+                <YAxis stroke="#94a3b8" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1e293b',
+                    border: 'none',
+                    borderRadius: '0.5rem',
+                    color: '#f8fafc'
+                  }}
+                  labelFormatter={(value) => new Date(value).toLocaleString()}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="documentsProcessed"
+                  name="Documents"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  dot={{ fill: '#3b82f6' }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="accuracy"
+                  name="Accuracy"
+                  stroke="#22c55e"
+                  strokeWidth={2}
+                  dot={{ fill: '#22c55e' }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="processingTime"
+                  name="Processing Time"
+                  stroke="#eab308"
+                  strokeWidth={2}
+                  dot={{ fill: '#eab308' }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        {/* Efficiency Metrics */}
+        <Card className="bg-slate-700/50 border-none p-6">
+          <h4 className="text-lg font-semibold mb-6 flex items-center gap-2">
+            <Users className="h-5 w-5 text-green-400" />
+            Efficiency Metrics
+          </h4>
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              { 
+                label: 'Automation Rate',
+                value: workflowMetrics.automationRate,
+                icon: BrainCircuit,
+                color: 'blue'
+              },
+              { 
+                label: 'Completion Rate',
+                value: workflowMetrics.completionRate,
+                icon: CheckCircle2,
+                color: 'green'
+              },
+              { 
+                label: 'Error Reduction',
+                value: workflowMetrics.errorReduction,
+                icon: AlertCircle,
+                color: 'yellow'
+              },
+              { 
+                label: 'Cost Savings',
+                value: workflowMetrics.costSavings,
+                icon: FileCheck,
+                color: 'purple'
+              }
+            ].map((metric, index) => (
+              <div key={index} className="p-4 bg-slate-600/50 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <metric.icon className={`h-5 w-5 text-${metric.color}-400`} />
+                  <span className="text-sm font-medium text-slate-200">
+                    {metric.label}
+                  </span>
+                </div>
+                <div className="text-2xl font-bold text-slate-100">
+                  {metric.value.toFixed(1)}%
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  vs. Manual Processing
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Processing Timeline */}
+        <Card className="bg-slate-700/50 border-none p-6">
+          <h4 className="text-lg font-semibold mb-6 flex items-center gap-2">
+            <Clock className="h-5 w-5 text-yellow-400" />
+            Processing Performance
+          </h4>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-400">Average Processing Time</p>
+                <p className="text-2xl font-bold text-slate-100">
+                  {workflowMetrics.averageProcessingTime.toFixed(2)}s
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-400">Documents Processed</p>
+                <p className="text-2xl font-bold text-slate-100">
+                  {aiMetrics.documentsProcessed}
+                </p>
+              </div>
+            </div>
+            <div className="h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={workflowMetrics.timelineData.slice(-7)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                  <XAxis 
+                    dataKey="timestamp"
+                    stroke="#94a3b8"
+                    tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                  />
+                  <YAxis stroke="#94a3b8" />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#1e293b',
+                      border: 'none',
+                      borderRadius: '0.5rem',
+                      color: '#f8fafc'
+                    }}
+                    labelFormatter={(value) => new Date(value).toLocaleString()}
+                  />
+                  <Bar dataKey="processingTime" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  };
+
+  useEffect(() => {
+    startMetricsRefresh();
+    return () => stopMetricsRefresh();
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       {/* Header Section */}
@@ -347,8 +585,10 @@ export default function WorkflowAutomation() {
         </Card>
 
         {/* Analysis Results Table */}
-        {analysisResults && renderAnalysisTable()}
+        {renderAnalysisTable()}
 
+        {/* Show Analytics Dashboard */}
+        <AnalyticsDashboard />
 
         {/* Workflow Progress */}
         {activeTaskId && taskData && (

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Card,
@@ -36,15 +36,22 @@ import {
   Clock,
   DollarSign,
   AlertCircle,
+  BrainCircuit,
+  ChartBar,
+  Users,
+  FileCheck,
+  CheckCircle2
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { useAnalyticsStore, startMetricsRefresh, stopMetricsRefresh } from '@/lib/analyticsService';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
 export default function ReportsDashboard() {
   const { user } = useAuth();
   const [timeRange, setTimeRange] = useState("7d");
+  const { aiMetrics, workflowMetrics, isLoading, error } = useAnalyticsStore();
 
   const { data: analytics, isLoading: isLoadingAnalytics } = useQuery({
     queryKey: ['/api/analytics', timeRange],
@@ -55,6 +62,11 @@ export default function ReportsDashboard() {
     },
   });
 
+  useEffect(() => {
+    startMetricsRefresh();
+    return () => stopMetricsRefresh();
+  }, []);
+
   if (!user) return null;
 
   if (isLoadingAnalytics) {
@@ -63,6 +75,14 @@ export default function ReportsDashboard() {
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
+  }
+
+  if (isLoading) {
+    return <div>Loading analytics...</div>;
+  }
+
+  if (error) {
+    return <div>Error loading analytics: {error}</div>;
   }
 
   const metrics = analytics?.automationMetrics || {
@@ -339,6 +359,48 @@ export default function ReportsDashboard() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+        {/* AI Model Performance */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-lg font-semibold flex items-center gap-2">
+              <BrainCircuit className="h-5 w-5 text-purple-400" />
+              AI Model Performance
+            </h4>
+          </div>
+          {/* AI metrics visualization */}
+          <div className="space-y-4">
+            {[
+              { label: 'Model Accuracy', value: aiMetrics.accuracy, color: 'blue' },
+              { label: 'Confidence Score', value: aiMetrics.confidence, color: 'green' },
+              { label: 'Success Rate', value: aiMetrics.successRate, color: 'purple' },
+              { label: 'Error Rate', value: aiMetrics.errorRate, color: 'red' }
+            ].map((metric, index) => (
+              <div key={index} className="relative pt-1">
+                {/* Metric visualization code */}
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Workflow Analytics */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-lg font-semibold flex items-center gap-2">
+              <ChartBar className="h-5 w-5 text-blue-400" />
+              Workflow Analytics
+            </h4>
+          </div>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={workflowMetrics.timelineData}>
+                {/* Chart components */}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
