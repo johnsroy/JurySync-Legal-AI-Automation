@@ -5,7 +5,6 @@ import { modelMetrics, workflowMetrics, documentMetrics } from "@shared/schema/m
 import { and, eq, gte, sql } from "drizzle-orm";
 import { subDays } from "date-fns";
 import { metricsCollector } from "../services/metricsCollector";
-import { ReportType } from "@shared/schema/reports";
 
 const router = Router();
 
@@ -197,32 +196,27 @@ router.get("/reports", async (req, res) => {
     const query = db.select().from(reports);
 
     if (type !== "all") {
-      query.where(eq(reports.type, type as ReportType));
+      query.where(eq(reports.type, type.toString()));
     }
 
     const allReports = await query;
 
-    // Fix the metadata type issues
+    // Add template information to reports
     const reportsWithTemplates = await Promise.all(
       allReports.map(async (report) => {
         const documentData = await db
           .select({
-            metadata: documentMetrics.metadata
+            templateUsed: documentMetrics.metadata.templateUsed,
+            templateCategory: documentMetrics.metadata.templateCategory
           })
           .from(documentMetrics)
-          .where(eq(documentMetrics.id, report.id))
+          .where(eq(documentMetrics.id, report.documentId))
           .limit(1);
-
-        // Safely access metadata properties
-        const metadata = documentData[0]?.metadata as {
-          templateUsed?: string;
-          templateCategory?: string;
-        };
 
         return {
           ...report,
-          template: metadata?.templateUsed || 'Custom',
-          category: metadata?.templateCategory || 'None'
+          template: documentData[0]?.templateUsed || 'Custom',
+          category: documentData[0]?.templateCategory || 'None'
         };
       })
     );
@@ -231,36 +225,6 @@ router.get("/reports", async (req, res) => {
   } catch (error) {
     console.error("Reports fetch error:", error);
     res.status(500).json({ error: "Failed to fetch reports" });
-  }
-});
-
-router.get("/unified", async (req, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const documentsProcessed = 42;
-    const averageProcessingTime = 37;
-    const complianceScore = 91;
-    const activeDocuments = 5;
-
-    const activityData = [
-      { date: "2025-10-20", documents: 5 },
-      { date: "2025-10-21", documents: 8 },
-      { date: "2025-10-22", documents: 2 },
-    ];
-
-    res.json({
-      documentsProcessed,
-      averageProcessingTime,
-      complianceScore,
-      activeDocuments,
-      activityData,
-    });
-  } catch (err) {
-    console.error("Error in /api/analytics/unified:", err);
-    res.status(500).json({ error: "Failed to retrieve analytics" });
   }
 });
 

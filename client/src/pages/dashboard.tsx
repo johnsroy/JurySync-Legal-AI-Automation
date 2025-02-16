@@ -69,38 +69,6 @@ const modules = [
   }
 ];
 
-// Define defaultMetrics with the same structure as your metrics
-const defaultMetrics = [
-  {
-    title: "Documents Processed",
-    value: "0",
-    description: "across all modules",
-    icon: FileCheck,
-    color: "text-green-600"
-  },
-  {
-    title: "Average Processing Time",
-    value: "0s",
-    description: "per document",
-    icon: Clock,
-    color: "text-blue-600"
-  },
-  {
-    title: "Compliance Score",
-    value: "0%",
-    description: "overall rating",
-    icon: Shield,
-    color: "text-yellow-600"
-  },
-  {
-    title: "Active Documents",
-    value: "0",
-    description: "in review",
-    icon: GitMerge,
-    color: "text-purple-600"
-  }
-];
-
 function MetricsCard({ title, value, description, icon: Icon, color }: any) {
   return (
     <Card className="bg-white/80 backdrop-blur-lg">
@@ -126,28 +94,17 @@ export default function Dashboard() {
   const { user, logoutMutation } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [metrics, setMetrics] = useState(defaultMetrics);
 
   // Fetch unified metrics
-  const { data: unifiedMetrics, isLoading: isLoadingMetrics, error } = useQuery({
-    queryKey: ["/api/analytics/unified"],
+  const { data: unifiedMetrics, isLoading: isLoadingMetrics } = useQuery({
+    queryKey: ['/api/metrics/unified'],
     queryFn: async () => {
-      const response = await fetch("/api/analytics/unified");
+      const response = await fetch('/api/metrics/unified');
       if (!response.ok) {
-        throw new Error(`Failed to fetch unified metrics. status=${response.status}`);
+        throw new Error('Failed to fetch metrics');
       }
-      const data = await response.json();
-
-      // Example usage: update your local metrics array
-      setMetrics([
-        { ...defaultMetrics[0], value: data.documentsProcessed?.toString() },
-        { ...defaultMetrics[1], value: `${data.averageProcessingTime || 0}s` },
-        { ...defaultMetrics[2], value: `${data.complianceScore || 0}%` },
-        { ...defaultMetrics[3], value: data.activeDocuments?.toString() },
-      ]);
-
-      return data;
-    },
+      return response.json();
+    }
   });
 
   const handleModuleSelect = (module: typeof modules[0]) => {

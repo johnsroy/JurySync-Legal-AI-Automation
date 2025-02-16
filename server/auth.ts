@@ -139,7 +139,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: Error | null, user: SelectUser | false, info?: { message: string }) => {
+    passport.authenticate("local", (err, user, info) => {
       if (err) {
         return res.status(500).json({
           message: "Internal server error during login",
