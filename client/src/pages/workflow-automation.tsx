@@ -25,6 +25,8 @@ import { generateDraftAnalysis } from "@/services/anthropic-service";
 import { LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useRouter } from "wouter";
+import { v4 as uuidv4 } from 'uuid';
 
 // Add legal-themed loading messages
 const legalLoadingMessages = [
@@ -236,6 +238,7 @@ export function WorkflowAutomation() {
   }>>([]);
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState(legalLoadingMessages[0]);
+  const router = useRouter();
 
   // Effect to update document analysis based on workflow completion
   useEffect(() => {
@@ -576,6 +579,27 @@ export function WorkflowAutomation() {
         title: "Processing Complete",
         description: "Document workflow completed successfully",
       });
+
+      const analysisResult = stageStates[5].result;
+
+      // Create vault entry with analysis results
+      const vaultEntry = {
+        id: uuidv4(),
+        fileName: uploadedFiles[uploadedFiles.length - 1]?.name || 'Unknown',
+        documentType: analysisResult.metadata?.documentType || 'Unknown',
+        industry: analysisResult.metadata?.industry || 'Unknown',
+        complianceStatus: analysisResult.metadata?.complianceStatus || 'Unknown',
+        timestamp: new Date().toISOString(),
+        content: analysisResult.content || ''
+      };
+
+      // Save to vault
+      const existingVault = JSON.parse(localStorage.getItem('documentVault') || '[]');
+      const updatedVault = [...existingVault, vaultEntry];
+      localStorage.setItem('documentVault', JSON.stringify(updatedVault));
+
+      // Redirect to vault page
+      router.push('/vault');
     } catch (error) {
       toast({
         title: "Processing Error",
