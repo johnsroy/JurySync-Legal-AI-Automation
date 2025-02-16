@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Layout } from "@/components/layout";
 
-export function Settings() {
+export function HistoryReports() {
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -16,30 +16,30 @@ export function Settings() {
         transition={{ delay: 0.2 }}
       >
         <h1 className="text-3xl font-bold text-gray-900">
-          Settings
+          History & Reports
         </h1>
         <p className="mt-2 text-gray-600">
-          Manage your application preferences
+          View your document history and analytics
         </p>
       </motion.div>
 
       <Card className="bg-white/80 backdrop-blur-lg">
         <CardHeader>
-          <CardTitle>Application Settings</CardTitle>
+          <CardTitle>Document History</CardTitle>
           <CardDescription>
-            Configure your preferences
+            Track your document processing history
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Add your settings content here */}
+          {/* Add your history and reports content here */}
         </CardContent>
       </Card>
     </motion.div>
   );
 }
 
-Settings.getLayout = function getLayout(page: React.ReactElement) {
+HistoryReports.getLayout = function getLayout(page: React.ReactElement) {
   return <Layout>{page}</Layout>;
 };
 
-export default Settings;
+export default HistoryReports; 

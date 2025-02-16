@@ -16,6 +16,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
 import { ContractRedlining } from "@/components/ContractRedlining/ContractRedlining";
+import { motion } from "framer-motion";
+import { Layout } from "@/components/layout";
 
 // Keep only necessary interfaces and schemas
 interface Template {
@@ -291,8 +293,7 @@ function DiffViewer({ original, modified }: { original: string; modified: string
   );
 }
 
-
-export default function ContractAutomation() {
+export function ContractAutomation() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
@@ -506,239 +507,273 @@ export default function ContractAutomation() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <MetricsWidget
-          title="Time Saved"
-          value={metrics.timeSaved}
-          icon={Clock}
-          description="Average time saved per contract"
-        />
-        <MetricsWidget
-          title="Error Reduction"
-          value={metrics.errorReduction}
-          icon={Scale}
-          description="Reduction in contract errors"
-        />
-        <MetricsWidget
-          title="Completion Rate"
-          value={metrics.completionRate}
-          icon={Check}
-          description="Contracts completed successfully"
-        />
-        <MetricsWidget
-          title="Accuracy"
-          value={metrics.accuracy}
-          icon={Scale}
-          description="AI suggestions accuracy rate"
-        />
-      </div>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+    >
+      <motion.div
+        className="text-center mb-8"
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.2 }}
+      >
+        <h1 className="text-3xl font-bold text-gray-900">
+          Contract Automation
+        </h1>
+        <p className="mt-2 text-gray-600">
+          Automate your contract creation and management
+        </p>
+      </motion.div>
 
-      {!isCustomizing ? (
-        <>
-          <h2 className="text-2xl font-bold mb-6">Select a Contract Template</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {templates.map((template) => (
-              <Card key={template.id} className="flex flex-col">
-                <CardHeader>
-                  <CardTitle>{template.name}</CardTitle>
-                  <CardDescription>{template.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="flex-grow">
-                  <div className="bg-gray-50 p-4 rounded-md">
-                    <pre className="whitespace-pre-wrap text-sm max-h-48 overflow-y-auto">
-                      {template.baseContent.slice(0, 200)}...
-                    </pre>
-                  </div>
-                  <div className="mt-4">
-                    <h4 className="font-semibold mb-2">Required Fields:</h4>
-                    <ul className="list-disc list-inside text-sm text-gray-600">
-                      {template.variables
-                        .filter(v => v.required)
-                        .map(v => (
-                          <li key={v.name}>{v.description}</li>
-                        ))}
-                    </ul>
-                  </div>
-                </CardContent>
-                <CardFooter>
-                  <Button
-                    className="w-full"
-                    onClick={() => handleTemplateSelect(template)}
-                  >
-                    Use This Template
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold">Customize Your Contract</h2>
-            <Button variant="outline" onClick={() => setIsCustomizing(false)}>
-              Change Template
-            </Button>
+      <Card className="bg-white/80 backdrop-blur-lg">
+        <CardHeader>
+          <CardTitle>Contract Management</CardTitle>
+          <CardDescription>
+            Create and manage your legal contracts
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <MetricsWidget
+              title="Time Saved"
+              value={metrics.timeSaved}
+              icon={Clock}
+              description="Average time saved per contract"
+            />
+            <MetricsWidget
+              title="Error Reduction"
+              value={metrics.errorReduction}
+              icon={Scale}
+              description="Reduction in contract errors"
+            />
+            <MetricsWidget
+              title="Completion Rate"
+              value={metrics.completionRate}
+              icon={Check}
+              description="Contracts completed successfully"
+            />
+            <MetricsWidget
+              title="Accuracy"
+              value={metrics.accuracy}
+              icon={Scale}
+              description="AI suggestions accuracy rate"
+            />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle>{selectedTemplate?.name}</CardTitle>
-                <CardDescription>
-                  Add your requirements to customize this template
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <FormLabel>Requirements</FormLabel>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleAddRequirement}
-                        >
-                          Add Requirement
-                        </Button>
+          {!isCustomizing ? (
+            <>
+              <h2 className="text-2xl font-bold mb-6">Select a Contract Template</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {templates.map((template) => (
+                  <Card key={template.id} className="flex flex-col">
+                    <CardHeader>
+                      <CardTitle>{template.name}</CardTitle>
+                      <CardDescription>{template.description}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex-grow">
+                      <div className="bg-gray-50 p-4 rounded-md">
+                        <pre className="whitespace-pre-wrap text-sm max-h-48 overflow-y-auto">
+                          {template.baseContent.slice(0, 200)}...
+                        </pre>
                       </div>
-
-                      {form.watch("requirements").map((_, index) => (
-                        <div key={index} className="space-y-4 p-4 border rounded">
-                          <RequirementField
-                            index={index}
-                            control={form.control}
-                            templateId={selectedTemplate?.id || ''}
-                            onSuggestionSelect={(suggestion) => handleAutocompleteSelect(index, suggestion)}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`requirements.${index}.importance`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Importance</FormLabel>
-                                <select
-                                  {...field}
-                                  className="w-full p-2 border rounded"
-                                >
-                                  <option value="HIGH">High Priority</option>
-                                  <option value="MEDIUM">Medium Priority</option>
-                                  <option value="LOW">Low Priority</option>
-                                </select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleRemoveRequirement(index)}
-                            disabled={form.watch("requirements").length <= 1}
-                          >
-                            Remove Requirement
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-
-                    {selectedTemplate && (
                       <div className="mt-4">
-                        <RequirementSuggestions
-                          templateId={selectedTemplate.id}
-                          currentDescription={form.watch("requirements")[form.watch("requirements").length - 1]?.description}
-                          onSelect={handleSuggestionSelect}
-                        />
+                        <h4 className="font-semibold mb-2">Required Fields:</h4>
+                        <ul className="list-disc list-inside text-sm text-gray-600">
+                          {template.variables
+                            .filter(v => v.required)
+                            .map(v => (
+                              <li key={v.name}>{v.description}</li>
+                            ))}
+                        </ul>
                       </div>
-                    )}
+                    </CardContent>
+                    <CardFooter>
+                      <Button
+                        className="w-full"
+                        onClick={() => handleTemplateSelect(template)}
+                      >
+                        Use This Template
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold">Customize Your Contract</h2>
+                <Button variant="outline" onClick={() => setIsCustomizing(false)}>
+                  Change Template
+                </Button>
+              </div>
 
-                    <FormField
-                      control={form.control}
-                      name="customInstructions"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Custom Instructions (Optional)</FormLabel>
-                          <FormControl>
-                            <div className="space-y-4">
-                              <Textarea
-                                {...field}
-                                placeholder="Add any special instructions or notes..."
-                                className="min-h-[100px]"
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="lg:col-span-1">
+                  <CardHeader>
+                    <CardTitle>{selectedTemplate?.name}</CardTitle>
+                    <CardDescription>
+                      Add your requirements to customize this template
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Form {...form}>
+                      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center">
+                            <FormLabel>Requirements</FormLabel>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleAddRequirement}
+                            >
+                              Add Requirement
+                            </Button>
+                          </div>
+
+                          {form.watch("requirements").map((_, index) => (
+                            <div key={index} className="space-y-4 p-4 border rounded">
+                              <RequirementField
+                                index={index}
+                                control={form.control}
+                                templateId={selectedTemplate?.id || ''}
+                                onSuggestionSelect={(suggestion) => handleAutocompleteSelect(index, suggestion)}
                               />
-                              {selectedTemplate && (
-                                <CustomInstructionsSuggestions
-                                  templateId={selectedTemplate.id}
-                                  currentRequirements={form.watch("requirements")}
-                                  onSelect={handleCustomInstructionSelect}
-                                />
-                              )}
+                              <FormField
+                                control={form.control}
+                                name={`requirements.${index}.importance`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Importance</FormLabel>
+                                    <select
+                                      {...field}
+                                      className="w-full p-2 border rounded"
+                                    >
+                                      <option value="HIGH">High Priority</option>
+                                      <option value="MEDIUM">Medium Priority</option>
+                                      <option value="LOW">Low Priority</option>
+                                    </select>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleRemoveRequirement(index)}
+                                disabled={form.watch("requirements").length <= 1}
+                              >
+                                Remove Requirement
+                              </Button>
                             </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                          ))}
+                        </div>
 
-                    <Button
-                      type="submit"
-                      className="w-full"
-                      disabled={isGenerating}
-                    >
-                      {isGenerating ? (
-                        <ContractGenerationLoadingIcon />
-                      ) : (
-                        <>
-                          <Gavel className="h-4 w-4 mr-2" />
-                          Generate Contract
-                        </>
-                      )}
-                    </Button>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
+                        {selectedTemplate && (
+                          <div className="mt-4">
+                            <RequirementSuggestions
+                              templateId={selectedTemplate.id}
+                              currentDescription={form.watch("requirements")[form.watch("requirements").length - 1]?.description}
+                              onSelect={handleSuggestionSelect}
+                            />
+                          </div>
+                        )}
 
-            <div className="lg:col-span-1 space-y-6">
-              {generatedContract && (
-                <>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Contract Analysis</CardTitle>
-                      <CardDescription>
-                        Review and edit contract clauses with AI assistance
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ContractRedlining initialContent={generatedContract.content} />
-                    </CardContent>
-                  </Card>
+                        <FormField
+                          control={form.control}
+                          name="customInstructions"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Custom Instructions (Optional)</FormLabel>
+                              <FormControl>
+                                <div className="space-y-4">
+                                  <Textarea
+                                    {...field}
+                                    placeholder="Add any special instructions or notes..."
+                                    className="min-h-[100px]"
+                                  />
+                                  {selectedTemplate && (
+                                    <CustomInstructionsSuggestions
+                                      templateId={selectedTemplate.id}
+                                      currentRequirements={form.watch("requirements")}
+                                      onSelect={handleCustomInstructionSelect}
+                                    />
+                                  )}
+                                </div>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Download Options</CardTitle>
-                      <CardDescription>Export your contract in different formats</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex gap-4">
-                        <Button onClick={() => handleDownload('pdf')}>
-                          Download as PDF
+                        <Button
+                          type="submit"
+                          className="w-full"
+                          disabled={isGenerating}
+                        >
+                          {isGenerating ? (
+                            <ContractGenerationLoadingIcon />
+                          ) : (
+                            <>
+                              <Gavel className="h-4 w-4 mr-2" />
+                              Generate Contract
+                            </>
+                          )}
                         </Button>
-                        <Button onClick={() => handleDownload('docx')}>
-                          Download as DOCX
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+                      </form>
+                    </Form>
+                  </CardContent>
+                </Card>
+
+                <div className="lg:col-span-1 space-y-6">
+                  {generatedContract && (
+                    <>
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Contract Analysis</CardTitle>
+                          <CardDescription>
+                            Review and edit contract clauses with AI assistance
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ContractRedlining initialContent={generatedContract.content} />
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Download Options</CardTitle>
+                          <CardDescription>Export your contract in different formats</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="flex gap-4">
+                            <Button onClick={() => handleDownload('pdf')}>
+                              Download as PDF
+                            </Button>
+                            <Button onClick={() => handleDownload('docx')}>
+                              Download as DOCX
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
+
+ContractAutomation.getLayout = function getLayout(page: React.ReactElement) {
+  return <Layout>{page}</Layout>;
+};
+
+export default ContractAutomation;

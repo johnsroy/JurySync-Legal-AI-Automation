@@ -1,9 +1,7 @@
-import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { Routes, Route } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/use-auth";
-import Layout from "@/components/Layout";
+import { Layout } from "@/components/layout";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing-page";
 import LoginPage from "@/pages/login-page";
@@ -18,13 +16,16 @@ import Reports from "@/pages/reports";
 import ReportsDashboard from "@/pages/reports-dashboard";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
-import WorkflowAutomation from "@/pages/workflow-automation";
-import VaultPage from "@/pages/vault-page";
+import WorkflowAutomation from "@/pages/WorkflowAutomation";
+import Vault from "@/pages/vault";
+import HistoryReports from "@/pages/history-reports";
 import { ProtectedRoute } from "./lib/protected-route";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./lib/queryClient";
 
 function Router() {
   return (
-    <Switch>
+    <Routes>
       {/* Public routes */}
       <Route path="/" component={LandingPage} />
       <Route path="/login" component={LoginPage} />
@@ -32,73 +33,31 @@ function Router() {
       <Route path="/pricing" component={PricingPage} />
       <Route path="/subscription" component={SubscriptionPage} />
 
-      {/* Protected routes with Layout */}
+      {/* Protected routes */}
       <Route path="/dashboard">
-        <Layout>
-          <ProtectedRoute component={Dashboard} path="/dashboard" />
-        </Layout>
+        <ProtectedRoute component={Dashboard} />
       </Route>
-
       <Route path="/vault">
-        <Layout>
-          <ProtectedRoute component={VaultPage} path="/vault" />
-        </Layout>
+        <ProtectedRoute component={Vault} />
       </Route>
-
-      <Route path="/workflow">
-        <Layout>
-          <ProtectedRoute component={WorkflowPage} path="/workflow" />
-        </Layout>
-      </Route>
-
       <Route path="/workflow-automation">
-        <Layout>
-          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
-        </Layout>
+        <ProtectedRoute component={WorkflowAutomation} />
       </Route>
-
-      <Route path="/compliance-auditing">
-        <Layout>
-          <ProtectedRoute component={ComplianceAuditing} path="/compliance-auditing" />
-        </Layout>
-      </Route>
-
       <Route path="/contract-automation">
-        <Layout>
-          <ProtectedRoute component={ContractAutomation} path="/contract-automation" />
-        </Layout>
+        <ProtectedRoute component={ContractAutomation} />
       </Route>
-
-      <Route path="/legal-research">
-        <Layout>
-          <ProtectedRoute component={LegalResearch} path="/legal-research" />
-        </Layout>
+      <Route path="/history-reports">
+        <ProtectedRoute component={HistoryReports} />
       </Route>
-
-      <Route path="/reports">
-        <Layout>
-          <ProtectedRoute component={Reports} path="/reports" />
-        </Layout>
-      </Route>
-
-      <Route path="/analytics">
-        <Layout>
-          <ProtectedRoute component={ReportsDashboard} path="/analytics" />
-        </Layout>
-      </Route>
-
       <Route path="/settings">
-        <Layout>
-          <ProtectedRoute component={Settings} path="/settings" />
-        </Layout>
+        <ProtectedRoute component={Settings} />
       </Route>
 
+      {/* 404 route */}
       <Route>
-        <Layout>
-          <NotFound />
-        </Layout>
+        <ProtectedRoute component={NotFound} />
       </Route>
-    </Switch>
+    </Routes>
   );
 }
 
