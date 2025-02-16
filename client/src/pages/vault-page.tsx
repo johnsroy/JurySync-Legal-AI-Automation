@@ -11,7 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import Layout from "@/components/Layout";
-import { documentStore, type VaultDocument } from '@/lib/documentStore';
+import { documentStore, type VaultDocument } from '../lib/documentStore';
 
 // Define allowed roles that can upload documents
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
@@ -139,7 +139,9 @@ export default function VaultPage() {
   const loadDocuments = useCallback(async () => {
     try {
       setIsLoading(true);
+      console.log('Loading documents...');
       const docs = documentStore.getDocuments();
+      console.log('Loaded documents:', docs);
       setDocuments(docs);
     } catch (error) {
       console.error('Error loading documents:', error);
@@ -158,13 +160,26 @@ export default function VaultPage() {
     
     // Listen for storage changes
     const handleStorageChange = (e: StorageEvent) => {
+      console.log('Storage event:', e);
       if (e.key === 'vaultDocuments') {
+        console.log('Vault documents changed, reloading...');
         loadDocuments();
       }
     };
     
+    // Also listen for custom events
+    const handleCustomEvent = () => {
+      console.log('Custom event received, reloading documents...');
+      loadDocuments();
+    };
+    
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener('vaultUpdated', handleCustomEvent);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('vaultUpdated', handleCustomEvent);
+    };
   }, [loadDocuments]);
 
   const handleDelete = async (id: string) => {
@@ -465,6 +480,26 @@ export default function VaultPage() {
                     <h4 className="font-medium text-sm text-gray-900">Compliance Status</h4>
                     <div className="mt-1">
                       {renderComplianceStatus(selectedDocument)}
+                    </div>
+                  </div>
+                )}
+                {selectedDocument?.metadata?.research && (
+                  <div>
+                    <h4 className="font-medium text-sm text-gray-900 mt-4">Legal Research</h4>
+                    <div className="mt-2 space-y-3">
+                      {selectedDocument.metadata.research.relevantCases?.map((caseItem, index) => (
+                        <div key={index} className="p-3 bg-gray-50 rounded-lg">
+                          <a 
+                            href={caseItem.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                          >
+                            {caseItem.title}
+                          </a>
+                          <p className="text-xs text-gray-600 mt-1">{caseItem.summary}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

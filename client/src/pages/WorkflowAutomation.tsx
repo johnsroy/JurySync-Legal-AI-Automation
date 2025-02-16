@@ -26,7 +26,9 @@ import {
   BadgeCheck,
   AlertTriangle,
   ChevronDown,
-  FileDown
+  FileDown,
+  Folder,
+  ArrowRight
 } from "lucide-react";
 import {
   Collapsible,
@@ -37,7 +39,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { triggerVaultUpdate } from '@/lib/events';
-import { documentStore } from '@/lib/documentStore';
+import { documentStore } from '../lib/documentStore';
 
 interface ErrorLog {
   timestamp: string;
@@ -53,6 +55,78 @@ interface DocumentAnalysis {
     status: 'PASSED' | 'FAILED' | 'PENDING';
     details: string;
     lastChecked: string;
+  };
+  legalResearch: {
+    relevantCases: Array<{
+      title: string;
+      url: string;
+      relevance: number;
+      summary: string;
+      jurisdiction: string;
+      year: number;
+      keyHoldings: string[];
+      impact: string;
+      citations: string[];
+    }>;
+    statutes: Array<{
+      title: string;
+      url: string;
+      relevance: number;
+      summary: string;
+      jurisdiction: string;
+      sections: Array<{
+        number: string;
+        content: string;
+        applicability: string;
+      }>;
+      requirements: string[];
+      compliance: string;
+    }>;
+    scholarlyArticles: Array<{
+      title: string;
+      url: string;
+      authors: string[];
+      publication: string;
+      year: number;
+      relevance: number;
+      summary: string;
+      keyFindings: string[];
+      methodology: string;
+      implications: string;
+    }>;
+    legalAnalysis: {
+      keyIssues: string[];
+      riskAreas: Array<{
+        area: string;
+        severity: 'LOW' | 'MEDIUM' | 'HIGH';
+        description: string;
+        recommendations: string[];
+      }>;
+      precedentAnalysis: string;
+      jurisdictionalConsiderations: string[];
+      complianceRequirements: Array<{
+        requirement: string;
+        status: 'MET' | 'PARTIAL' | 'NOT_MET';
+        actions: string[];
+      }>;
+      recommendations: Array<{
+        type: 'IMMEDIATE' | 'SHORT_TERM' | 'LONG_TERM';
+        action: string;
+        rationale: string;
+        priority: 'HIGH' | 'MEDIUM' | 'LOW';
+      }>;
+    };
+    industryContext: {
+      trends: string[];
+      regulations: Array<{
+        name: string;
+        impact: string;
+        deadline: string;
+        status: 'CURRENT' | 'UPCOMING' | 'PROPOSED';
+      }>;
+      bestPractices: string[];
+      competitiveAnalysis: string;
+    };
   };
 }
 
@@ -184,16 +258,39 @@ export default function WorkflowAutomation() {
   // Download handlers
   const handleDownloadPDF = async () => {
     try {
-      const response = await fetch(`/api/orchestrator/tasks/${activeTaskId}/report?format=pdf`);
+      // Include research data in the report request
+      const reportData = {
+        taskId: activeTaskId,
+        includeResearch: true,
+        format: 'pdf'
+      };
+
+      const response = await fetch('/api/orchestrator/tasks/report', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(reportData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate report');
+      }
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `workflow-report-${activeTaskId}.pdf`;
+      a.download = `legal-analysis-report-${activeTaskId}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+
+      toast({
+        title: "Success",
+        description: "Report downloaded successfully with research links",
+      });
     } catch (error) {
       console.error('PDF download failed:', error);
       toast({
@@ -253,15 +350,14 @@ export default function WorkflowAutomation() {
 
   // Analysis Results Table Component
   const renderAnalysisTable = () => {
-    if (!analysisResults) {
-      return null;
-    }
+    // Get all documents from the store
+    const allDocuments = documentStore.getDocuments();
 
     return (
       <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
         <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
           <FileCheck className="h-5 w-5 text-green-400" />
-          Document Analysis Results
+          Document Vault
         </h3>
         <Table>
           <TableHeader>
@@ -274,49 +370,82 @@ export default function WorkflowAutomation() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow>
-              <TableCell className="text-slate-300">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-blue-400" />
-                  Document
-                </div>
-              </TableCell>
-              <TableCell className="text-slate-300">
-                {analysisResults.documentType}
-              </TableCell>
-              <TableCell className="text-slate-300">
-                {analysisResults.industry}
-              </TableCell>
-              <TableCell>
-                <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
-                  analysisResults.complianceStatus.status === 'PASSED'
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-red-500/20 text-red-400'
-                }`}>
-                  {analysisResults.complianceStatus.status === 'PASSED' ? (
-                    <>
-                      <CheckCircle2 className="h-3 w-3" />
-                      Compliant
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="h-3 w-3" />
-                      Non-Compliant
-                    </>
-                  )}
-                </span>
-              </TableCell>
-              <TableCell>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-slate-400 hover:text-slate-300"
-                >
-                  <FileDown className="h-4 w-4 mr-1" />
-                  Download
-                </Button>
-              </TableCell>
-            </TableRow>
+            {allDocuments.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-4">
+                  <div className="flex flex-col items-center justify-center">
+                    <Folder className="h-12 w-12 text-slate-400 mb-4" />
+                    <h3 className="text-lg font-medium text-slate-300 mb-2">No Documents Yet</h3>
+                    <p className="text-slate-400">
+                      Upload your first document to get started
+                    </p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              allDocuments.map((doc) => (
+                <TableRow key={doc.id}>
+                  <TableCell className="text-slate-300">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-blue-400" />
+                      {doc.fileName}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-slate-300">
+                    {doc.documentType}
+                  </TableCell>
+                  <TableCell className="text-slate-300">
+                    {doc.industry}
+                  </TableCell>
+                  <TableCell>
+                    <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
+                      doc.complianceStatus.toLowerCase().includes('compliant')
+                        ? 'bg-green-500/20 text-green-400'
+                        : doc.complianceStatus.toLowerCase().includes('pending')
+                          ? 'bg-yellow-500/20 text-yellow-400'
+                          : 'bg-red-500/20 text-red-400'
+                    }`}>
+                      {doc.complianceStatus.toLowerCase().includes('compliant') ? (
+                        <>
+                          <CheckCircle2 className="h-3 w-3" />
+                          {doc.complianceStatus}
+                        </>
+                      ) : doc.complianceStatus.toLowerCase().includes('pending') ? (
+                        <>
+                          <Clock className="h-3 w-3" />
+                          {doc.complianceStatus}
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-3 w-3" />
+                          {doc.complianceStatus}
+                        </>
+                      )}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-slate-400 hover:text-slate-300"
+                      onClick={() => {
+                        const url = window.URL.createObjectURL(new Blob([doc.content], { type: 'text/plain' }));
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = doc.fileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                      }}
+                    >
+                      <FileDown className="h-4 w-4 mr-1" />
+                      Download
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </Card>
@@ -332,7 +461,9 @@ export default function WorkflowAutomation() {
         throw new Error("Analysis result not found");
       }
 
-      // Save to document store
+      // Create document data with proper risk level
+      const riskLevel = analysisResult.complianceStatus.status === 'PASSED' ? 'LOW' : 'HIGH';
+      
       const documentData = {
         fileName: taskData.currentStepDetails?.description || 'Unknown Document',
         documentType: analysisResult.documentType || 'Legal Document',
@@ -346,16 +477,25 @@ export default function WorkflowAutomation() {
         metadata: {
           confidence: analysisResult.complianceStatus.status === 'PASSED' ? 85 : 0,
           recommendations: [],
-          riskLevel: analysisResult.complianceStatus.status === 'PASSED' ? 'LOW' : 'HIGH'
+          riskLevel: riskLevel as 'LOW' | 'MEDIUM' | 'HIGH'
         }
       };
 
-      documentStore.saveDocument(documentData);
+      // Save to document store and verify
+      const savedDoc = documentStore.saveDocument(documentData);
+      console.log('Document saved:', savedDoc);
+
+      // Verify documents in store
+      const allDocs = documentStore.getDocuments();
+      console.log('All documents:', allDocs);
 
       toast({
         title: "Success",
         description: "Document processed and saved to vault",
       });
+
+      // Trigger a storage event to update other tabs
+      documentStore.dispatchStorageEvent();
 
       setLocation("/vault");
     } catch (error) {
@@ -374,6 +514,166 @@ export default function WorkflowAutomation() {
       handleFinalStage();
     }
   }, [taskData?.status, taskData?.progress]);
+
+  // Add a Research Results component
+  const ResearchResults = ({ research }: { research: DocumentAnalysis['legalResearch'] }) => {
+    if (!research) return null;
+
+    return (
+      <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
+        <h3 className="text-xl font-semibold mb-6 text-white flex items-center gap-2">
+          <BookCheck className="h-5 w-5 text-blue-400" />
+          Legal Research & Analysis
+        </h3>
+
+        {/* Key Legal Issues */}
+        <div className="mb-8">
+          <h4 className="text-lg font-medium text-slate-200 mb-4">Key Legal Issues</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {research.legalAnalysis.keyIssues.map((issue, index) => (
+              <div key={index} className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="h-4 w-4 text-yellow-400" />
+                  <span className="text-slate-200">{issue}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Risk Analysis */}
+        <div className="mb-8">
+          <h4 className="text-lg font-medium text-slate-200 mb-4">Risk Analysis</h4>
+          <div className="space-y-4">
+            {research.legalAnalysis.riskAreas.map((risk, index) => (
+              <div key={index} className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-slate-200 font-medium">{risk.area}</span>
+                  <span className={`px-2 py-1 rounded-full text-xs ${
+                    risk.severity === 'HIGH' ? 'bg-red-500/20 text-red-400' :
+                    risk.severity === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-green-500/20 text-green-400'
+                  }`}>
+                    {risk.severity} Risk
+                  </span>
+                </div>
+                <p className="text-slate-300 text-sm mb-3">{risk.description}</p>
+                <div className="space-y-2">
+                  {risk.recommendations.map((rec, i) => (
+                    <div key={i} className="flex items-start gap-2 text-sm">
+                      <CheckCircle2 className="h-4 w-4 text-blue-400 mt-1" />
+                      <span className="text-slate-300">{rec}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Relevant Cases */}
+        <div className="mb-8">
+          <h4 className="text-lg font-medium text-slate-200 mb-4">Relevant Case Law</h4>
+          <div className="space-y-4">
+            {research.relevantCases.map((caseItem, index) => (
+              <div key={index} className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex justify-between items-start mb-2">
+                  <a 
+                    href={caseItem.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:text-blue-300 font-medium"
+                  >
+                    {caseItem.title}
+                  </a>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-400">
+                      {caseItem.year} | {caseItem.jurisdiction}
+                    </span>
+                    <span className="px-2 py-1 rounded-full text-xs bg-blue-500/20 text-blue-400">
+                      {Math.round(caseItem.relevance * 100)}% Relevant
+                    </span>
+                  </div>
+                </div>
+                <p className="text-slate-300 text-sm mb-3">{caseItem.summary}</p>
+                <div className="space-y-2">
+                  <h5 className="text-sm font-medium text-slate-200">Key Holdings:</h5>
+                  {caseItem.keyHoldings.map((holding, i) => (
+                    <div key={i} className="flex items-start gap-2 text-sm">
+                      <div className="h-4 w-4 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 mt-1">
+                        <span className="text-blue-400 text-xs">{i + 1}</span>
+                      </div>
+                      <span className="text-slate-300">{holding}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Compliance Requirements */}
+        <div className="mb-8">
+          <h4 className="text-lg font-medium text-slate-200 mb-4">Compliance Requirements</h4>
+          <div className="space-y-4">
+            {research.legalAnalysis.complianceRequirements.map((req, index) => (
+              <div key={index} className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-slate-200 font-medium">{req.requirement}</span>
+                  <span className={`px-2 py-1 rounded-full text-xs ${
+                    req.status === 'MET' ? 'bg-green-500/20 text-green-400' :
+                    req.status === 'PARTIAL' ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>
+                    {req.status.replace('_', ' ')}
+                  </span>
+                </div>
+                <div className="space-y-2 mt-3">
+                  {req.actions.map((action, i) => (
+                    <div key={i} className="flex items-start gap-2 text-sm">
+                      <ArrowRight className="h-4 w-4 text-blue-400 mt-1" />
+                      <span className="text-slate-300">{action}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Recommendations */}
+        <div>
+          <h4 className="text-lg font-medium text-slate-200 mb-4">Strategic Recommendations</h4>
+          <div className="space-y-4">
+            {research.legalAnalysis.recommendations.map((rec, index) => (
+              <div key={index} className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      rec.type === 'IMMEDIATE' ? 'bg-red-500/20 text-red-400' :
+                      rec.type === 'SHORT_TERM' ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-green-500/20 text-green-400'
+                    }`}>
+                      {rec.type.replace('_', ' ')}
+                    </span>
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      rec.priority === 'HIGH' ? 'bg-red-500/20 text-red-400' :
+                      rec.priority === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-green-500/20 text-green-400'
+                    }`}>
+                      {rec.priority} Priority
+                    </span>
+                  </div>
+                </div>
+                <p className="text-slate-200 font-medium mb-2">{rec.action}</p>
+                <p className="text-slate-300 text-sm">{rec.rationale}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
@@ -417,9 +717,13 @@ export default function WorkflowAutomation() {
           </div>
         </Card>
 
-        {/* Analysis Results Table */}
-        {analysisResults && renderAnalysisTable()}
+        {/* Always render the Document Vault table */}
+        {renderAnalysisTable()}
 
+        {/* Add this after the Document Vault table */}
+        {taskData?.documentAnalysis?.legalResearch && (
+          <ResearchResults research={taskData.documentAnalysis.legalResearch} />
+        )}
 
         {/* Workflow Progress */}
         {activeTaskId && taskData && (
