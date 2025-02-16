@@ -11,4 +11,13 @@ if (process.env.NODE_ENV === 'production') {
   prisma = (global as any).prisma;
 }
 
+// Verify database connection
+prisma.$connect()
+  .then(() => {
+    console.log('Database connection established');
+  })
+  .catch((error) => {
+    console.error('Database connection failed:', error);
+  });
+
 export default prisma; 

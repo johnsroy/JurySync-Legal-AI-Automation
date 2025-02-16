@@ -37,6 +37,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { triggerVaultUpdate } from '@/lib/events';
+import { documentStore } from '@/lib/documentStore';
 
 interface ErrorLog {
   timestamp: string;
@@ -58,6 +59,11 @@ interface DocumentAnalysis {
 // Modified TaskData interface to include documentAnalysis
 interface TaskData extends OriginalTaskData {
   documentAnalysis?: DocumentAnalysis;
+  currentStepDetails?: {
+    description: string;
+    content: string;
+    status: string;
+  };
 }
 
 // Add this after the existing interfaces
@@ -326,6 +332,7 @@ export default function WorkflowAutomation() {
         throw new Error("Analysis result not found");
       }
 
+      // Save to document store
       const documentData = {
         fileName: taskData.currentStepDetails?.description || 'Unknown Document',
         documentType: analysisResult.documentType || 'Legal Document',
@@ -343,17 +350,7 @@ export default function WorkflowAutomation() {
         }
       };
 
-      const response = await fetch('/api/documents', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(documentData),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save document');
-      }
+      documentStore.saveDocument(documentData);
 
       toast({
         title: "Success",

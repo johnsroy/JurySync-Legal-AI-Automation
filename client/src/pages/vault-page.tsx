@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,24 +11,10 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import Layout from "@/components/Layout";
+import { documentStore, type VaultDocument } from '@/lib/documentStore';
 
 // Define allowed roles that can upload documents
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
-
-interface VaultDocument {
-  id: string;
-  fileName: string;
-  documentType: string;
-  industry: string;
-  complianceStatus: string;
-  timestamp: string;
-  content: string;
-  metadata?: {
-    confidence: number;
-    recommendations: string[];
-    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-  };
-}
 
 // Document type categorization
 const documentTypes = {
@@ -52,13 +38,13 @@ export default function VaultPage() {
   const [documents, setDocuments] = useState<VaultDocument[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<VaultDocument | null>(null);
   const [isContentModalVisible, setIsContentModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [isLoading, setIsLoading] = useState(true);
 
   // Helper function to categorize document type
-  const categorizeDocumentType = (content: string): string => {
+  const categorizeDocumentType = async (content: string): Promise<string> => {
     const contentLower = content.toLowerCase();
     
     for (const [category, keywords] of Object.entries(documentTypes)) {
@@ -68,12 +54,17 @@ export default function VaultPage() {
     }
     
     // Use AI to analyze content and determine document type
-    const aiAnalysis = analyzeDocumentType(content);
-    return aiAnalysis || "Miscellaneous";
+    try {
+      const aiResult = await analyzeDocumentType(content);
+      return aiResult;
+    } catch (error) {
+      console.error('Document type analysis failed:', error);
+      return "Miscellaneous";
+    }
   };
 
   // Helper function to categorize industry
-  const categorizeIndustry = (content: string): string => {
+  const categorizeIndustry = async (content: string): Promise<string> => {
     const contentLower = content.toLowerCase();
     
     for (const [category, keywords] of Object.entries(industries)) {
@@ -83,8 +74,13 @@ export default function VaultPage() {
     }
     
     // Use AI to analyze content and determine industry
-    const aiAnalysis = analyzeIndustry(content);
-    return aiAnalysis || "General";
+    try {
+      const aiResult = await analyzeIndustry(content);
+      return aiResult;
+    } catch (error) {
+      console.error('Industry analysis failed:', error);
+      return "General";
+    }
   };
 
   // AI-powered document analysis
@@ -140,72 +136,41 @@ export default function VaultPage() {
     }
   };
 
-  const fetchDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/documents', {
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setDocuments(data);
+      const docs = documentStore.getDocuments();
+      setDocuments(docs);
     } catch (error) {
-      console.error('Error fetching documents:', error);
+      console.error('Error loading documents:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load documents. Please try again.',
+        description: 'Failed to load documents',
         variant: 'destructive',
       });
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
-    if (user) {
-      fetchDocuments();
-    }
-  }, [user]);
+    loadDocuments();
+    
+    // Listen for storage changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'vaultDocuments') {
+        loadDocuments();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [loadDocuments]);
 
-  // Update refresh handler
-  const handleRefresh = async () => {
-    try {
-      await fetchDocuments();
-      toast({
-        title: 'Success',
-        description: 'Document list refreshed successfully',
-      });
-    } catch (error) {
-      console.error('Error refreshing documents:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to refresh document list',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  // Update delete handler
   const handleDelete = async (id: string) => {
     try {
-      const response = await fetch(`/api/documents/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete document');
-      }
-
-      await fetchDocuments(); // Refresh the list
+      documentStore.deleteDocument(id);
+      loadDocuments();
       toast({
         title: 'Success',
         description: 'Document deleted successfully',
@@ -218,6 +183,14 @@ export default function VaultPage() {
         variant: 'destructive',
       });
     }
+  };
+
+  const handleRefresh = () => {
+    loadDocuments();
+    toast({
+      title: 'Success',
+      description: 'Document list refreshed',
+    });
   };
 
   // File upload handler
@@ -311,19 +284,19 @@ export default function VaultPage() {
   const renderComplianceStatus = (doc: VaultDocument) => {
     const status = doc.complianceStatus.toLowerCase();
     let color = 'text-yellow-600';
-    let icon = AlertCircle;
+    let Icon = AlertCircle;
 
     if (status.includes('compliant')) {
       color = 'text-green-600';
-      icon = CheckCircle2;
+      Icon = CheckCircle2;
     } else if (status.includes('non-compliant')) {
       color = 'text-red-600';
-      icon = XCircle;
+      Icon = XCircle;
     }
 
     return (
       <div className={`flex items-center gap-2 ${color}`}>
-        <icon className="h-4 w-4" />
+        <Icon className="h-4 w-4" />
         <span>{doc.complianceStatus}</span>
       </div>
     );
