@@ -1,35 +1,14 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import {
-  Loader2,
-  AlertCircle,
-  CheckCircle2,
-  Terminal,
-  FileText,
-  Scale,
-  Book,
-  Download,
-  ChevronRight,
-  UploadCloud,
-  BarChart2,
-  Briefcase,
-  Shield,
-  History,
-  RefreshCcw,
-  BrainCircuit,
-  CheckCircle,
-  Circle,
+  Loader2, AlertCircle, CheckCircle2, Terminal, FileText, Scale,
+  Book, Download, ChevronRight, UploadCloud, BarChart2,
+  Briefcase, Shield, History, RefreshCcw
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone } from 'react-dropzone';
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
@@ -45,12 +24,7 @@ import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
 import { generateDraftAnalysis } from "@/services/anthropic-service";
 import { LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Add legal-themed loading messages
 const legalLoadingMessages = [
@@ -68,13 +42,13 @@ const cardVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.5 },
+    transition: { duration: 0.5 }
   },
   exit: {
     opacity: 0,
     y: -20,
-    transition: { duration: 0.3 },
-  },
+    transition: { duration: 0.3 }
+  }
 };
 
 const stageVariants = {
@@ -82,52 +56,53 @@ const stageVariants = {
   animate: {
     scale: 1,
     opacity: 1,
-    transition: { duration: 0.3 },
+    transition: { duration: 0.3 }
   },
   exit: {
     scale: 0.95,
     opacity: 0,
-    transition: { duration: 0.2 },
-  },
+    transition: { duration: 0.2 }
+  }
 };
 
 const progressVariants = {
   initial: { width: 0 },
   animate: (progress: number) => ({
     width: `${progress}%`,
-    transition: { duration: 0.5, ease: "easeInOut" },
-  }),
+    transition: { duration: 0.5, ease: "easeInOut" }
+  })
 };
 
 const cleanDocumentText = (text: string): string => {
-  if (!text) return "";
+  if (!text) return '';
   return text
-    .replace(/<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi, "")
-    .replace(/<\?xml\s+[^>]*\?>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&[a-z]+;/gi, " ")
-    .replace(/\s+/g, " ")
+    .replace(/<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi, '')
+    .replace(/<\?xml\s+[^>]*\?>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 };
 
-const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({
-  onFileSelect,
-}) => {
+const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ onFileSelect }) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
-      "application/pdf": [".pdf"],
-      "application/msword": [".doc"],
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        [".docx"],
-      "text/plain": [".txt"],
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'text/plain': ['.txt']
     },
     onDrop: async (acceptedFiles) => {
       const processedFiles = acceptedFiles.map(async (file) => {
-        if (file.type === "text/plain") {
+        if (file.type === 'text/plain') {
           const text = await file.text();
           const cleanedText = cleanDocumentText(text);
-          return new File([cleanedText], file.name, { type: "text/plain" });
+          return new File(
+            [cleanedText],
+            file.name,
+            { type: 'text/plain' }
+          );
         }
         return file;
       });
@@ -135,32 +110,30 @@ const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({
       const cleanedFiles = await Promise.all(processedFiles);
       onFileSelect(cleanedFiles);
     },
-    multiple: true,
+    multiple: true
   });
 
   return (
     <div
       {...getRootProps()}
       className={`
-        border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-300
-        ${isDragActive ? "border-blue-400 bg-blue-400/10" : "border-slate-600 hover:border-blue-400/50"}
+        border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all
+        ${isDragActive
+          ? 'border-green-500 bg-green-50'
+          : 'border-gray-300 hover:border-green-400 hover:bg-gray-50'
+        }
       `}
     >
       <input {...getInputProps()} />
-      <UploadCloud
-        className={`h-12 w-12 mx-auto mb-4 text-slate-400 transition-transform duration-300 ${isDragActive ? "scale-110" : ""}`}
-      />
-      <h3 className="text-xl font-semibold mb-2">Upload Legal Documents</h3>
-      <p className="text-slate-400 mb-3">
-        Drag & drop your documents here or click to select files
+      <Upload className={`mx-auto h-12 w-12 ${isDragActive ? 'text-green-500' : 'text-gray-400'}`} />
+      <p className="mt-2 text-sm text-gray-600">
+        {isDragActive
+          ? "Drop your documents here..."
+          : "Drag and drop your documents here, or click to select"}
       </p>
-      <div className="flex justify-center gap-3 text-sm text-slate-500">
-        <span>PDF</span>
-        <span>•</span>
-        <span>DOCX</span>
-        <span>•</span>
-        <span>TXT</span>
-      </div>
+      <p className="text-xs text-gray-500 mt-1">
+        Supports PDF, DOCX, DOC, and TXT files
+      </p>
     </div>
   );
 };
@@ -169,41 +142,34 @@ const WorkflowStage: React.FC<{
   icon: React.ElementType;
   title: string;
   description: string;
-  status: "pending" | "processing" | "completed" | "error";
+  status: 'pending' | 'processing' | 'completed' | 'error';
 }> = ({ icon: Icon, title, description, status }) => {
   return (
     <div className="relative flex items-center gap-4">
-      <div
-        className={`
+      <div className={`
         w-10 h-10 rounded-full flex items-center justify-center
-        ${
-          status === "completed"
-            ? "bg-green-100 text-green-600"
-            : status === "processing"
-              ? "bg-blue-100 text-blue-600"
-              : status === "error"
-                ? "bg-red-100 text-red-600"
-                : "bg-gray-100 text-gray-600"
-        }
-      `}
-      >
+        ${status === 'completed' ? 'bg-green-100 text-green-600' :
+          status === 'processing' ? 'bg-blue-100 text-blue-600' :
+            status === 'error' ? 'bg-red-100 text-red-600' :
+              'bg-gray-100 text-gray-600'}
+      `}>
         <Icon className="h-5 w-5" />
       </div>
       <div>
         <h4 className="font-medium text-gray-900">{title}</h4>
         <p className="text-sm text-gray-500">{description}</p>
       </div>
-      {status === "completed" && (
+      {status === 'completed' && (
         <div className="absolute right-0">
           <CheckCircle2 className="h-5 w-5 text-green-500" />
         </div>
       )}
-      {status === "processing" && (
+      {status === 'processing' && (
         <div className="absolute right-0">
           <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
         </div>
       )}
-      {status === "error" && (
+      {status === 'error' && (
         <div className="absolute right-0">
           <RefreshCcw className="h-5 w-5 text-red-500" />
         </div>
@@ -216,7 +182,7 @@ interface StageOutput {
   message: string;
   details?: string;
   timestamp: string;
-  status: "success" | "warning" | "error" | "info";
+  status: 'success' | 'warning' | 'error' | 'info';
 }
 
 interface StageResult {
@@ -227,7 +193,7 @@ interface StageResult {
 }
 
 interface WorkflowStageState {
-  status: "pending" | "processing" | "completed" | "error";
+  status: 'pending' | 'processing' | 'completed' | 'error';
   outputs: StageOutput[];
   result?: StageResult;
   approvers?: Approver[];
@@ -238,12 +204,12 @@ interface WorkflowStageState {
 interface KeyFinding {
   category: string;
   finding: string;
-  severity: "LOW" | "MEDIUM" | "HIGH";
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
 interface ComplianceStatus {
   requirement: string;
-  status: "COMPLIANT" | "NON_COMPLIANT" | "PARTIALLY_COMPLIANT";
+  status: 'COMPLIANT' | 'NON_COMPLIANT' | 'PARTIALLY_COMPLIANT';
   details: string;
 }
 
@@ -261,39 +227,30 @@ export function WorkflowAutomation() {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [workflowProgress, setWorkflowProgress] = useState(0);
   const [currentStage, setCurrentStage] = useState(0);
-  const [stageStates, setStageStates] = useState<
-    Record<number, WorkflowStageState>
-  >({});
-  const [documentAnalyses, setDocumentAnalyses] = useState<
-    Array<{
-      fileName: string;
-      documentType: string;
-      industry: string;
-      complianceStatus: string;
-    }>
-  >([]);
+  const [stageStates, setStageStates] = useState<Record<number, WorkflowStageState>>({});
+  const [documentAnalyses, setDocumentAnalyses] = useState<Array<{
+    fileName: string;
+    documentType: string;
+    industry: string;
+    complianceStatus: string;
+  }>>([]);
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState(legalLoadingMessages[0]);
 
   // Effect to update document analysis based on workflow completion
   useEffect(() => {
     const isWorkflowComplete = Object.values(stageStates).every(
-      (state) => state?.status === "completed",
+      state => state?.status === 'completed'
     );
 
     if (isWorkflowComplete && stageStates[5]?.result?.metadata) {
       const metadata = stageStates[5].result.metadata;
-      setDocumentAnalyses((prev) => [
-        ...prev,
-        {
-          fileName:
-            uploadedFiles[uploadedFiles.length - 1]?.name ||
-            "Untitled Document",
-          documentType: metadata.documentType,
-          industry: metadata.industry,
-          complianceStatus: metadata.complianceStatus,
-        },
-      ]);
+      setDocumentAnalyses(prev => [...prev, {
+        fileName: uploadedFiles[uploadedFiles.length - 1]?.name || 'Untitled Document',
+        documentType: metadata.documentType,
+        industry: metadata.industry,
+        complianceStatus: metadata.complianceStatus
+      }]);
     }
   }, [stageStates, uploadedFiles]);
 
@@ -301,9 +258,7 @@ export function WorkflowAutomation() {
     if (currentStage >= 0 && workflowProgress < 100) {
       const interval = setInterval(() => {
         setLoadingMessage(
-          legalLoadingMessages[
-            Math.floor(Math.random() * legalLoadingMessages.length)
-          ],
+          legalLoadingMessages[Math.floor(Math.random() * legalLoadingMessages.length)]
         );
       }, 3000);
       return () => clearInterval(interval);
@@ -322,68 +277,60 @@ export function WorkflowAutomation() {
     }
   }, [toast]);
 
-  const handleSuggestionSelect = useCallback(
-    (suggestionText: string) => {
-      if (!selectedText) return;
+  const handleSuggestionSelect = useCallback((suggestionText: string) => {
+    if (!selectedText) return;
 
-      const textArea = document.querySelector("textarea");
-      if (!textArea) return;
+    const textArea = document.querySelector('textarea');
+    if (!textArea) return;
 
-      const start = textArea.selectionStart;
-      const end = textArea.selectionEnd;
+    const start = textArea.selectionStart;
+    const end = textArea.selectionEnd;
 
-      setDocumentText(
-        (prev) =>
-          prev.substring(0, start) + suggestionText + prev.substring(end),
-      );
+    setDocumentText(prev =>
+      prev.substring(0, start) +
+      suggestionText +
+      prev.substring(end)
+    );
 
-      toast({
-        title: "Suggestion Applied",
-        description: "The selected clause has been updated.",
-      });
-    },
-    [selectedText, toast],
-  );
+    toast({
+      title: "Suggestion Applied",
+      description: "The selected clause has been updated.",
+    });
+  }, [selectedText, toast]);
 
-  const addStageOutput = useCallback(
-    (stageIndex: number, output: StageOutput) => {
-      setStageStates((prev) => ({
-        ...prev,
-        [stageIndex]: {
-          ...prev[stageIndex],
-          outputs: [...(prev[stageIndex]?.outputs || []), output],
-        },
-      }));
-    },
-    [],
-  );
+  const addStageOutput = useCallback((stageIndex: number, output: StageOutput) => {
+    setStageStates(prev => ({
+      ...prev,
+      [stageIndex]: {
+        ...prev[stageIndex],
+        outputs: [...(prev[stageIndex]?.outputs || []), output]
+      }
+    }));
+  }, []);
 
-  const updateStageStatus = useCallback(
-    (stageIndex: number, status: WorkflowStageState["status"]) => {
-      setStageStates((prev) => ({
-        ...prev,
-        [stageIndex]: {
-          ...prev[stageIndex],
-          status,
-          outputs: prev[stageIndex]?.outputs || [],
-        },
-      }));
-    },
-    [],
-  );
+  const updateStageStatus = useCallback((stageIndex: number, status: WorkflowStageState['status']) => {
+    setStageStates(prev => ({
+      ...prev,
+      [stageIndex]: {
+        ...prev[stageIndex],
+        status,
+        outputs: prev[stageIndex]?.outputs || []
+      }
+    }));
+  }, []);
 
   const generatePDF = async (content: string, title: string) => {
     const doc = new jsPDF();
 
-    const element = document.createElement("div");
+    const element = document.createElement('div');
     element.innerHTML = content;
     document.body.appendChild(element);
 
     try {
       const canvas = await html2canvas(element);
-      const imgData = canvas.toDataURL("image/png");
-      doc.addImage(imgData, "PNG", 10, 10, 190, 0);
-      doc.save(`${title.toLowerCase().replace(/\s+/g, "-")}.pdf`);
+      const imgData = canvas.toDataURL('image/png');
+      doc.addImage(imgData, 'PNG', 10, 10, 190, 0);
+      doc.save(`${title.toLowerCase().replace(/\s+/g, '-')}.pdf`);
     } finally {
       document.body.removeChild(element);
     }
@@ -394,7 +341,7 @@ export function WorkflowAutomation() {
       toast({
         title: "No Content",
         description: "Please enter document text",
-        variant: "destructive",
+        variant: "destructive"
       });
       return;
     }
@@ -423,7 +370,7 @@ export function WorkflowAutomation() {
               message: "Draft analysis completed",
               details: "AI has analyzed the document structure and content",
               timestamp: new Date().toISOString(),
-              status: "success",
+              status: 'success'
             });
 
             return {
@@ -432,14 +379,14 @@ export function WorkflowAutomation() {
               metadata: {
                 analysisType: "DRAFT_GENERATION",
                 timestamp: new Date().toISOString(),
-                confidence: 0.95,
-              },
+                confidence: 0.95
+              }
             };
           } catch (error) {
             console.error("Draft generation error:", error);
             throw error;
           }
-        },
+        }
       },
       {
         name: "Compliance Check",
@@ -450,10 +397,10 @@ export function WorkflowAutomation() {
             findings: [
               "Document structure follows standard format",
               "Required legal clauses present",
-              "No major compliance issues detected",
+              "No major compliance issues detected"
             ],
             documentType: "SOC 3 Report",
-            industry: "TECHNOLOGY",
+            industry: "TECHNOLOGY"
           };
 
           const complianceContent = `
@@ -461,7 +408,7 @@ export function WorkflowAutomation() {
             <p><strong>Compliance Score:</strong> ${complianceResult.score}%</p>
             <h3>Key Findings:</h3>
             <ul>
-              ${complianceResult.findings.map((finding) => `<li>${finding}</li>`).join("")}
+              ${complianceResult.findings.map(finding => `<li>${finding}</li>`).join('')}
             </ul>
           `;
 
@@ -474,10 +421,10 @@ export function WorkflowAutomation() {
               score: complianceResult.score,
               findings: complianceResult.findings,
               documentType: complianceResult.documentType,
-              industry: complianceResult.industry,
-            },
+              industry: complianceResult.industry
+            }
           };
-        },
+        }
       },
       {
         name: "Legal Research",
@@ -493,9 +440,9 @@ export function WorkflowAutomation() {
 
           return {
             content: researchContent,
-            title: "Legal Research Report",
+            title: "Legal Research Report"
           };
-        },
+        }
       },
       {
         name: "Approval Process",
@@ -507,9 +454,9 @@ export function WorkflowAutomation() {
 
           return {
             content: approvalContent,
-            title: "Approval Status Report",
+            title: "Approval Status Report"
           };
-        },
+        }
       },
       {
         name: "Final Audit",
@@ -521,27 +468,24 @@ export function WorkflowAutomation() {
 
           return {
             content: auditContent,
-            title: "Final Audit Report",
+            title: "Final Audit Report"
           };
-        },
+        }
       },
       {
         name: "Document Analysis Results",
         handler: async () => {
-          const workflowResults = Object.entries(stageStates).map(
-            ([stage, state]) => ({
-              stageType: workflowStages[Number(stage)].title.toLowerCase(),
-              content: documentText,
-              status: state.status,
-              metadata: state.result?.metadata,
-            }),
-          );
+          const workflowResults = Object.entries(stageStates).map(([stage, state]) => ({
+            stageType: workflowStages[Number(stage)].title.toLowerCase(),
+            content: documentText,
+            status: state.status,
+            metadata: state.result?.metadata
+          }));
 
           const complianceStage = stageStates[1]?.result?.metadata;
           const currentFile = uploadedFiles[uploadedFiles.length - 1];
 
-          const documentType =
-            complianceStage?.documentType || "Compliance Document";
+          const documentType = complianceStage?.documentType || "Compliance Document";
           const industry = complianceStage?.industry || "TECHNOLOGY";
           const complianceStatus = complianceStage?.status || "Compliant";
 
@@ -550,7 +494,7 @@ export function WorkflowAutomation() {
             <div class="space-y-4">
               <div>
                 <h3>Document Classification</h3>
-                <p><strong>File:</strong> ${currentFile?.name || "Untitled Document"}</p>
+                <p><strong>File:</strong> ${currentFile?.name || 'Untitled Document'}</p>
                 <p><strong>Type:</strong> ${documentType}</p>
                 <p><strong>Industry:</strong> ${industry}</p>
               </div>
@@ -567,47 +511,45 @@ export function WorkflowAutomation() {
             industry,
             complianceStatus: complianceStatus,
             confidence: complianceStage?.score || 0,
-            fileName: currentFile?.name,
+            fileName: currentFile?.name
           };
 
           return {
             content: analysisContent,
             title: "Document Analysis Results",
-            metadata: finalMetadata,
+            metadata: finalMetadata
           };
-        },
-      },
+        }
+      }
     ];
 
     try {
       for (let i = 0; i < stages.length; i++) {
         setCurrentStage(i);
-        updateStageStatus(i, "processing");
+        updateStageStatus(i, 'processing');
 
         addStageOutput(i, {
           message: `Starting ${stages[i].name}`,
           timestamp: new Date().toISOString(),
-          status: "info",
+          status: 'info'
         });
 
         try {
           const result = await stages[i].handler();
 
-          setStageStates((prev) => ({
+          setStageStates(prev => ({
             ...prev,
             [i]: {
               ...prev[i],
-              status: "completed",
+              status: 'completed',
               result: {
                 ...result,
                 metadata: {
                   ...result.metadata,
-                  complianceStatus:
-                    result.metadata?.status ||
-                    result.metadata?.complianceStatus,
-                },
-              },
-            },
+                  complianceStatus: result.metadata?.status || result.metadata?.complianceStatus
+                }
+              }
+            }
           }));
 
           setWorkflowProgress((i + 1) * (100 / stages.length));
@@ -615,16 +557,16 @@ export function WorkflowAutomation() {
           addStageOutput(i, {
             message: `${stages[i].name} completed`,
             timestamp: new Date().toISOString(),
-            status: "success",
+            status: 'success'
           });
         } catch (error) {
           console.error(`Error in stage ${i}:`, error);
-          updateStageStatus(i, "error");
+          updateStageStatus(i, 'error');
           addStageOutput(i, {
             message: `Error in ${stages[i].name}`,
-            details: error instanceof Error ? error.message : "Unknown error",
+            details: error instanceof Error ? error.message : 'Unknown error',
             timestamp: new Date().toISOString(),
-            status: "error",
+            status: 'error'
           });
           throw error;
         }
@@ -638,223 +580,483 @@ export function WorkflowAutomation() {
       toast({
         title: "Processing Error",
         description: "An error occurred during document processing",
-        variant: "destructive",
+        variant: "destructive"
       });
     }
   };
 
-  const handleFileProcessed = useCallback(
-    ({
-      text,
-      documentId,
-      fileName,
-    }: {
-      text: string;
-      documentId: string;
-      fileName: string;
-    }) => {
-      setDocumentText(text);
-      toast({
-        title: "Document Processed",
-        description: `${fileName} has been successfully parsed and loaded.`,
-      });
-    },
-    [toast],
-  );
+  const handleFileProcessed = useCallback(({ text, documentId, fileName }: { text: string; documentId: string; fileName: string }) => {
+    setDocumentText(text);
+    toast({
+      title: "Document Processed",
+      description: `${fileName} has been successfully parsed and loaded.`,
+    });
+  }, [toast]);
 
-  const handleFileError = useCallback(
-    (error: string) => {
-      toast({
-        title: "Upload Failed",
-        description: error,
-        variant: "destructive",
-      });
-    },
-    [toast],
-  );
+  const handleFileError = useCallback((error: string) => {
+    toast({
+      title: "Upload Failed",
+      description: error,
+      variant: "destructive"
+    });
+  }, [toast]);
 
   const workflowStages = [
     {
       title: "Draft Generation",
       description: "AI-powered document drafting and formatting",
-      icon: FileText,
+      icon: FileText
     },
     {
       title: "Compliance Check",
       description: "Automated compliance check and risk assessment",
-      icon: Shield,
+      icon: Shield
     },
     {
       title: "Legal Research",
       description: "Context-aware legal research and analysis",
-      icon: Book,
+      icon: Book
     },
     {
       title: "Approval Process",
       description: "Workflow approval and document execution",
-      icon: History,
+      icon: History
     },
     {
       title: "Final Audit",
       description: "Continuous monitoring and compliance updates",
-      icon: RefreshCcw,
+      icon: RefreshCcw
     },
     {
       title: "Document Analysis Results",
       description: "Final analysis of the document",
-      icon: BarChart2,
-    },
+      icon: BarChart2
+    }
   ];
 
   const logoVariants = {
     initial: { scale: 1, rotate: 0 },
-    hover: { scale: 1.1, rotate: 360, transition: { duration: 0.6 } },
+    hover: { scale: 1.1, rotate: 360, transition: { duration: 0.6 } }
   };
 
   const textVariants = {
     initial: { x: 0, opacity: 1 },
-    hover: { x: 10, opacity: 0.8, transition: { duration: 0.3 } },
+    hover: { x: 10, opacity: 0.8, transition: { duration: 0.3 } }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
-      {/* Header Section */}
-      <header className="border-b border-slate-700">
-        <div className="container mx-auto py-6">
-          <div className="flex items-center space-x-2 mb-2">
-            <BrainCircuit className="h-8 w-8 text-blue-400" />
-            <h1 className="text-3xl font-bold tracking-tight">
-              Full Lifecycle Automation Workflow
-            </h1>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+      <header className="bg-white/80 backdrop-blur-lg border-b border-indigo-100">
+        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Link href="/dashboard" className="flex items-center space-x-4 hover:text-indigo-600">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white">
+                <Briefcase className="h-5 w-5" />
+              </div>
+              <h1 className="text-xl font-semibold">JurySync</h1>
+            </Link>
           </div>
-          <p className="text-slate-400 text-lg">
-            From Draft to Execution – Automating 80% of Legal Compliance Tasks
-          </p>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-600">
+              Welcome, {user?.firstName} {user?.lastName}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => logoutMutation.mutate()}
+              disabled={logoutMutation.isPending}
+            >
+              {logoutMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogOut className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="container mx-auto py-8">
-        {/* Upload Section */}
-        <Card className="p-8 mb-8 bg-slate-800 border-slate-700">
-          <div
-            {...getRootProps()}
-            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-300
-              ${isDragActive ? "border-blue-400 bg-blue-400/10" : "border-slate-600 hover:border-blue-400/50"}`}
+      <div className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-10">
+        <motion.div
+          className="flex items-center gap-2 p-4 mb-6 cursor-pointer"
+          onHoverStart={() => setIsLogoHovered(true)}
+          onHoverEnd={() => setIsLogoHovered(false)}
+          onClick={() => setIsLogoHovered(!isLogoHovered)}
+        >
+          <motion.div
+            variants={logoVariants}
+            initial="initial"
+            animate={isLogoHovered ? "hover" : "initial"}
           >
-            <input {...getInputProps()} />
-            <UploadCloud
-              className={`h-12 w-12 mx-auto mb-4 text-slate-400 transition-transform duration-300 ${isDragActive ? "scale-110" : ""}`}
-            />
-            <h3 className="text-xl font-semibold mb-2">
-              Upload Legal Documents
-            </h3>
-            <p className="text-slate-400 mb-3">
-              Drag & drop your documents here or click to select files
-            </p>
-            <div className="flex justify-center gap-3 text-sm text-slate-500">
-              <span>PDF</span>
-              <span>•</span>
-              <span>DOCX</span>
-              <span>•</span>
-              <span>TXT</span>
-            </div>
-          </div>
-        </Card>
+            <Shield className="h-6 w-6 text-primary" />
+          </motion.div>
+          <motion.span
+            className="text-xl font-bold"
+            variants={textVariants}
+            initial="initial"
+            animate={isLogoHovered ? "hover" : "initial"}
+          >
+            JurySync
+          </motion.span>
+        </motion.div>
 
-        {/* Workflow Progress Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Progress Tracker */}
-          <Card className="bg-slate-800 border-slate-700 p-6">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Workflow Progress</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {workflowStages.map((stage, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start space-x-3 p-2 rounded-lg hover:bg-slate-700/50 transition-colors"
-                  >
-                    <div className="flex-shrink-0 mt-1">
-                      {stage.completed ? (
-                        <div className="relative">
-                          <CheckCircle className="h-5 w-5 text-green-500" />
+        <nav className="space-y-1 px-2">
+          <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <BarChart2 className="h-5 w-5 text-gray-400" />
+            Dashboard
+          </Link>
+
+          <Link href="/workflow-automation" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md bg-primary/5 text-primary hover:bg-primary/10">
+            <FileText className="h-5 w-5" />
+            Workflow Automation
+          </Link>
+
+          <Link href="/contract-automation" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <Scale className="h-5 w-5 text-gray-400" />
+            Contract Automation
+          </Link>
+
+          <Link href="/juryvault" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <Shield className="h-5 w-5 text-gray-400" />
+            JuryVault
+          </Link>
+
+          <Link href="/history-reports" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <History className="h-5 w-5 text-gray-400" />
+            History & Reports
+          </Link>
+
+          <Link href="/settings" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <Terminal className="h-5 w-5 text-gray-400" />
+            Settings
+          </Link>
+        </nav>
+      </div>
+
+      <div className="ml-64">
+        <main className="container mx-auto px-4 py-8">
+          <motion.div
+            className="max-w-6xl mx-auto space-y-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            <motion.div
+              className="text-center mb-8"
+              initial={{ y: -20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+            >
+              <h1 className="text-3xl font-bold text-gray-900">
+                Document Workflow Automation
+              </h1>
+              <p className="mt-2 text-gray-600">
+                Process and analyze legal documents with JurySync AI assistance
+              </p>
+            </motion.div>
+
+            <AnimatePresence>
+              {documentAnalyses.length > 0 && (
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Document Analysis Results</CardTitle>
+                      <CardDescription>
+                        Automated classification and compliance assessment
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {documentAnalyses.map((analysis, index) => (
+                          <DocumentAnalysisTable
+                            key={index}
+                            analysis={analysis}
+                            isLoading={false}
+                          />
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Document Upload</CardTitle>
+                      <CardDescription>
+                        Upload your document or enter text manually below
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <FileUpload
+                        onFileProcessed={handleFileProcessed}
+                        onError={handleFileError}
+                        multiple={true}
+                        setUploadedFiles={setUploadedFiles}
+                      />
+                    </CardContent>
+                  </Card>
+                </motion.div>
+
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  transition={{ delay: 0.2 }}
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Document Editor</CardTitle>
+                      <CardDescription>
+                        Edit your document and select text for suggestions
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Textarea
+                        placeholder="Enter or paste your document text here..."
+                        className="min-h-[200px] resize-none"
+                        value={documentText}
+                        onChange={(e) => setDocumentText(e.target.value)}
+                        onSelect={handleTextSelect}
+                        onMouseUp={handleTextSelect}
+                        onKeyUp={handleTextSelect}
+                      />
+                      <Button
+                        className="w-full"
+                        onClick={handleSubmit}
+                        disabled={!documentText.trim()}
+                      >
+                        Process Document
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+
+                <AnimatePresence>
+                  {Object.entries(stageStates).map(([stageIndex, state]) => (
+                    <motion.div
+                      key={stageIndex}
+                      variants={stageVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      layout
+                    >
+                      <Card className="bg-white/80 backdrop-blur-lg">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            {(() => {
+                              const Icon = workflowStages[Number(stageIndex)].icon;
+                              return (
+                                <Icon className={
+                                  state.status === 'completed' ? 'text-green-500' :
+                                    state.status === 'processing' ? 'text-blue-500' :
+                                      state.status === 'error' ? 'text-red-500' :
+                                        'text-gray-500'
+                                } />
+                              );
+                            })()}
+                            {workflowStages[Number(stageIndex)].title}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {state.outputs.map((output, idx) => (
+                            <div
+                              key={idx}
+                              className={`p-4 rounded-lg border ${
+                                output.status === 'error' ? 'border-red-200 bg-red-50' :
+                                  output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
+                                    output.status === 'success' ? 'border-green-200 bg-green-50' :
+                                      'border-blue-200 bg-blue-50'
+                                }`}
+                            >
+                              <p className="font-medium">{output.message}</p>
+                              {output.details && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {output.details}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-2">
+                                {new Date(output.timestamp).toLocaleTimeString()}
+                              </p>
+                            </div>
+                          ))}
+
+                          {state.result && (
+                            <DocumentPreview
+                              content={state.result.content}
+                              title={state.result.title}
+                              metadata={state.result.metadata}
+                              onDownload={() => generatePDF(state.result.content, state.result.title)}
+                            >
+                              {currentStage === 3 && (
+                                <Card className="bg-white/80 backdrop-blur-lg mt-4">
+                                  <CardHeader>
+                                    <CardTitle>Document Approval</CardTitle>
+                                    <CardDescription>
+                                      Request approval for this document
+                                    </CardDescription>
+                                  </CardHeader>
+                                  <CardContent>
+                                    {!stageStates[3]?.isApproved ? (
+                                      <ApprovalForm
+                                        onApprove={async (approvers) => {
+                                          try {
+                                            setStageStates(prev => ({
+                                              ...prev,
+                                              [currentStage]: {
+                                                ...prev[currentStage],
+                                                approvers,
+                                                isApproved: true,
+                                                status: 'completed'
+                                              }
+                                            }));
+
+                                            setCurrentStage(prev => prev + 1);
+                                            setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
+
+                                            addStageOutput(currentStage, {
+                                              message: "Document approved",
+                                              details: `Approved by ${approvers.length} reviewer(s)`,
+                                              timestamp: new Date().toISOString(),
+                                              status: 'success'
+                                            });
+                                          } catch (error) {
+                                            console.error("Approval error:", error);
+                                            toast({
+                                              title: "Approval Failed",
+                                              description: error instanceof Error ? error.message : "Failed to process approval",
+                                              variant: "destructive"
+                                            });
+                                          }
+                                        }}
+                                        isLoading={stageStates[3]?.status === 'processing'}
+                                      />
+                                    ) : (
+                                      <div className="text-center text-green-600">
+                                        <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
+                                        <p>Document has been approved</p>
+                                      </div>
+                                    )}
+                                  </CardContent>
+                                </Card>
+                              )}
+                            </DocumentPreview>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+
+              <div className="space-y-6">
+                <PredictiveSuggestions
+                  selectedText={selectedText}
+                  onSuggestionSelect={handleSuggestionSelect}
+                />
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  transition={{ delay: 0.4 }}
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Workflow Progress</CardTitle>
+                      <CardDescription>
+                        Track document processing progress
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div className="relative pt-1">
+                        <div className="flex mb-2 items-center justify-between">
+                          <div>
+                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-100 text-blue-600">
+                              {workflowProgress < 100 ? 'Processing' : 'Complete'}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold inline-block text-blue-600">
+                              {workflowProgress}%
+                            </span>
+                          </div>
                         </div>
-                      ) : stage.inProgress ? (
-                        <Loader2 className="h-5 w-5 text-blue-400 animate-spin" />
-                      ) : (
-                        <Circle className="h-5 w-5 text-slate-500" />
-                      )}
-                    </div>
-                    <div className="flex-grow min-w-0">
-                      {" "}
-                      {/* Added min-w-0 to prevent text overflow */}
-                      <div className="flex justify-between items-start">
-                        <span className="font-medium block truncate">
-                          {stage.title}
-                        </span>
-                        {stage.completed && (
-                          <span className="text-xs text-green-500 ml-2 flex-shrink-0">
-                            Completed
-                          </span>
+                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-100">
+                          <motion.div
+                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
+                            variants={progressVariants}
+                            initial="initial"
+                            animate="animate"
+                            custom={workflowProgress}
+                          />
+                        </div>
+                        {workflowProgress < 100 && (
+                          <motion.p
+                            className="text-sm text-gray-600 text-center"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.3 }}
+                          >
+                            {loadingMessage}
+                          </motion.p>
                         )}
                       </div>
-                      <p className="text-sm text-slate-400 mt-0.5">
-                        {stage.description}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
 
-          {/* Metrics Dashboard */}
-          <Card className="bg-slate-800 border-slate-700 p-6">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Processing Metrics</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                {metrics.map((metric, index) => (
-                  <div key={index} className="p-4 bg-slate-700/50 rounded-lg">
-                    <div className="text-2xl font-bold text-blue-400">
-                      {metric.value}
-                    </div>
-                    <div className="text-sm text-slate-300">{metric.label}</div>
-                    <div className="text-xs text-slate-400 mt-1">
-                      {metric.description}
-                    </div>
-                  </div>
-                ))}
+                      <div className="space-y-6">
+                        {workflowStages.map((stage, index) => (
+                          <TooltipProvider key={index}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="w-full">
+                                  <WorkflowStage
+                                    icon={stage.icon}
+                                    title={stage.title}
+                                    description={stage.description}
+                                    status={stageStates[index]?.status || 'pending'}
+                                  />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="right">
+                                <p>{getStageTooltip(stage.title, stageStates[index]?.status)}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Results Section - Only show when there are results */}
-        {analysisResults && (
-          <Card className="bg-slate-800 border-slate-700 p-6">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Analysis Results</CardTitle>
-            </CardHeader>
-            <CardContent>{renderAnalysisTable()}</CardContent>
-          </Card>
-        )}
-      </main>
+            </div>
+          </motion.div>
+        </main>
+      </div>
     </div>
   );
 }
 
 function getStageTooltip(stage: string, status: string | undefined): string {
-  if (!status || status === "pending") {
+  if (!status || status === 'pending') {
     return `Waiting to begin ${stage.toLowerCase()} phase`;
   }
-  if (status === "processing") {
+  if (status === 'processing') {
     return `Currently processing ${stage.toLowerCase()}`;
   }
-  if (status === "completed") {
+  if (status === 'completed') {
     return `Successfully completed ${stage.toLowerCase()}`;
   }
   return `Error during ${stage.toLowerCase()} phase`;

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import {
   Loader2, AlertCircle, CheckCircle2, Terminal, FileText, Scale,
   Book, Download, ChevronRight, UploadCloud, BarChart2,
-  Briefcase, Shield, History, RefreshCcw, BrainCircuit, CheckCircle, Circle
+  Briefcase, Shield, History, RefreshCcw
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from 'react-dropzone';
@@ -117,25 +117,23 @@ const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ o
     <div
       {...getRootProps()}
       className={`
-        border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-300
-        ${isDragActive ? 'border-blue-400 bg-blue-400/10' : 'border-slate-600 hover:border-blue-400/50'}
+        border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all
+        ${isDragActive
+          ? 'border-green-500 bg-green-50'
+          : 'border-gray-300 hover:border-green-400 hover:bg-gray-50'
+        }
       `}
     >
       <input {...getInputProps()} />
-      <UploadCloud className={`h-12 w-12 mx-auto mb-4 text-slate-400 transition-transform duration-300 ${isDragActive ? 'scale-110' : ''}`} />
-      <h3 className="text-xl font-semibold mb-2">
-        Upload Legal Documents
-      </h3>
-      <p className="text-slate-400 mb-3">
-        Drag & drop your documents here or click to select files
+      <Upload className={`mx-auto h-12 w-12 ${isDragActive ? 'text-green-500' : 'text-gray-400'}`} />
+      <p className="mt-2 text-sm text-gray-600">
+        {isDragActive
+          ? "Drop your documents here..."
+          : "Drag and drop your documents here, or click to select"}
       </p>
-      <div className="flex justify-center gap-3 text-sm text-slate-500">
-        <span>PDF</span>
-        <span>•</span>
-        <span>DOCX</span>
-        <span>•</span>
-        <span>TXT</span>
-      </div>
+      <p className="text-xs text-gray-500 mt-1">
+        Supports PDF, DOCX, DOC, and TXT files
+      </p>
     </div>
   );
 };
@@ -647,117 +645,406 @@ export function WorkflowAutomation() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
-      {/* Header Section */}
-      <header className="border-b border-slate-700">
-        <div className="container mx-auto py-6">
-          <div className="flex items-center space-x-2 mb-2">
-            <BrainCircuit className="h-8 w-8 text-blue-400" />
-            <h1 className="text-3xl font-bold tracking-tight">
-              Full Lifecycle Automation Workflow
-            </h1>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+      <header className="bg-white/80 backdrop-blur-lg border-b border-indigo-100">
+        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Link href="/dashboard" className="flex items-center space-x-4 hover:text-indigo-600">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white">
+                <Briefcase className="h-5 w-5" />
+              </div>
+              <h1 className="text-xl font-semibold">JurySync</h1>
+            </Link>
           </div>
-          <p className="text-slate-400 text-lg">
-            From Draft to Execution – Automating 80% of Legal Compliance Tasks
-          </p>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-600">
+              Welcome, {user?.firstName} {user?.lastName}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => logoutMutation.mutate()}
+              disabled={logoutMutation.isPending}
+            >
+              {logoutMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogOut className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="container mx-auto py-8">
-        {/* Upload Section */}
-        <Card className="p-8 mb-8 bg-slate-800 border-slate-700">
-          <div
-            {...getRootProps()}
-            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-300
-              ${isDragActive ? 'border-blue-400 bg-blue-400/10' : 'border-slate-600 hover:border-blue-400/50'}`}
+      <div className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-10">
+        <motion.div
+          className="flex items-center gap-2 p-4 mb-6 cursor-pointer"
+          onHoverStart={() => setIsLogoHovered(true)}
+          onHoverEnd={() => setIsLogoHovered(false)}
+          onClick={() => setIsLogoHovered(!isLogoHovered)}
+        >
+          <motion.div
+            variants={logoVariants}
+            initial="initial"
+            animate={isLogoHovered ? "hover" : "initial"}
           >
-            <input {...getInputProps()} />
-            <UploadCloud className={`h-12 w-12 mx-auto mb-4 text-slate-400 transition-transform duration-300 ${isDragActive ? 'scale-110' : ''}`} />
-            <h3 className="text-xl font-semibold mb-2">
-              Upload Legal Documents
-            </h3>
-            <p className="text-slate-400 mb-3">
-              Drag & drop your documents here or click to select files
-            </p>
-            <div className="flex justify-center gap-3 text-sm text-slate-500">
-              <span>PDF</span>
-              <span>•</span>
-              <span>DOCX</span>
-              <span>•</span>
-              <span>TXT</span>
-            </div>
-          </div>
-        </Card>
+            <Shield className="h-6 w-6 text-primary" />
+          </motion.div>
+          <motion.span
+            className="text-xl font-bold"
+            variants={textVariants}
+            initial="initial"
+            animate={isLogoHovered ? "hover" : "initial"}
+          >
+            JurySync
+          </motion.span>
+        </motion.div>
 
-        {/* Workflow Progress Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Progress Tracker */}
-          <Card className="bg-slate-800 border-slate-700 p-6">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Workflow Progress</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {workflowStages.map((stage, index) => (
-                  <div key={index} className="flex items-start space-x-3 p-2 rounded-lg hover:bg-slate-700/50 transition-colors">
-                    <div className="flex-shrink-0 mt-1">
-                      {stage.completed ? (
-                        <div className="relative">
-                          <CheckCircle className="h-5 w-5 text-green-500" />
+        <nav className="space-y-1 px-2">
+          <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <BarChart2 className="h-5 w-5 text-gray-400" />
+            Dashboard
+          </Link>
+
+          <Link href="/workflow-automation" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md bg-primary/5 text-primary hover:bg-primary/10">
+            <FileText className="h-5 w-5" />
+            Workflow Automation
+          </Link>
+
+          <Link href="/contract-automation" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <Scale className="h-5 w-5 text-gray-400" />
+            Contract Automation
+          </Link>
+
+          <Link href="/juryvault" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <Shield className="h-5 w-5 text-gray-400" />
+            JuryVault
+          </Link>
+
+          <Link href="/history-reports" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <History className="h-5 w-5 text-gray-400" />
+            History & Reports
+          </Link>
+
+          <Link href="/settings" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-50">
+            <Terminal className="h-5 w-5 text-gray-400" />
+            Settings
+          </Link>
+        </nav>
+      </div>
+
+      <div className="ml-64">
+        <main className="container mx-auto px-4 py-8">
+          <motion.div
+            className="max-w-6xl mx-auto space-y-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            <motion.div
+              className="text-center mb-8"
+              initial={{ y: -20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+            >
+              <h1 className="text-3xl font-bold text-gray-900">
+                Document Workflow Automation
+              </h1>
+              <p className="mt-2 text-gray-600">
+                Process and analyze legal documents with JurySync AI assistance
+              </p>
+            </motion.div>
+
+            <AnimatePresence>
+              {documentAnalyses.length > 0 && (
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Document Analysis Results</CardTitle>
+                      <CardDescription>
+                        Automated classification and compliance assessment
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {documentAnalyses.map((analysis, index) => (
+                          <DocumentAnalysisTable
+                            key={index}
+                            analysis={analysis}
+                            isLoading={false}
+                          />
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Document Upload</CardTitle>
+                      <CardDescription>
+                        Upload your document or enter text manually below
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <FileUpload
+                        onFileProcessed={handleFileProcessed}
+                        onError={handleFileError}
+                        multiple={true}
+                        setUploadedFiles={setUploadedFiles}
+                      />
+                    </CardContent>
+                  </Card>
+                </motion.div>
+
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  transition={{ delay: 0.2 }}
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Document Editor</CardTitle>
+                      <CardDescription>
+                        Edit your document and select text for suggestions
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Textarea
+                        placeholder="Enter or paste your document text here..."
+                        className="min-h-[200px] resize-none"
+                        value={documentText}
+                        onChange={(e) => setDocumentText(e.target.value)}
+                        onSelect={handleTextSelect}
+                        onMouseUp={handleTextSelect}
+                        onKeyUp={handleTextSelect}
+                      />
+                      <Button
+                        className="w-full"
+                        onClick={handleSubmit}
+                        disabled={!documentText.trim()}
+                      >
+                        Process Document
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+
+                <AnimatePresence>
+                  {Object.entries(stageStates).map(([stageIndex, state]) => (
+                    <motion.div
+                      key={stageIndex}
+                      variants={stageVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      layout
+                    >
+                      <Card className="bg-white/80 backdrop-blur-lg">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            {(() => {
+                              const Icon = workflowStages[Number(stageIndex)].icon;
+                              return (
+                                <Icon className={
+                                  state.status === 'completed' ? 'text-green-500' :
+                                    state.status === 'processing' ? 'text-blue-500' :
+                                      state.status === 'error' ? 'text-red-500' :
+                                        'text-gray-500'
+                                } />
+                              );
+                            })()}
+                            {workflowStages[Number(stageIndex)].title}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {state.outputs.map((output, idx) => (
+                            <div
+                              key={idx}
+                              className={`p-4 rounded-lg border ${
+                                output.status === 'error' ? 'border-red-200 bg-red-50' :
+                                  output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
+                                    output.status === 'success' ? 'border-green-200 bg-green-50' :
+                                      'border-blue-200 bg-blue-50'
+                                }`}
+                            >
+                              <p className="font-medium">{output.message}</p>
+                              {output.details && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {output.details}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-2">
+                                {new Date(output.timestamp).toLocaleTimeString()}
+                              </p>
+                            </div>
+                          ))}
+
+                          {state.result && (
+                            <DocumentPreview
+                              content={state.result.content}
+                              title={state.result.title}
+                              metadata={state.result.metadata}
+                              onDownload={() => generatePDF(state.result.content, state.result.title)}
+                            >
+                              {currentStage === 3 && (
+                                <Card className="bg-white/80 backdrop-blur-lg mt-4">
+                                  <CardHeader>
+                                    <CardTitle>Document Approval</CardTitle>
+                                    <CardDescription>
+                                      Request approval for this document
+                                    </CardDescription>
+                                  </CardHeader>
+                                  <CardContent>
+                                    {!stageStates[3]?.isApproved ? (
+                                      <ApprovalForm
+                                        onApprove={async (approvers) => {
+                                          try {
+                                            setStageStates(prev => ({
+                                              ...prev,
+                                              [currentStage]: {
+                                                ...prev[currentStage],
+                                                approvers,
+                                                isApproved: true,
+                                                status: 'completed'
+                                              }
+                                            }));
+
+                                            setCurrentStage(prev => prev + 1);
+                                            setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
+
+                                            addStageOutput(currentStage, {
+                                              message: "Document approved",
+                                              details: `Approved by ${approvers.length} reviewer(s)`,
+                                              timestamp: new Date().toISOString(),
+                                              status: 'success'
+                                            });
+                                          } catch (error) {
+                                            console.error("Approval error:", error);
+                                            toast({
+                                              title: "Approval Failed",
+                                              description: error instanceof Error ? error.message : "Failed to process approval",
+                                              variant: "destructive"
+                                            });
+                                          }
+                                        }}
+                                        isLoading={stageStates[3]?.status === 'processing'}
+                                      />
+                                    ) : (
+                                      <div className="text-center text-green-600">
+                                        <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
+                                        <p>Document has been approved</p>
+                                      </div>
+                                    )}
+                                  </CardContent>
+                                </Card>
+                              )}
+                            </DocumentPreview>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+
+              <div className="space-y-6">
+                <PredictiveSuggestions
+                  selectedText={selectedText}
+                  onSuggestionSelect={handleSuggestionSelect}
+                />
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  transition={{ delay: 0.4 }}
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Workflow Progress</CardTitle>
+                      <CardDescription>
+                        Track document processing progress
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div className="relative pt-1">
+                        <div className="flex mb-2 items-center justify-between">
+                          <div>
+                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-100 text-blue-600">
+                              {workflowProgress < 100 ? 'Processing' : 'Complete'}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold inline-block text-blue-600">
+                              {workflowProgress}%
+                            </span>
+                          </div>
                         </div>
-                      ) : stage.inProgress ? (
-                        <Loader2 className="h-5 w-5 text-blue-400 animate-spin" />
-                      ) : (
-                        <Circle className="h-5 w-5 text-slate-500" />
-                      )}
-                    </div>
-                    <div className="flex-grow min-w-0"> {/* Added min-w-0 to prevent text overflow */}
-                      <div className="flex justify-between items-start">
-                        <span className="font-medium block truncate">{stage.title}</span>
-                        {stage.completed && (
-                          <span className="text-xs text-green-500 ml-2 flex-shrink-0">Completed</span>
+                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-100">
+                          <motion.div
+                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
+                            variants={progressVariants}
+                            initial="initial"
+                            animate="animate"
+                            custom={workflowProgress}
+                          />
+                        </div>
+                        {workflowProgress < 100 && (
+                          <motion.p
+                            className="text-sm text-gray-600 text-center"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.3 }}
+                          >
+                            {loadingMessage}
+                          </motion.p>
                         )}
                       </div>
-                      <p className="text-sm text-slate-400 mt-0.5">{stage.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
 
-          {/* Metrics Dashboard */}
-          <Card className="bg-slate-800 border-slate-700 p-6">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Processing Metrics</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                {metrics.map((metric, index) => (
-                  <div key={index} className="p-4 bg-slate-700/50 rounded-lg">
-                    <div className="text-2xl font-bold text-blue-400">{metric.value}</div>
-                    <div className="text-sm text-slate-300">{metric.label}</div>
-                    <div className="text-xs text-slate-400 mt-1">{metric.description}</div>
-                  </div>
-                ))}
+                      <div className="space-y-6">
+                        {workflowStages.map((stage, index) => (
+                          <TooltipProvider key={index}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="w-full">
+                                  <WorkflowStage
+                                    icon={stage.icon}
+                                    title={stage.title}
+                                    description={stage.description}
+                                    status={stageStates[index]?.status || 'pending'}
+                                  />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="right">
+                                <p>{getStageTooltip(stage.title, stageStates[index]?.status)}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Results Section - Only show when there are results */}
-        {analysisResults && (
-          <Card className="bg-slate-800 border-slate-700 p-6">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl">Analysis Results</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {renderAnalysisTable()}
-            </CardContent>
-          </Card>
-        )}
-      </main>
+            </div>
+          </motion.div>
+        </main>
+      </div>
     </div>
   );
 }
