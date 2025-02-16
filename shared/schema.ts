@@ -885,7 +885,7 @@ export const documentAnalysis = pgTable("document_analysis", {
   updatedAt: timestamp("updated_at").defaultNow()
 });
 
-export type DocumentAnalysisRecord = typeof documentAnalysis.$inferSelect;
+export type DocumentAnalysis = typeof documentAnalysis.$inferSelect;
 export type InsertDocumentAnalysis = typeof documentAnalysis.$inferInsert;
 
 // Add relations

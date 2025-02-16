@@ -13,7 +13,6 @@ import orchestratorRouter from "./routes/orchestrator";
 import contractAnalysisRouter from "./routes/contract-analysis";
 import reportsRouter from "./routes/reports";
 import vaultRouter from "./routes/vault";
-import helpSuggestionsRouter from "./routes/help-suggestions"; // Add this import
 import cors from 'cors';
 import { json } from 'express';
 
@@ -59,9 +58,6 @@ export function registerRoutes(app: Express): Server {
 
   // Add contract analysis routes
   app.use("/api/contract-analysis", contractAnalysisRouter);
-
-  // Add help suggestions routes
-  app.use("/api/help", helpSuggestionsRouter);
 
   // Add Stripe payment endpoints
   app.post("/api/checkout", async (req, res) => {

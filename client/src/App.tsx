@@ -1,9 +1,9 @@
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "./components/ui/toaster";
+import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/use-auth";
-import Layout from "./components/Layout";
+import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing-page";
 import LoginPage from "@/pages/login-page";
@@ -35,61 +35,61 @@ function Router() {
       {/* Protected routes with Layout */}
       <Route path="/dashboard">
         <Layout>
-          <Dashboard />
+          <ProtectedRoute component={Dashboard} path="/dashboard" />
         </Layout>
       </Route>
 
       <Route path="/vault">
         <Layout>
-          <VaultPage />
+          <ProtectedRoute component={VaultPage} path="/vault" />
         </Layout>
       </Route>
 
       <Route path="/workflow">
         <Layout>
-          <WorkflowPage />
+          <ProtectedRoute component={WorkflowPage} path="/workflow" />
         </Layout>
       </Route>
 
       <Route path="/workflow-automation">
         <Layout>
-          <WorkflowAutomation />
+          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
         </Layout>
       </Route>
 
       <Route path="/compliance-auditing">
         <Layout>
-          <ComplianceAuditing />
+          <ProtectedRoute component={ComplianceAuditing} path="/compliance-auditing" />
         </Layout>
       </Route>
 
       <Route path="/contract-automation">
         <Layout>
-          <ContractAutomation />
+          <ProtectedRoute component={ContractAutomation} path="/contract-automation" />
         </Layout>
       </Route>
 
       <Route path="/legal-research">
         <Layout>
-          <LegalResearch />
+          <ProtectedRoute component={LegalResearch} path="/legal-research" />
         </Layout>
       </Route>
 
       <Route path="/reports">
         <Layout>
-          <Reports />
+          <ProtectedRoute component={Reports} path="/reports" />
         </Layout>
       </Route>
 
       <Route path="/analytics">
         <Layout>
-          <ReportsDashboard />
+          <ProtectedRoute component={ReportsDashboard} path="/analytics" />
         </Layout>
       </Route>
 
       <Route path="/settings">
         <Layout>
-          <Settings />
+          <ProtectedRoute component={Settings} path="/settings" />
         </Layout>
       </Route>
 
