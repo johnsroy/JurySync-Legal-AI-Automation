@@ -11,44 +11,38 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Configure connection pool with better settings
+// Configure connection pool with optimized settings
 export const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // How long a client is allowed to remain idle before being closed
-  connectionTimeoutMillis: 2000, // How long to wait for a connection
-  maxUses: 7500, // Close & replace a connection after it has been used this many times
+  max: 10, // Reduced from 20 to prevent connection exhaustion
+  idleTimeoutMillis: 60000, // Increased timeout
+  connectionTimeoutMillis: 5000, // Increased connection timeout
+  maxUses: 5000, // Reduced from 7500 to prevent connection issues
 });
 
 export const db = drizzle({ client: pool, schema });
 
-// Connection event monitoring
-pool.on('connect', (client) => {
+// Simplified connection monitoring
+pool.on('connect', () => {
   console.log('New client connected to database', { 
-    processID: client.processID,
     timestamp: new Date().toISOString() 
   });
 });
 
-pool.on('error', (err, client) => {
+pool.on('error', (err) => {
   console.error('Unexpected database error:', { 
     error: err.message,
-    code: err.code,
-    processID: client?.processID,
     timestamp: new Date().toISOString()
   });
 
-  // Attempt to reconnect if connection is lost
-  if (err.code === '57P01') {
-    console.log('Attempting to reconnect...');
-    client?.connect().catch(connectErr => {
-      console.error('Reconnection failed:', connectErr.message);
-    });
+  // Only attempt reconnection for specific error types
+  if (err.message.includes('terminating connection')) {
+    console.log('Attempting to reconnect to database...');
   }
 });
 
 // Graceful shutdown handling
-process.on('SIGTERM', () => {
+process.once('SIGTERM', () => {
   console.log('Received SIGTERM. Closing pool...');
   pool.end(() => {
     console.log('Pool has ended');
@@ -56,7 +50,7 @@ process.on('SIGTERM', () => {
   });
 });
 
-process.on('SIGINT', () => {
+process.once('SIGINT', () => {
   console.log('Received SIGINT. Closing pool...');
   pool.end(() => {
     console.log('Pool has ended');

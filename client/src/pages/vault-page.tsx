@@ -3,27 +3,44 @@ import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, FileText, Folder, AlertCircle, Trash2, RefreshCw } from "lucide-react";
+import { Upload, FileText, Folder, AlertCircle, Trash2, RefreshCw, Shield, Clock, AlertTriangle, CheckCircle2, Search, Filter, Download, Eye } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Define allowed roles that can upload documents
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
 
 interface DocumentAnalysis {
+  id: string;
+  title: string;
+  uploadDate: string;
   documentType: string;
   industry: string;
-  complianceStatus: string;
-  confidence?: number;
-  details?: {
-    findings: string[];
-    scope: string | null;
-    keyTerms: string[];
-    recommendations: string[];
+  status: 'COMPLIANT' | 'NON_COMPLIANT' | 'PENDING';
+  riskScore: number;
+  lastAnalyzed: string;
+  complianceDetails: {
+    issues: number;
+    recommendations: number;
+    criticalFindings: number;
+  };
+  metadata: {
+    pageCount: number;
+    fileSize: string;
+    author?: string;
+    lastModified: string;
   };
 }
 
@@ -40,6 +57,9 @@ export default function VaultPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
 
   // File upload handler
   const onDrop = async (acceptedFiles: File[]) => {
@@ -183,6 +203,45 @@ export default function VaultPage() {
     );
   };
 
+  const filteredDocuments = documents?.filter(doc => {
+    const matchesSearch = doc.title.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === "all" || doc.analysis.status === statusFilter;
+    const matchesType = typeFilter === "all" || doc.analysis.documentType === typeFilter;
+    return matchesSearch && matchesStatus && matchesType;
+  });
+
+  const handleDownload = async (docId: string) => {
+    try {
+      const response = await apiRequest('GET', `/api/vault/documents/${docId}/download`);
+      if (!response.ok) throw new Error('Download failed');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `document-${docId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Download Successful",
+        description: "Document downloaded successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Download Failed",
+        description: "Failed to download document. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDelete = (docId: string) => {
+    deleteMutation.mutate(parseInt(docId));
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
       <div className="container mx-auto px-4 py-8">
@@ -225,6 +284,30 @@ export default function VaultPage() {
           </div>
         )}
 
+        {/* Search and Filter Section */}
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex gap-4">
+            <Input
+              placeholder="Search documents..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-64"
+              icon={<Search className="h-4 w-4" />}
+            />
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="COMPLIANT">Compliant</SelectItem>
+                <SelectItem value="NON_COMPLIANT">Non-Compliant</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         {/* Documents Table */}
         <Card className="mb-8">
           <CardContent className="p-6">
@@ -246,12 +329,12 @@ export default function VaultPage() {
                         <span className="animate-spin mr-2">⌛</span> Loading documents...
                       </TableCell>
                     </TableRow>
-                  ) : !documents.length ? (
+                  ) : !filteredDocuments?.length ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-4">
                         <div className="flex flex-col items-center justify-center">
                           <Folder className="h-12 w-12 text-gray-400 mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">No Documents Yet</h3>
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">No Documents Found</h3>
                           <p className="text-gray-500">
                             {canUpload ? 'Upload your first document to get started' : 'No documents available'}
                           </p>
@@ -259,7 +342,7 @@ export default function VaultPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    documents.map((doc: Document) => (
+                    filteredDocuments.map((doc: DocumentAnalysis) => (
                       <TableRow key={doc.id}>
                         <TableCell>
                           <div className="flex items-center space-x-3">
@@ -267,17 +350,30 @@ export default function VaultPage() {
                             <div>
                               <p className="font-medium text-sm">{doc.title}</p>
                               <p className="text-xs text-gray-500">
-                                {new Date(doc.createdAt).toLocaleDateString()}
+                                {new Date(doc.uploadDate).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>{renderDocumentType(doc)}</TableCell>
                         <TableCell>
-                          {doc.analysis?.industry || "Unknown"}
+                          {doc.industry || "Unknown"}
                         </TableCell>
                         <TableCell>
-                          {renderComplianceStatus(doc)}
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            doc.status === 'COMPLIANT' ? 'bg-green-100 text-green-700' :
+                            doc.status === 'NON_COMPLIANT' ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {doc.status === 'COMPLIANT' ? (
+                              <CheckCircle2 className="h-4 w-4 mr-1" />
+                            ) : doc.status === 'NON_COMPLIANT' ? (
+                              <AlertTriangle className="h-4 w-4 mr-1" />
+                            ) : (
+                              <Clock className="h-4 w-4 mr-1" />
+                            )}
+                            {doc.status}
+                          </span>
                         </TableCell>
                         <TableCell>
                           <div className="flex space-x-2">
@@ -286,7 +382,7 @@ export default function VaultPage() {
                               size="sm"
                               onClick={() => setSelectedDocument(doc)}
                             >
-                              <AlertCircle className="h-4 w-4 mr-2" />
+                              <Eye className="h-4 w-4 mr-2" />
                               View Details
                             </Button>
                             <Button
@@ -295,7 +391,7 @@ export default function VaultPage() {
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => {
                                 if (window.confirm('Are you sure you want to delete this document?')) {
-                                  deleteMutation.mutate(doc.id);
+                                  handleDelete(doc.id);
                                 }
                               }}
                             >

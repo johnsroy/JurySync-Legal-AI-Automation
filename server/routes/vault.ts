@@ -1,10 +1,10 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
-import { vaultDocuments, documents, type VaultDocument } from "@shared/schema";
+import { vaultDocuments, documents, type VaultDocument, documentAnalysis } from "@shared/schema";
 import { rbacMiddleware } from "../middleware/rbac";
 import { analyzeDocument } from "../services/documentAnalysisService";
-import { eq, count, avg } from "drizzle-orm";
+import { eq, count, avg, desc } from "drizzle-orm";
 import { legalDocumentService } from "../services/legalDocumentService";
 
 // Configure multer for memory storage
@@ -303,67 +303,32 @@ router.post('/upload-with-category', async (req, res) => {
 // Get all documents from both vault and workflow
 router.get('/documents', async (req, res) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
+    if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    console.log('Fetching documents from both vault and workflow...');
+    const results = await db
+      .select({
+        id: documents.id,
+        title: documents.title,
+        uploadDate: documents.createdAt,
+        documentType: documents.type,
+        industry: documentAnalysis.industry,
+        status: documentAnalysis.complianceStatus,
+        riskScore: documentAnalysis.riskScore,
+        lastAnalyzed: documentAnalysis.updatedAt,
+        complianceDetails: documentAnalysis.complianceDetails,
+        metadata: documents.metadata
+      })
+      .from(documents)
+      .leftJoin(documentAnalysis, eq(documents.id, documentAnalysis.documentId))
+      .where(eq(documents.userId, req.user.id))
+      .orderBy(desc(documents.createdAt));
 
-    // Fetch documents from both collections with proper type handling
-    const [vaultDocs, workflowDocs] = await Promise.all([
-      db.select().from(vaultDocuments).where(eq(vaultDocuments.userId, userId)),
-      db.select().from(documents).where(eq(documents.userId, userId))
-    ]);
-
-    console.log(`Found ${vaultDocs.length} vault documents and ${workflowDocs.length} workflow documents`);
-
-    // Combine documents with proper source tracking and metadata handling
-    const allDocs = [
-      ...vaultDocs.map(doc => ({
-        ...doc,
-        source: 'vault',
-        metadata: {
-          ...doc.metadata,
-          documentType: doc.metadata?.documentType || doc.documentType || 'Unknown',
-          industry: doc.metadata?.industry || 'Unknown'
-        }
-      })),
-      ...workflowDocs.map(doc => ({
-        ...doc,
-        source: 'workflow',
-        metadata: {
-          ...doc.metadata,
-          documentType: doc.metadata?.documentType || doc.documentType || 'Unknown',
-          industry: doc.metadata?.industry || 'Unknown'
-        }
-      }))
-    ];
-
-    // Remove duplicates based on content hash or ID
-    const uniqueDocs = Array.from(
-      new Map(allDocs.map(doc => [doc.id, doc])).values()
-    );
-
-    console.log(`Returning ${uniqueDocs.length} unique documents`);
-
-    res.json({
-      documents: uniqueDocs.map(doc => ({
-        id: doc.id,
-        title: doc.title,
-        createdAt: doc.createdAt,
-        metadata: doc.metadata,
-        source: doc.source,
-        documentType: doc.metadata?.documentType || 'Unknown',
-        industry: doc.metadata?.industry || 'Unknown',
-        content: doc.content,
-        aiSummary: doc.aiSummary,
-        processingStatus: doc.processingStatus
-      }))
-    });
-  } catch (error: any) {
-    console.error('Documents fetch error:', error);
-    res.status(500).json({ error: error.message });
+    res.json(results);
+  } catch (error) {
+    console.error("Failed to fetch vault documents:", error);
+    res.status(500).json({ error: "Failed to fetch documents" });
   }
 });
 
@@ -403,6 +368,36 @@ router.delete('/documents/:id', async (req, res) => {
   } catch (error: any) {
     console.error('Document deletion error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/documents/:id/download", async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const document = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, req.params.id))
+      .limit(1);
+
+    if (!document[0]) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    if (document[0].userId !== req.user.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // Implement your file download logic here
+    // This might involve fetching from S3, local filesystem, etc.
+    
+    res.download(document[0].filePath);
+  } catch (error) {
+    console.error("Failed to download document:", error);
+    res.status(500).json({ error: "Failed to download document" });
   }
 });
 

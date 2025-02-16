@@ -12,6 +12,7 @@ import { createServer } from 'net';
 import { handleStripeWebhook } from "./webhooks/stripe";
 import documentAnalyticsRouter from './routes/document-analytics';
 import analyticsRouter from "./routes/analytics";
+import vaultRouter from './routes/vault';
 
 async function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -101,6 +102,9 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
 // Register analytics route
 app.use("/api/analytics", analyticsRouter);
 
+// Register vault routes
+app.use('/api/vault', vaultRouter);
+
 (async () => {
   try {
     // Database setup
@@ -150,7 +154,7 @@ app.use("/api/analytics", analyticsRouter);
 
     // Setup Vite or serve static files for main application
     if (process.env.NODE_ENV !== "production") {
-      await setupVite(app);
+      await setupVite(app, __dirname);
       console.log('Vite middleware setup complete');
     } else {
       serveStatic(app);

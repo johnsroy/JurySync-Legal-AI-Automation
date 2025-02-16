@@ -5,6 +5,7 @@ import { modelMetrics, workflowMetrics, documentMetrics } from "@shared/schema/m
 import { and, eq, gte, sql } from "drizzle-orm";
 import { subDays } from "date-fns";
 import { metricsCollector } from "../services/metricsCollector";
+import { ReportType } from "@shared/schema/reports";
 
 const router = Router();
 
@@ -196,27 +197,32 @@ router.get("/reports", async (req, res) => {
     const query = db.select().from(reports);
 
     if (type !== "all") {
-      query.where(eq(reports.type, type.toString()));
+      query.where(eq(reports.type, type as ReportType));
     }
 
     const allReports = await query;
 
-    // Add template information to reports
+    // Fix the metadata type issues
     const reportsWithTemplates = await Promise.all(
       allReports.map(async (report) => {
         const documentData = await db
           .select({
-            templateUsed: documentMetrics.metadata.templateUsed,
-            templateCategory: documentMetrics.metadata.templateCategory
+            metadata: documentMetrics.metadata
           })
           .from(documentMetrics)
-          .where(eq(documentMetrics.id, report.documentId))
+          .where(eq(documentMetrics.id, report.id))
           .limit(1);
+
+        // Safely access metadata properties
+        const metadata = documentData[0]?.metadata as {
+          templateUsed?: string;
+          templateCategory?: string;
+        };
 
         return {
           ...report,
-          template: documentData[0]?.templateUsed || 'Custom',
-          category: documentData[0]?.templateCategory || 'None'
+          template: metadata?.templateUsed || 'Custom',
+          category: metadata?.templateCategory || 'None'
         };
       })
     );

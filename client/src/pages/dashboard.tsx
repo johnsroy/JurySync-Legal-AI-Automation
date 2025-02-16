@@ -69,6 +69,38 @@ const modules = [
   }
 ];
 
+// Define defaultMetrics with the same structure as your metrics
+const defaultMetrics = [
+  {
+    title: "Documents Processed",
+    value: "0",
+    description: "across all modules",
+    icon: FileCheck,
+    color: "text-green-600"
+  },
+  {
+    title: "Average Processing Time",
+    value: "0s",
+    description: "per document",
+    icon: Clock,
+    color: "text-blue-600"
+  },
+  {
+    title: "Compliance Score",
+    value: "0%",
+    description: "overall rating",
+    icon: Shield,
+    color: "text-yellow-600"
+  },
+  {
+    title: "Active Documents",
+    value: "0",
+    description: "in review",
+    icon: GitMerge,
+    color: "text-purple-600"
+  }
+];
+
 function MetricsCard({ title, value, description, icon: Icon, color }: any) {
   return (
     <Card className="bg-white/80 backdrop-blur-lg">
@@ -94,6 +126,7 @@ export default function Dashboard() {
   const { user, logoutMutation } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [metrics, setMetrics] = useState(defaultMetrics);
 
   // Fetch unified metrics
   const { data: unifiedMetrics, isLoading: isLoadingMetrics, error } = useQuery({

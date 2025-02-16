@@ -197,7 +197,7 @@ export default function ReportsDashboard() {
                       fill="#8884d8"
                       dataKey="value"
                     >
-                      {analytics?.riskDistribution?.map((_, index) => (
+                      {analytics?.riskDistribution?.map((entry: { name: string; value: number }, index: number) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>

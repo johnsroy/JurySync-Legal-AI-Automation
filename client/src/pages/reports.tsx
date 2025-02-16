@@ -6,6 +6,24 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 
+// Add interfaces for your document types
+interface Document {
+  title: string;
+  status: string;
+  riskScore: number;
+  lastScanned: string;
+  templateUsed?: string;
+  templateCategory?: string;
+}
+
+interface RecentDocument {
+  title: string;
+  status: string;
+  riskScore: number;
+  lastScanned: string;
+  templateInfo: string;
+}
+
 export default function Reports() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -59,7 +77,7 @@ export default function Reports() {
     }
   };
 
-  const recentDocuments = documents?.slice(0, 5).map(doc => ({
+  const recentDocuments = documents?.slice(0, 5).map((doc: Document): RecentDocument => ({
     title: doc.title,
     status: doc.status,
     riskScore: doc.riskScore,
@@ -114,7 +132,7 @@ export default function Reports() {
               </p>
             ) : recentDocuments.length > 0 ? (
               <div className="space-y-4">
-                {recentDocuments.map((doc, idx) => (
+                {recentDocuments.map((doc: RecentDocument, idx: number) => (
                   <div key={idx} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
                     <div>
                       <h4 className="font-medium">{doc.title}</h4>
