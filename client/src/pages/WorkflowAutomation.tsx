@@ -160,6 +160,7 @@ export default function WorkflowAutomation() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const [uploadedDocuments, setUploadedDocuments] = useState<DocumentAnalysis[]>([]);
 
   // Protect the route
   if (!user) {
@@ -185,7 +186,7 @@ export default function WorkflowAutomation() {
     formData.append('file', acceptedFiles[0]);
 
     try {
-      // Start analysis immediately
+      // Start analysis
       console.log("Starting document analysis...");
       const analysisResponse = await fetch('/api/orchestrator/analyze', {
         method: 'POST',
@@ -200,36 +201,29 @@ export default function WorkflowAutomation() {
       console.log("Analysis results:", analysisData);
 
       if (analysisData.analysis) {
+        // Add to uploaded documents list
+        setUploadedDocuments(prev => [analysisData.analysis, ...prev]);
         setAnalysisResults(analysisData.analysis);
       }
 
       // Start workflow process
-      const response = await fetch('/api/orchestrator/documents', {
+      const response = await fetch('/api/orchestrator/tasks', {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
-      if (data.taskId) {
-        setActiveTaskId(data.taskId);
-        toast({
-          title: "Processing Started",
-          description: "Your document is being analyzed",
-          duration: 5000
-        });
+      if (!response.ok) {
+        throw new Error('Failed to start workflow');
       }
+
+      const data = await response.json();
+      setActiveTaskId(data.taskId);
+      
     } catch (error) {
-      console.error('Upload/Analysis failed:', error);
-      const errorLog: ErrorLog = {
-        timestamp: new Date().toISOString(),
-        stage: 'upload',
-        message: 'Document upload failed',
-        details: error instanceof Error ? error.message : String(error)
-      };
-      setErrorLogs(prev => [errorLog, ...prev]);
+      console.error('Upload error:', error);
       toast({
         title: "Upload Failed",
-        description: "There was an error uploading your document",
+        description: error instanceof Error ? error.message : "Failed to upload document",
         variant: "destructive"
       });
     }
@@ -350,75 +344,66 @@ export default function WorkflowAutomation() {
 
   // Analysis Results Table Component
   const renderAnalysisTable = () => {
-    // Get all documents from the store
-    const allDocuments = documentStore.getDocuments();
-
     return (
       <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
         <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
           <FileCheck className="h-5 w-5 text-green-400" />
-          Document Vault
+          Document Analysis Results
         </h3>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-slate-300">File</TableHead>
-              <TableHead className="text-slate-300">Document Type</TableHead>
+              <TableHead className="text-slate-300">Document</TableHead>
+              <TableHead className="text-slate-300">Type</TableHead>
               <TableHead className="text-slate-300">Industry</TableHead>
-              <TableHead className="text-slate-300">Compliance Status</TableHead>
+              <TableHead className="text-slate-300">Status</TableHead>
               <TableHead className="text-slate-300">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {allDocuments.length === 0 ? (
+            {uploadedDocuments.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center py-4">
                   <div className="flex flex-col items-center justify-center">
                     <Folder className="h-12 w-12 text-slate-400 mb-4" />
                     <h3 className="text-lg font-medium text-slate-300 mb-2">No Documents Yet</h3>
-                    <p className="text-slate-400">
-                      Upload your first document to get started
-                    </p>
+                    <p className="text-slate-400">Upload your first document to get started</p>
                   </div>
                 </TableCell>
               </TableRow>
             ) : (
-              allDocuments.map((doc) => (
-                <TableRow key={doc.id}>
+              uploadedDocuments.map((doc, index) => (
+                <TableRow key={index}>
                   <TableCell className="text-slate-300">
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-blue-400" />
-                      {doc.fileName}
+                      Document {index + 1}
                     </div>
                   </TableCell>
-                  <TableCell className="text-slate-300">
-                    {doc.documentType}
-                  </TableCell>
-                  <TableCell className="text-slate-300">
-                    {doc.industry}
-                  </TableCell>
+                  <TableCell className="text-slate-300">{doc.documentType}</TableCell>
+                  <TableCell className="text-slate-300">{doc.industry}</TableCell>
                   <TableCell>
                     <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
-                      doc.complianceStatus.toLowerCase().includes('compliant')
+                      doc.complianceStatus.status === 'PASSED'
                         ? 'bg-green-500/20 text-green-400'
-                        : doc.complianceStatus.toLowerCase().includes('pending')
+                        : doc.complianceStatus.status === 'PENDING'
                           ? 'bg-yellow-500/20 text-yellow-400'
                           : 'bg-red-500/20 text-red-400'
                     }`}>
-                      {doc.complianceStatus.toLowerCase().includes('compliant') ? (
+                      {doc.complianceStatus.status === 'PASSED' ? (
                         <>
                           <CheckCircle2 className="h-3 w-3" />
-                          {doc.complianceStatus}
+                          Compliant
                         </>
-                      ) : doc.complianceStatus.toLowerCase().includes('pending') ? (
+                      ) : doc.complianceStatus.status === 'PENDING' ? (
                         <>
                           <Clock className="h-3 w-3" />
-                          {doc.complianceStatus}
+                          Pending
                         </>
                       ) : (
                         <>
                           <AlertCircle className="h-3 w-3" />
-                          {doc.complianceStatus}
+                          Non-Compliant
                         </>
                       )}
                     </span>
@@ -429,18 +414,27 @@ export default function WorkflowAutomation() {
                       size="sm"
                       className="text-slate-400 hover:text-slate-300"
                       onClick={() => {
-                        const url = window.URL.createObjectURL(new Blob([doc.content], { type: 'text/plain' }));
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = doc.fileName;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
+                        // Save to document store
+                        documentStore.saveDocument({
+                          fileName: `Document ${index + 1}`,
+                          documentType: doc.documentType,
+                          industry: doc.industry,
+                          complianceStatus: doc.complianceStatus.status,
+                          content: doc.legalResearch.relevantCases[0]?.summary || '',
+                          metadata: {
+                            confidence: 85,
+                            recommendations: doc.legalResearch.legalAnalysis.recommendations.map(r => r.action),
+                            riskLevel: doc.legalResearch.legalAnalysis.riskAreas[0]?.severity || 'LOW'
+                          }
+                        });
+                        toast({
+                          title: "Success",
+                          description: "Document saved to vault",
+                        });
                       }}
                     >
                       <FileDown className="h-4 w-4 mr-1" />
-                      Download
+                      Save to Vault
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -717,10 +711,10 @@ export default function WorkflowAutomation() {
           </div>
         </Card>
 
-        {/* Always render the Document Vault table */}
+        {/* Always show the analysis table */}
         {renderAnalysisTable()}
 
-        {/* Add this after the Document Vault table */}
+        {/* Add this after the analysis table */}
         {taskData?.documentAnalysis?.legalResearch && (
           <ResearchResults research={taskData.documentAnalysis.legalResearch} />
         )}

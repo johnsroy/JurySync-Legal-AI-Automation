@@ -15,6 +15,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { HelpBubble } from "@/components/HelpBubble";
+import { useContextualHelp } from "@/hooks/use-contextual-help";
 
 // Animation variants
 const sidebarVariants = {
@@ -52,37 +54,43 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       href: "/dashboard",
       icon: BarChart2,
       label: "Dashboard",
-      tooltip: "View analytics and insights"
+      tooltip: "View analytics and insights",
+      helpContext: "dashboard_overview"
     },
     {
       href: "/workflow-automation",
       icon: Workflow,
       label: "Workflow Automation",
-      tooltip: "Automate document workflows"
+      tooltip: "Automate document workflows",
+      helpContext: "workflow_automation"
     },
     {
       href: "/contract-automation",
       icon: Scale,
       label: "Contract Automation",
-      tooltip: "Automate contract processing"
+      tooltip: "Automate contract processing",
+      helpContext: "contract_automation"
     },
     {
       href: "/vault",
       icon: Shield,
       label: "JuryVault",
-      tooltip: "Secure document storage"
+      tooltip: "Secure document storage",
+      helpContext: "document_vault"
     },
     {
       href: "/reports",
       icon: History,
       label: "History & Reports",
-      tooltip: "View historical data and reports"
+      tooltip: "View historical data and reports",
+      helpContext: "reports_analytics"
     },
     {
       href: "/settings",
       icon: Settings,
       label: "Settings",
-      tooltip: "Manage your preferences"
+      tooltip: "Manage your preferences",
+      helpContext: "user_settings"
     }
   ];
 
@@ -110,24 +118,41 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
             <nav className="flex-1 px-2 space-y-1">
               <TooltipProvider>
-                {menuItems.map((item) => (
-                  <Tooltip key={item.href}>
-                    <TooltipTrigger asChild>
-                      <Link href={item.href}>
-                        <Button
-                          variant={location === item.href ? "secondary" : "ghost"}
-                          className="w-full justify-start gap-3"
-                        >
-                          <item.icon className="h-5 w-5" />
-                          {item.label}
-                        </Button>
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                      {item.tooltip}
-                    </TooltipContent>
-                  </Tooltip>
-                ))}
+                {menuItems.map((item) => {
+                  const { data: helpData } = useContextualHelp(item.helpContext);
+
+                  return (
+                    <div key={item.href} className="relative group">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Link href={item.href}>
+                            <Button
+                              variant={location === item.href ? "secondary" : "ghost"}
+                              className="w-full justify-start gap-3"
+                            >
+                              <item.icon className="h-5 w-5" />
+                              {item.label}
+                            </Button>
+                          </Link>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          {item.tooltip}
+                        </TooltipContent>
+                      </Tooltip>
+
+                      {helpData && (
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <HelpBubble
+                            title={helpData.title}
+                            content={helpData.content}
+                            position="right"
+                            className="ml-2"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </TooltipProvider>
             </nav>
 
