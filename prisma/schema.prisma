@@ -1,0 +1,25 @@
+model Document {
+  id              String    @id @default(cuid())
+  fileName        String
+  documentType    String
+  industry        String
+  complianceStatus String
+  content         String    @db.Text
+  metadata        Json?
+  timestamp       DateTime  @default(now())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model DocumentAnalysis {
+  id              String    @id @default(cuid())
+  documentId      String
+  document        Document  @relation(fields: [documentId], references: [id])
+  analysisType    String
+  result          Json
+  timestamp       DateTime  @default(now())
+
+  @@index([documentId])
+} 

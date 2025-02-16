@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { triggerVaultUpdate } from '@/lib/events';
 
 interface ErrorLog {
   timestamp: string;
@@ -325,13 +326,8 @@ export default function WorkflowAutomation() {
         throw new Error("Analysis result not found");
       }
 
-      // Get the current file name from the task data
-      const fileName = taskData.currentStepDetails?.description || 'Unknown Document';
-
-      // Create a properly structured vault entry
-      const vaultEntry = {
-        id: Date.now().toString(),
-        fileName: fileName,
+      const documentData = {
+        fileName: taskData.currentStepDetails?.description || 'Unknown Document',
         documentType: analysisResult.documentType || 'Legal Document',
         industry: analysisResult.industry || 'General',
         complianceStatus: analysisResult.complianceStatus.status === 'PASSED' 
@@ -339,7 +335,6 @@ export default function WorkflowAutomation() {
           : analysisResult.complianceStatus.status === 'PENDING' 
             ? 'Pending Review' 
             : 'Non-Compliant',
-        timestamp: new Date().toISOString(),
         content: taskData.currentStepDetails?.content || '',
         metadata: {
           confidence: analysisResult.complianceStatus.status === 'PASSED' ? 85 : 0,
@@ -348,22 +343,24 @@ export default function WorkflowAutomation() {
         }
       };
 
-      // Save to vault
-      const existingVault = JSON.parse(localStorage.getItem('documentVault') || '[]');
-      const updatedVault = [...existingVault, vaultEntry];
-      localStorage.setItem('documentVault', JSON.stringify(updatedVault));
+      const response = await fetch('/api/documents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(documentData),
+      });
 
-      // Dispatch storage event to notify other tabs/components
-      window.dispatchEvent(new Event('storage'));
+      if (!response.ok) {
+        throw new Error('Failed to save document');
+      }
 
       toast({
         title: "Success",
         description: "Document processed and saved to vault",
       });
 
-      // Navigate to vault page
       setLocation("/vault");
-
     } catch (error) {
       console.error('Processing error:', error);
       toast({
@@ -373,6 +370,13 @@ export default function WorkflowAutomation() {
       });
     }
   };
+
+  // Add this to ensure handleFinalStage is called at the right time
+  useEffect(() => {
+    if (taskData?.status === 'completed' && taskData.progress === 100) {
+      handleFinalStage();
+    }
+  }, [taskData?.status, taskData?.progress]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">

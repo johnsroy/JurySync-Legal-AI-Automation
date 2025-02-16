@@ -23,6 +23,11 @@ interface VaultDocument {
   complianceStatus: string;
   timestamp: string;
   content: string;
+  metadata?: {
+    confidence: number;
+    recommendations: string[];
+    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  };
 }
 
 // Document type categorization
@@ -50,6 +55,7 @@ export default function VaultPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [isLoading, setIsLoading] = useState(true);
 
   // Helper function to categorize document type
   const categorizeDocumentType = (content: string): string => {
@@ -134,29 +140,85 @@ export default function VaultPage() {
     }
   };
 
-  useEffect(() => {
-    const loadDocuments = () => {
-      try {
-        const storedDocs = localStorage.getItem('documentVault');
-        if (storedDocs) {
-          const parsedDocs = JSON.parse(storedDocs);
-          setDocuments(parsedDocs);
+  const fetchDocuments = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch('/api/documents', {
+        headers: {
+          'Content-Type': 'application/json',
         }
-      } catch (error) {
-        console.error('Error loading documents:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load documents',
-          variant: 'destructive',
-        });
-      }
-    };
+      });
 
-    loadDocuments();
-    // Add event listener for storage changes
-    window.addEventListener('storage', loadDocuments);
-    return () => window.removeEventListener('storage', loadDocuments);
-  }, [toast]);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setDocuments(data);
+    } catch (error) {
+      console.error('Error fetching documents:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load documents. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchDocuments();
+    }
+  }, [user]);
+
+  // Update refresh handler
+  const handleRefresh = async () => {
+    try {
+      await fetchDocuments();
+      toast({
+        title: 'Success',
+        description: 'Document list refreshed successfully',
+      });
+    } catch (error) {
+      console.error('Error refreshing documents:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to refresh document list',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Update delete handler
+  const handleDelete = async (id: string) => {
+    try {
+      const response = await fetch(`/api/documents/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete document');
+      }
+
+      await fetchDocuments(); // Refresh the list
+      toast({
+        title: 'Success',
+        description: 'Document deleted successfully',
+      });
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete document',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // File upload handler
   const onDrop = async (acceptedFiles: File[]) => {
@@ -182,24 +244,6 @@ export default function VaultPage() {
       'text/plain': ['.txt']
     }
   });
-
-  // Add refresh function
-  const handleRefresh = async () => {
-    try {
-      await queryClient.invalidateQueries({ queryKey: ['/api/vault/documents'] });
-      toast({
-        title: 'Success',
-        description: 'Document list refreshed successfully',
-      });
-    } catch (error) {
-      console.error('Error refreshing documents:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to refresh document list',
-        variant: 'destructive',
-      });
-    }
-  };
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -284,6 +328,15 @@ export default function VaultPage() {
       </div>
     );
   };
+
+  // Add loading state handling
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
@@ -397,7 +450,7 @@ export default function VaultPage() {
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => {
                                 if (window.confirm('Are you sure you want to delete this document?')) {
-                                  deleteMutation.mutate(doc.id);
+                                  handleDelete(doc.id);
                                 }
                               }}
                             >
