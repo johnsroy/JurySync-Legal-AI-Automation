@@ -59,6 +59,18 @@ interface TaskData extends OriginalTaskData {
   documentAnalysis?: DocumentAnalysis;
 }
 
+// Add this after the existing interfaces
+interface AnalysisResult {
+  documentType: string;
+  industry: string;
+  complianceStatus: {
+    status: 'PASSED' | 'FAILED' | 'PENDING';
+    score: number;
+    details: string;
+  };
+  content: string;
+}
+
 export default function WorkflowAutomation() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
@@ -302,6 +314,64 @@ export default function WorkflowAutomation() {
         </Table>
       </Card>
     );
+  };
+
+  // Update the final stage handler
+  const handleFinalStage = async () => {
+    try {
+      const analysisResult = taskData?.documentAnalysis;
+      
+      if (!analysisResult) {
+        throw new Error("Analysis result not found");
+      }
+
+      // Get the current file name from the task data
+      const fileName = taskData.currentStepDetails?.description || 'Unknown Document';
+
+      // Create a properly structured vault entry
+      const vaultEntry = {
+        id: Date.now().toString(),
+        fileName: fileName,
+        documentType: analysisResult.documentType || 'Legal Document',
+        industry: analysisResult.industry || 'General',
+        complianceStatus: analysisResult.complianceStatus.status === 'PASSED' 
+          ? 'Compliant' 
+          : analysisResult.complianceStatus.status === 'PENDING' 
+            ? 'Pending Review' 
+            : 'Non-Compliant',
+        timestamp: new Date().toISOString(),
+        content: taskData.currentStepDetails?.content || '',
+        metadata: {
+          confidence: analysisResult.complianceStatus.status === 'PASSED' ? 85 : 0,
+          recommendations: [],
+          riskLevel: analysisResult.complianceStatus.status === 'PASSED' ? 'LOW' : 'HIGH'
+        }
+      };
+
+      // Save to vault
+      const existingVault = JSON.parse(localStorage.getItem('documentVault') || '[]');
+      const updatedVault = [...existingVault, vaultEntry];
+      localStorage.setItem('documentVault', JSON.stringify(updatedVault));
+
+      // Dispatch storage event to notify other tabs/components
+      window.dispatchEvent(new Event('storage'));
+
+      toast({
+        title: "Success",
+        description: "Document processed and saved to vault",
+      });
+
+      // Navigate to vault page
+      setLocation("/vault");
+
+    } catch (error) {
+      console.error('Processing error:', error);
+      toast({
+        title: "Processing Error",
+        description: error instanceof Error ? error.message : "An error occurred during document processing",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
