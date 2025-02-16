@@ -11,6 +11,7 @@ import cors from 'cors';
 import { createServer } from 'net';
 import { handleStripeWebhook } from "./webhooks/stripe";
 import documentAnalyticsRouter from './routes/document-analytics';
+import { analyticsRouter } from "./routes/analytics";
 
 async function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -96,6 +97,9 @@ setupAuth(app);
 
 // Register document analytics route
 app.use('/api/document-analytics', documentAnalyticsRouter);
+
+// Register analytics router
+app.use(analyticsRouter);
 
 (async () => {
   try {

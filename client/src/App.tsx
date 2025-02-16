@@ -5,11 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/use-auth";
 import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
-import LandingPage from "@/pages/landing-page";
-import LoginPage from "@/pages/login-page";
-import RegisterPage from "@/pages/register-page";
-import PricingPage from "@/pages/pricing-page";
-import SubscriptionPage from "@/pages/subscription-page";
+import AuthPage from "@/pages/auth-page";
 import Dashboard from "@/pages/dashboard";
 import ComplianceAuditing from "@/pages/compliance-auditing";
 import ContractAutomation from "@/pages/contract-automation";
@@ -19,32 +15,19 @@ import ReportsDashboard from "@/pages/reports-dashboard";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
 import WorkflowAutomation from "@/pages/workflow-automation";
-import VaultPage from "@/pages/vault-page";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
   return (
     <Switch>
       {/* Public routes */}
-      <Route path="/" component={LandingPage} />
-      <Route path="/login" component={LoginPage} />
-      <Route path="/register" component={RegisterPage} />
-      <Route path="/pricing" component={PricingPage} />
-      <Route path="/subscription" component={SubscriptionPage} />
+      <Route path="/auth" component={AuthPage} />
 
       {/* Protected routes */}
       <Route path="/dashboard">
         <ProtectedRoute path="/dashboard">
           <Layout>
             <Dashboard />
-          </Layout>
-        </ProtectedRoute>
-      </Route>
-
-      <Route path="/vault">
-        <ProtectedRoute path="/vault">
-          <Layout>
-            <VaultPage />
           </Layout>
         </ProtectedRoute>
       </Route>
@@ -113,6 +96,16 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      {/* Root route - redirect to dashboard if authenticated */}
+      <Route path="/">
+        <ProtectedRoute path="/">
+          <Layout>
+            <Dashboard />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* 404 route */}
       <Route>
         <Layout>
           <NotFound />

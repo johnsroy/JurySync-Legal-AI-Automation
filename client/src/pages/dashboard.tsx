@@ -6,6 +6,7 @@ import { Clock, FileCheck, Shield, GitMerge, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
+import { ErrorBoundary } from "react-error-boundary";
 
 // Animation variants
 const cardVariants = {
@@ -77,7 +78,7 @@ function MetricsCard({ title, value, description, icon: Icon, color }: MetricsCa
   );
 }
 
-export default function Dashboard() {
+function DashboardContent() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [metrics, setMetrics] = useState(defaultMetrics);
@@ -85,43 +86,22 @@ export default function Dashboard() {
   const { data: unifiedMetrics, isLoading, error } = useQuery({
     queryKey: ['/api/metrics/unified'],
     queryFn: async () => {
-      try {
-        const response = await fetch('/api/metrics/unified');
-        if (!response.ok) {
-          throw new Error('Failed to fetch metrics');
-        }
-        const data = await response.json();
-
-        setMetrics([
-          {
-            ...defaultMetrics[0],
-            value: data.documentsProcessed.toString()
-          },
-          {
-            ...defaultMetrics[1],
-            value: `${data.averageProcessingTime}s`
-          },
-          {
-            ...defaultMetrics[2],
-            value: `${data.complianceScore}%`
-          },
-          {
-            ...defaultMetrics[3],
-            value: data.activeDocuments.toString()
-          }
-        ]);
-
-        return data;
-      } catch (error) {
-        console.error('Error fetching metrics:', error);
-        throw error;
+      const response = await fetch('/api/metrics/unified');
+      if (!response.ok) {
+        throw new Error('Failed to fetch metrics');
       }
+      const data = await response.json();
+
+      setMetrics([
+        { ...defaultMetrics[0], value: data.documentsProcessed?.toString() || "0" },
+        { ...defaultMetrics[1], value: `${data.averageProcessingTime || 0}s` },
+        { ...defaultMetrics[2], value: `${data.complianceScore || 0}%` },
+        { ...defaultMetrics[3], value: data.activeDocuments?.toString() || "0" },
+      ]);
+
+      return data;
     }
   });
-
-  if (!user) {
-    return null;
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
@@ -213,5 +193,26 @@ export default function Dashboard() {
         </motion.div>
       </AnimatePresence>
     </div>
+  );
+}
+
+function ErrorFallback({ error }: { error: Error }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center">
+      <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-center mb-4">Something went wrong</h2>
+        <p className="text-gray-600 text-center">{error.message}</p>
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  console.log("Dashboard component rendering"); // Debug log
+  return (
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
+      <DashboardContent />
+    </ErrorBoundary>
   );
 }

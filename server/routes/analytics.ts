@@ -5,6 +5,7 @@ import { modelMetrics, workflowMetrics, documentMetrics } from "@shared/schema/m
 import { and, eq, gte, sql } from "drizzle-orm";
 import { subDays } from "date-fns";
 import { metricsCollector } from "../services/metricsCollector";
+import { generateDashboardInsights } from "../services/dashboardAnalytics";
 
 const router = Router();
 
@@ -228,4 +229,39 @@ router.get("/reports", async (req, res) => {
   }
 });
 
-export default router;
+// Export the main router
+export const analyticsRouter = router;
+
+// Add the /api/metrics/unified route
+analyticsRouter.get("/api/metrics/unified", async (req, res) => {
+  try {
+    // 1. Gather or compute your main metrics
+    const documentsProcessed = 12; // e.g. from DB
+    const averageProcessingTime = 47; // in seconds
+    const complianceScore = 88; // in percentage
+    const activeDocuments = 3; // how many active docs?
+
+    // 2. Possibly fetch AI insights
+    const aiInsights = await generateDashboardInsights();
+
+    // 3. Provide chart data for the BarChart in the dashboard
+    const activityData = [
+      { date: "2025-02-14", documents: 6 },
+      { date: "2025-02-15", documents: 10 },
+      { date: "2025-02-16", documents: 7 },
+    ];
+
+    // Return JSON payload
+    res.json({
+      documentsProcessed,
+      averageProcessingTime,
+      complianceScore,
+      activeDocuments,
+      activityData,
+      aiInsights
+    });
+  } catch (err) {
+    console.error("Error in /api/metrics/unified:", err);
+    res.status(500).json({ error: "Failed to retrieve analytics" });
+  }
+});
