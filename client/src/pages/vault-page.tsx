@@ -1,212 +1,45 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, FileText, Folder, AlertCircle, Trash2, RefreshCw, CheckCircle2, XCircle, Eye } from "lucide-react";
+import { Upload, FileText, Folder, AlertCircle, Trash2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import Layout from "@/components/Layout";
-import { documentStore, type VaultDocument } from '../lib/documentStore';
 
 // Define allowed roles that can upload documents
 const UPLOAD_ALLOWED_ROLES = ["ADMIN", "LAWYER"];
 
-// Document type categorization
-const documentTypes = {
-  contract: ['agreement', 'contract', 'lease', 'license'],
-  legal: ['brief', 'motion', 'petition', 'complaint', 'affidavit'],
-  corporate: ['bylaws', 'resolution', 'minutes', 'incorporation'],
-  regulatory: ['compliance', 'regulation', 'policy', 'guideline'],
-  financial: ['invoice', 'statement', 'report', 'audit']
-};
+interface DocumentAnalysis {
+  documentType: string;
+  industry: string;
+  complianceStatus: string;
+  confidence?: number;
+  details?: {
+    findings: string[];
+    scope: string | null;
+    keyTerms: string[];
+    recommendations: string[];
+  };
+}
 
-// Industry categorization
-const industries = {
-  technology: ['software', 'it', 'tech', 'digital', 'cyber', 'data'],
-  healthcare: ['medical', 'health', 'hospital', 'pharma', 'clinical'],
-  finance: ['banking', 'financial', 'investment', 'insurance'],
-  realestate: ['property', 'real estate', 'lease', 'tenant'],
-  manufacturing: ['production', 'industrial', 'manufacturing', 'factory']
-};
+interface Document {
+  id: number;
+  title: string;
+  createdAt: string;
+  analysis: DocumentAnalysis;
+}
 
 export default function VaultPage() {
-  const [documents, setDocuments] = useState<VaultDocument[]>([]);
-  const [selectedDocument, setSelectedDocument] = useState<VaultDocument | null>(null);
-  const [isContentModalVisible, setIsContentModalVisible] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-
-  // Helper function to categorize document type
-  const categorizeDocumentType = async (content: string): Promise<string> => {
-    const contentLower = content.toLowerCase();
-    
-    for (const [category, keywords] of Object.entries(documentTypes)) {
-      if (keywords.some(keyword => contentLower.includes(keyword))) {
-        return category.charAt(0).toUpperCase() + category.slice(1);
-      }
-    }
-    
-    // Use AI to analyze content and determine document type
-    try {
-      const aiResult = await analyzeDocumentType(content);
-      return aiResult;
-    } catch (error) {
-      console.error('Document type analysis failed:', error);
-      return "Miscellaneous";
-    }
-  };
-
-  // Helper function to categorize industry
-  const categorizeIndustry = async (content: string): Promise<string> => {
-    const contentLower = content.toLowerCase();
-    
-    for (const [category, keywords] of Object.entries(industries)) {
-      if (keywords.some(keyword => contentLower.includes(keyword))) {
-        return category.charAt(0).toUpperCase() + category.slice(1);
-      }
-    }
-    
-    // Use AI to analyze content and determine industry
-    try {
-      const aiResult = await analyzeIndustry(content);
-      return aiResult;
-    } catch (error) {
-      console.error('Industry analysis failed:', error);
-      return "General";
-    }
-  };
-
-  // AI-powered document analysis
-  const analyzeDocumentType = async (content: string): Promise<string> => {
-    try {
-      const response = await fetch('/api/analyze/document-type', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
-      });
-      
-      if (!response.ok) throw new Error('Analysis failed');
-      const data = await response.json();
-      return data.documentType;
-    } catch (error) {
-      console.error('Document type analysis failed:', error);
-      return "Unknown";
-    }
-  };
-
-  const analyzeIndustry = async (content: string): Promise<string> => {
-    try {
-      const response = await fetch('/api/analyze/industry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
-      });
-      
-      if (!response.ok) throw new Error('Analysis failed');
-      const data = await response.json();
-      return data.industry;
-    } catch (error) {
-      console.error('Industry analysis failed:', error);
-      return "Unknown";
-    }
-  };
-
-  // Analyze compliance status
-  const analyzeCompliance = async (content: string): Promise<string> => {
-    try {
-      const response = await fetch('/api/analyze/compliance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
-      });
-      
-      if (!response.ok) throw new Error('Analysis failed');
-      const data = await response.json();
-      return data.status;
-    } catch (error) {
-      console.error('Compliance analysis failed:', error);
-      return "Pending Review";
-    }
-  };
-
-  const loadDocuments = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      console.log('Loading documents...');
-      const docs = documentStore.getDocuments();
-      console.log('Loaded documents:', docs);
-      setDocuments(docs);
-    } catch (error) {
-      console.error('Error loading documents:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load documents',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [toast]);
-
-  useEffect(() => {
-    loadDocuments();
-    
-    // Listen for storage changes
-    const handleStorageChange = (e: StorageEvent) => {
-      console.log('Storage event:', e);
-      if (e.key === 'vaultDocuments') {
-        console.log('Vault documents changed, reloading...');
-        loadDocuments();
-      }
-    };
-    
-    // Also listen for custom events
-    const handleCustomEvent = () => {
-      console.log('Custom event received, reloading documents...');
-      loadDocuments();
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('vaultUpdated', handleCustomEvent);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('vaultUpdated', handleCustomEvent);
-    };
-  }, [loadDocuments]);
-
-  const handleDelete = async (id: string) => {
-    try {
-      documentStore.deleteDocument(id);
-      loadDocuments();
-      toast({
-        title: 'Success',
-        description: 'Document deleted successfully',
-      });
-    } catch (error) {
-      console.error('Error deleting document:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to delete document',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleRefresh = () => {
-    loadDocuments();
-    toast({
-      title: 'Success',
-      description: 'Document list refreshed',
-    });
-  };
 
   // File upload handler
   const onDrop = async (acceptedFiles: File[]) => {
@@ -233,9 +66,40 @@ export default function VaultPage() {
     }
   });
 
+  // Add refresh function
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['/api/vault/documents'] });
+      toast({
+        title: 'Success',
+        description: 'Document list refreshed successfully',
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Fetch documents
+  const { data: documents = [], isLoading } = useQuery({
+    queryKey: ['/api/vault/documents'],
+    queryFn: async () => {
+      try {
+        const response = await apiRequest('GET', '/api/vault/documents');
+        const data = await response.json();
+        return data.documents;
+      } catch (error) {
+        console.error('Error fetching documents:', error);
+        throw error;
+      }
+    },
+    staleTime: 1000, // Consider data fresh for 1 second
+    cacheTime: 5 * 60 * 1000, // Keep data in cache for 5 minutes
+  });
+
   // Delete mutation
   const deleteMutation = useMutation({
-    mutationFn: async (documentId: string) => {
+    mutationFn: async (documentId: number) => {
       const response = await apiRequest('DELETE', `/api/vault/documents/${documentId}`);
       if (!response.ok) {
         throw new Error('Failed to delete document');
@@ -286,45 +150,38 @@ export default function VaultPage() {
   const canUpload = user && UPLOAD_ALLOWED_ROLES.includes(user.role);
 
   // Function to render document type with proper M&A classification
-  const renderDocumentType = (doc: VaultDocument) => {
-    return (
-      <div className="flex items-center gap-2">
-        <FileText className="h-4 w-4 text-blue-600" />
-        <span>{doc.documentType || "Unknown"}</span>
-      </div>
-    );
+  const renderDocumentType = (doc: Document) => {
+    const type = doc.analysis?.documentType;
+    if (!type) return "Unknown";
+
+    // Special handling for M&A documents to ensure proper display
+    if (type.toLowerCase().includes('m&a') || 
+        type.toLowerCase().includes('merger') || 
+        type.toLowerCase().includes('acquisition')) {
+      return type.startsWith('M&A Agreement') ? type : `M&A Agreement - ${type}`;
+    }
+
+    return type;
   };
 
   // Function to render compliance status
-  const renderComplianceStatus = (doc: VaultDocument) => {
-    const status = doc.complianceStatus.toLowerCase();
-    let color = 'text-yellow-600';
-    let Icon = AlertCircle;
+  const renderComplianceStatus = (doc: Document) => {
+    if (!doc.analysis?.complianceStatus) return null;
 
-    if (status.includes('compliant')) {
-      color = 'text-green-600';
-      Icon = CheckCircle2;
-    } else if (status.includes('non-compliant')) {
-      color = 'text-red-600';
-      Icon = XCircle;
-    }
+    const statusColors = {
+      'Compliant': 'text-green-600 bg-green-50',
+      'Non-Compliant': 'text-red-600 bg-red-50',
+      'Needs Review': 'text-yellow-600 bg-yellow-50'
+    };
+
+    const statusColor = statusColors[doc.analysis.complianceStatus as keyof typeof statusColors] || 'text-gray-600 bg-gray-50';
 
     return (
-      <div className={`flex items-center gap-2 ${color}`}>
-        <Icon className="h-4 w-4" />
-        <span>{doc.complianceStatus}</span>
-      </div>
+      <span className={`px-2 py-1 rounded-full text-xs ${statusColor}`}>
+        {doc.analysis.complianceStatus}
+      </span>
     );
   };
-
-  // Add loading state handling
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
@@ -341,8 +198,9 @@ export default function VaultPage() {
               variant="outline"
               size="sm"
               className="flex items-center gap-2"
+              disabled={isRefreshing}
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
           </div>
@@ -382,7 +240,13 @@ export default function VaultPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {documents.length === 0 ? (
+                  {isLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-4">
+                        <span className="animate-spin mr-2">⌛</span> Loading documents...
+                      </TableCell>
+                    </TableRow>
+                  ) : !documents.length ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-4">
                         <div className="flex flex-col items-center justify-center">
@@ -395,29 +259,22 @@ export default function VaultPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    documents.map((doc: VaultDocument) => (
+                    documents.map((doc: Document) => (
                       <TableRow key={doc.id}>
                         <TableCell>
                           <div className="flex items-center space-x-3">
-                            <FileText className="h-5 w-5 text-blue-600 flex-shrink-0" />
+                            <FileText className="h-5 w-5 text-green-600 flex-shrink-0" />
                             <div>
-                              <p className="font-medium text-sm">{doc.fileName}</p>
+                              <p className="font-medium text-sm">{doc.title}</p>
                               <p className="text-xs text-gray-500">
-                                {new Date(doc.timestamp).toLocaleDateString()}
+                                {new Date(doc.createdAt).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
                         </TableCell>
+                        <TableCell>{renderDocumentType(doc)}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-blue-600" />
-                            <span>{doc.documentType}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-purple-600">
-                            {doc.industry}
-                          </span>
+                          {doc.analysis?.industry || "Unknown"}
                         </TableCell>
                         <TableCell>
                           {renderComplianceStatus(doc)}
@@ -429,8 +286,8 @@ export default function VaultPage() {
                               size="sm"
                               onClick={() => setSelectedDocument(doc)}
                             >
-                              <Eye className="h-4 w-4 mr-2" />
-                              View
+                              <AlertCircle className="h-4 w-4 mr-2" />
+                              View Details
                             </Button>
                             <Button
                               variant="ghost"
@@ -438,7 +295,7 @@ export default function VaultPage() {
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => {
                                 if (window.confirm('Are you sure you want to delete this document?')) {
-                                  handleDelete(doc.id);
+                                  deleteMutation.mutate(doc.id);
                                 }
                               }}
                             >
@@ -460,7 +317,7 @@ export default function VaultPage() {
           <Dialog open={!!selectedDocument} onOpenChange={() => setSelectedDocument(null)}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Document Details: {selectedDocument.fileName}</DialogTitle>
+                <DialogTitle>Document Details: {selectedDocument.title}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
@@ -472,10 +329,10 @@ export default function VaultPage() {
                 <div>
                   <h4 className="font-medium text-sm text-gray-900">Industry</h4>
                   <p className="text-sm text-gray-700">
-                    {selectedDocument.industry || "Unknown"}
+                    {selectedDocument.analysis?.industry || "Unknown"}
                   </p>
                 </div>
-                {selectedDocument.complianceStatus && (
+                {selectedDocument.analysis?.complianceStatus && (
                   <div>
                     <h4 className="font-medium text-sm text-gray-900">Compliance Status</h4>
                     <div className="mt-1">
@@ -483,25 +340,35 @@ export default function VaultPage() {
                     </div>
                   </div>
                 )}
-                {selectedDocument?.metadata?.research && (
-                  <div>
-                    <h4 className="font-medium text-sm text-gray-900 mt-4">Legal Research</h4>
-                    <div className="mt-2 space-y-3">
-                      {selectedDocument.metadata.research.relevantCases?.map((caseItem, index) => (
-                        <div key={index} className="p-3 bg-gray-50 rounded-lg">
-                          <a 
-                            href={caseItem.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 font-medium text-sm"
-                          >
-                            {caseItem.title}
-                          </a>
-                          <p className="text-xs text-gray-600 mt-1">{caseItem.summary}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                {selectedDocument.analysis?.details && (
+                  <>
+                    {selectedDocument.analysis.details.scope && (
+                      <div>
+                        <h4 className="font-medium text-sm text-gray-900">Scope</h4>
+                        <p className="text-sm text-gray-700">{selectedDocument.analysis.details.scope}</p>
+                      </div>
+                    )}
+                    {selectedDocument.analysis.details.findings?.length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-sm text-gray-900">Key Findings</h4>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
+                          {selectedDocument.analysis.details.findings.map((finding, index) => (
+                            <li key={index}>{finding}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {selectedDocument.analysis.details.recommendations?.length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-sm text-gray-900">Recommendations</h4>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
+                          {selectedDocument.analysis.details.recommendations.map((rec, index) => (
+                            <li key={index}>{rec}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </DialogContent>

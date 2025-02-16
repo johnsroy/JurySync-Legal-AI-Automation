@@ -1,1 +1,0 @@
-// Similar structure to document-type.ts but with industry-specific prompts 
