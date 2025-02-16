@@ -2,8 +2,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { 
-  Loader2, AlertCircle, CheckCircle2, Terminal, FileText, Scale, 
+import {
+  Loader2, AlertCircle, CheckCircle2, Terminal, FileText, Scale,
   Book, Download, ChevronRight, UploadCloud, BarChart2,
   Briefcase, Shield, History, RefreshCcw
 } from "lucide-react";
@@ -24,9 +24,55 @@ import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
 import { generateDraftAnalysis } from "@/services/anthropic-service";
 import { LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
+// Add legal-themed loading messages
+const legalLoadingMessages = [
+  "Analyzing document structure...",
+  "Checking legal compliance...",
+  "Validating regulatory requirements...",
+  "Reviewing precedent cases...",
+  "Ensuring document integrity...",
+  "Cross-referencing legal standards...",
+];
 
-// Document cleaning utility
+// Animation variants
+const cardVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.5 }
+  },
+  exit: {
+    opacity: 0,
+    y: -20,
+    transition: { duration: 0.3 }
+  }
+};
+
+const stageVariants = {
+  initial: { scale: 0.95, opacity: 0 },
+  animate: {
+    scale: 1,
+    opacity: 1,
+    transition: { duration: 0.3 }
+  },
+  exit: {
+    scale: 0.95,
+    opacity: 0,
+    transition: { duration: 0.2 }
+  }
+};
+
+const progressVariants = {
+  initial: { width: 0 },
+  animate: (progress: number) => ({
+    width: `${progress}%`,
+    transition: { duration: 0.5, ease: "easeInOut" }
+  })
+};
+
 const cleanDocumentText = (text: string): string => {
   if (!text) return '';
   return text
@@ -39,7 +85,6 @@ const cleanDocumentText = (text: string): string => {
     .trim();
 };
 
-// Enhanced FileUploadZone with preprocessing
 const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ onFileSelect }) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -105,8 +150,8 @@ const WorkflowStage: React.FC<{
         w-10 h-10 rounded-full flex items-center justify-center
         ${status === 'completed' ? 'bg-green-100 text-green-600' :
           status === 'processing' ? 'bg-blue-100 text-blue-600' :
-          status === 'error' ? 'bg-red-100 text-red-600' :
-          'bg-gray-100 text-gray-600'}
+            status === 'error' ? 'bg-red-100 text-red-600' :
+              'bg-gray-100 text-gray-600'}
       `}>
         <Icon className="h-5 w-5" />
       </div>
@@ -190,6 +235,7 @@ export function WorkflowAutomation() {
     complianceStatus: string;
   }>>([]);
   const [isLogoHovered, setIsLogoHovered] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState(legalLoadingMessages[0]);
 
   // Effect to update document analysis based on workflow completion
   useEffect(() => {
@@ -207,6 +253,17 @@ export function WorkflowAutomation() {
       }]);
     }
   }, [stageStates, uploadedFiles]);
+
+  useEffect(() => {
+    if (currentStage >= 0 && workflowProgress < 100) {
+      const interval = setInterval(() => {
+        setLoadingMessage(
+          legalLoadingMessages[Math.floor(Math.random() * legalLoadingMessages.length)]
+        );
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [currentStage, workflowProgress]);
 
   const handleTextSelect = useCallback(() => {
     const selection = window.getSelection();
@@ -265,7 +322,6 @@ export function WorkflowAutomation() {
   const generatePDF = async (content: string, title: string) => {
     const doc = new jsPDF();
 
-    // Create a temporary div to render the content
     const element = document.createElement('div');
     element.innerHTML = content;
     document.body.appendChild(element);
@@ -335,7 +391,6 @@ export function WorkflowAutomation() {
       {
         name: "Compliance Check",
         handler: async () => {
-          // Simplified compliance check
           const complianceResult = {
             score: 85,
             status: "Compliant",
@@ -432,7 +487,7 @@ export function WorkflowAutomation() {
 
           const documentType = complianceStage?.documentType || "Compliance Document";
           const industry = complianceStage?.industry || "TECHNOLOGY";
-          const complianceStatus = complianceStage?.status || "Compliant"; // Changed default value
+          const complianceStatus = complianceStage?.status || "Compliant";
 
           const analysisContent = `
             <h2>Final Document Analysis</h2>
@@ -451,11 +506,10 @@ export function WorkflowAutomation() {
             </div>
           `;
 
-          // Update metadata to ensure consistency
           const finalMetadata = {
             documentType,
             industry,
-            complianceStatus: complianceStatus, // Use the same value
+            complianceStatus: complianceStatus,
             confidence: complianceStage?.score || 0,
             fileName: currentFile?.name
           };
@@ -498,9 +552,7 @@ export function WorkflowAutomation() {
             }
           }));
 
-          // Update progress
           setWorkflowProgress((i + 1) * (100 / stages.length));
-
 
           addStageOutput(i, {
             message: `${stages[i].name} completed`,
@@ -594,7 +646,6 @@ export function WorkflowAutomation() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
-      {/* Header */}
       <header className="bg-white/80 backdrop-blur-lg border-b border-indigo-100">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -625,9 +676,8 @@ export function WorkflowAutomation() {
         </div>
       </header>
 
-      {/* Sidebar Navigation */}
       <div className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-10">
-        <motion.div 
+        <motion.div
           className="flex items-center gap-2 p-4 mb-6 cursor-pointer"
           onHoverStart={() => setIsLogoHovered(true)}
           onHoverEnd={() => setIsLogoHovered(false)}
@@ -640,7 +690,7 @@ export function WorkflowAutomation() {
           >
             <Shield className="h-6 w-6 text-primary" />
           </motion.div>
-          <motion.span 
+          <motion.span
             className="text-xl font-bold"
             variants={textVariants}
             initial="initial"
@@ -683,235 +733,333 @@ export function WorkflowAutomation() {
         </nav>
       </div>
 
-      {/* Main Content Area - shifted right to accommodate sidebar */}
       <div className="ml-64">
-        {/* Main Content */}
         <main className="container mx-auto px-4 py-8">
-          <div className="max-w-6xl mx-auto space-y-6">
-            {/* Title Section */}
-            <div className="text-center mb-8">
+          <motion.div
+            className="max-w-6xl mx-auto space-y-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            <motion.div
+              className="text-center mb-8"
+              initial={{ y: -20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+            >
               <h1 className="text-3xl font-bold text-gray-900">
                 Document Workflow Automation
               </h1>
               <p className="mt-2 text-gray-600">
                 Process and analyze legal documents with JurySync AI assistance
               </p>
-            </div>
+            </motion.div>
 
-            {/* Document Analysis Results Card */}
-            {documentAnalyses.length > 0 && (
-              <Card className="bg-white/80 backdrop-blur-lg">
-                <CardHeader>
-                  <CardTitle>Document Analysis Results</CardTitle>
-                  <CardDescription>
-                    Automated classification and compliance assessment
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {documentAnalyses.map((analysis, index) => (
-                      <DocumentAnalysisTable
-                        key={index}
-                        analysis={analysis}
-                        isLoading={false}
-                      />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Document Editor Section */}
-              <div className="lg:col-span-2 space-y-6">
-                {/* Add FileUpload component */}
-                <Card className="bg-white/80 backdrop-blur-lg">
-                  <CardHeader>
-                    <CardTitle>Document Upload</CardTitle>
-                    <CardDescription>
-                      Upload your document or enter text manually below
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <FileUpload
-                      onFileProcessed={handleFileProcessed}
-                      onError={handleFileError}
-                      multiple={true}
-                      setUploadedFiles={setUploadedFiles}
-                    />
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-white/80 backdrop-blur-lg">
-                  <CardHeader>
-                    <CardTitle>Document Editor</CardTitle>
-                    <CardDescription>
-                      Edit your document and select text for suggestions
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <Textarea
-                      placeholder="Enter or paste your document text here..."
-                      className="min-h-[200px] resize-none"
-                      value={documentText}
-                      onChange={(e) => setDocumentText(e.target.value)}
-                      onSelect={handleTextSelect}
-                      onMouseUp={handleTextSelect}
-                      onKeyUp={handleTextSelect}
-                    />
-                    <Button
-                      className="w-full"
-                      onClick={handleSubmit}
-                      disabled={!documentText.trim()}
-                    >
-                      Process Document
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                {/* Stage Output Display */}
-                {Object.entries(stageStates).map(([stageIndex, state]) => (
-                  <Card key={stageIndex} className="bg-white/80 backdrop-blur-lg">
+            <AnimatePresence>
+              {documentAnalyses.length > 0 && (
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        {(() => {
-                          const Icon = workflowStages[Number(stageIndex)].icon;
-                          return (
-                            <Icon className={
-                              state.status === 'completed' ? 'text-green-500' :
-                                state.status === 'processing' ? 'text-blue-500' :
-                                state.status === 'error' ? 'text-red-500' :
-                                'text-gray-500'
-                            } />
-                          );
-                        })()}
-                        {workflowStages[Number(stageIndex)].title}
-                      </CardTitle>
+                      <CardTitle>Document Analysis Results</CardTitle>
+                      <CardDescription>
+                        Automated classification and compliance assessment
+                      </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      {state.outputs.map((output, idx) => (
-                        <div
-                          key={idx}
-                          className={`p-4 rounded-lg border ${
-                            output.status === 'error' ? 'border-red-200 bg-red-50' :
-                              output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
-                              output.status === 'success' ? 'border-green-200 bg-green-50' :
-                              'border-blue-200 bg-blue-50'
-                            }`}
-                        >
-                          <p className="font-medium">{output.message}</p>
-                          {output.details && (
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {output.details}
-                            </p>
-                          )}
-                          <p className="text-xs text-muted-foreground mt-2">
-                            {new Date(output.timestamp).toLocaleTimeString()}
-                          </p>
-                        </div>
-                      ))}
-
-                      {state.result && (
-                        <DocumentPreview
-                          content={state.result.content}
-                          title={state.result.title}
-                          metadata={state.result.metadata}
-                          onDownload={() => generatePDF(state.result.content, state.result.title)}
-                        >
-                          {currentStage === 3 && (
-                            <Card className="bg-white/80 backdrop-blur-lg mt-4">
-                              <CardHeader>
-                                <CardTitle>Document Approval</CardTitle>
-                                <CardDescription>
-                                  Request approval for this document
-                                </CardDescription>
-                              </CardHeader>
-                              <CardContent>
-                                {!stageStates[3]?.isApproved ? (
-                                  <ApprovalForm
-                                    onApprove={async (approvers) => {
-                                      try {
-                                        setStageStates(prev => ({
-                                          ...prev,
-                                          [currentStage]: {
-                                            ...prev[currentStage],
-                                            approvers,
-                                            isApproved: true,
-                                            status: 'completed'
-                                          }
-                                        }));
-
-                                        setCurrentStage(prev => prev + 1);
-                                        setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
-
-                                        addStageOutput(currentStage, {
-                                          message: "Document approved",
-                                          details: `Approved by ${approvers.length} reviewer(s)`,
-                                          timestamp: new Date().toISOString(),
-                                          status: 'success'
-                                        });
-                                      } catch (error) {
-                                        console.error("Approval error:", error);
-                                        toast({
-                                          title: "Approval Failed",
-                                          description: error instanceof Error ? error.message : "Failed to process approval",
-                                          variant: "destructive"
-                                        });
-                                      }
-                                    }}
-                                    isLoading={stageStates[3]?.status === 'processing'}
-                                  />
-                                ) : (
-                                  <div className="text-center text-green-600">
-                                    <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
-                                    <p>Document has been approved</p>
-                                  </div>
-                                )}
-                              </CardContent>
-                            </Card>
-                          )}
-                        </DocumentPreview>
-                      )}
+                    <CardContent>
+                      <div className="space-y-4">
+                        {documentAnalyses.map((analysis, index) => (
+                          <DocumentAnalysisTable
+                            key={index}
+                            analysis={analysis}
+                            isLoading={false}
+                          />
+                        ))}
+                      </div>
                     </CardContent>
                   </Card>
-                ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Document Upload</CardTitle>
+                      <CardDescription>
+                        Upload your document or enter text manually below
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <FileUpload
+                        onFileProcessed={handleFileProcessed}
+                        onError={handleFileError}
+                        multiple={true}
+                        setUploadedFiles={setUploadedFiles}
+                      />
+                    </CardContent>
+                  </Card>
+                </motion.div>
+
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  transition={{ delay: 0.2 }}
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Document Editor</CardTitle>
+                      <CardDescription>
+                        Edit your document and select text for suggestions
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Textarea
+                        placeholder="Enter or paste your document text here..."
+                        className="min-h-[200px] resize-none"
+                        value={documentText}
+                        onChange={(e) => setDocumentText(e.target.value)}
+                        onSelect={handleTextSelect}
+                        onMouseUp={handleTextSelect}
+                        onKeyUp={handleTextSelect}
+                      />
+                      <Button
+                        className="w-full"
+                        onClick={handleSubmit}
+                        disabled={!documentText.trim()}
+                      >
+                        Process Document
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+
+                <AnimatePresence>
+                  {Object.entries(stageStates).map(([stageIndex, state]) => (
+                    <motion.div
+                      key={stageIndex}
+                      variants={stageVariants}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      layout
+                    >
+                      <Card className="bg-white/80 backdrop-blur-lg">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            {(() => {
+                              const Icon = workflowStages[Number(stageIndex)].icon;
+                              return (
+                                <Icon className={
+                                  state.status === 'completed' ? 'text-green-500' :
+                                    state.status === 'processing' ? 'text-blue-500' :
+                                      state.status === 'error' ? 'text-red-500' :
+                                        'text-gray-500'
+                                } />
+                              );
+                            })()}
+                            {workflowStages[Number(stageIndex)].title}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {state.outputs.map((output, idx) => (
+                            <div
+                              key={idx}
+                              className={`p-4 rounded-lg border ${
+                                output.status === 'error' ? 'border-red-200 bg-red-50' :
+                                  output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
+                                    output.status === 'success' ? 'border-green-200 bg-green-50' :
+                                      'border-blue-200 bg-blue-50'
+                                }`}
+                            >
+                              <p className="font-medium">{output.message}</p>
+                              {output.details && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {output.details}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-2">
+                                {new Date(output.timestamp).toLocaleTimeString()}
+                              </p>
+                            </div>
+                          ))}
+
+                          {state.result && (
+                            <DocumentPreview
+                              content={state.result.content}
+                              title={state.result.title}
+                              metadata={state.result.metadata}
+                              onDownload={() => generatePDF(state.result.content, state.result.title)}
+                            >
+                              {currentStage === 3 && (
+                                <Card className="bg-white/80 backdrop-blur-lg mt-4">
+                                  <CardHeader>
+                                    <CardTitle>Document Approval</CardTitle>
+                                    <CardDescription>
+                                      Request approval for this document
+                                    </CardDescription>
+                                  </CardHeader>
+                                  <CardContent>
+                                    {!stageStates[3]?.isApproved ? (
+                                      <ApprovalForm
+                                        onApprove={async (approvers) => {
+                                          try {
+                                            setStageStates(prev => ({
+                                              ...prev,
+                                              [currentStage]: {
+                                                ...prev[currentStage],
+                                                approvers,
+                                                isApproved: true,
+                                                status: 'completed'
+                                              }
+                                            }));
+
+                                            setCurrentStage(prev => prev + 1);
+                                            setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
+
+                                            addStageOutput(currentStage, {
+                                              message: "Document approved",
+                                              details: `Approved by ${approvers.length} reviewer(s)`,
+                                              timestamp: new Date().toISOString(),
+                                              status: 'success'
+                                            });
+                                          } catch (error) {
+                                            console.error("Approval error:", error);
+                                            toast({
+                                              title: "Approval Failed",
+                                              description: error instanceof Error ? error.message : "Failed to process approval",
+                                              variant: "destructive"
+                                            });
+                                          }
+                                        }}
+                                        isLoading={stageStates[3]?.status === 'processing'}
+                                      />
+                                    ) : (
+                                      <div className="text-center text-green-600">
+                                        <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
+                                        <p>Document has been approved</p>
+                                      </div>
+                                    )}
+                                  </CardContent>
+                                </Card>
+                              )}
+                            </DocumentPreview>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
 
-              {/* Predictive Suggestions Section */}
               <div className="space-y-6">
                 <PredictiveSuggestions
                   selectedText={selectedText}
                   onSuggestionSelect={handleSuggestionSelect}
                 />
-                <Card className="bg-white/80 backdrop-blur-lg">
-                  <CardHeader>
-                    <CardTitle>Workflow Progress</CardTitle>
-                    <CardDescription>
-                      Track document processing progress
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <Progress value={workflowProgress} className="h-2" />
-                    <div className="space-y-6">
-                      {workflowStages.map((stage, index) => (
-                        <WorkflowStage
-                          key={index}
-                          icon={stage.icon}
-                          title={stage.title}
-                          description={stage.description}
-                          status={stageStates[index]?.status || 'pending'}
-                        />
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+                <motion.div
+                  variants={cardVariants}
+                  initial="hidden"
+                  animate="visible"
+                  transition={{ delay: 0.4 }}
+                >
+                  <Card className="bg-white/80 backdrop-blur-lg">
+                    <CardHeader>
+                      <CardTitle>Workflow Progress</CardTitle>
+                      <CardDescription>
+                        Track document processing progress
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div className="relative pt-1">
+                        <div className="flex mb-2 items-center justify-between">
+                          <div>
+                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-100 text-blue-600">
+                              {workflowProgress < 100 ? 'Processing' : 'Complete'}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold inline-block text-blue-600">
+                              {workflowProgress}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-100">
+                          <motion.div
+                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
+                            variants={progressVariants}
+                            initial="initial"
+                            animate="animate"
+                            custom={workflowProgress}
+                          />
+                        </div>
+                        {workflowProgress < 100 && (
+                          <motion.p
+                            className="text-sm text-gray-600 text-center"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.3 }}
+                          >
+                            {loadingMessage}
+                          </motion.p>
+                        )}
+                      </div>
+
+                      <div className="space-y-6">
+                        {workflowStages.map((stage, index) => (
+                          <TooltipProvider key={index}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="w-full">
+                                  <WorkflowStage
+                                    icon={stage.icon}
+                                    title={stage.title}
+                                    description={stage.description}
+                                    status={stageStates[index]?.status || 'pending'}
+                                  />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="right">
+                                <p>{getStageTooltip(stage.title, stageStates[index]?.status)}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               </div>
             </div>
-          </div>
+          </motion.div>
         </main>
       </div>
     </div>
   );
+}
+
+function getStageTooltip(stage: string, status: string | undefined): string {
+  if (!status || status === 'pending') {
+    return `Waiting to begin ${stage.toLowerCase()} phase`;
+  }
+  if (status === 'processing') {
+    return `Currently processing ${stage.toLowerCase()}`;
+  }
+  if (status === 'completed') {
+    return `Successfully completed ${stage.toLowerCase()}`;
+  }
+  return `Error during ${stage.toLowerCase()} phase`;
 }
 
 export default WorkflowAutomation;
