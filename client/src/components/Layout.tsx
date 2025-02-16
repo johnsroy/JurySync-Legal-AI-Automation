@@ -6,6 +6,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
+  SidebarProvider,
 } from "@/components/ui/sidebar";
 import { 
   LayoutDashboard, 
@@ -23,7 +24,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ErrorBoundary } from "react-error-boundary";
 
 // Animation variants
 const sidebarVariants = {
@@ -43,28 +43,21 @@ const contentVariants = {
   }
 };
 
-function ErrorFallback({ error }: { error: Error }) {
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
-      <div className="bg-white p-8 rounded-lg shadow-lg max-w-md">
-        <Shield className="h-12 w-12 text-red-500 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-center mb-2">Layout Error</h2>
-        <p className="text-gray-600 text-center">{error.message}</p>
-      </div>
-    </div>
-  );
-}
+const logoVariants = {
+  initial: { scale: 1, rotate: 0 },
+  hover: { 
+    scale: 1.1, 
+    rotate: 360, 
+    transition: { duration: 0.6 } 
+  }
+};
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
 
-  if (!user) {
-    return null;
-  }
-
   return (
-    <ErrorBoundary FallbackComponent={ErrorFallback}>
+    <SidebarProvider defaultOpen>
       <div className="flex min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
         <motion.div
           className="fixed inset-y-0 left-0 z-50"
@@ -74,10 +67,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         >
           <Sidebar className="border-r border-gray-200 bg-white/80 backdrop-blur-lg">
             <SidebarHeader>
-              <div className="flex items-center gap-2 p-4">
+              <motion.div 
+                className="flex items-center gap-2 p-4"
+                whileHover="hover"
+                initial="initial"
+                variants={logoVariants}
+              >
                 <Shield className="h-6 w-6 text-primary" />
                 <span className="font-bold text-primary">JurySync</span>
-              </div>
+              </motion.div>
             </SidebarHeader>
 
             <SidebarContent>
@@ -145,16 +143,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       <TooltipTrigger asChild>
                         <SidebarMenuButton
                           asChild
-                          isActive={location === "/legal-research"}
+                          isActive={location === "/vault"}
                         >
-                          <Link href="/legal-research" className="flex items-center gap-3 px-3 py-2 text-sm font-medium">
-                            <FileText className="h-5 w-5" />
-                            Legal Research
+                          <Link href="/vault" className="flex items-center gap-3 px-3 py-2 text-sm font-medium">
+                            <Shield className="h-5 w-5" />
+                            JuryVault
                           </Link>
                         </SidebarMenuButton>
                       </TooltipTrigger>
                       <TooltipContent side="right">
-                        Research legal documents
+                        Secure document storage
                       </TooltipContent>
                     </Tooltip>
                   </SidebarMenuItem>
@@ -203,8 +201,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <div className="text-sm">
-                      <p className="font-medium">{user.firstName} {user.lastName}</p>
-                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                      <p className="font-medium">{user?.firstName} {user?.lastName}</p>
+                      <p className="text-xs text-muted-foreground">{user?.email}</p>
                     </div>
                   </div>
                   <TooltipProvider>
@@ -223,7 +221,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           )}
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="right">
+                      <TooltipContent side="left">
                         Sign out
                       </TooltipContent>
                     </Tooltip>
@@ -235,14 +233,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </motion.div>
 
         <motion.main 
-          className="flex-1 ml-64"
+          className="flex-1 ml-64 overflow-auto"
           variants={contentVariants}
           initial="hidden"
           animate="visible"
         >
-          {children}
+          <div className="container mx-auto p-6">
+            {children}
+          </div>
         </motion.main>
       </div>
-    </ErrorBoundary>
+    </SidebarProvider>
   );
 }

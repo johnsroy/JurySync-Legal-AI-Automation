@@ -5,7 +5,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/use-auth";
 import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
-import AuthPage from "@/pages/auth-page";
+import LandingPage from "@/pages/landing-page";
+import LoginPage from "@/pages/login-page";
+import RegisterPage from "@/pages/register-page";
+import PricingPage from "@/pages/pricing-page";
+import SubscriptionPage from "@/pages/subscription-page";
 import Dashboard from "@/pages/dashboard";
 import ComplianceAuditing from "@/pages/compliance-auditing";
 import ContractAutomation from "@/pages/contract-automation";
@@ -15,97 +19,80 @@ import ReportsDashboard from "@/pages/reports-dashboard";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
 import WorkflowAutomation from "@/pages/workflow-automation";
+import VaultPage from "@/pages/vault-page";
 import { ProtectedRoute } from "./lib/protected-route";
 
 function Router() {
   return (
     <Switch>
       {/* Public routes */}
-      <Route path="/auth" component={AuthPage} />
+      <Route path="/" component={LandingPage} />
+      <Route path="/login" component={LoginPage} />
+      <Route path="/register" component={RegisterPage} />
+      <Route path="/pricing" component={PricingPage} />
+      <Route path="/subscription" component={SubscriptionPage} />
 
-      {/* Protected routes */}
+      {/* Protected routes with Layout */}
       <Route path="/dashboard">
-        <ProtectedRoute path="/dashboard">
-          <Layout>
-            <Dashboard />
-          </Layout>
-        </ProtectedRoute>
+        <Layout>
+          <ProtectedRoute component={Dashboard} path="/dashboard" />
+        </Layout>
+      </Route>
+
+      <Route path="/vault">
+        <Layout>
+          <ProtectedRoute component={VaultPage} path="/vault" />
+        </Layout>
       </Route>
 
       <Route path="/workflow">
-        <ProtectedRoute path="/workflow">
-          <Layout>
-            <WorkflowPage />
-          </Layout>
-        </ProtectedRoute>
+        <Layout>
+          <ProtectedRoute component={WorkflowPage} path="/workflow" />
+        </Layout>
       </Route>
 
       <Route path="/workflow-automation">
-        <ProtectedRoute path="/workflow-automation">
-          <Layout>
-            <WorkflowAutomation />
-          </Layout>
-        </ProtectedRoute>
+        <Layout>
+          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
+        </Layout>
       </Route>
 
       <Route path="/compliance-auditing">
-        <ProtectedRoute path="/compliance-auditing">
-          <Layout>
-            <ComplianceAuditing />
-          </Layout>
-        </ProtectedRoute>
+        <Layout>
+          <ProtectedRoute component={ComplianceAuditing} path="/compliance-auditing" />
+        </Layout>
       </Route>
 
       <Route path="/contract-automation">
-        <ProtectedRoute path="/contract-automation">
-          <Layout>
-            <ContractAutomation />
-          </Layout>
-        </ProtectedRoute>
+        <Layout>
+          <ProtectedRoute component={ContractAutomation} path="/contract-automation" />
+        </Layout>
       </Route>
 
       <Route path="/legal-research">
-        <ProtectedRoute path="/legal-research">
-          <Layout>
-            <LegalResearch />
-          </Layout>
-        </ProtectedRoute>
+        <Layout>
+          <ProtectedRoute component={LegalResearch} path="/legal-research" />
+        </Layout>
       </Route>
 
       <Route path="/reports">
-        <ProtectedRoute path="/reports">
-          <Layout>
-            <Reports />
-          </Layout>
-        </ProtectedRoute>
+        <Layout>
+          <ProtectedRoute component={Reports} path="/reports" />
+        </Layout>
       </Route>
 
       <Route path="/analytics">
-        <ProtectedRoute path="/analytics">
-          <Layout>
-            <ReportsDashboard />
-          </Layout>
-        </ProtectedRoute>
+        <Layout>
+          <ProtectedRoute component={ReportsDashboard} path="/analytics" />
+        </Layout>
       </Route>
 
       <Route path="/settings">
-        <ProtectedRoute path="/settings">
-          <Layout>
-            <Settings />
-          </Layout>
-        </ProtectedRoute>
+        <Layout>
+          <ProtectedRoute component={Settings} path="/settings" />
+        </Layout>
       </Route>
 
-      {/* Root route - redirect to dashboard if authenticated */}
-      <Route path="/">
-        <ProtectedRoute path="/">
-          <Layout>
-            <Dashboard />
-          </Layout>
-        </ProtectedRoute>
-      </Route>
-
-      {/* 404 route */}
       <Route>
         <Layout>
           <NotFound />
