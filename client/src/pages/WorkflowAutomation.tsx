@@ -1,975 +1,584 @@
-import { useAuth } from "@/hooks/use-auth";
-import { Link } from "wouter";
+import { useState } from "react";
+import { Link, useLocation } from "wouter";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import {
-  Loader2, AlertCircle, CheckCircle2, Terminal, FileText, Scale,
-  Book, Download, ChevronRight, UploadCloud, BarChart2,
-  Briefcase, Shield, History, RefreshCcw
-} from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
-import { useDropzone } from 'react-dropzone';
-import { useToast } from "@/hooks/use-toast";
-import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { PredictiveSuggestions } from "@/components/ContractRedlining/PredictiveSuggestions";
-import { DocumentPreview } from "@/components/DocumentPreview";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
-import { FileUpload } from "@/components/FileUpload";
-import { approvalAuditService } from "@/lib/approval-audit";
-import { ApprovalForm } from "@/components/ApprovalForm";
-import { documentAnalyticsService } from "@/services/documentAnalytics";
-import { DocumentAnalysisTable } from "@/components/DocumentAnalysisTable";
-import { generateDraftAnalysis } from "@/services/anthropic-service";
-import { LogOut } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRouter } from "wouter";
-import { v4 as uuidv4 } from 'uuid';
-import { Layout } from "@/components/layout";
+import { useDropzone } from "react-dropzone";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest, type TaskData as OriginalTaskData } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import {
+  BookCheck,
+  Scale,
+  FileText,
+  History,
+  Upload,
+  RefreshCcw,
+  Download,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Users,
+  BrainCircuit,
+  ChartBar,
+  FileCheck,
+  BadgeCheck,
+  AlertTriangle,
+  ChevronDown,
+  FileDown
+} from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-// Add legal-themed loading messages
-const legalLoadingMessages = [
-  "Analyzing document structure...",
-  "Checking legal compliance...",
-  "Validating regulatory requirements...",
-  "Reviewing precedent cases...",
-  "Ensuring document integrity...",
-  "Cross-referencing legal standards...",
-];
-
-// Animation variants
-const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5 }
-  },
-  exit: {
-    opacity: 0,
-    y: -20,
-    transition: { duration: 0.3 }
-  }
-};
-
-const stageVariants = {
-  initial: { scale: 0.95, opacity: 0 },
-  animate: {
-    scale: 1,
-    opacity: 1,
-    transition: { duration: 0.3 }
-  },
-  exit: {
-    scale: 0.95,
-    opacity: 0,
-    transition: { duration: 0.2 }
-  }
-};
-
-const progressVariants = {
-  initial: { width: 0 },
-  animate: (progress: number) => ({
-    width: `${progress}%`,
-    transition: { duration: 0.5, ease: "easeInOut" }
-  })
-};
-
-const cleanDocumentText = (text: string): string => {
-  if (!text) return '';
-  return text
-    .replace(/<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi, '')
-    .replace(/<\?xml\s+[^>]*\?>/gi, '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&[a-z]+;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-};
-
-// Add interface for analysis result
-interface AnalysisResult {
-  content: string;
-  title: string;
-  metadata?: {
-    documentType?: string;
-    industry?: string;
-    complianceStatus?: string;
-    status?: string;
-  };
-}
-
-// Update the StageResult interface
-interface StageResult {
-  content: string;
-  title: string;
-  metadata: {
-    documentType: string;
-    industry: string;
-    complianceStatus: string;
-    confidence?: number;
-    fileName?: string;
-  };
-}
-
-const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ onFileSelect }) => {
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: {
-      'application/pdf': ['.pdf'],
-      'application/msword': ['.doc'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'text/plain': ['.txt']
-    },
-    onDrop: async (acceptedFiles) => {
-      const processedFiles = acceptedFiles.map(async (file) => {
-        if (file.type === 'text/plain') {
-          const text = await file.text();
-          const cleanedText = cleanDocumentText(text);
-          return new File(
-            [cleanedText],
-            file.name,
-            { type: 'text/plain' }
-          );
-        }
-        return file;
-      });
-
-      const cleanedFiles = await Promise.all(processedFiles);
-      onFileSelect(cleanedFiles);
-    },
-    multiple: true
-  });
-
-  return (
-    <div
-      {...getRootProps()}
-      className={`
-        border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all
-        ${isDragActive
-          ? 'border-green-500 bg-green-50'
-          : 'border-gray-300 hover:border-green-400 hover:bg-gray-50'
-        }
-      `}
-    >
-      <input {...getInputProps()} />
-      <UploadCloud className={`mx-auto h-12 w-12 ${isDragActive ? 'text-green-500' : 'text-gray-400'}`} />
-      <p className="mt-2 text-sm text-gray-600">
-        {isDragActive
-          ? "Drop your documents here..."
-          : "Drag and drop your documents here, or click to select"}
-      </p>
-      <p className="text-xs text-gray-500 mt-1">
-        Supports PDF, DOCX, DOC, and TXT files
-      </p>
-    </div>
-  );
-};
-
-const WorkflowStage: React.FC<{
-  icon: React.ElementType;
-  title: string;
-  description: string;
-  status: 'pending' | 'processing' | 'completed' | 'error';
-}> = ({ icon: Icon, title, description, status }) => {
-  return (
-    <div className="relative flex items-center gap-4">
-      <div className={`
-        w-10 h-10 rounded-full flex items-center justify-center
-        ${status === 'completed' ? 'bg-green-100 text-green-600' :
-          status === 'processing' ? 'bg-blue-100 text-blue-600' :
-            status === 'error' ? 'bg-red-100 text-red-600' :
-              'bg-gray-100 text-gray-600'}
-      `}>
-        <Icon className="h-5 w-5" />
-      </div>
-      <div>
-        <h4 className="font-medium text-gray-900">{title}</h4>
-        <p className="text-sm text-gray-500">{description}</p>
-      </div>
-      {status === 'completed' && (
-        <div className="absolute right-0">
-          <CheckCircle2 className="h-5 w-5 text-green-500" />
-        </div>
-      )}
-      {status === 'processing' && (
-        <div className="absolute right-0">
-          <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
-        </div>
-      )}
-      {status === 'error' && (
-        <div className="absolute right-0">
-          <RefreshCcw className="h-5 w-5 text-red-500" />
-        </div>
-      )}
-    </div>
-  );
-};
-
-interface StageOutput {
+interface ErrorLog {
+  timestamp: string;
+  stage: string;
   message: string;
   details?: string;
-  timestamp: string;
-  status: 'success' | 'warning' | 'error' | 'info';
 }
 
-interface WorkflowStageState {
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  outputs: StageOutput[];
-  result?: StageResult;
-  approvers?: Approver[];
-  isApproved?: boolean;
-  metadata?: any;
+interface DocumentAnalysis {
+  documentType: string;
+  industry: string;
+  complianceStatus: {
+    status: 'PASSED' | 'FAILED' | 'PENDING';
+    details: string;
+    lastChecked: string;
+  };
 }
 
-interface KeyFinding {
-  category: string;
-  finding: string;
-  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+// Modified TaskData interface to include documentAnalysis
+interface TaskData extends OriginalTaskData {
+  documentAnalysis?: DocumentAnalysis;
 }
 
-interface ComplianceStatus {
-  requirement: string;
-  status: 'COMPLIANT' | 'NON_COMPLIANT' | 'PARTIALLY_COMPLIANT';
-  details: string;
-}
-
-interface Approver {
-  id: number;
-  name: string;
-  role: string;
-}
-
-export function WorkflowAutomation() {
-  const { user, logoutMutation } = useAuth();
+export default function WorkflowAutomation() {
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
+  const [analysisResults, setAnalysisResults] = useState<DocumentAnalysis | null>(null);
   const { toast } = useToast();
-  const [documentText, setDocumentText] = useState("");
-  const [selectedText, setSelectedText] = useState("");
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [workflowProgress, setWorkflowProgress] = useState(0);
-  const [currentStage, setCurrentStage] = useState(0);
-  const [stageStates, setStageStates] = useState<Record<number, WorkflowStageState>>({});
-  const [documentAnalyses, setDocumentAnalyses] = useState<Array<{
-    fileName: string;
-    documentType: string;
-    industry: string;
-    complianceStatus: string;
-  }>>([]);
-  const [isLogoHovered, setIsLogoHovered] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState(legalLoadingMessages[0]);
-  const router = useRouter();
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
-  // Effect to update document analysis based on workflow completion
-  useEffect(() => {
-    const isWorkflowComplete = Object.values(stageStates).every(
-      state => state?.status === 'completed'
-    );
+  // Protect the route
+  if (!user) {
+    console.log("No user found, redirecting to login");
+    setLocation("/login");
+    return null;
+  }
 
-    if (isWorkflowComplete && stageStates[5]?.result?.metadata) {
-      const metadata = stageStates[5].result.metadata;
-      setDocumentAnalyses(prev => [...prev, {
-        fileName: uploadedFiles[uploadedFiles.length - 1]?.name || 'Untitled Document',
-        documentType: metadata.documentType,
-        industry: metadata.industry,
-        complianceStatus: metadata.complianceStatus
-      }]);
-    }
-  }, [stageStates, uploadedFiles]);
-
-  useEffect(() => {
-    if (currentStage >= 0 && workflowProgress < 100) {
-      const interval = setInterval(() => {
-        setLoadingMessage(
-          legalLoadingMessages[Math.floor(Math.random() * legalLoadingMessages.length)]
-        );
-      }, 3000);
-      return () => clearInterval(interval);
-    }
-  }, [currentStage, workflowProgress]);
-
-  const handleTextSelect = useCallback(() => {
-    const selection = window.getSelection();
-    if (selection && selection.toString().trim()) {
-      const selectedContent = selection.toString().trim();
-      setSelectedText(selectedContent);
-      toast({
-        title: "Text Selected",
-        description: "Loading relevant suggestions...",
-      });
-    }
-  }, [toast]);
-
-  const handleSuggestionSelect = useCallback((suggestionText: string) => {
-    if (!selectedText) return;
-
-    const textArea = document.querySelector('textarea');
-    if (!textArea) return;
-
-    const start = textArea.selectionStart;
-    const end = textArea.selectionEnd;
-
-    setDocumentText(prev =>
-      prev.substring(0, start) +
-      suggestionText +
-      prev.substring(end)
-    );
-
-    toast({
-      title: "Suggestion Applied",
-      description: "The selected clause has been updated.",
-    });
-  }, [selectedText, toast]);
-
-  const addStageOutput = useCallback((stageIndex: number, output: StageOutput) => {
-    setStageStates(prev => ({
-      ...prev,
-      [stageIndex]: {
-        ...prev[stageIndex],
-        outputs: [...(prev[stageIndex]?.outputs || []), output]
-      }
-    }));
-  }, []);
-
-  const updateStageStatus = useCallback((stageIndex: number, status: WorkflowStageState['status']) => {
-    setStageStates(prev => ({
-      ...prev,
-      [stageIndex]: {
-        ...prev[stageIndex],
-        status,
-        outputs: prev[stageIndex]?.outputs || []
-      }
-    }));
-  }, []);
-
-  const generatePDF = async (content: string, title: string) => {
-    const doc = new jsPDF();
-
-    const element = document.createElement('div');
-    element.innerHTML = content;
-    document.body.appendChild(element);
-
-    try {
-      const canvas = await html2canvas(element);
-      const imgData = canvas.toDataURL('image/png');
-      doc.addImage(imgData, 'PNG', 10, 10, 190, 0);
-      doc.save(`${title.toLowerCase().replace(/\s+/g, '-')}.pdf`);
-    } finally {
-      document.body.removeChild(element);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!documentText.trim()) {
-      toast({
-        title: "No Content",
-        description: "Please enter document text",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Reset states
-    setCurrentStage(0);
-    setWorkflowProgress(0);
-    setStageStates({});
-    setDocumentAnalyses([]); // Reset document analyses
-
-    const stages = [
-      {
-        name: "Draft Generation",
-        handler: async () => {
-          try {
-            const analysis = await generateDraftAnalysis(documentText);
-
-            const draftContent = `
-              <h2>Detailed Document Analysis</h2>
-              <div class="space-y-4">
-                ${analysis}
-              </div>
-            `;
-
-            addStageOutput(0, {
-              message: "Draft analysis completed",
-              details: "AI has analyzed the document structure and content",
-              timestamp: new Date().toISOString(),
-              status: 'success'
-            });
-
-            return {
-              content: draftContent,
-              title: "Document Draft Analysis",
-              metadata: {
-                analysisType: "DRAFT_GENERATION",
-                timestamp: new Date().toISOString(),
-                confidence: 0.95
-              }
-            };
-          } catch (error) {
-            console.error("Draft generation error:", error);
-            throw error;
-          }
-        }
-      },
-      {
-        name: "Compliance Check",
-        handler: async () => {
-          const complianceResult = {
-            score: 85,
-            status: "Compliant",
-            findings: [
-              "Document structure follows standard format",
-              "Required legal clauses present",
-              "No major compliance issues detected"
-            ],
-            documentType: "SOC 3 Report",
-            industry: "TECHNOLOGY"
-          };
-
-          const complianceContent = `
-            <h2>Compliance Analysis Report</h2>
-            <p><strong>Compliance Score:</strong> ${complianceResult.score}%</p>
-            <h3>Key Findings:</h3>
-            <ul>
-              ${complianceResult.findings.map(finding => `<li>${finding}</li>`).join('')}
-            </ul>
-          `;
-
-          return {
-            content: complianceContent,
-            title: "Compliance Analysis Report",
-            metadata: {
-              status: complianceResult.status,
-              complianceStatus: complianceResult.status,
-              score: complianceResult.score,
-              findings: complianceResult.findings,
-              documentType: complianceResult.documentType,
-              industry: complianceResult.industry
-            }
-          };
-        }
-      },
-      {
-        name: "Legal Research",
-        handler: async () => {
-          const researchContent = `
-            <h2>Legal Research Findings</h2>
-            <h3>Relevant Case Law:</h3>
-            <ul>
-              <li>Similar contract disputes</li>
-              <li>Regulatory precedents</li>
-            </ul>
-          `;
-
-          return {
-            content: researchContent,
-            title: "Legal Research Report"
-          };
-        }
-      },
-      {
-        name: "Approval Process",
-        handler: async () => {
-          const approvalContent = `
-            <h2>Document Approval Status</h2>
-            <p>Pending approval from authorized reviewers</p>
-          `;
-
-          return {
-            content: approvalContent,
-            title: "Approval Status Report"
-          };
-        }
-      },
-      {
-        name: "Final Audit",
-        handler: async () => {
-          const auditContent = `
-            <h2>Final Audit Report</h2>
-            <p>Comprehensive audit completed</p>
-          `;
-
-          return {
-            content: auditContent,
-            title: "Final Audit Report"
-          };
-        }
-      },
-      {
-        name: "Document Analysis Results",
-        handler: async () => {
-          try {
-            const complianceStage = stageStates[1]?.result?.metadata || {};
-            const currentFile = uploadedFiles[uploadedFiles.length - 1];
-
-            const documentType = complianceStage.documentType || "Compliance Document";
-            const industry = complianceStage.industry || "TECHNOLOGY";
-            const complianceStatus = complianceStage.complianceStatus || "Compliant";
-
-            const analysisContent = `
-              <h2>Final Document Analysis</h2>
-              <div class="space-y-4">
-                <div>
-                  <h3>Document Classification</h3>
-                  <p><strong>File:</strong> ${currentFile?.name || 'Untitled Document'}</p>
-                  <p><strong>Type:</strong> ${documentType}</p>
-                  <p><strong>Industry:</strong> ${industry}</p>
-                </div>
-                <div>
-                  <h3>Compliance Assessment</h3>
-                  <p><strong>Status:</strong> ${complianceStatus}</p>
-                </div>
-              </div>
-            `;
-
-            return {
-              content: analysisContent,
-              title: "Document Analysis Results",
-              metadata: {
-                documentType,
-                industry,
-                complianceStatus,
-                fileName: currentFile?.name || 'Unknown'
-              }
-            };
-          } catch (error) {
-            console.error('Error in final analysis:', error);
-            throw error;
-          }
-        }
-      }
-    ];
-
-    try {
-      for (let i = 0; i < stages.length; i++) {
-        setCurrentStage(i);
-        updateStageStatus(i, 'processing');
-
-        addStageOutput(i, {
-          message: `Starting ${stages[i].name}`,
-          timestamp: new Date().toISOString(),
-          status: 'info'
-        });
-
-        try {
-          const result = await stages[i].handler();
-
-          setStageStates(prev => ({
-            ...prev,
-            [i]: {
-              ...prev[i],
-              status: 'completed',
-              result: {
-                ...result,
-                metadata: {
-                  ...result.metadata,
-                  complianceStatus: result.metadata?.status || result.metadata?.complianceStatus
-                }
-              }
-            }
-          }));
-
-          setWorkflowProgress((i + 1) * (100 / stages.length));
-
-          addStageOutput(i, {
-            message: `${stages[i].name} completed`,
-            timestamp: new Date().toISOString(),
-            status: 'success'
-          });
-        } catch (error) {
-          console.error(`Error in stage ${i}:`, error);
-          updateStageStatus(i, 'error');
-          addStageOutput(i, {
-            message: `Error in ${stages[i].name}`,
-            details: error instanceof Error ? error.message : 'Unknown error',
-            timestamp: new Date().toISOString(),
-            status: 'error'
-          });
-          throw error;
-        }
-      }
-
-      toast({
-        title: "Processing Complete",
-        description: "Document workflow completed successfully",
-      });
-
-      const analysisResult = stageStates[5]?.result;
-      
-      if (!analysisResult) {
-        throw new Error("Analysis result not found");
-      }
-
-      if (!analysisResult?.metadata) {
-        throw new Error("Analysis result metadata not found");
-      }
-
-      // Create vault entry with analysis results
-      const vaultEntry = {
-        id: uuidv4(),
-        fileName: analysisResult.metadata.fileName || 'Unknown',
-        documentType: analysisResult.metadata.documentType,
-        industry: analysisResult.metadata.industry,
-        complianceStatus: analysisResult.metadata.complianceStatus,
-        timestamp: new Date().toISOString(),
-        content: analysisResult.content
-      };
-
-      // Save to vault
-      const existingVault = JSON.parse(localStorage.getItem('documentVault') || '[]');
-      const updatedVault = [...existingVault, vaultEntry];
-      localStorage.setItem('documentVault', JSON.stringify(updatedVault));
-
-      // Replace router.push with window.location.href
-      window.location.href = '/vault';
-
-    } catch (error) {
-      console.error('Processing error:', error);
-      toast({
-        title: "Processing Error",
-        description: error instanceof Error ? error.message : "An error occurred during document processing",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleFileProcessed = useCallback(({ text, documentId, fileName }: { text: string; documentId: string; fileName: string }) => {
-    setDocumentText(text);
-    toast({
-      title: "Document Processed",
-      description: `${fileName} has been successfully parsed and loaded.`,
-    });
-  }, [toast]);
-
-  const handleFileError = useCallback((error: string) => {
-    toast({
-      title: "Upload Failed",
-      description: error,
-      variant: "destructive"
-    });
-  }, [toast]);
-
+  // Workflow stages definition
   const workflowStages = [
-    {
-      title: "Draft Generation",
-      description: "AI-powered document drafting and formatting",
-      icon: FileText
-    },
-    {
-      title: "Compliance Check",
-      description: "Automated compliance check and risk assessment",
-      icon: Shield
-    },
-    {
-      title: "Legal Research",
-      description: "Context-aware legal research and analysis",
-      icon: Book
-    },
-    {
-      title: "Approval Process",
-      description: "Workflow approval and document execution",
-      icon: History
-    },
-    {
-      title: "Final Audit",
-      description: "Continuous monitoring and compliance updates",
-      icon: RefreshCcw
-    },
-    {
-      title: "Document Analysis Results",
-      description: "Final analysis of the document",
-      icon: BarChart2
-    }
+    { id: 'draft', name: 'Draft Generation', icon: FileText },
+    { id: 'compliance', name: 'Compliance Check', icon: Scale },
+    { id: 'research', name: 'Legal Research', icon: BookCheck },
+    { id: 'approval', name: 'Approval Process', icon: BadgeCheck },
+    { id: 'audit', name: 'Final Audit', icon: History }
   ];
 
-  const logoVariants = {
-    initial: { scale: 1, rotate: 0 },
-    hover: { scale: 1.1, rotate: 360, transition: { duration: 0.6 } }
+  // Document upload handler
+  const onDrop = async (acceptedFiles: File[]) => {
+    if (acceptedFiles.length === 0) return;
+
+    const formData = new FormData();
+    formData.append('file', acceptedFiles[0]);
+
+    try {
+      // Start analysis immediately
+      console.log("Starting document analysis...");
+      const analysisResponse = await fetch('/api/orchestrator/analyze', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!analysisResponse.ok) {
+        throw new Error('Analysis request failed');
+      }
+
+      const analysisData = await analysisResponse.json();
+      console.log("Analysis results:", analysisData);
+
+      if (analysisData.analysis) {
+        setAnalysisResults(analysisData.analysis);
+      }
+
+      // Start workflow process
+      const response = await fetch('/api/orchestrator/documents', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (data.taskId) {
+        setActiveTaskId(data.taskId);
+        toast({
+          title: "Processing Started",
+          description: "Your document is being analyzed",
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Upload/Analysis failed:', error);
+      const errorLog: ErrorLog = {
+        timestamp: new Date().toISOString(),
+        stage: 'upload',
+        message: 'Document upload failed',
+        details: error instanceof Error ? error.message : String(error)
+      };
+      setErrorLogs(prev => [errorLog, ...prev]);
+      toast({
+        title: "Upload Failed",
+        description: "There was an error uploading your document",
+        variant: "destructive"
+      });
+    }
   };
 
-  const textVariants = {
-    initial: { x: 0, opacity: 1 },
-    hover: { x: 10, opacity: 0.8, transition: { duration: 0.3 } }
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
+
+  // Task progress query
+  const { data: taskData } = useQuery<TaskData>({
+    queryKey: ['/api/orchestrator/tasks', activeTaskId],
+    enabled: !!activeTaskId,
+    refetchInterval: 2000,
+  });
+
+  // Retry mutation
+  const retryMutation = useMutation({
+    mutationFn: async (stageId?: string) => {
+      if (!activeTaskId) return;
+      await apiRequest('POST', `/api/orchestrator/tasks/${activeTaskId}/retry`, { stageId });
+      await queryClient.invalidateQueries({
+        queryKey: ['/api/orchestrator/tasks', activeTaskId]
+      });
+    }
+  });
+
+  // Download handlers
+  const handleDownloadPDF = async () => {
+    try {
+      const response = await fetch(`/api/orchestrator/tasks/${activeTaskId}/report?format=pdf`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workflow-report-${activeTaskId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('PDF download failed:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download PDF report",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDownloadCSV = async () => {
+    try {
+      const response = await fetch(`/api/orchestrator/tasks/${activeTaskId}/report?format=csv`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `workflow-metrics-${activeTaskId}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('CSV download failed:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download CSV report",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Get current stage based on progress
+  const getCurrentStage = (progress: number) => {
+    if (progress <= 20) return 0;
+    if (progress <= 40) return 1;
+    if (progress <= 60) return 2;
+    if (progress <= 80) return 3;
+    return 4;
+  };
+
+  // Sample metrics data
+  const metricsData = [
+    { name: 'Tasks Automated', value: 80, label: '80% of routine tasks automated' },
+    { name: 'Processing Speed', value: 70, label: '70% faster processing' },
+    { name: 'Cost Savings', value: 40, label: '40% labor cost savings' },
+    { name: 'Error Reduction', value: 60, label: '60% error reduction' }
+  ];
+
+  // Sample timeline data
+  const timelineData = [
+    { name: 'Week 1', tasks: 45, time: 120 },
+    { name: 'Week 2', tasks: 52, time: 110 },
+    { name: 'Week 3', tasks: 48, time: 90 },
+    { name: 'Week 4', tasks: 60, time: 85 }
+  ];
+
+  // Analysis Results Table Component
+  const renderAnalysisTable = () => {
+    if (!analysisResults) {
+      return null;
+    }
+
+    return (
+      <Card className="p-6 mb-8 bg-slate-800 border-slate-700">
+        <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+          <FileCheck className="h-5 w-5 text-green-400" />
+          Document Analysis Results
+        </h3>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-slate-300">File</TableHead>
+              <TableHead className="text-slate-300">Document Type</TableHead>
+              <TableHead className="text-slate-300">Industry</TableHead>
+              <TableHead className="text-slate-300">Compliance Status</TableHead>
+              <TableHead className="text-slate-300">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell className="text-slate-300">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-400" />
+                  Document
+                </div>
+              </TableCell>
+              <TableCell className="text-slate-300">
+                {analysisResults.documentType}
+              </TableCell>
+              <TableCell className="text-slate-300">
+                {analysisResults.industry}
+              </TableCell>
+              <TableCell>
+                <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
+                  analysisResults.complianceStatus.status === 'PASSED'
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-red-500/20 text-red-400'
+                }`}>
+                  {analysisResults.complianceStatus.status === 'PASSED' ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Compliant
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-3 w-3" />
+                      Non-Compliant
+                    </>
+                  )}
+                </span>
+              </TableCell>
+              <TableCell>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-slate-400 hover:text-slate-300"
+                >
+                  <FileDown className="h-4 w-4 mr-1" />
+                  Download
+                </Button>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Card>
+    );
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Document Workflow Automation</h1>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <motion.div
-            variants={cardVariants}
-            initial="hidden"
-            animate="visible"
-          >
-            <Card className="bg-white/80 backdrop-blur-lg">
-              <CardHeader>
-                <CardTitle>Document Upload</CardTitle>
-                <CardDescription>
-                  Upload your document or enter text manually below
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <FileUpload
-                  onFileProcessed={handleFileProcessed}
-                  onError={handleFileError}
-                  multiple={true}
-                  setUploadedFiles={setUploadedFiles}
-                />
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <motion.div
-            variants={cardVariants}
-            initial="hidden"
-            animate="visible"
-            transition={{ delay: 0.2 }}
-          >
-            <Card className="bg-white/80 backdrop-blur-lg">
-              <CardHeader>
-                <CardTitle>Document Editor</CardTitle>
-                <CardDescription>
-                  Edit your document and select text for suggestions
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Textarea
-                  placeholder="Enter or paste your document text here..."
-                  className="min-h-[200px] resize-none"
-                  value={documentText}
-                  onChange={(e) => setDocumentText(e.target.value)}
-                  onSelect={handleTextSelect}
-                  onMouseUp={handleTextSelect}
-                  onKeyUp={handleTextSelect}
-                />
-                <Button
-                  className="w-full"
-                  onClick={handleSubmit}
-                  disabled={!documentText.trim()}
-                >
-                  Process Document
-                </Button>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          <AnimatePresence>
-            {Object.entries(stageStates).map(([stageIndex, state]) => (
-              <motion.div
-                key={stageIndex}
-                variants={stageVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                layout
-              >
-                <Card className="bg-white/80 backdrop-blur-lg">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      {(() => {
-                        const Icon = workflowStages[Number(stageIndex)].icon;
-                        return (
-                          <Icon className={
-                            state.status === 'completed' ? 'text-green-500' :
-                              state.status === 'processing' ? 'text-blue-500' :
-                                state.status === 'error' ? 'text-red-500' :
-                                  'text-gray-500'
-                          } />
-                        );
-                      })()}
-                      {workflowStages[Number(stageIndex)].title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {state.outputs.map((output, idx) => (
-                      <div
-                        key={idx}
-                        className={`p-4 rounded-lg border ${
-                          output.status === 'error' ? 'border-red-200 bg-red-50' :
-                            output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
-                              output.status === 'success' ? 'border-green-200 bg-green-50' :
-                                'border-blue-200 bg-blue-50'
-                          }`}
-                      >
-                        <p className="font-medium">{output.message}</p>
-                        {output.details && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {output.details}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground mt-2">
-                          {new Date(output.timestamp).toLocaleTimeString()}
-                        </p>
-                      </div>
-                    ))}
-
-                    {state.result && (
-                      <DocumentPreview
-                        content={state.result.content}
-                        title={state.result.title}
-                        metadata={state.result.metadata}
-                        onDownload={() => generatePDF(state.result.content, state.result.title)}
-                      >
-                        {currentStage === 3 && (
-                          <Card className="bg-white/80 backdrop-blur-lg mt-4">
-                            <CardHeader>
-                              <CardTitle>Document Approval</CardTitle>
-                              <CardDescription>
-                                Request approval for this document
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                              {!stageStates[3]?.isApproved ? (
-                                <ApprovalForm
-                                  onApprove={async (approvers) => {
-                                    try {
-                                      setStageStates(prev => ({
-                                        ...prev,
-                                        [currentStage]: {
-                                          ...prev[currentStage],
-                                          approvers,
-                                          isApproved: true,
-                                          status: 'completed'
-                                        }
-                                      }));
-
-                                      setCurrentStage(prev => prev + 1);
-                                      setWorkflowProgress((currentStage + 1) * (100 / workflowStages.length));
-
-                                      addStageOutput(currentStage, {
-                                        message: "Document approved",
-                                        details: `Approved by ${approvers.length} reviewer(s)`,
-                                        timestamp: new Date().toISOString(),
-                                        status: 'success'
-                                      });
-                                    } catch (error) {
-                                      console.error("Approval error:", error);
-                                      toast({
-                                        title: "Approval Failed",
-                                        description: error instanceof Error ? error.message : "Failed to process approval",
-                                        variant: "destructive"
-                                      });
-                                    }
-                                  }}
-                                  isLoading={stageStates[3]?.status === 'processing'}
-                                />
-                              ) : (
-                                <div className="text-center text-green-600">
-                                  <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
-                                  <p>Document has been approved</p>
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        )}
-                      </DocumentPreview>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+      {/* Header Section */}
+      <header className="border-b border-slate-700">
+        <div className="container mx-auto py-8">
+          <div className="flex items-center space-x-2 mb-2">
+            <BrainCircuit className="h-8 w-8 text-blue-400" />
+            <h1 className="text-4xl font-bold tracking-tight">
+              Full Lifecycle Automation Workflow
+            </h1>
+          </div>
+          <p className="text-slate-400 text-lg mb-8">
+            From Draft to Execution – Automating 80% of Legal Compliance Tasks
+          </p>
         </div>
+      </header>
 
-        <div className="space-y-6">
-          <PredictiveSuggestions
-            selectedText={selectedText}
-            onSuggestionSelect={handleSuggestionSelect}
-          />
-          <motion.div
-            variants={cardVariants}
-            initial="hidden"
-            animate="visible"
-            transition={{ delay: 0.4 }}
+      {/* Main Content Area */}
+      <main className="container mx-auto py-16">
+        {/* Upload Section */}
+        <Card className="p-12 mb-12 bg-slate-800 border-slate-700">
+          <div
+            {...getRootProps()}
+            className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-300
+              ${isDragActive ? 'border-blue-400 bg-blue-400/10 scale-102' : 'border-slate-600 hover:border-blue-400/50'}`}
           >
-            <Card className="bg-white/80 backdrop-blur-lg">
-              <CardHeader>
-                <CardTitle>Workflow Progress</CardTitle>
-                <CardDescription>
-                  Track document processing progress
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="relative pt-1">
-                  <div className="flex mb-2 items-center justify-between">
-                    <div>
-                      <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-100 text-blue-600">
-                        {workflowProgress < 100 ? 'Processing' : 'Complete'}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs font-semibold inline-block text-blue-600">
-                        {workflowProgress}%
-                      </span>
-                    </div>
+            <input {...getInputProps()} />
+            <Upload className={`h-16 w-16 mx-auto mb-6 text-slate-400 transition-transform duration-300 ${isDragActive ? 'scale-110' : ''}`} />
+            <h3 className="text-xl font-semibold mb-3">
+              Upload Legal Documents
+            </h3>
+            <p className="text-slate-400 mb-4">
+              Drag & drop your documents here or click to select files
+            </p>
+            <div className="flex justify-center gap-4 text-sm text-slate-500">
+              <span>PDF</span>
+              <span>DOCX</span>
+              <span>TXT</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Analysis Results Table */}
+        {analysisResults && renderAnalysisTable()}
+
+
+        {/* Workflow Progress */}
+        {activeTaskId && taskData && (
+          <>
+            {/* Stage Timeline */}
+            <Card className="p-12 mb-12 bg-slate-800 border-slate-700">
+              <div className="relative mb-12">
+                <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-700 -translate-y-1/2" />
+                <div className="relative flex justify-between">
+                  {workflowStages.map((stage, index) => {
+                    const currentStage = getCurrentStage(taskData.progress);
+                    const Icon = stage.icon;
+                    const isCompleted = index < currentStage;
+                    const isCurrent = index === currentStage;
+                    const isError = taskData.status === 'failed' && isCurrent;
+
+                    return (
+                      <div key={stage.id} className="flex flex-col items-center">
+                        <div
+                          className={`w-12 h-12 rounded-full flex items-center justify-center relative z-10 transition-all duration-300
+                          ${isCompleted ? 'bg-green-500 scale-105' :
+                              isError ? 'bg-red-500 scale-105' :
+                                isCurrent ? 'bg-blue-500/20 border-2 border-blue-400 scale-110' :
+                                  'bg-slate-700'}`}
+                        >
+                          {isCompleted ? (
+                            <CheckCircle2 className="h-6 w-6 text-white" />
+                          ) : isError ? (
+                            <AlertTriangle className="h-6 w-6 text-white" />
+                          ) : isCurrent ? (
+                            <Clock className="h-6 w-6 text-blue-400 animate-spin" />
+                          ) : (
+                            <Icon className="h-6 w-6 text-slate-400" />
+                          )}
+                        </div>
+                        <div className="mt-4 text-sm font-medium text-center">
+                          <span className={`transition-colors ${
+                            isCompleted ? 'text-green-400' :
+                              isError ? 'text-red-400' :
+                                isCurrent ? 'text-blue-400' :
+                                  'text-slate-400'
+                          }`}>
+                            {stage.name}
+                          </span>
+                          {isError && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => retryMutation.mutate(stage.id)}
+                              disabled={retryMutation.isPending}
+                              className="mt-2 text-red-400 hover:text-red-300"
+                            >
+                              <RefreshCcw className="h-3 w-3 mr-1" />
+                              Retry Stage
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Status and Actions */}
+              <div className="flex justify-between items-center mb-8">
+                <div>
+                  <div className="flex items-center space-x-2 mb-2">
+                    {taskData.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-400" />}
+                    {taskData.status === 'processing' && <Clock className="h-5 w-5 text-blue-400 animate-spin" />}
+                    {taskData.status === 'failed' && <AlertCircle className="h-5 w-5 text-red-400" />}
+                    <h3 className="text-2xl font-semibold">Workflow Progress</h3>
                   </div>
-                  <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-100">
-                    <motion.div
-                      className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
-                      variants={progressVariants}
-                      initial="initial"
-                      animate="animate"
-                      custom={workflowProgress}
-                    />
-                  </div>
-                  {workflowProgress < 100 && (
-                    <motion.p
-                      className="text-sm text-gray-600 text-center"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ duration: 0.3 }}
+                  <p className="text-slate-400">
+                    {taskData.currentStepDetails?.description || 'Processing your document...'}
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-4">
+                  {taskData.status === 'failed' && (
+                    <Button
+                      variant="outline"
+                      onClick={() => retryMutation.mutate()}
+                      disabled={retryMutation.isPending}
+                      className="border-slate-600 hover:bg-slate-700"
                     >
-                      {loadingMessage}
-                    </motion.p>
+                      <RefreshCcw className="h-4 w-4 mr-2" />
+                      Retry Process
+                    </Button>
                   )}
                 </div>
+              </div>
 
-                <div className="space-y-6">
-                  {workflowStages.map((stage, index) => (
-                    <TooltipProvider key={index}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="w-full">
-                            <WorkflowStage
-                              icon={stage.icon}
-                              title={stage.title}
-                              description={stage.description}
-                              status={stageStates[index]?.status || 'pending'}
-                            />
+              {/* Progress Bar */}
+              <Progress
+                value={taskData.progress}
+                className="h-2 mb-6 bg-slate-700"
+              />
+
+              {/* Error Log Section */}
+              {errorLogs.length > 0 && (
+                <Collapsible className="mb-8">
+                  <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-red-500/10 rounded-lg border border-red-500/20 transition-colors hover:bg-red-500/20">
+                    <div className="flex items-center space-x-2">
+                      <AlertTriangle className="h-5 w-5 text-red-400" />
+                      <span className="font-medium text-red-400">Error Log</span>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-red-400" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <ScrollArea className="h-[200px] mt-4">
+                      <div className="space-y-4">
+                        {errorLogs.map((log, index) => (
+                          <div key={index} className="p-4 bg-red-500/5 rounded border border-red-500/10">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-red-400 font-medium">{log.stage}</span>
+                              <span className="text-sm text-slate-500">
+                                {new Date(log.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-slate-300">{log.message}</p>
+                            {log.details && (
+                              <p className="mt-2 text-sm text-slate-400">{log.details}</p>
+                            )}
                           </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                          <p>{getStageTooltip(stage.title, stageStates[index]?.status)}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ))}
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+
+              {/* Metrics Dashboard */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
+                {/* Performance Metrics */}
+                <Card className="bg-slate-700/50 border-none p-6">
+                  <h4 className="text-lg font-semibold mb-6">Performance Metrics</h4>
+                  <div className="space-y-4">
+                    {metricsData.map((metric, index) => (
+                      <div key={index} className="relative pt-1">
+                        <div className="flex mb-2 items-center justify-between">
+                          <div>
+                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full bg-blue-500/20 text-blue-400">
+                              {metric.name}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold inline-block text-blue-400">
+                              {metric.value}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-slate-600">
+                          <div
+                            style={{ width: `${metric.value}%` }}
+                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {/* Processing Timeline */}
+                <Card className="bg-slate-700/50 border-none p-6">
+                  <h4 className="text-lg font-semibold mb-6">Processing Timeline</h4>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={timelineData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                        <XAxis dataKey="name" stroke="#94a3b8" />
+                        <YAxis stroke="#94a3b8" />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#1e293b',
+                            border: 'none',
+                            borderRadius: '0.5rem',
+                            color: '#f8fafc'
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="tasks"
+                          stroke="#3b82f6"
+                          strokeWidth={2}
+                          dot={{ fill: '#3b82f6' }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="time"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          dot={{ fill: '#22c55e' }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Report Download Section */}
+              <div className="mt-12 border-t border-slate-700 pt-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-lg font-semibold mb-2">Download Report</h4>
+                    <p className="text-slate-400">Export workflow results and metrics in your preferred format</p>
+                  </div>
+                  <div className="flex gap-4">
+                    <Button
+                      variant="outline"
+                      onClick={handleDownloadPDF}
+                      className="border-slate-600 hover:bg-slate-700 transition-colors"
+                    >
+                      <FileDown className="h-4 w-4 mr-2" />
+                      PDF Report
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleDownloadCSV}
+                      className="border-slate-600 hover:bg-slate-700 transition-colors"
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      CSV Data
+                    </Button>
+                  </div>
                 </div>
-              </CardContent>
+              </div>
             </Card>
-          </motion.div>
-        </div>
-      </div>
+          </>
+        )}
+      </main>
     </div>
   );
 }
-
-function getStageTooltip(stage: string, status: string | undefined): string {
-  if (!status || status === 'pending') {
-    return `Waiting to begin ${stage.toLowerCase()} phase`;
-  }
-  if (status === 'processing') {
-    return `Currently processing ${stage.toLowerCase()}`;
-  }
-  if (status === 'completed') {
-    return `Successfully completed ${stage.toLowerCase()}`;
-  }
-  return `Error during ${stage.toLowerCase()} phase`;
-}
-
-WorkflowAutomation.getLayout = function getLayout(page: React.ReactElement) {
-  return <Layout>{page}</Layout>;
-};
-
-export default WorkflowAutomation;

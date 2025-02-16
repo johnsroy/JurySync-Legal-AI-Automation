@@ -1,7 +1,9 @@
-import { Route, Switch } from "wouter";
+import { Switch, Route } from "wouter";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/use-auth";
-import { Layout } from "@/components/layout";
+import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing-page";
 import LoginPage from "@/pages/login-page";
@@ -16,11 +18,9 @@ import Reports from "@/pages/reports";
 import ReportsDashboard from "@/pages/reports-dashboard";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
-import Vault from "@/pages/vault";
-import HistoryReports from "@/pages/history-reports";
+import WorkflowAutomation from "@/pages/workflow-automation";
+import VaultPage from "@/pages/vault-page";
 import { ProtectedRoute } from "./lib/protected-route";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "./lib/queryClient";
 
 function Router() {
   return (
@@ -32,28 +32,72 @@ function Router() {
       <Route path="/pricing" component={PricingPage} />
       <Route path="/subscription" component={SubscriptionPage} />
 
-      {/* Protected routes */}
+      {/* Protected routes with Layout */}
       <Route path="/dashboard">
-        <ProtectedRoute component={Dashboard} />
-      </Route>
-      <Route path="/vault">
-        <ProtectedRoute component={Vault} />
-      </Route>
-      <Route path="/workflow">
-        <ProtectedRoute component={WorkflowPage} />
-      </Route>
-      <Route path="/contract-automation">
-        <ProtectedRoute component={ContractAutomation} />
-      </Route>
-      <Route path="/history-reports">
-        <ProtectedRoute component={HistoryReports} />
-      </Route>
-      <Route path="/settings">
-        <ProtectedRoute component={Settings} />
+        <Layout>
+          <ProtectedRoute component={Dashboard} path="/dashboard" />
+        </Layout>
       </Route>
 
-      {/* 404 route */}
-      <Route component={NotFound} />
+      <Route path="/vault">
+        <Layout>
+          <ProtectedRoute component={VaultPage} path="/vault" />
+        </Layout>
+      </Route>
+
+      <Route path="/workflow">
+        <Layout>
+          <ProtectedRoute component={WorkflowPage} path="/workflow" />
+        </Layout>
+      </Route>
+
+      <Route path="/workflow-automation">
+        <Layout>
+          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
+        </Layout>
+      </Route>
+
+      <Route path="/compliance-auditing">
+        <Layout>
+          <ProtectedRoute component={ComplianceAuditing} path="/compliance-auditing" />
+        </Layout>
+      </Route>
+
+      <Route path="/contract-automation">
+        <Layout>
+          <ProtectedRoute component={ContractAutomation} path="/contract-automation" />
+        </Layout>
+      </Route>
+
+      <Route path="/legal-research">
+        <Layout>
+          <ProtectedRoute component={LegalResearch} path="/legal-research" />
+        </Layout>
+      </Route>
+
+      <Route path="/reports">
+        <Layout>
+          <ProtectedRoute component={Reports} path="/reports" />
+        </Layout>
+      </Route>
+
+      <Route path="/analytics">
+        <Layout>
+          <ProtectedRoute component={ReportsDashboard} path="/analytics" />
+        </Layout>
+      </Route>
+
+      <Route path="/settings">
+        <Layout>
+          <ProtectedRoute component={Settings} path="/settings" />
+        </Layout>
+      </Route>
+
+      <Route>
+        <Layout>
+          <NotFound />
+        </Layout>
+      </Route>
     </Switch>
   );
 }
@@ -62,10 +106,8 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Layout>
-          <Router />
-          <Toaster />
-        </Layout>
+        <Router />
+        <Toaster />
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -25,7 +25,6 @@ import { generateDraftAnalysis } from "@/services/anthropic-service";
 import { LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { v4 as uuidv4 } from 'uuid';
 
 // Add legal-themed loading messages
 const legalLoadingMessages = [
@@ -86,71 +85,6 @@ const cleanDocumentText = (text: string): string => {
     .trim();
 };
 
-// Add interface for analysis result
-interface AnalysisResult {
-  content: string;
-  title: string;
-  metadata?: {
-    documentType?: string;
-    industry?: string;
-    complianceStatus?: string;
-    status?: string;
-  };
-}
-
-// Update the StageResult interface
-interface StageResult {
-  content: string;
-  title: string;
-  metadata?: {
-    documentType?: string;
-    industry?: string;
-    complianceStatus?: string;
-    status?: string;
-    analysisType?: string;
-    timestamp?: string;
-    confidence?: number;
-    score?: number;
-    findings?: string[];
-  };
-}
-
-interface WorkflowStageState {
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  outputs: Array<{
-    message: string;
-    details?: string;
-    timestamp: string;
-    status: 'success' | 'warning' | 'error' | 'info';
-  }>;
-  result?: StageResult;
-  approvers?: Array<{
-    id: number;
-    name: string;
-    role: string;
-  }>;
-  isApproved?: boolean;
-  metadata?: any;
-}
-
-interface KeyFinding {
-  category: string;
-  finding: string;
-  severity: 'LOW' | 'MEDIUM' | 'HIGH';
-}
-
-interface ComplianceStatus {
-  requirement: string;
-  status: 'COMPLIANT' | 'NON_COMPLIANT' | 'PARTIALLY_COMPLIANT';
-  details: string;
-}
-
-interface Approver {
-  id: number;
-  name: string;
-  role: string;
-}
-
 const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ onFileSelect }) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -191,7 +125,7 @@ const FileUploadZone: React.FC<{ onFileSelect: (files: File[]) => void }> = ({ o
       `}
     >
       <input {...getInputProps()} />
-      <UploadCloud className={`mx-auto h-12 w-12 ${isDragActive ? 'text-green-500' : 'text-gray-400'}`} />
+      <Upload className={`mx-auto h-12 w-12 ${isDragActive ? 'text-green-500' : 'text-gray-400'}`} />
       <p className="mt-2 text-sm text-gray-600">
         {isDragActive
           ? "Drop your documents here..."
@@ -251,6 +185,13 @@ interface StageOutput {
   status: 'success' | 'warning' | 'error' | 'info';
 }
 
+interface StageResult {
+  content: string;
+  title: string;
+  downloadUrl?: string;
+  metadata?: any;
+}
+
 interface WorkflowStageState {
   status: 'pending' | 'processing' | 'completed' | 'error';
   outputs: StageOutput[];
@@ -295,8 +236,6 @@ export function WorkflowAutomation() {
   }>>([]);
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState(legalLoadingMessages[0]);
-  const location = useLocation();
-
 
   // Effect to update document analysis based on workflow completion
   useEffect(() => {
@@ -536,53 +475,50 @@ export function WorkflowAutomation() {
       {
         name: "Document Analysis Results",
         handler: async () => {
-          try {
-            const workflowResults = Object.entries(stageStates).map(([stage, state]) => ({
-              stageType: workflowStages[Number(stage)].title.toLowerCase(),
-              content: documentText,
-              status: state.status,
-              metadata: state.result?.metadata
-            }));
+          const workflowResults = Object.entries(stageStates).map(([stage, state]) => ({
+            stageType: workflowStages[Number(stage)].title.toLowerCase(),
+            content: documentText,
+            status: state.status,
+            metadata: state.result?.metadata
+          }));
 
-            const complianceStage = stageStates[1]?.result?.metadata;
-            const currentFile = uploadedFiles[uploadedFiles.length - 1];
+          const complianceStage = stageStates[1]?.result?.metadata;
+          const currentFile = uploadedFiles[uploadedFiles.length - 1];
 
-            const documentType = complianceStage?.documentType || "Compliance Document";
-            const industry = complianceStage?.industry || "TECHNOLOGY";
-            const complianceStatus = complianceStage?.status || complianceStage?.complianceStatus || "Compliant";
+          const documentType = complianceStage?.documentType || "Compliance Document";
+          const industry = complianceStage?.industry || "TECHNOLOGY";
+          const complianceStatus = complianceStage?.status || "Compliant";
 
-            const analysisContent = `
-              <h2>Final Document Analysis</h2>
-              <div class="space-y-4">
-                <div>
-                  <h3>Document Classification</h3>
-                  <p><strong>File:</strong> ${currentFile?.name || 'Untitled Document'}</p>
-                  <p><strong>Type:</strong> ${documentType}</p>
-                  <p><strong>Industry:</strong> ${industry}</p>
-                </div>
-                <div>
-                  <h3>Compliance Assessment</h3>
-                  <p><strong>Status:</strong> ${complianceStatus}</p>
-                  <p><strong>Score:</strong> ${complianceStage?.score || 0}%</p>
-                </div>
+          const analysisContent = `
+            <h2>Final Document Analysis</h2>
+            <div class="space-y-4">
+              <div>
+                <h3>Document Classification</h3>
+                <p><strong>File:</strong> ${currentFile?.name || 'Untitled Document'}</p>
+                <p><strong>Type:</strong> ${documentType}</p>
+                <p><strong>Industry:</strong> ${industry}</p>
               </div>
-            `;
+              <div>
+                <h3>Compliance Assessment</h3>
+                <p><strong>Status:</strong> ${complianceStatus}</p>
+                <p><strong>Score:</strong> ${complianceStage?.score || 0}%</p>
+              </div>
+            </div>
+          `;
 
-            return {
-              content: analysisContent,
-              title: "Document Analysis Results",
-              metadata: {
-                documentType,
-                industry,
-                complianceStatus,
-                confidence: complianceStage?.score || 0,
-                fileName: currentFile?.name
-              }
-            };
-          } catch (error) {
-            console.error('Error in final analysis:', error);
-            throw error;
-          }
+          const finalMetadata = {
+            documentType,
+            industry,
+            complianceStatus: complianceStatus,
+            confidence: complianceStage?.score || 0,
+            fileName: currentFile?.name
+          };
+
+          return {
+            content: analysisContent,
+            title: "Document Analysis Results",
+            metadata: finalMetadata
+          };
         }
       }
     ];
@@ -640,36 +576,10 @@ export function WorkflowAutomation() {
         title: "Processing Complete",
         description: "Document workflow completed successfully",
       });
-
-      const analysisResult = stageStates[5]?.result;
-
-      if (!analysisResult) {
-        throw new Error("Analysis result not found");
-      }
-
-      // Create vault entry with analysis results
-      const vaultEntry = {
-        id: uuidv4(),
-        fileName: uploadedFiles[uploadedFiles.length - 1]?.name || 'Unknown',
-        documentType: analysisResult.metadata?.documentType || 'Unknown',
-        industry: analysisResult.metadata?.industry || 'Unknown',
-        complianceStatus: analysisResult.metadata?.complianceStatus || 'Unknown',
-        timestamp: new Date().toISOString(),
-        content: analysisResult.content || ''
-      };
-
-      // Save to vault
-      const existingVault = JSON.parse(localStorage.getItem('documentVault') || '[]');
-      const updatedVault = [...existingVault, vaultEntry];
-      localStorage.setItem('documentVault', JSON.stringify(updatedVault));
-
-      // Navigate to vault page
-      //router.push('/vault');  Commented out as per instructions.  Navigation handled elsewhere.
     } catch (error) {
-      console.error('Processing error:', error);
       toast({
         title: "Processing Error",
-        description: error instanceof Error ? error.message : "An error occurred during document processing",
+        description: "An error occurred during document processing",
         variant: "destructive"
       });
     }

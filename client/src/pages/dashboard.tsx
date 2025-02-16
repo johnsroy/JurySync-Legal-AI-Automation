@@ -2,13 +2,11 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Clock, FileCheck, Scale, GitMerge, Shield, Book, AlertTriangle, Gavel, LogOut, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
-import { Layout } from "@/components/layout";
 
 // Updated metrics structure to include all modules
 const metrics = [
@@ -92,7 +90,7 @@ function MetricsCard({ title, value, description, icon: Icon, color }: any) {
   );
 }
 
-export function Dashboard() {
+export default function Dashboard() {
   const { user, logoutMutation } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -134,34 +132,95 @@ export function Dashboard() {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-    >
-      <motion.div
-        className="text-center mb-8"
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2 }}
-      >
-        <h1 className="text-3xl font-bold text-gray-900">
-          Dashboard
-        </h1>
-        <p className="mt-2 text-gray-600">
-          Overview of your legal document activities
-        </p>
-      </motion.div>
+    <div className="p-8 space-y-8">
+      {/* Header */}
+      <header className="bg-white/80 backdrop-blur-lg border-b border-green-100">
+        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Gavel className="h-6 w-6 text-green-600" />
+            <h1 className="text-xl font-semibold">JurySync.io</h1>
+          </div>
+          <div className="flex items-center gap-4">
+            {user?.subscriptionStatus === "TRIAL" && !user.trialUsed && (
+              <div className="text-sm bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                Trial Active
+              </div>
+            )}
+            <span className="text-sm text-gray-600">
+              Welcome, {user?.firstName} {user?.lastName}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => logoutMutation.mutate()}
+              disabled={logoutMutation.isPending}
+            >
+              {logoutMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogOut className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </div>
+      </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Add your dashboard cards here */}
+      {/* Main Content */}
+      <div className="space-y-8">
+        {/* Overview Section */}
+        <div>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Legal Intelligence Dashboard</h2>
+          <p className="text-gray-600">Unified view of your legal operations</p>
+        </div>
+
+        {/* Unified Metrics Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {metrics.map((metric, index) => (
+            <MetricsCard key={index} {...metric} />
+          ))}
+        </div>
+
+        {/* Modules Grid */}
+        <div className="space-y-4">
+          <h3 className="text-2xl font-bold text-gray-900">Legal Intelligence Modules</h3>
+          <div className="grid gap-6">
+            {modules.map((module) => (
+              <Card
+                key={module.id}
+                className={`bg-gradient-to-r ${module.gradient} hover:shadow-lg transition-all cursor-pointer`}
+                onClick={() => handleModuleSelect(module)}
+              >
+                <CardContent className="p-8">
+                  <div className="flex items-start gap-6">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-green-500/10 rounded-full scale-110 group-hover:scale-125 transition-transform" />
+                      <module.icon className="h-12 w-12 text-green-600 relative z-10" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="text-2xl font-semibold mb-2">{module.title}</h3>
+                          <p className="text-gray-600">{module.description}</p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          {Object.entries(module.metrics).map(([key, value]) => (
+                            <div key={key} className="text-center">
+                              <p className="text-lg font-semibold">{value}</p>
+                              <p className="text-sm text-gray-600">{key}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
       </div>
-    </motion.div>
+    </div>
   );
 }
-
-Dashboard.getLayout = function getLayout(page: React.ReactElement) {
-  return <Layout>{page}</Layout>;
-};
-
-export default Dashboard;
