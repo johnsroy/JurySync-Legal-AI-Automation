@@ -228,4 +228,34 @@ router.get("/reports", async (req, res) => {
   }
 });
 
+router.get("/unified", async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const documentsProcessed = 42;
+    const averageProcessingTime = 37;
+    const complianceScore = 91;
+    const activeDocuments = 5;
+
+    const activityData = [
+      { date: "2025-10-20", documents: 5 },
+      { date: "2025-10-21", documents: 8 },
+      { date: "2025-10-22", documents: 2 },
+    ];
+
+    res.json({
+      documentsProcessed,
+      averageProcessingTime,
+      complianceScore,
+      activeDocuments,
+      activityData,
+    });
+  } catch (err) {
+    console.error("Error in /api/analytics/unified:", err);
+    res.status(500).json({ error: "Failed to retrieve analytics" });
+  }
+});
+
 export default router;

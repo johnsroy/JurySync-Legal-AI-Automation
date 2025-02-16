@@ -96,15 +96,25 @@ export default function Dashboard() {
   const { toast } = useToast();
 
   // Fetch unified metrics
-  const { data: unifiedMetrics, isLoading: isLoadingMetrics } = useQuery({
-    queryKey: ['/api/metrics/unified'],
+  const { data: unifiedMetrics, isLoading: isLoadingMetrics, error } = useQuery({
+    queryKey: ["/api/analytics/unified"],
     queryFn: async () => {
-      const response = await fetch('/api/metrics/unified');
+      const response = await fetch("/api/analytics/unified");
       if (!response.ok) {
-        throw new Error('Failed to fetch metrics');
+        throw new Error(`Failed to fetch unified metrics. status=${response.status}`);
       }
-      return response.json();
-    }
+      const data = await response.json();
+
+      // Example usage: update your local metrics array
+      setMetrics([
+        { ...defaultMetrics[0], value: data.documentsProcessed?.toString() },
+        { ...defaultMetrics[1], value: `${data.averageProcessingTime || 0}s` },
+        { ...defaultMetrics[2], value: `${data.complianceScore || 0}%` },
+        { ...defaultMetrics[3], value: data.activeDocuments?.toString() },
+      ]);
+
+      return data;
+    },
   });
 
   const handleModuleSelect = (module: typeof modules[0]) => {
