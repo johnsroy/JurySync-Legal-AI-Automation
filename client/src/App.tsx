@@ -32,65 +32,85 @@ function Router() {
       <Route path="/pricing" component={PricingPage} />
       <Route path="/subscription" component={SubscriptionPage} />
 
-      {/* Protected routes with Layout */}
+      {/* Protected routes */}
       <Route path="/dashboard">
-        <Layout>
-          <ProtectedRoute component={Dashboard} path="/dashboard" />
-        </Layout>
+        <ProtectedRoute path="/dashboard">
+          <Layout>
+            <Dashboard />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route path="/vault">
-        <Layout>
-          <ProtectedRoute component={VaultPage} path="/vault" />
-        </Layout>
+        <ProtectedRoute path="/vault">
+          <Layout>
+            <VaultPage />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route path="/workflow">
-        <Layout>
-          <ProtectedRoute component={WorkflowPage} path="/workflow" />
-        </Layout>
+        <ProtectedRoute path="/workflow">
+          <Layout>
+            <WorkflowPage />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route path="/workflow-automation">
-        <Layout>
-          <ProtectedRoute component={WorkflowAutomation} path="/workflow-automation" />
-        </Layout>
+        <ProtectedRoute path="/workflow-automation">
+          <Layout>
+            <WorkflowAutomation />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route path="/compliance-auditing">
-        <Layout>
-          <ProtectedRoute component={ComplianceAuditing} path="/compliance-auditing" />
-        </Layout>
+        <ProtectedRoute path="/compliance-auditing">
+          <Layout>
+            <ComplianceAuditing />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route path="/contract-automation">
-        <Layout>
-          <ProtectedRoute component={ContractAutomation} path="/contract-automation" />
-        </Layout>
+        <ProtectedRoute path="/contract-automation">
+          <Layout>
+            <ContractAutomation />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route path="/legal-research">
-        <Layout>
-          <ProtectedRoute component={LegalResearch} path="/legal-research" />
-        </Layout>
+        <ProtectedRoute path="/legal-research">
+          <Layout>
+            <LegalResearch />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route path="/reports">
-        <Layout>
-          <ProtectedRoute component={Reports} path="/reports" />
-        </Layout>
+        <ProtectedRoute path="/reports">
+          <Layout>
+            <Reports />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route path="/analytics">
-        <Layout>
-          <ProtectedRoute component={ReportsDashboard} path="/analytics" />
-        </Layout>
+        <ProtectedRoute path="/analytics">
+          <Layout>
+            <ReportsDashboard />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route path="/settings">
-        <Layout>
-          <ProtectedRoute component={Settings} path="/settings" />
-        </Layout>
+        <ProtectedRoute path="/settings">
+          <Layout>
+            <Settings />
+          </Layout>
+        </ProtectedRoute>
       </Route>
 
       <Route>
