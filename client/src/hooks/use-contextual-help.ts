@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "../lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
 
 export type ContextualHelpData = {
   title: string;
