@@ -1,4 +1,4 @@
-import { Routes, Route } from "wouter";
+import { Route, Switch } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/use-auth";
 import { Layout } from "@/components/layout";
@@ -16,7 +16,6 @@ import Reports from "@/pages/reports";
 import ReportsDashboard from "@/pages/reports-dashboard";
 import Settings from "@/pages/settings";
 import WorkflowPage from "@/pages/workflow-page";
-import WorkflowAutomation from "@/pages/WorkflowAutomation";
 import Vault from "@/pages/vault";
 import HistoryReports from "@/pages/history-reports";
 import { ProtectedRoute } from "./lib/protected-route";
@@ -25,7 +24,7 @@ import { queryClient } from "./lib/queryClient";
 
 function Router() {
   return (
-    <Routes>
+    <Switch>
       {/* Public routes */}
       <Route path="/" component={LandingPage} />
       <Route path="/login" component={LoginPage} />
@@ -40,8 +39,8 @@ function Router() {
       <Route path="/vault">
         <ProtectedRoute component={Vault} />
       </Route>
-      <Route path="/workflow-automation">
-        <ProtectedRoute component={WorkflowAutomation} />
+      <Route path="/workflow">
+        <ProtectedRoute component={WorkflowPage} />
       </Route>
       <Route path="/contract-automation">
         <ProtectedRoute component={ContractAutomation} />
@@ -54,10 +53,8 @@ function Router() {
       </Route>
 
       {/* 404 route */}
-      <Route>
-        <ProtectedRoute component={NotFound} />
-      </Route>
-    </Routes>
+      <Route component={NotFound} />
+    </Switch>
   );
 }
 
@@ -65,8 +62,10 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Router />
-        <Toaster />
+        <Layout>
+          <Router />
+          <Toaster />
+        </Layout>
       </AuthProvider>
     </QueryClientProvider>
   );
