@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, FileText, Download, Eye, BookOpen, ClipboardCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { LegalResearchResults } from "@/components/LegalResearchResults";
 
 interface AnalysisResult {
   documentType: string;
@@ -13,25 +14,20 @@ interface AnalysisResult {
   industryDescription: string;
   status: 'COMPLIANT' | 'NON_COMPLIANT';
   statusDescription: string;
-  compliance: {
-    score: number;
-    issues: any[];
-    recommendations: string[];
-  };
-  legal: {
-    analysis: string;
-    precedents: string[];
-    risks: string[];
-  };
-  approval: {
+  legalResearch?: {
+    documentType: string;
+    industry: string;
     status: string;
-    requiredSignoffs: string[];
-    nextSteps: string[];
-  };
-  audit: {
-    summary: string;
-    findings: string[];
-    recommendations: string[];
+    findings: {
+      relevantCaseLaw: {
+        title: string;
+        description: string;
+      }[];
+      regulatoryPrecedents: {
+        title: string;
+        description: string;
+      }[];
+    };
   };
 }
 
@@ -134,7 +130,6 @@ export default function DocumentWorkflow() {
   return (
     <div className="container mx-auto py-8 px-4">
       <div className="space-y-8">
-        {/* Document Upload Section */}
         <Card className="p-6">
           <div className="space-y-4">
             <div className="flex items-center gap-4">
@@ -169,7 +164,6 @@ export default function DocumentWorkflow() {
           </div>
         </Card>
 
-        {/* Status Grid */}
         {analysisResult && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="p-6 bg-blue-50 dark:bg-blue-900/10">
@@ -207,7 +201,6 @@ export default function DocumentWorkflow() {
           </div>
         )}
 
-        {/* Analysis Tabs */}
         {analysisResult && (
           <Tabs defaultValue="draft" className="space-y-4">
             <TabsList className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-6">
@@ -233,7 +226,14 @@ export default function DocumentWorkflow() {
 
             <TabsContent value="legal">
               <Card className="p-6">
-                <TabActions type="legal" />
+                {analysisResult.legalResearch ? (
+                  <LegalResearchResults 
+                    result={analysisResult.legalResearch}
+                    onDownload={() => downloadPDF('legal')}
+                  />
+                ) : (
+                  <TabActions type="legal" />
+                )}
               </Card>
             </TabsContent>
 
