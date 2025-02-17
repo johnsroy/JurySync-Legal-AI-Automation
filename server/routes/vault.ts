@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
-import { vaultDocuments, documents, type VaultDocument } from "@shared/schema";
+import { vaultDocuments, documents, type VaultDocument, type Document } from "@shared/schema";
 import { rbacMiddleware } from "../middleware/rbac";
 import { analyzeDocument } from "../services/documentAnalysisService";
 import { eq, count, avg } from "drizzle-orm";
@@ -322,20 +322,19 @@ router.get('/documents', async (req, res) => {
     const allDocs = [
       ...vaultDocs.map(doc => ({
         ...doc,
-        source: 'vault',
+        source: 'vault' as const,
         metadata: {
           ...doc.metadata,
-          documentType: doc.metadata?.documentType || doc.documentType || 'Unknown',
+          documentType: doc.documentType,
           industry: doc.metadata?.industry || 'Unknown'
         }
       })),
       ...workflowDocs.map(doc => ({
         ...doc,
-        source: 'workflow',
+        source: 'workflow' as const,
         metadata: {
-          ...doc.metadata,
-          documentType: doc.metadata?.documentType || doc.documentType || 'Unknown',
-          industry: doc.metadata?.industry || 'Unknown'
+          documentType: doc.agentType,
+          industry: 'Unknown'
         }
       }))
     ];
@@ -354,11 +353,10 @@ router.get('/documents', async (req, res) => {
         createdAt: doc.createdAt,
         metadata: doc.metadata,
         source: doc.source,
-        documentType: doc.metadata?.documentType || 'Unknown',
-        industry: doc.metadata?.industry || 'Unknown',
+        documentType: doc.metadata.documentType,
+        industry: doc.metadata.industry,
         content: doc.content,
-        aiSummary: doc.aiSummary,
-        processingStatus: doc.processingStatus
+        processingStatus: 'source' in doc ? doc.processingStatus : null
       }))
     });
   } catch (error: any) {

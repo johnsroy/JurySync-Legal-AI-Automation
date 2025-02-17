@@ -265,6 +265,35 @@ export const insertVaultDocumentSchema = createInsertSchema(vaultDocuments)
 export type VaultDocument = typeof vaultDocuments.$inferSelect;
 export type InsertVaultDocument = z.infer<typeof insertVaultDocumentSchema>;
 
+// Add before the vaultDocuments definition
+export const legalDocuments = pgTable("legal_documents", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  documentType: text("document_type").notNull(),
+  jurisdiction: text("jurisdiction").notNull(),
+  date: timestamp("date").notNull(),
+  status: text("status").notNull(),
+  metadata: jsonb("metadata").$type<{
+    court?: string;
+    citation?: string;
+    type?: string;
+    publicLawNumber?: string;
+  }>(),
+  citations: jsonb("citations").default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertLegalDocumentSchema = createInsertSchema(legalDocuments);
+export type LegalDocument = typeof legalDocuments.$inferSelect;
+export type InsertLegalDocument = z.infer<typeof insertLegalDocumentSchema>;
+
+// Add the relations
+export const legalDocumentsRelations = relations(legalDocuments, ({ many }) => ({
+  citations: many(legalDocuments)
+}));
+
 // Only updating the complianceDocuments table definition
 export const complianceDocuments = pgTable("compliance_documents", {
   id: serial("id").primaryKey(),
@@ -875,7 +904,7 @@ export const documentAnalysisRelations = relations(documentAnalysis, ({ one }) =
 // Remove duplicate table definitions and ensure only one instance of vaultDocumentAnalysis exists
 export const vaultDocumentAnalysis = pgTable("vault_documentanalysis", {
   id: serial("id").primaryKey(),
-  documentId: integer("document__id").notNull(),
+  documentId: integer("document_id").notNull(),
   fileName: text("file_name").notNull(),
   fileDate: text("file_date").notNull(),
   documentType: text("document_type").notNull().default("Audit"),
