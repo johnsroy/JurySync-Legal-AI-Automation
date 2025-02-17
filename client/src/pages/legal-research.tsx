@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Gavel, LogOut, Loader2, Book, Search, FileText, AlertTriangle } from "lucide-react";
+import { Gavel, LogOut, Loader2, Book, Search, FileText, AlertTriangle, Download } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -103,10 +103,10 @@ export default function LegalResearch() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ 
-          query, 
+        body: JSON.stringify({
+          query,
           filters,
-          useDeepResearch: true 
+          useDeepResearch: true
         })
       });
 
@@ -378,93 +378,87 @@ export default function LegalResearch() {
             )}
 
             {result && (
-              <>
-                {/* Summary */}
-                <Card className="bg-card/80 backdrop-blur-lg border-border">
-                  <CardHeader>
-                    <CardTitle>Analysis Summary</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-foreground">{result.summary}</p>
-                  </CardContent>
-                </Card>
+              <Card className="bg-card/80 backdrop-blur-lg border-border p-6">
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-semibold">Legal Research Findings</h3>
+                    <Button onClick={downloadReport}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Report
+                    </Button>
+                  </div>
 
-                {/* Relevant Cases */}
-                <Card className="bg-card/80 backdrop-blur-lg border-border">
-                  <CardHeader>
-                    <CardTitle>Relevant Cases</CardTitle>
-                    <CardDescription>
-                      Found {result.relevantCases.length} related cases
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-[400px] pr-4">
-                      <div className="space-y-4">
-                        {result.relevantCases.map((item, index) => (
-                          <Card key={index} className="bg-card border-border">
-                            <CardContent className="pt-6">
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <h3 className="font-semibold text-foreground">{item.document.title}</h3>
-                                  <Badge variant="outline">{item.document.jurisdiction}</Badge>
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                  {item.document.content.substring(0, 200)}...
-                                </p>
-                                <div className="flex items-center justify-between text-sm">
-                                  <span className="text-muted-foreground">
-                                    {new Date(item.document.date).toLocaleDateString()}
-                                  </span>
-                                  <Badge>{item.relevance}</Badge>
-                                </div>
+                  {/* Relevant Case Law Section */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium">Relevant Case Law</h4>
+                    <div className="grid gap-4">
+                      {result.analysis.keyPrecedents.map((precedent, index) => (
+                        <Card key={index} className="p-4 bg-card/50">
+                          <div className="space-y-2">
+                            <h5 className="font-semibold text-primary">{precedent.case}</h5>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-sm font-medium text-muted-foreground">Relevance</p>
+                                <p className="text-sm">{precedent.relevance}</p>
                               </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
-
-                {/* Timeline */}
-                <Card className="bg-card/80 backdrop-blur-lg border-border">
-                  <CardHeader>
-                    <CardTitle>Legal Timeline</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {result.timeline.map((event, index) => (
-                        <div key={index} className="flex items-start gap-4">
-                          <div className="w-24 flex-shrink-0">
-                            <span className="text-sm font-medium text-muted-foreground">{event.date}</span>
+                              <div>
+                                <p className="text-sm font-medium text-muted-foreground">Impact</p>
+                                <p className="text-sm">{precedent.impact}</p>
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex-1">
-                            <p className="text-foreground">{event.event}</p>
-                          </div>
-                        </div>
+                        </Card>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
 
-
-                {/* Recommendations */}
-                <Card className="bg-card/80 backdrop-blur-lg border-border">
-                  <CardHeader>
-                    <CardTitle>Recommendations</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-2">
-                      {result.analysis.recommendations.map((recommendation, index) => (
-                        <li key={index} className="flex items-start gap-2">
-                          <FileText className="h-5 w-5 text-primary mt-0.5" />
-                          <span className="text-foreground">{recommendation}</span>
-                        </li>
+                  {/* Legal Principles Section */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium">Key Legal Principles</h4>
+                    <div className="grid gap-2">
+                      {result.analysis.legalPrinciples.map((principle, index) => (
+                        <Card key={index} className="p-3 bg-card/50">
+                          <div className="flex items-start gap-3">
+                            <span className="text-primary">{index + 1}.</span>
+                            <p>{principle}</p>
+                          </div>
+                        </Card>
                       ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              </>
+                    </div>
+                  </div>
+
+                  {/* Citations Section */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium">Citations and References</h4>
+                    <div className="grid gap-4">
+                      {result.citations.map((citation, index) => (
+                        <Card key={index} className="p-4 bg-card/50">
+                          <div className="space-y-2">
+                            <h5 className="font-semibold text-primary">{citation.source}</h5>
+                            <p className="text-sm text-muted-foreground">{citation.reference}</p>
+                            <p className="text-sm italic">{citation.context}</p>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Recommendations Section */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium">Recommendations</h4>
+                    <div className="grid gap-3">
+                      {result.analysis.recommendations.map((recommendation, index) => (
+                        <Card key={index} className="p-4 bg-card/50">
+                          <div className="flex items-start gap-3">
+                            <FileText className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                            <p>{recommendation}</p>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </Card>
             )}
           </div>
         </div>

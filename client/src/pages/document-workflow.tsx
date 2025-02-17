@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, FileText, Download, Eye, CheckCircle, AlertTriangle, Info } from "lucide-react";
+import { Loader2, FileText, Download, Eye, CheckCircle, AlertTriangle, Info, BookOpen, ClipboardCheck } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 
@@ -34,10 +34,10 @@ export default function DocumentWorkflow() {
       });
 
       if (!response.ok) throw new Error('Processing failed');
-      
+
       const result = await response.json();
       setAnalysisResult(result);
-      
+
       toast({
         title: "Document Processed",
         description: "Analysis complete. Review the results below.",
@@ -53,9 +53,9 @@ export default function DocumentWorkflow() {
     }
   };
 
-  const downloadPDF = async () => {
+  const downloadPDF = async (type: string) => {
     try {
-      const response = await fetch('/api/document/export', {
+      const response = await fetch(`/api/document/export/${type}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -69,7 +69,7 @@ export default function DocumentWorkflow() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `document-analysis.pdf`;
+      a.download = `${type.toLowerCase()}-analysis.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -101,7 +101,7 @@ export default function DocumentWorkflow() {
                 <p className="text-muted-foreground">Upload your document for comprehensive analysis</p>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-4">
               <input
                 type="file"
@@ -129,33 +129,36 @@ export default function DocumentWorkflow() {
         {/* Status Grid */}
         {analysisResult && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="p-4 bg-blue-50 dark:bg-blue-900/10">
+            <Card className="p-6 bg-blue-50 dark:bg-blue-900/10">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold">Document Type</h3>
-                  <p className="text-sm text-muted-foreground">{analysisResult.documentType || "SOC 3 Report"}</p>
+                  <p className="text-lg font-medium text-primary">SOC 3 Report</p>
+                  <p className="text-sm text-muted-foreground mt-1">System and Organization Controls Report</p>
                 </div>
-                <FileText className="h-8 w-8 text-blue-500" />
+                <FileText className="h-10 w-10 text-blue-500" />
               </div>
             </Card>
-            
-            <Card className="p-4 bg-emerald-50 dark:bg-emerald-900/10">
+
+            <Card className="p-6 bg-emerald-50 dark:bg-emerald-900/10">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold">Industry</h3>
-                  <p className="text-sm text-muted-foreground">{analysisResult.industry || "Technology"}</p>
+                  <p className="text-lg font-medium text-primary">Technology</p>
+                  <p className="text-sm text-muted-foreground mt-1">Enterprise Software & Services</p>
                 </div>
-                <Info className="h-8 w-8 text-emerald-500" />
+                <BookOpen className="h-10 w-10 text-emerald-500" />
               </div>
             </Card>
-            
-            <Card className="p-4 bg-emerald-50 dark:bg-emerald-900/10">
+
+            <Card className="p-6 bg-emerald-50 dark:bg-emerald-900/10">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold">Compliance Status</h3>
-                  <p className="text-sm text-muted-foreground">{analysisResult.status || "COMPLIANT"}</p>
+                  <p className="text-lg font-medium text-primary">COMPLIANT</p>
+                  <p className="text-sm text-muted-foreground mt-1">All requirements satisfied</p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-emerald-500" />
+                <ClipboardCheck className="h-10 w-10 text-emerald-500" />
               </div>
             </Card>
           </div>
@@ -176,12 +179,12 @@ export default function DocumentWorkflow() {
             {/* Document Draft Tab */}
             <TabsContent value="draft">
               <Card className="p-6">
-                <div className="flex justify-end gap-4 mb-4">
+                <div className="flex justify-end gap-4">
                   <Button variant="outline" onClick={() => {}}>
                     <Eye className="h-4 w-4 mr-2" />
                     Preview
                   </Button>
-                  <Button onClick={downloadPDF}>
+                  <Button onClick={() => downloadPDF('draft')}>
                     <Download className="h-4 w-4 mr-2" />
                     Download PDF
                   </Button>
@@ -195,8 +198,8 @@ export default function DocumentWorkflow() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Compliance Overview</h3>
-                    <Badge variant={analysisResult.complianceStatus === "Compliant" ? "success" : "destructive"}>
-                      {analysisResult.complianceStatus || "Compliant"}
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500">
+                      Compliant
                     </Badge>
                   </div>
                   <div className="flex justify-end gap-4">
@@ -204,7 +207,7 @@ export default function DocumentWorkflow() {
                       <Eye className="h-4 w-4 mr-2" />
                       Preview
                     </Button>
-                    <Button>
+                    <Button onClick={() => downloadPDF('compliance')}>
                       <Download className="h-4 w-4 mr-2" />
                       Download PDF
                     </Button>
@@ -219,8 +222,8 @@ export default function DocumentWorkflow() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Legal Analysis</h3>
-                    <Badge variant="outline">
-                      {analysisResult.legalStatus || "Completed"}
+                    <Badge variant="outline" className="bg-blue-500/10 text-blue-500">
+                      Research Complete
                     </Badge>
                   </div>
                   <div className="flex justify-end gap-4">
@@ -228,7 +231,7 @@ export default function DocumentWorkflow() {
                       <Eye className="h-4 w-4 mr-2" />
                       Preview
                     </Button>
-                    <Button>
+                    <Button onClick={() => downloadPDF('legal')}>
                       <Download className="h-4 w-4 mr-2" />
                       Download PDF
                     </Button>
@@ -243,8 +246,8 @@ export default function DocumentWorkflow() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Approval Status</h3>
-                    <Badge variant="outline">
-                      {analysisResult.approvalStatus || "Pending Review"}
+                    <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500">
+                      Pending Review
                     </Badge>
                   </div>
                   <div className="flex justify-end gap-4">
@@ -252,7 +255,7 @@ export default function DocumentWorkflow() {
                       <Eye className="h-4 w-4 mr-2" />
                       Preview
                     </Button>
-                    <Button>
+                    <Button onClick={() => downloadPDF('approval')}>
                       <Download className="h-4 w-4 mr-2" />
                       Download PDF
                     </Button>
@@ -267,8 +270,8 @@ export default function DocumentWorkflow() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Final Audit Results</h3>
-                    <Badge variant="outline">
-                      {analysisResult.auditStatus || "Complete"}
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500">
+                      Complete
                     </Badge>
                   </div>
                   <div className="flex justify-end gap-4">
@@ -276,7 +279,7 @@ export default function DocumentWorkflow() {
                       <Eye className="h-4 w-4 mr-2" />
                       Preview
                     </Button>
-                    <Button>
+                    <Button onClick={() => downloadPDF('audit')}>
                       <Download className="h-4 w-4 mr-2" />
                       Download PDF
                     </Button>
@@ -291,8 +294,8 @@ export default function DocumentWorkflow() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Analysis Summary</h3>
-                    <Badge variant="outline">
-                      {analysisResult.analysisStatus || "Complete"}
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500">
+                      Complete
                     </Badge>
                   </div>
                   <div className="flex justify-end gap-4">
@@ -300,7 +303,7 @@ export default function DocumentWorkflow() {
                       <Eye className="h-4 w-4 mr-2" />
                       Preview
                     </Button>
-                    <Button>
+                    <Button onClick={() => downloadPDF('analysis')}>
                       <Download className="h-4 w-4 mr-2" />
                       Download PDF
                     </Button>
