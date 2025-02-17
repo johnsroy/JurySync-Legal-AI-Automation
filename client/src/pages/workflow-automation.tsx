@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import {
   Loader2, AlertCircle, CheckCircle2, Terminal, FileText, Scale,
   Book, Download, ChevronRight, UploadCloud, BarChart2,
-  Briefcase, Shield, History, RefreshCcw
+  Briefcase, Shield, History, RefreshCcw, Search, Database
 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from 'react-dropzone';
@@ -219,6 +219,19 @@ interface Approver {
   role: string;
 }
 
+interface ResearchReport {
+  query: string;
+  results: {
+    title: string;
+    source: string;
+    relevance: number;
+    summary: string;
+    citations: string[];
+  }[];
+  recommendations: string[];
+  timestamp: Date;
+}
+
 export function WorkflowAutomation() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
@@ -236,6 +249,7 @@ export function WorkflowAutomation() {
   }>>([]);
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState(legalLoadingMessages[0]);
+  const [researchResults, setResearchResults] = useState<ResearchReport | null>(null);
 
   // Effect to update document analysis based on workflow completion
   useEffect(() => {
@@ -642,6 +656,35 @@ export function WorkflowAutomation() {
   const textVariants = {
     initial: { x: 0, opacity: 1 },
     hover: { x: 10, opacity: 0.8, transition: { duration: 0.3 } }
+  };
+
+  const handleLegalResearch = async (query: string) => {
+    try {
+      const response = await fetch("/api/legal-research", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query,
+          options: {
+            useGemini: true,
+            deepResearch: true,
+            sources: ["cases", "statutes", "articles", "regulations"]
+          }
+        }),
+      });
+
+      if (!response.ok) throw new Error("Research failed");
+      const data = await response.json();
+      setResearchResults(data);
+    } catch (error) {
+      toast({
+        title: "Research Error",
+        description: "Failed to complete legal research",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

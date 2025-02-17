@@ -12,6 +12,7 @@ import { createServer } from 'net';
 import { handleStripeWebhook } from "./webhooks/stripe";
 import documentAnalyticsRouter from './routes/document-analytics';
 import redlineRouter from "./routes/redline";
+import legalResearchRouter from "./routes/legal-research";
 
 async function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -105,6 +106,9 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
 
 // Register redline route
 app.use("/api/redline", redlineRouter);
+
+// Register legal research route
+app.use("/api/legal-research", legalResearchRouter);
 
 (async () => {
   try {
