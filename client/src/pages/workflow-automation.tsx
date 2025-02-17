@@ -219,15 +219,16 @@ interface Approver {
   role: string;
 }
 
+interface LegalResearchResult {
+  title: string;
+  source: string;
+  relevance: number;
+  summary: string;
+  citations: string[];
+}
+
 interface ResearchReport {
-  query: string;
-  results: {
-    title: string;
-    source: string;
-    relevance: number;
-    summary: string;
-    citations: string[];
-  }[];
+  results: LegalResearchResult[];
   recommendations: string[];
   timestamp: Date;
 }
@@ -249,7 +250,9 @@ export function WorkflowAutomation() {
   }>>([]);
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState(legalLoadingMessages[0]);
+  const [researchQuery, setResearchQuery] = useState("");
   const [researchResults, setResearchResults] = useState<ResearchReport | null>(null);
+  const [isResearching, setIsResearching] = useState(false);
 
   // Effect to update document analysis based on workflow completion
   useEffect(() => {
@@ -658,32 +661,55 @@ export function WorkflowAutomation() {
     hover: { x: 10, opacity: 0.8, transition: { duration: 0.3 } }
   };
 
-  const handleLegalResearch = async (query: string) => {
+  const handleLegalResearch = async () => {
+    if (!researchQuery.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a research query",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsResearching(true);
     try {
       const response = await fetch("/api/legal-research", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          query,
+          query: researchQuery,
           options: {
             useGemini: true,
             deepResearch: true,
             sources: ["cases", "statutes", "articles", "regulations"]
           }
-        }),
+        })
       });
 
       if (!response.ok) throw new Error("Research failed");
       const data = await response.json();
       setResearchResults(data);
+      
+      // Update the workflow stage state
+      setStageStates(prev => ({
+        ...prev,
+        2: { // Legal Research is stage 2
+          status: 'completed',
+          result: {
+            content: data,
+            title: "Legal Research Report"
+          }
+        }
+      }));
+
     } catch (error) {
       toast({
         title: "Research Error",
         description: "Failed to complete legal research",
-        variant: "destructive",
+        variant: "destructive"
       });
+    } finally {
+      setIsResearching(false);
     }
   };
 

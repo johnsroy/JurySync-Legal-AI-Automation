@@ -31,19 +31,6 @@ interface LegalResearchResponse {
     reference: string;
     context: string;
   }[];
-  relevantCases: Array<{
-    document: {
-      title: string;
-      content: string;
-      jurisdiction: string;
-      date: string;
-    };
-    relevance: string;
-  }>;
-  timeline: Array<{
-    date: string;
-    event: string;
-  }>;
 }
 
 interface LegalDocument {
@@ -388,39 +375,47 @@ export default function LegalResearch() {
                     </Button>
                   </div>
 
-                  {/* Relevant Case Law Section */}
+                  {/* Summary Section */}
                   <div className="space-y-4">
-                    <h4 className="text-lg font-medium">Relevant Case Law</h4>
-                    <div className="grid gap-4">
-                      {result.analysis.keyPrecedents.map((precedent, index) => (
+                    <h4 className="text-lg font-medium">Executive Summary</h4>
+                    <Card className="p-4 bg-card/50">
+                      <p className="text-foreground">{result.summary}</p>
+                    </Card>
+                  </div>
+
+                  {/* Legal Principles Section */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium">Key Legal Principles</h4>
+                    <div className="grid gap-3">
+                      {result.analysis.legalPrinciples.map((principle, index) => (
                         <Card key={index} className="p-4 bg-card/50">
-                          <div className="space-y-2">
-                            <h5 className="font-semibold text-primary">{precedent.case}</h5>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-sm font-medium text-muted-foreground">Relevance</p>
-                                <p className="text-sm">{precedent.relevance}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium text-muted-foreground">Impact</p>
-                                <p className="text-sm">{precedent.impact}</p>
-                              </div>
-                            </div>
+                          <div className="flex items-start gap-3">
+                            <span className="text-primary font-semibold">{index + 1}.</span>
+                            <p className="text-foreground">{principle}</p>
                           </div>
                         </Card>
                       ))}
                     </div>
                   </div>
 
-                  {/* Legal Principles Section */}
+                  {/* Key Precedents Section */}
                   <div className="space-y-4">
-                    <h4 className="text-lg font-medium">Key Legal Principles</h4>
-                    <div className="grid gap-2">
-                      {result.analysis.legalPrinciples.map((principle, index) => (
-                        <Card key={index} className="p-3 bg-card/50">
-                          <div className="flex items-start gap-3">
-                            <span className="text-primary">{index + 1}.</span>
-                            <p>{principle}</p>
+                    <h4 className="text-lg font-medium">Key Legal Precedents</h4>
+                    <div className="grid gap-4">
+                      {result.analysis.keyPrecedents.map((precedent, index) => (
+                        <Card key={index} className="p-4 bg-card/50">
+                          <div className="space-y-3">
+                            <h5 className="font-semibold text-primary">{precedent.case}</h5>
+                            <div className="grid md:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-sm font-medium text-muted-foreground">Relevance</p>
+                                <p className="text-foreground">{precedent.relevance}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-muted-foreground">Impact</p>
+                                <p className="text-foreground">{precedent.impact}</p>
+                              </div>
+                            </div>
                           </div>
                         </Card>
                       ))}
@@ -451,7 +446,7 @@ export default function LegalResearch() {
                         <Card key={index} className="p-4 bg-card/50">
                           <div className="flex items-start gap-3">
                             <FileText className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                            <p>{recommendation}</p>
+                            <p className="text-foreground">{recommendation}</p>
                           </div>
                         </Card>
                       ))}

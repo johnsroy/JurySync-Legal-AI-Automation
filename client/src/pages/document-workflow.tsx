@@ -1,16 +1,44 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, FileText, Download, Eye, CheckCircle, AlertTriangle, Info, BookOpen, ClipboardCheck } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Loader2, FileText, Download, Eye, BookOpen, ClipboardCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+
+interface AnalysisResult {
+  documentType: string;
+  documentDescription: string;
+  industry: string;
+  industryDescription: string;
+  status: 'COMPLIANT' | 'NON_COMPLIANT';
+  statusDescription: string;
+  compliance: {
+    score: number;
+    issues: any[];
+    recommendations: string[];
+  };
+  legal: {
+    analysis: string;
+    precedents: string[];
+    risks: string[];
+  };
+  approval: {
+    status: string;
+    requiredSignoffs: string[];
+    nextSteps: string[];
+  };
+  audit: {
+    summary: string;
+    findings: string[];
+    recommendations: string[];
+  };
+}
 
 export default function DocumentWorkflow() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const { toast } = useToast();
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,6 +82,8 @@ export default function DocumentWorkflow() {
   };
 
   const downloadPDF = async (type: string) => {
+    if (!analysisResult) return;
+
     try {
       const response = await fetch(`/api/document/export/${type}`, {
         method: 'POST',
@@ -77,7 +107,7 @@ export default function DocumentWorkflow() {
 
       toast({
         title: "Export Success",
-        description: "Document analysis has been downloaded.",
+        description: `${type} analysis has been downloaded.`,
       });
     } catch (error) {
       toast({
@@ -87,6 +117,19 @@ export default function DocumentWorkflow() {
       });
     }
   };
+
+  const TabActions = ({ type }: { type: string }) => (
+    <div className="flex justify-end gap-4">
+      <Button variant="outline">
+        <Eye className="h-4 w-4 mr-2" />
+        Preview
+      </Button>
+      <Button onClick={() => downloadPDF(type)}>
+        <Download className="h-4 w-4 mr-2" />
+        Download PDF
+      </Button>
+    </div>
+  );
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -133,8 +176,8 @@ export default function DocumentWorkflow() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold">Document Type</h3>
-                  <p className="text-lg font-medium text-primary">SOC 3 Report</p>
-                  <p className="text-sm text-muted-foreground mt-1">System and Organization Controls Report</p>
+                  <p className="text-lg font-medium text-primary">{analysisResult.documentType}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{analysisResult.documentDescription}</p>
                 </div>
                 <FileText className="h-10 w-10 text-blue-500" />
               </div>
@@ -144,8 +187,8 @@ export default function DocumentWorkflow() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold">Industry</h3>
-                  <p className="text-lg font-medium text-primary">Technology</p>
-                  <p className="text-sm text-muted-foreground mt-1">Enterprise Software & Services</p>
+                  <p className="text-lg font-medium text-primary">{analysisResult.industry}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{analysisResult.industryDescription}</p>
                 </div>
                 <BookOpen className="h-10 w-10 text-emerald-500" />
               </div>
@@ -155,8 +198,8 @@ export default function DocumentWorkflow() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold">Compliance Status</h3>
-                  <p className="text-lg font-medium text-primary">COMPLIANT</p>
-                  <p className="text-sm text-muted-foreground mt-1">All requirements satisfied</p>
+                  <p className="text-lg font-medium text-primary">{analysisResult.status}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{analysisResult.statusDescription}</p>
                 </div>
                 <ClipboardCheck className="h-10 w-10 text-emerald-500" />
               </div>
@@ -176,139 +219,39 @@ export default function DocumentWorkflow() {
               <TabsTrigger value="analysis">Analysis</TabsTrigger>
             </TabsList>
 
-            {/* Document Draft Tab */}
             <TabsContent value="draft">
               <Card className="p-6">
-                <div className="flex justify-end gap-4">
-                  <Button variant="outline" onClick={() => {}}>
-                    <Eye className="h-4 w-4 mr-2" />
-                    Preview
-                  </Button>
-                  <Button onClick={() => downloadPDF('draft')}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Download PDF
-                  </Button>
-                </div>
+                <TabActions type="draft" />
               </Card>
             </TabsContent>
 
-            {/* Compliance Tab */}
             <TabsContent value="compliance">
               <Card className="p-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Compliance Overview</h3>
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500">
-                      Compliant
-                    </Badge>
-                  </div>
-                  <div className="flex justify-end gap-4">
-                    <Button variant="outline">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Preview
-                    </Button>
-                    <Button onClick={() => downloadPDF('compliance')}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </Button>
-                  </div>
-                </div>
+                <TabActions type="compliance" />
               </Card>
             </TabsContent>
 
-            {/* Legal Research Tab */}
             <TabsContent value="legal">
               <Card className="p-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Legal Analysis</h3>
-                    <Badge variant="outline" className="bg-blue-500/10 text-blue-500">
-                      Research Complete
-                    </Badge>
-                  </div>
-                  <div className="flex justify-end gap-4">
-                    <Button variant="outline">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Preview
-                    </Button>
-                    <Button onClick={() => downloadPDF('legal')}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </Button>
-                  </div>
-                </div>
+                <TabActions type="legal" />
               </Card>
             </TabsContent>
 
-            {/* Approval Status Tab */}
             <TabsContent value="approval">
               <Card className="p-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Approval Status</h3>
-                    <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500">
-                      Pending Review
-                    </Badge>
-                  </div>
-                  <div className="flex justify-end gap-4">
-                    <Button variant="outline">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Preview
-                    </Button>
-                    <Button onClick={() => downloadPDF('approval')}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </Button>
-                  </div>
-                </div>
+                <TabActions type="approval" />
               </Card>
             </TabsContent>
 
-            {/* Final Audit Tab */}
             <TabsContent value="audit">
               <Card className="p-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Final Audit Results</h3>
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500">
-                      Complete
-                    </Badge>
-                  </div>
-                  <div className="flex justify-end gap-4">
-                    <Button variant="outline">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Preview
-                    </Button>
-                    <Button onClick={() => downloadPDF('audit')}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </Button>
-                  </div>
-                </div>
+                <TabActions type="audit" />
               </Card>
             </TabsContent>
 
-            {/* Analysis Tab */}
             <TabsContent value="analysis">
               <Card className="p-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Analysis Summary</h3>
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500">
-                      Complete
-                    </Badge>
-                  </div>
-                  <div className="flex justify-end gap-4">
-                    <Button variant="outline">
-                      <Eye className="h-4 w-4 mr-2" />
-                      Preview
-                    </Button>
-                    <Button onClick={() => downloadPDF('analysis')}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </Button>
-                  </div>
-                </div>
+                <TabActions type="analysis" />
               </Card>
             </TabsContent>
           </Tabs>

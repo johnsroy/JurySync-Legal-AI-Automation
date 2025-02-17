@@ -925,3 +925,12 @@ export const vaultDocumentAnalysisRelations = relations(vaultDocumentAnalysis, (
 export type VaultDocumentAnalysis = typeof vaultDocumentAnalysis.$inferSelect;
 export const insertVaultDocumentAnalysisSchema = createInsertSchema(vaultDocumentAnalysis);
 export type InsertVaultDocumentAnalysis = z.infer<typeof insertVaultDocumentAnalysisSchema>;
+
+// Add this to your existing schema file
+export const legalResearchReports = pgTable('legal_research_reports', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull(),
+  query: text('query').notNull(),
+  results: jsonb('results').notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+});
