@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,6 +14,7 @@ interface AnalysisResult {
   industryDescription: string;
   status: 'COMPLIANT' | 'NON_COMPLIANT';
   statusDescription: string;
+  content?: string;
   legalAnalysis?: LegalAnalysis;
 }
 
@@ -23,12 +24,13 @@ export default function DocumentWorkflow() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const { toast } = useToast();
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      console.log('File selected:', file.name);
       setSelectedFile(file);
     }
-  };
+  }, []);
 
   const processDocument = async () => {
     if (!selectedFile) return;
@@ -38,6 +40,7 @@ export default function DocumentWorkflow() {
     formData.append('document', selectedFile);
 
     try {
+      console.log('Starting document processing...');
       const response = await fetch('/api/document/process', {
         method: 'POST',
         body: formData
@@ -46,12 +49,15 @@ export default function DocumentWorkflow() {
       if (!response.ok) throw new Error('Processing failed');
 
       const result = await response.json();
-      console.log('Document processing result:', result); // Debug log
+      console.log('Document processing result:', result);
 
-      // Perform legal analysis on the document content
-      const content = result.content || '';
-      const legalAnalysis = await analyzeLegalDocument(content);
-      console.log('Legal analysis result:', legalAnalysis); // Debug log
+      if (!result.content) {
+        throw new Error('No document content received for analysis');
+      }
+
+      console.log('Starting legal analysis...');
+      const legalAnalysis = await analyzeLegalDocument(result.content);
+      console.log('Legal analysis completed:', legalAnalysis);
 
       setAnalysisResult({
         ...result,
@@ -59,11 +65,11 @@ export default function DocumentWorkflow() {
       });
 
       toast({
-        title: "Document Processed",
-        description: "Analysis complete. Review the results below.",
+        title: "Analysis Complete",
+        description: "Document processed and legal analysis ready.",
       });
     } catch (error) {
-      console.error('Document processing error:', error); // Debug log
+      console.error('Document processing error:', error);
       toast({
         title: "Processing Failed",
         description: error instanceof Error ? error.message : "Failed to process document",
@@ -162,182 +168,172 @@ export default function DocumentWorkflow() {
         </Card>
 
         {analysisResult && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="p-6 bg-blue-50 dark:bg-blue-900/10">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold">Document Type</h3>
-                  <p className="text-lg font-medium text-primary">{analysisResult.documentType}</p>
-                  <p className="text-sm text-muted-foreground mt-1">{analysisResult.documentDescription}</p>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="p-6 bg-blue-50 dark:bg-blue-900/10">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">Document Type</h3>
+                    <p className="text-lg font-medium text-primary">{analysisResult.documentType}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{analysisResult.documentDescription}</p>
+                  </div>
+                  <FileText className="h-10 w-10 text-blue-500" />
                 </div>
-                <FileText className="h-10 w-10 text-blue-500" />
-              </div>
-            </Card>
-
-            <Card className="p-6 bg-emerald-50 dark:bg-emerald-900/10">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold">Industry</h3>
-                  <p className="text-lg font-medium text-primary">{analysisResult.industry}</p>
-                  <p className="text-sm text-muted-foreground mt-1">{analysisResult.industryDescription}</p>
-                </div>
-                <BookOpen className="h-10 w-10 text-emerald-500" />
-              </div>
-            </Card>
-
-            <Card className="p-6 bg-emerald-50 dark:bg-emerald-900/10">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold">Compliance Status</h3>
-                  <p className="text-lg font-medium text-primary">{analysisResult.status}</p>
-                  <p className="text-sm text-muted-foreground mt-1">{analysisResult.statusDescription}</p>
-                </div>
-                <ClipboardCheck className="h-10 w-10 text-emerald-500" />
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {analysisResult && (
-          <Tabs defaultValue="legal" className="space-y-4">
-            <TabsList className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-6">
-              <TabsTrigger value="draft">Document Draft</TabsTrigger>
-              <TabsTrigger value="compliance">Compliance</TabsTrigger>
-              <TabsTrigger value="legal">Legal Research</TabsTrigger>
-              <TabsTrigger value="approval">Approval Status</TabsTrigger>
-              <TabsTrigger value="audit">Final Audit</TabsTrigger>
-              <TabsTrigger value="analysis">Analysis</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="draft">
-              <Card className="p-6">
-                <TabActions type="draft" />
               </Card>
-            </TabsContent>
 
-            <TabsContent value="compliance">
-              <Card className="p-6">
-                <TabActions type="compliance" />
+              <Card className="p-6 bg-emerald-50 dark:bg-emerald-900/10">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">Industry</h3>
+                    <p className="text-lg font-medium text-primary">{analysisResult.industry}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{analysisResult.industryDescription}</p>
+                  </div>
+                  <BookOpen className="h-10 w-10 text-emerald-500" />
+                </div>
               </Card>
-            </TabsContent>
 
-            <TabsContent value="legal">
-              <Card className="p-6">
-                {analysisResult.legalAnalysis ? (
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xl font-semibold">Legal Research Findings</h3>
-                      <Button onClick={() => downloadPDF('legal')}>
-                        <Download className="h-4 w-4 mr-2" />
-                        Download Report
-                      </Button>
-                    </div>
+              <Card className="p-6 bg-emerald-50 dark:bg-emerald-900/10">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">Compliance Status</h3>
+                    <p className="text-lg font-medium text-primary">{analysisResult.status}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{analysisResult.statusDescription}</p>
+                  </div>
+                  <ClipboardCheck className="h-10 w-10 text-emerald-500" />
+                </div>
+              </Card>
+            </div>
 
-                    {/* Executive Summary */}
-                    <div className="space-y-4">
-                      <h4 className="text-lg font-medium">Executive Summary</h4>
-                      <Card className="p-4 bg-card/50">
-                        <p className="text-foreground">{analysisResult.legalAnalysis.summary}</p>
-                      </Card>
-                    </div>
+            <Tabs defaultValue="legal" className="space-y-4">
+              <TabsList className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-6">
+                <TabsTrigger value="legal">Legal Research</TabsTrigger>
+                <TabsTrigger value="compliance">Compliance</TabsTrigger>
+                <TabsTrigger value="draft">Document Draft</TabsTrigger>
+                <TabsTrigger value="approval">Approval Status</TabsTrigger>
+                <TabsTrigger value="audit">Final Audit</TabsTrigger>
+                <TabsTrigger value="analysis">Analysis</TabsTrigger>
+              </TabsList>
 
-                    {/* Legal Principles */}
-                    <div className="space-y-4">
-                      <h4 className="text-lg font-medium">Key Legal Principles</h4>
-                      <div className="grid gap-3">
-                        {analysisResult.legalAnalysis.analysis.legalPrinciples.map((principle, index) => (
-                          <Card key={index} className="p-4 bg-card/50">
-                            <div className="flex items-start gap-3">
-                              <span className="text-primary font-semibold">{index + 1}.</span>
-                              <p className="text-foreground">{principle}</p>
-                            </div>
-                          </Card>
-                        ))}
+              <TabsContent value="legal">
+                <Card className="p-6">
+                  {analysisResult.legalAnalysis ? (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xl font-semibold">Legal Research Findings</h3>
+                        <Button onClick={() => downloadPDF('legal')}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Download Report
+                        </Button>
                       </div>
-                    </div>
 
-                    {/* Key Precedents */}
-                    <div className="space-y-4">
-                      <h4 className="text-lg font-medium">Key Legal Precedents</h4>
-                      <div className="grid gap-4">
-                        {analysisResult.legalAnalysis.analysis.keyPrecedents.map((precedent, index) => (
-                          <Card key={index} className="p-4 bg-card/50">
-                            <div className="space-y-3">
-                              <h5 className="font-semibold text-primary">{precedent.case}</h5>
-                              <div className="grid md:grid-cols-2 gap-4">
-                                <div>
-                                  <p className="text-sm font-medium text-muted-foreground">Relevance</p>
-                                  <p className="text-foreground">{precedent.relevance}</p>
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium text-muted-foreground">Impact</p>
-                                  <p className="text-foreground">{precedent.impact}</p>
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-medium">Executive Summary</h4>
+                        <Card className="p-4 bg-card/50">
+                          <p className="text-foreground">{analysisResult.legalAnalysis.summary}</p>
+                        </Card>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-medium">Key Legal Principles</h4>
+                        <div className="grid gap-3">
+                          {analysisResult.legalAnalysis.analysis.legalPrinciples.map((principle, index) => (
+                            <Card key={index} className="p-4 bg-card/50">
+                              <div className="flex items-start gap-3">
+                                <span className="text-primary font-semibold">{index + 1}.</span>
+                                <p className="text-foreground">{principle}</p>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-medium">Key Legal Precedents</h4>
+                        <div className="grid gap-4">
+                          {analysisResult.legalAnalysis.analysis.keyPrecedents.map((precedent, index) => (
+                            <Card key={index} className="p-4 bg-card/50">
+                              <div className="space-y-3">
+                                <h5 className="font-semibold text-primary">{precedent.case}</h5>
+                                <div className="grid md:grid-cols-2 gap-4">
+                                  <div>
+                                    <p className="text-sm font-medium text-muted-foreground">Relevance</p>
+                                    <p className="text-foreground">{precedent.relevance}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-muted-foreground">Impact</p>
+                                    <p className="text-foreground">{precedent.impact}</p>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </Card>
-                        ))}
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-medium">Citations and References</h4>
+                        <div className="grid gap-4">
+                          {analysisResult.legalAnalysis.citations.map((citation, index) => (
+                            <Card key={index} className="p-4 bg-card/50">
+                              <div className="space-y-2">
+                                <h5 className="font-semibold text-primary">{citation.source}</h5>
+                                <p className="text-sm text-muted-foreground">{citation.reference}</p>
+                                <p className="text-sm italic">{citation.context}</p>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-medium">Recommendations</h4>
+                        <div className="grid gap-3">
+                          {analysisResult.legalAnalysis.analysis.recommendations.map((recommendation, index) => (
+                            <Card key={index} className="p-4 bg-card/50">
+                              <div className="flex items-start gap-3">
+                                <FileText className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                                <p className="text-foreground">{recommendation}</p>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
                       </div>
                     </div>
-
-                    {/* Citations and References */}
-                    <div className="space-y-4">
-                      <h4 className="text-lg font-medium">Citations and References</h4>
-                      <div className="grid gap-4">
-                        {analysisResult.legalAnalysis.citations.map((citation, index) => (
-                          <Card key={index} className="p-4 bg-card/50">
-                            <div className="space-y-2">
-                              <h5 className="font-semibold text-primary">{citation.source}</h5>
-                              <p className="text-sm text-muted-foreground">{citation.reference}</p>
-                              <p className="text-sm italic">{citation.context}</p>
-                            </div>
-                          </Card>
-                        ))}
-                      </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+                      <p className="mt-4 text-muted-foreground">Analyzing document...</p>
                     </div>
-
-                    {/* Recommendations */}
-                    <div className="space-y-4">
-                      <h4 className="text-lg font-medium">Recommendations</h4>
-                      <div className="grid gap-3">
-                        {analysisResult.legalAnalysis.analysis.recommendations.map((recommendation, index) => (
-                          <Card key={index} className="p-4 bg-card/50">
-                            <div className="flex items-start gap-3">
-                              <FileText className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                              <p className="text-foreground">{recommendation}</p>
-                            </div>
-                          </Card>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto" />
-                    <p className="mt-4 text-muted-foreground">Analyzing document...</p>
-                  </div>
-                )}
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="approval">
-              <Card className="p-6">
-                <TabActions type="approval" />
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="audit">
-              <Card className="p-6">
-                <TabActions type="audit" />
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="analysis">
-              <Card className="p-6">
-                <TabActions type="analysis" />
-              </Card>
-            </TabsContent>
-          </Tabs>
+                  )}
+                </Card>
+              </TabsContent>
+              <TabsContent value="compliance">
+                <Card className="p-6">
+                  <TabActions type="compliance" />
+                </Card>
+              </TabsContent>
+              <TabsContent value="draft">
+                <Card className="p-6">
+                  <TabActions type="draft" />
+                </Card>
+              </TabsContent>
+              <TabsContent value="approval">
+                <Card className="p-6">
+                  <TabActions type="approval" />
+                </Card>
+              </TabsContent>
+              <TabsContent value="audit">
+                <Card className="p-6">
+                  <TabActions type="audit" />
+                </Card>
+              </TabsContent>
+              <TabsContent value="analysis">
+                <Card className="p-6">
+                  <TabActions type="analysis" />
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </>
         )}
       </div>
     </div>
