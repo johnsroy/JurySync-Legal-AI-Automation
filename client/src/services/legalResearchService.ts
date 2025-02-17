@@ -27,37 +27,43 @@ export async function analyzeLegalDocument(content: string): Promise<LegalAnalys
   try {
     console.log('Starting legal document analysis...'); // Debug log
 
-    const promptTemplate = `Analyze the following legal document and provide a comprehensive analysis. Include:
-1. An executive summary
-2. Key legal principles identified
-3. Relevant case law and precedents
-4. Citations and references
-5. Recommendations
-
-Document: ${content}
-
-Please format the response as a JSON object with the following structure:
-{
-  "summary": "executive summary text",
-  "analysis": {
-    "legalPrinciples": ["principle 1", "principle 2", ...],
-    "keyPrecedents": [
-      {
-        "case": "case name",
-        "relevance": "relevance description",
-        "impact": "impact description"
-      }
-    ],
-    "recommendations": ["recommendation 1", "recommendation 2", ...]
-  },
-  "citations": [
-    {
-      "source": "source name",
-      "reference": "reference details",
-      "context": "context description"
+    if (!content || content.trim().length === 0) {
+      throw new Error('No content provided for analysis');
     }
-  ]
-}`;
+
+    const promptTemplate = `Analyze the following legal document content in detail. Provide a comprehensive analysis that includes:
+
+    1. An executive summary of the key findings
+    2. Key legal principles and their implications
+    3. Relevant case law and precedents that apply
+    4. Citations and references to support the analysis
+    5. Actionable recommendations
+
+    Document Content:
+    ${content.slice(0, 8000)} // Limit content length to avoid token limits
+
+    Format the response as a JSON object with this structure:
+    {
+      "summary": "executive summary text",
+      "analysis": {
+        "legalPrinciples": ["principle 1", "principle 2", ...],
+        "keyPrecedents": [
+          {
+            "case": "case name",
+            "relevance": "relevance to current document",
+            "impact": "potential impact on interpretation"
+          }
+        ],
+        "recommendations": ["recommendation 1", "recommendation 2", ...]
+      },
+      "citations": [
+        {
+          "source": "source name",
+          "reference": "reference details",
+          "context": "how this applies to the current document"
+        }
+      ]
+    }`;
 
     console.log('Sending request to OpenAI...'); // Debug log
 
@@ -66,14 +72,16 @@ Please format the response as a JSON object with the following structure:
       messages: [
         { 
           role: "system", 
-          content: "You are a legal research expert specializing in regulatory compliance, contract law, and corporate governance." 
+          content: "You are a legal expert specializing in document analysis, regulatory compliance, and legal research. Provide detailed, professional analysis with actionable insights." 
         },
         { 
           role: "user", 
           content: promptTemplate 
         }
       ],
-      response_format: { type: "json_object" }
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+      max_tokens: 4000
     });
 
     console.log('Received response from OpenAI'); // Debug log
@@ -90,6 +98,6 @@ Please format the response as a JSON object with the following structure:
     return parsedResponse;
   } catch (error) {
     console.error('Legal analysis error:', error);
-    throw new Error('Failed to analyze legal document');
+    throw new Error(error instanceof Error ? error.message : 'Failed to analyze legal document');
   }
 }
