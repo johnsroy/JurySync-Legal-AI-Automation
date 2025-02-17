@@ -19,15 +19,16 @@ export function DocumentPreview({ content, title, metadata, onDownload, children
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <Card className="w-full bg-white shadow-sm">
+    <Card className="w-full bg-gray-800/50 border-gray-700 shadow-lg">
       <CardContent className="p-4">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold">{title}</h3>
+          <h3 className="text-lg font-semibold text-white">{title}</h3>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setIsExpanded(!isExpanded)}
+              className="bg-gray-700 hover:bg-gray-600 text-gray-200 border-gray-600"
             >
               <Eye className="h-4 w-4 mr-2" />
               {isExpanded ? "Collapse" : "Preview"}
@@ -36,6 +37,7 @@ export function DocumentPreview({ content, title, metadata, onDownload, children
               variant="default"
               size="sm"
               onClick={onDownload}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               <Download className="h-4 w-4 mr-2" />
               Download PDF
@@ -45,33 +47,36 @@ export function DocumentPreview({ content, title, metadata, onDownload, children
 
         {metadata && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div className="flex items-start space-x-2 p-3 bg-gray-50 rounded-lg">
-              <FileText className="h-5 w-5 text-blue-500 mt-0.5" />
+            <div className="flex items-start space-x-2 p-3 bg-gray-900/50 rounded-lg border border-gray-700">
+              <FileText className="h-5 w-5 text-blue-400 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Document Type</p>
-                <p className="text-sm">{metadata.documentType || "SOC 3 Report"}</p>
+                <p className="text-sm font-medium text-gray-300">Document Type</p>
+                <p className="text-sm text-gray-400">{metadata.documentType || "SOC 3 Report"}</p>
               </div>
             </div>
-            <div className="flex items-start space-x-2 p-3 bg-gray-50 rounded-lg">
-              <BookOpen className="h-5 w-5 text-green-500 mt-0.5" />
+            <div className="flex items-start space-x-2 p-3 bg-gray-900/50 rounded-lg border border-gray-700">
+              <BookOpen className="h-5 w-5 text-emerald-400 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Industry</p>
-                <p className="text-sm">{metadata.industry || "Technology"}</p>
+                <p className="text-sm font-medium text-gray-300">Industry</p>
+                <p className="text-sm text-gray-400">{metadata.industry || "Technology"}</p>
               </div>
             </div>
-            <div className="flex items-start space-x-2 p-3 bg-gray-50 rounded-lg">
-              <Shield className="h-5 w-5 text-yellow-500 mt-0.5" />
+            <div className="flex items-start space-x-2 p-3 bg-gray-900/50 rounded-lg border border-gray-700">
+              <Shield className="h-5 w-5 text-yellow-400 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Compliance Status</p>
-                <p className="text-sm">{metadata.complianceStatus || "COMPLIANT"}</p>
+                <p className="text-sm font-medium text-gray-300">Compliance Status</p>
+                <p className="text-sm text-gray-400">{metadata.complianceStatus || "COMPLIANT"}</p>
               </div>
             </div>
           </div>
         )}
 
         {isExpanded && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg max-h-96 overflow-y-auto">
-            <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: content }} />
+          <div className="mt-4 p-4 bg-gray-900/50 rounded-lg border border-gray-700 max-h-96 overflow-y-auto">
+            <div 
+              className="prose prose-invert max-w-none text-gray-200" 
+              dangerouslySetInnerHTML={{ __html: content }} 
+            />
           </div>
         )}
 

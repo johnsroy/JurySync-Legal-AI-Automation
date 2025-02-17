@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
+// Keep existing interfaces unchanged
 interface ClauseAnalysis {
   clauseId: string;
   originalText: string;
@@ -15,8 +16,8 @@ interface ClauseAnalysis {
   category: string;
   impact: string;
   confidence: number;
-  startIndex?: number; //added
-  endIndex?: number; //added
+  startIndex?: number;
+  endIndex?: number;
 }
 
 interface ContractRedliningProps {
@@ -24,13 +25,8 @@ interface ContractRedliningProps {
   onUpdate?: (content: string) => void;
 }
 
-interface ApiResponse<T> {
-  success: boolean;
-  analysis?: T;
-  error?: string;
-}
-
 export function ContractRedlining({ initialContent, onUpdate }: ContractRedliningProps) {
+  // Keep existing state management
   const [clauses, setClauses] = useState<ClauseAnalysis[]>([]);
   const [selectedClause, setSelectedClause] = useState<ClauseAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,6 +34,7 @@ export function ContractRedlining({ initialContent, onUpdate }: ContractRedlinin
   const [currentContent, setCurrentContent] = useState(initialContent);
   const { toast } = useToast();
 
+  // Keep existing functions unchanged
   const analyzeContract = async () => {
     setIsLoading(true);
     try {
@@ -115,9 +112,9 @@ export function ContractRedlining({ initialContent, onUpdate }: ContractRedlinin
   };
 
   const getRiskColor = (score: number) => {
-    if (score >= 8) return "text-red-500 bg-red-100";
-    if (score >= 5) return "text-yellow-500 bg-yellow-100";
-    return "text-green-500 bg-green-100";
+    if (score >= 8) return "text-red-400 bg-red-950/50";
+    if (score >= 5) return "text-yellow-400 bg-yellow-950/50";
+    return "text-emerald-400 bg-emerald-950/50";
   };
 
   // Run initial analysis when content changes
@@ -130,15 +127,19 @@ export function ContractRedlining({ initialContent, onUpdate }: ContractRedlinin
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Contract Analysis</h2>
-        <Button onClick={analyzeContract} disabled={isLoading}>
+        <h2 className="text-2xl font-bold text-white">Contract Analysis</h2>
+        <Button 
+          onClick={analyzeContract} 
+          disabled={isLoading}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+        >
           {isLoading ? "Analyzing..." : "Analyze Contract"}
         </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {clauses.map((clause) => (
-          <Card key={clause.clauseId} className="p-4">
+          <Card key={clause.clauseId} className="p-4 bg-gray-800/50 border-gray-700">
             <div className="flex justify-between items-start mb-2">
               <div
                 className={`px-2 py-1 rounded-full text-sm font-medium ${getRiskColor(
@@ -147,11 +148,13 @@ export function ContractRedlining({ initialContent, onUpdate }: ContractRedlinin
               >
                 Risk: {clause.riskScore}/10
               </div>
-              <span className="text-sm text-gray-500">v{clause.version}</span>
+              <span className="text-sm text-gray-400">v{clause.version}</span>
             </div>
             <div className="mb-4">
-              <h3 className="font-medium mb-2">Original Text</h3>
-              <p className="text-sm text-gray-700">{clause.originalText}</p>
+              <h3 className="font-medium mb-2 text-gray-200">Original Text</h3>
+              <p className="text-sm text-gray-300 bg-gray-900/50 p-3 rounded-md border border-gray-700">
+                {clause.originalText}
+              </p>
             </div>
             <div className="flex justify-end">
               <Button
@@ -160,6 +163,7 @@ export function ContractRedlining({ initialContent, onUpdate }: ContractRedlinin
                   setSelectedClause(clause);
                   setIsDialogOpen(true);
                 }}
+                className="bg-gray-700 hover:bg-gray-600 text-gray-200 border-gray-600"
               >
                 Review Suggestions
               </Button>
@@ -170,37 +174,40 @@ export function ContractRedlining({ initialContent, onUpdate }: ContractRedlinin
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         {selectedClause && (
-          <DialogContent className="max-w-4xl">
+          <DialogContent className="max-w-4xl bg-gray-900 border-gray-800">
             <DialogHeader>
-              <DialogTitle>Clause Analysis</DialogTitle>
+              <DialogTitle className="text-white">Clause Analysis</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4">
               <div>
-                <h4 className="font-medium mb-2">Original Text</h4>
-                <p className="text-sm text-gray-700 p-2 bg-gray-50 rounded">
+                <h4 className="font-medium mb-2 text-gray-200">Original Text</h4>
+                <p className="text-sm text-gray-300 p-3 bg-gray-800/50 rounded border border-gray-700">
                   {selectedClause.originalText}
                 </p>
               </div>
               <div>
-                <h4 className="font-medium mb-2">Suggested Improvement</h4>
-                <p className="text-sm text-gray-700 p-2 bg-green-50 rounded">
+                <h4 className="font-medium mb-2 text-gray-200">Suggested Improvement</h4>
+                <p className="text-sm text-gray-300 p-3 bg-emerald-950/30 rounded border border-emerald-800/50">
                   {selectedClause.suggestedText}
                 </p>
               </div>
               <div>
-                <h4 className="font-medium mb-2">Analysis</h4>
-                <div className="space-y-2">
+                <h4 className="font-medium mb-2 text-gray-200">Analysis</h4>
+                <div className="space-y-2 text-gray-300 bg-gray-800/50 p-3 rounded border border-gray-700">
                   <p className="text-sm">
-                    <span className="font-medium">Risk Level:</span> {selectedClause.riskLevel}
+                    <span className="font-medium text-gray-200">Risk Level:</span>{" "}
+                    {selectedClause.riskLevel}
                   </p>
                   <p className="text-sm">
-                    <span className="font-medium">Category:</span> {selectedClause.category}
+                    <span className="font-medium text-gray-200">Category:</span>{" "}
+                    {selectedClause.category}
                   </p>
                   <p className="text-sm">
-                    <span className="font-medium">Impact:</span> {selectedClause.impact}
+                    <span className="font-medium text-gray-200">Impact:</span>{" "}
+                    {selectedClause.impact}
                   </p>
                   <p className="text-sm">
-                    <span className="font-medium">Explanation:</span>{" "}
+                    <span className="font-medium text-gray-200">Explanation:</span>{" "}
                     {selectedClause.explanation}
                   </p>
                 </div>
@@ -209,14 +216,18 @@ export function ContractRedlining({ initialContent, onUpdate }: ContractRedlinin
                 <Button
                   variant="outline"
                   onClick={() => setIsDialogOpen(false)}
+                  className="bg-gray-700 hover:bg-gray-600 text-gray-200 border-gray-600"
                 >
                   Close
                 </Button>
                 <Button
                   onClick={() => {
-                    updateClause(selectedClause.clauseId, selectedClause.suggestedText);
-                    setIsDialogOpen(false);
+                    if (selectedClause) {
+                      updateClause(selectedClause.clauseId, selectedClause.suggestedText);
+                      setIsDialogOpen(false);
+                    }
                   }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
                   Accept Suggestion
                 </Button>
