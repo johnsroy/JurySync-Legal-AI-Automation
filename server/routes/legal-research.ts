@@ -5,6 +5,57 @@ import { legalResearchReports, legalAnalyses } from "@shared/schema";
 
 const router = Router();
 
+// Generate suggested questions based on the current query
+router.post("/suggest-questions", async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { query } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: "No query provided" });
+    }
+
+    const prompt = `
+      Given this legal research query: "${query}"
+
+      Generate 5 relevant follow-up questions that would help expand the research scope. Format the response as a JSON array of strings.
+      The questions should be specific, actionable, and help deepen the legal analysis.
+
+      Example format:
+      ["Question 1", "Question 2", "Question 3", "Question 4", "Question 5"]
+    `;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-0125-preview",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal research expert specializing in generating relevant follow-up questions."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7
+    });
+
+    const response = JSON.parse(completion.choices[0].message.content);
+    return res.json(response);
+
+  } catch (error) {
+    console.error("Error generating suggested questions:", error);
+    return res.status(500).json({ 
+      error: "Failed to generate suggestions",
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 router.post("/", async (req, res) => {
   try {
     if (!req.user) {
