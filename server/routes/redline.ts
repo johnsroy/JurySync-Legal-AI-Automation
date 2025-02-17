@@ -1,5 +1,4 @@
 import { Router } from "express";
-// For a simple, line-based diff:
 import * as diff from "diff";
 
 const router = Router();
@@ -8,6 +7,15 @@ interface DiffSegment {
   value: string;
   added?: boolean;
   removed?: boolean;
+}
+
+interface RedlineResponse {
+  segments: DiffSegment[];
+  summary: {
+    additions: number;
+    deletions: number;
+    unchanged: number;
+  };
 }
 
 // POST /api/redline
@@ -23,27 +31,29 @@ router.post("/", async (req, res) => {
     }
 
     // Create word-level diff
-    const changes = diff.diffWords(originalText, proposedText);
-    
+    const changes: diff.Change[] = diff.diffWords(originalText, proposedText);
+
     // Transform into segments with proper formatting
-    const segments: DiffSegment[] = changes.map(change => ({
+    const segments: DiffSegment[] = changes.map((change) => ({
       value: change.value,
       added: change.added,
       removed: change.removed
     }));
 
-    return res.json({ 
+    const response: RedlineResponse = {
       segments,
       summary: {
         additions: changes.filter(c => c.added).length,
         deletions: changes.filter(c => c.removed).length,
         unchanged: changes.filter(c => !c.added && !c.removed).length
       }
-    });
+    };
+
+    return res.json(response);
   } catch (error) {
     console.error("Redline route error:", error);
     return res.status(500).json({ error: "Redline comparison failed" });
   }
 });
 
-export default router; 
+export default router;

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileUpload, Loader2, X, Upload } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface DiffSegment {
@@ -23,7 +23,6 @@ export function RedlineView({ originalText, proposedText, onClear, isLoading }: 
 
   useEffect(() => {
     if (originalText && proposedText) {
-      // This will be replaced by the API call in the parent
       highlightDifferences();
     }
   }, [originalText, proposedText]);
@@ -37,7 +36,7 @@ export function RedlineView({ originalText, proposedText, onClear, isLoading }: 
       });
 
       if (!response.ok) throw new Error("Failed to process diff");
-      
+
       const data = await response.json();
       setDiffSegments(data.segments || []);
     } catch (error) {
@@ -60,7 +59,7 @@ export function RedlineView({ originalText, proposedText, onClear, isLoading }: 
   return (
     <div className="space-y-4" data-testid="diff-view">
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold">Document Comparison</h3>
+        <h3 className="text-lg font-semibold text-gray-200">Document Comparison</h3>
         {onClear && (
           <Button variant="ghost" size="sm" onClick={onClear}>
             <X className="h-4 w-4 mr-2" />
@@ -69,17 +68,17 @@ export function RedlineView({ originalText, proposedText, onClear, isLoading }: 
         )}
       </div>
 
-      <div className="bg-muted p-4 rounded-lg">
+      <div className="bg-gray-900/70 p-6 rounded-lg border border-gray-700">
         {diffSegments.map((segment, idx) => (
           <span
             key={idx}
             className={`${
               segment.added
-                ? "bg-green-100 text-green-800"
+                ? "bg-emerald-950 text-emerald-300 px-1 rounded"
                 : segment.removed
-                ? "bg-red-100 text-red-800"
-                : ""
-            }`}
+                ? "bg-red-950 text-red-300 px-1 rounded"
+                : "text-gray-300"
+            } font-mono text-sm`}
             data-testid={
               segment.added
                 ? "diff-additions"
@@ -94,4 +93,4 @@ export function RedlineView({ originalText, proposedText, onClear, isLoading }: 
       </div>
     </div>
   );
-} 
+}
