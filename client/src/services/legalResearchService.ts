@@ -25,7 +25,9 @@ export interface LegalAnalysis {
 
 export async function analyzeLegalDocument(content: string): Promise<LegalAnalysis> {
   try {
-    const prompt = `Analyze the following legal document and provide a comprehensive analysis. Include:
+    console.log('Starting legal document analysis...'); // Debug log
+
+    const promptTemplate = `Analyze the following legal document and provide a comprehensive analysis. Include:
 1. An executive summary
 2. Key legal principles identified
 3. Relevant case law and precedents
@@ -57,8 +59,10 @@ Please format the response as a JSON object with the following structure:
   ]
 }`;
 
+    console.log('Sending request to OpenAI...'); // Debug log
+
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4-0125-preview",
       messages: [
         { 
           role: "system", 
@@ -66,18 +70,24 @@ Please format the response as a JSON object with the following structure:
         },
         { 
           role: "user", 
-          content: prompt 
+          content: promptTemplate 
         }
       ],
       response_format: { type: "json_object" }
     });
 
-    const content = completion.choices[0].message.content;
-    if (!content) {
-      throw new Error('No analysis generated');
+    console.log('Received response from OpenAI'); // Debug log
+
+    const responseContent = completion.choices[0].message.content;
+    if (!responseContent) {
+      throw new Error('No analysis generated from AI model');
     }
 
-    return JSON.parse(content) as LegalAnalysis;
+    console.log('Parsing response...'); // Debug log
+    const parsedResponse = JSON.parse(responseContent) as LegalAnalysis;
+    console.log('Analysis complete:', parsedResponse); // Debug log
+
+    return parsedResponse;
   } catch (error) {
     console.error('Legal analysis error:', error);
     throw new Error('Failed to analyze legal document');

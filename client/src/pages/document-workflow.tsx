@@ -5,7 +5,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, FileText, Download, Eye, BookOpen, ClipboardCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { LegalResearchResults } from "@/components/LegalResearchResults";
 import { analyzeLegalDocument, type LegalAnalysis } from '@/services/legalResearchService';
 
 interface AnalysisResult {
@@ -39,7 +38,6 @@ export default function DocumentWorkflow() {
     formData.append('document', selectedFile);
 
     try {
-      // First get basic document analysis
       const response = await fetch('/api/document/process', {
         method: 'POST',
         body: formData
@@ -48,10 +46,12 @@ export default function DocumentWorkflow() {
       if (!response.ok) throw new Error('Processing failed');
 
       const result = await response.json();
+      console.log('Document processing result:', result); // Debug log
 
-      // Then perform legal analysis
+      // Perform legal analysis on the document content
       const content = result.content || '';
       const legalAnalysis = await analyzeLegalDocument(content);
+      console.log('Legal analysis result:', legalAnalysis); // Debug log
 
       setAnalysisResult({
         ...result,
@@ -63,6 +63,7 @@ export default function DocumentWorkflow() {
         description: "Analysis complete. Review the results below.",
       });
     } catch (error) {
+      console.error('Document processing error:', error); // Debug log
       toast({
         title: "Processing Failed",
         description: error instanceof Error ? error.message : "Failed to process document",
@@ -198,7 +199,7 @@ export default function DocumentWorkflow() {
         )}
 
         {analysisResult && (
-          <Tabs defaultValue="draft" className="space-y-4">
+          <Tabs defaultValue="legal" className="space-y-4">
             <TabsList className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-6">
               <TabsTrigger value="draft">Document Draft</TabsTrigger>
               <TabsTrigger value="compliance">Compliance</TabsTrigger>
@@ -222,7 +223,7 @@ export default function DocumentWorkflow() {
 
             <TabsContent value="legal">
               <Card className="p-6">
-                {analysisResult?.legalAnalysis ? (
+                {analysisResult.legalAnalysis ? (
                   <div className="space-y-6">
                     <div className="flex items-center justify-between">
                       <h3 className="text-xl font-semibold">Legal Research Findings</h3>
@@ -232,7 +233,7 @@ export default function DocumentWorkflow() {
                       </Button>
                     </div>
 
-                    {/* Summary Section */}
+                    {/* Executive Summary */}
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Executive Summary</h4>
                       <Card className="p-4 bg-card/50">
@@ -240,7 +241,7 @@ export default function DocumentWorkflow() {
                       </Card>
                     </div>
 
-                    {/* Legal Principles Section */}
+                    {/* Legal Principles */}
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Key Legal Principles</h4>
                       <div className="grid gap-3">
@@ -255,7 +256,7 @@ export default function DocumentWorkflow() {
                       </div>
                     </div>
 
-                    {/* Key Precedents Section */}
+                    {/* Key Precedents */}
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Key Legal Precedents</h4>
                       <div className="grid gap-4">
@@ -279,7 +280,7 @@ export default function DocumentWorkflow() {
                       </div>
                     </div>
 
-                    {/* Citations Section */}
+                    {/* Citations and References */}
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Citations and References</h4>
                       <div className="grid gap-4">
@@ -295,7 +296,7 @@ export default function DocumentWorkflow() {
                       </div>
                     </div>
 
-                    {/* Recommendations Section */}
+                    {/* Recommendations */}
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Recommendations</h4>
                       <div className="grid gap-3">
@@ -311,7 +312,10 @@ export default function DocumentWorkflow() {
                     </div>
                   </div>
                 ) : (
-                  <TabActions type="legal" />
+                  <div className="text-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+                    <p className="mt-4 text-muted-foreground">Analyzing document...</p>
+                  </div>
                 )}
               </Card>
             </TabsContent>
