@@ -24,7 +24,7 @@ export const AuthContext = createContext<AuthContextType | null>(null);
 
 function getErrorMessage(error: any) {
   try {
-    const data = JSON.parse(error.message.split(": ")[1]);
+    const data = JSON.parse(error.message);
     switch (data.code) {
       case "USERNAME_EXISTS":
         return "This username is already taken. Please choose another one.";
@@ -91,12 +91,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (user: SelectUser) => {
+      queryClient.setQueryData(["/api/user"], user);
       toast({
-        title: "Account created",
-        description: "Please sign in with your credentials",
+        title: "Account created successfully",
+        description: "Welcome to JurySync.io!",
       });
-      setLocation("/login");
+      setLocation("/dashboard");
     },
     onError: (error: Error) => {
       toast({

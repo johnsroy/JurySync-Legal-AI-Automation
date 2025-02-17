@@ -2,7 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertUserSchema, InsertUser } from "@shared/schema";
-import { Redirect, Link, useLocation } from "wouter";
+import { Redirect, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,13 +20,10 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Loader2, Scale } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Loader2, Gavel } from "lucide-react";
 
 export default function RegisterPage() {
   const { user, registerMutation } = useAuth();
-  const [, setLocation] = useLocation();
-  const { toast } = useToast();
 
   const form = useForm<InsertUser>({
     resolver: zodResolver(insertUserSchema),
@@ -40,40 +37,30 @@ export default function RegisterPage() {
     },
   });
 
-  const onRegisterSuccess = () => {
-    toast({
-      title: "Registration successful",
-      description: "Please sign in with your credentials",
-    });
-    setLocation("/login");
-  };
-
   if (user) {
     return <Redirect to="/dashboard" />;
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 animate-gradient-x p-4">
-      <Card className="w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg shadow-xl border-0">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800 p-4">
+      <Card className="w-full max-w-md bg-background/80 backdrop-blur-lg shadow-xl border-border">
         <CardHeader className="space-y-1 text-center pb-8">
           <Link href="/" className="flex items-center justify-center space-x-2 mb-2">
-            <Scale className="h-8 w-8 text-blue-600" />
-            <span className="text-2xl font-bold font-display">LegalAI</span>
+            <Gavel className="h-8 w-8 text-primary" />
+            <span className="text-2xl font-bold">JurySync.io</span>
           </Link>
-          <CardTitle className="text-3xl font-bold tracking-tight font-display">
+          <CardTitle className="text-3xl font-bold tracking-tight">
             Create an account
           </CardTitle>
-          <CardDescription className="text-base">
-            Get started with LegalAI
+          <CardDescription className="text-base text-muted-foreground">
+            Join JurySync.io today
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
             <form
               onSubmit={form.handleSubmit((data) =>
-                registerMutation.mutate(data, {
-                  onSuccess: onRegisterSuccess
-                }),
+                registerMutation.mutate(data),
               )}
               className="space-y-4"
             >
@@ -85,7 +72,7 @@ export default function RegisterPage() {
                     <FormItem>
                       <FormLabel className="text-base">First Name</FormLabel>
                       <FormControl>
-                        <Input className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
+                        <Input className="h-12 bg-background/50 border-border" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -98,7 +85,7 @@ export default function RegisterPage() {
                     <FormItem>
                       <FormLabel className="text-base">Last Name</FormLabel>
                       <FormControl>
-                        <Input className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
+                        <Input className="h-12 bg-background/50 border-border" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -112,7 +99,7 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel className="text-base">Email</FormLabel>
                     <FormControl>
-                      <Input type="email" className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
+                      <Input type="email" className="h-12 bg-background/50 border-border" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -125,7 +112,7 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel className="text-base">Username</FormLabel>
                     <FormControl>
-                      <Input className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
+                      <Input className="h-12 bg-background/50 border-border" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -138,7 +125,7 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel className="text-base">Password</FormLabel>
                     <FormControl>
-                      <Input type="password" className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm" {...field} />
+                      <Input type="password" className="h-12 bg-background/50 border-border" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -146,7 +133,7 @@ export default function RegisterPage() {
               />
               <Button
                 type="submit"
-                className="w-full h-12 text-base bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 animate-gradient-x"
+                className="w-full h-12 text-base bg-primary hover:bg-primary/90"
                 disabled={registerMutation.isPending}
               >
                 {registerMutation.isPending && (
@@ -154,9 +141,9 @@ export default function RegisterPage() {
                 )}
                 Create Account
               </Button>
-              <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-center text-sm text-muted-foreground">
                 Already have an account?{" "}
-                <Link href="/login" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                <Link href="/login" className="text-primary hover:text-primary/90">
                   Sign in
                 </Link>
               </p>

@@ -20,8 +20,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Loader2, Scale } from "lucide-react";
-import { Gavel } from "lucide-react"; // Added import for Gavel icon
+import { Loader2 } from "lucide-react";
+import { Gavel } from "lucide-react";
 
 export default function LoginPage() {
   const { user, loginMutation } = useAuth();
@@ -44,17 +44,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-yellow-50 to-green-50 dark:from-gray-900 dark:to-gray-800 animate-gradient-x p-4">
-      <Card className="w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg shadow-xl border-0">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800 p-4">
+      <Card className="w-full max-w-md bg-background/80 backdrop-blur-lg shadow-xl border-border">
         <CardHeader className="space-y-1 text-center pb-8">
           <Link href="/" className="flex items-center justify-center space-x-2 mb-2">
-            <Gavel className="h-8 w-8 text-green-600" />
-            <span className="text-2xl font-bold font-display">JurySync.io</span>
+            <Gavel className="h-8 w-8 text-primary" />
+            <span className="text-2xl font-bold">JurySync.io</span>
           </Link>
-          <CardTitle className="text-3xl font-bold tracking-tight font-display">
+          <CardTitle className="text-3xl font-bold tracking-tight">
             Welcome back
           </CardTitle>
-          <CardDescription className="text-base">
+          <CardDescription className="text-base text-muted-foreground">
             Sign in to your account
           </CardDescription>
         </CardHeader>
@@ -74,7 +74,7 @@ export default function LoginPage() {
                     <FormLabel className="text-base">Username</FormLabel>
                     <FormControl>
                       <Input
-                        className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm"
+                        className="h-12 bg-background/50 border-border"
                         {...field}
                       />
                     </FormControl>
@@ -91,7 +91,7 @@ export default function LoginPage() {
                     <FormControl>
                       <Input
                         type="password"
-                        className="h-12 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm"
+                        className="h-12 bg-background/50 border-border"
                         {...field}
                       />
                     </FormControl>
@@ -101,7 +101,7 @@ export default function LoginPage() {
               />
               <Button
                 type="submit"
-                className="w-full h-12 text-base bg-gradient-to-r from-green-600 to-yellow-500 hover:from-green-700 hover:to-yellow-600 animate-gradient-x"
+                className="w-full h-12 text-base bg-primary hover:bg-primary/90"
                 disabled={loginMutation.isPending}
               >
                 {loginMutation.isPending && (
@@ -109,9 +109,9 @@ export default function LoginPage() {
                 )}
                 Sign In
               </Button>
-              <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-center text-sm text-muted-foreground">
                 Don't have an account?{" "}
-                <Link href="/register" className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300">
+                <Link href="/register" className="text-primary hover:text-primary/90">
                   Create one
                 </Link>
               </p>
