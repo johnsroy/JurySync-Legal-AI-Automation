@@ -13,6 +13,7 @@ import orchestratorRouter from "./routes/orchestrator";
 import contractAnalysisRouter from "./routes/contract-analysis";
 import reportsRouter from "./routes/reports";
 import vaultRouter from "./routes/vault";
+import redlineRouter from "./routes/redline";
 import cors from 'cors';
 import { json } from 'express';
 
@@ -31,6 +32,9 @@ export function registerRoutes(app: Express): Server {
     }), 
     handleWebhook
   );
+
+  // Add redlining routes
+  app.use("/api/redline", redlineRouter);
 
   // Add the vault router with enhanced AI capabilities
   app.use("/api/vault", vaultRouter);
