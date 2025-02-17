@@ -22,6 +22,7 @@ import WorkflowAutomation from "@/pages/workflow-automation";
 import VaultPage from "@/pages/vault-page";
 import { ProtectedRoute } from "./lib/protected-route";
 import { FC } from "react";
+import Redline from "@/pages/redline";
 
 const Router: FC = () => {
   return (
@@ -91,6 +92,12 @@ const Router: FC = () => {
       <Route path="/settings">
         <Layout>
           <ProtectedRoute component={Settings} path="/settings" />
+        </Layout>
+      </Route>
+
+      <Route path="/redline">
+        <Layout>
+          <ProtectedRoute component={Redline} path="/redline" />
         </Layout>
       </Route>
 
