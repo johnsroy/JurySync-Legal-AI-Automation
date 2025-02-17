@@ -134,15 +134,18 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
       }
     });
 
-    // Start webhook server first
-    let webhookPort = 5001;
-    while (await isPortInUse(webhookPort)) {
-      console.log(`Port ${webhookPort} is in use, trying ${webhookPort + 1}`);
-      webhookPort++;
+    const mainPort = process.env.PORT || 3000;
+    const webhookPort = process.env.REPLIT_DEPLOYMENT ? mainPort : 5001;
+
+    if (!process.env.REPLIT_DEPLOYMENT) {
+      // Only start separate webhook server in development
+      webhookServer.listen(webhookPort, '0.0.0.0', () => {
+        console.log(`Webhook server running at http://0.0.0.0:${webhookPort}`);
+      });
+    } else {
+      // In production, add webhook routes to main app
+      app.use('/webhook', webhookServer);
     }
-    webhookServer.listen(webhookPort, '0.0.0.0', () => {
-      console.log(`Webhook server running at http://0.0.0.0:${webhookPort}`);
-    });
 
     // Setup Vite or serve static files for main application
     if (process.env.NODE_ENV !== "production") {
@@ -153,9 +156,8 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
     }
 
     // Start main application server
-    const port = process.env.PORT || 3000;
-    app.listen(port, '0.0.0.0', () => {
-      console.log(`Main application server running at http://0.0.0.0:${port}`);
+    app.listen(mainPort, '0.0.0.0', () => {
+      console.log(`Main application server running at http://0.0.0.0:${mainPort}`);
     });
 
   } catch (error) {
