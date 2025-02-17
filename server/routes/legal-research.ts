@@ -13,6 +13,12 @@ router.post("/", async (req, res) => {
 
     const { query, options } = req.body;
 
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json({ error: "No query provided" });
+    }
+
+    console.log('Starting legal research for query:', query);
+
     const prompt = `
       Act as a legal research assistant. Analyze the following query and provide comprehensive research results:
 
@@ -45,6 +51,7 @@ router.post("/", async (req, res) => {
       - Practical recommendations
     `;
 
+    console.log('Sending request to OpenAI...');
     const completion = await openai.chat.completions.create({
       model: "gpt-4-0125-preview",
       messages: [
@@ -61,9 +68,14 @@ router.post("/", async (req, res) => {
       temperature: 0.7
     });
 
+    console.log('Received response from OpenAI');
     const response = completion.choices[0].message.content;
     let formattedResults;
+
     try {
+      if (!response) {
+        throw new Error('Empty response from AI model');
+      }
       formattedResults = JSON.parse(response);
       if (!formattedResults.results || !formattedResults.recommendations) {
         throw new Error("Invalid response structure");
@@ -81,6 +93,7 @@ router.post("/", async (req, res) => {
       timestamp: new Date(),
     });
 
+    console.log('Research completed successfully');
     return res.json({
       ...formattedResults,
       timestamp: new Date(),
@@ -88,7 +101,10 @@ router.post("/", async (req, res) => {
 
   } catch (error) {
     console.error("Legal research error:", error);
-    return res.status(500).json({ error: "Failed to complete research" });
+    return res.status(500).json({ 
+      error: "Failed to complete research",
+      details: error instanceof Error ? error.message : 'Unknown error occurred'
+    });
   }
 });
 
