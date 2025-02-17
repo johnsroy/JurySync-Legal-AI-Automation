@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -9,6 +9,12 @@ interface TextChange {
   content: string;
   timestamp: Date;
   position: number;
+}
+
+interface BufferedDeletion {
+  content: string;
+  position: number;
+  startTime: Date;
 }
 
 const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, setContent: (content: string) => void, setIsLoading: (loading: boolean) => void, toast: any) => {
@@ -54,6 +60,19 @@ export default function Redline() {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  // Buffer for tracking deletions
+  const [bufferedDeletion, setBufferedDeletion] = useState<BufferedDeletion | null>(null);
+  const bufferTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    // Clear the timeout when component unmounts
+    return () => {
+      if (bufferTimeoutRef.current) {
+        clearTimeout(bufferTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const trackChange = (type: 'insertion' | 'deletion', newContent: string, position: number) => {
     const change: TextChange = {
       type,
@@ -64,18 +83,50 @@ export default function Redline() {
     setChanges(prev => [...prev, change]);
   };
 
+  const commitBufferedDeletion = () => {
+    if (bufferedDeletion) {
+      trackChange('deletion', bufferedDeletion.content, bufferedDeletion.position);
+      setBufferedDeletion(null);
+    }
+  };
+
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
     const oldContent = content;
 
     if (newContent.length > oldContent.length) {
+      // Handle insertions immediately
       const pos = e.target.selectionStart - 1;
       const inserted = newContent.slice(pos, pos + (newContent.length - oldContent.length));
       trackChange('insertion', inserted, pos);
     } else if (newContent.length < oldContent.length) {
+      // Handle deletions with buffering
       const pos = e.target.selectionStart;
       const deleted = oldContent.slice(pos, pos + (oldContent.length - newContent.length));
-      trackChange('deletion', deleted, pos);
+
+      if (bufferTimeoutRef.current) {
+        clearTimeout(bufferTimeoutRef.current);
+      }
+
+      if (bufferedDeletion && 
+          pos === bufferedDeletion.position - deleted.length) {
+        // Combine with existing buffered deletion
+        setBufferedDeletion({
+          content: deleted + bufferedDeletion.content,
+          position: pos,
+          startTime: bufferedDeletion.startTime
+        });
+      } else {
+        // Start new buffered deletion
+        setBufferedDeletion({
+          content: deleted,
+          position: pos,
+          startTime: new Date()
+        });
+      }
+
+      // Set timeout to commit the buffered deletion
+      bufferTimeoutRef.current = setTimeout(commitBufferedDeletion, 10000);
     }
 
     setContent(newContent);
@@ -114,6 +165,11 @@ export default function Redline() {
 
   const downloadAsPDF = async () => {
     try {
+      // Commit any pending buffered deletion before export
+      if (bufferedDeletion) {
+        commitBufferedDeletion();
+      }
+
       const response = await fetch('/api/redline/export', {
         method: 'POST',
         headers: {
@@ -221,57 +277,81 @@ export default function Redline() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {changes.length === 0 ? (
+                {changes.length === 0 && !bufferedDeletion ? (
                   <p className="text-gray-400 text-center">No changes yet</p>
                 ) : (
-                  changes.map((change, index) => (
-                    <div 
-                      key={index}
-                      className="p-3 rounded-lg border border-gray-700 bg-gray-900"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <span className={`inline-block px-2 py-1 rounded text-xs ${
-                            change.type === 'insertion' 
-                              ? 'bg-emerald-900/50 text-emerald-300' 
-                              : 'bg-red-900/50 text-red-300'
-                          }`}>
-                            {change.type === 'insertion' ? 'Added' : 'Removed'}
-                          </span>
-                          <span className="ml-2 text-sm text-gray-400">
-                            {change.timestamp.toLocaleTimeString()}
-                          </span>
+                  <>
+                    {/* Show buffered deletion if exists */}
+                    {bufferedDeletion && (
+                      <div className="p-3 rounded-lg border border-gray-700 bg-gray-900 opacity-50">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <span className="inline-block px-2 py-1 rounded text-xs bg-red-900/50 text-red-300">
+                              Deleting...
+                            </span>
+                            <span className="ml-2 text-sm text-gray-400">
+                              {bufferedDeletion.startTime.toLocaleTimeString()}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => acceptChange(index)}
-                            className="text-emerald-400 hover:text-emerald-300"
-                          >
-                            <Check className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => rejectChange(index)}
-                            className="text-red-400 hover:text-red-300"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <p className="font-mono text-sm break-all">
+                          <span className="text-red-300 bg-red-900/30 px-1 rounded line-through">
+                            {bufferedDeletion.content}
+                          </span>
+                        </p>
                       </div>
-                      <p className="font-mono text-sm break-all">
-                        <span className={`${
-                          change.type === 'insertion'
-                            ? 'text-emerald-300 bg-emerald-900/30 px-1 rounded'
-                            : 'text-red-300 bg-red-900/30 px-1 rounded line-through'
-                        }`}>
-                          {change.content}
-                        </span>
-                      </p>
-                    </div>
-                  ))
+                    )}
+
+                    {/* Show committed changes */}
+                    {changes.map((change, index) => (
+                      <div 
+                        key={index}
+                        className="p-3 rounded-lg border border-gray-700 bg-gray-900"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <span className={`inline-block px-2 py-1 rounded text-xs ${
+                              change.type === 'insertion' 
+                                ? 'bg-emerald-900/50 text-emerald-300' 
+                                : 'bg-red-900/50 text-red-300'
+                            }`}>
+                              {change.type === 'insertion' ? 'Added' : 'Removed'}
+                            </span>
+                            <span className="ml-2 text-sm text-gray-400">
+                              {change.timestamp.toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => acceptChange(index)}
+                              className="text-emerald-400 hover:text-emerald-300"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => rejectChange(index)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="font-mono text-sm break-all">
+                          <span className={`${
+                            change.type === 'insertion'
+                              ? 'text-emerald-300 bg-emerald-900/30 px-1 rounded'
+                              : 'text-red-300 bg-red-900/30 px-1 rounded line-through'
+                          }`}>
+                            {change.content}
+                          </span>
+                        </p>
+                      </div>
+                    ))}
+                  </>
                 )}
               </div>
             </CardContent>
