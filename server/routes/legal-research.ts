@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "../db";
-import { legalResearchReports } from "@shared/schema";
+import { legalResearchReports, legalAnalyses } from "@shared/schema";
+import { analyzeLegalDocument } from "../services/legalAnalysisService";
 
 const router = Router();
 
@@ -86,6 +87,88 @@ router.post("/", async (req, res) => {
   } catch (error) {
     console.error("Legal research error:", error);
     return res.status(500).json({ error: "Failed to complete research" });
+  }
+});
+
+router.post("/analyze", async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { content } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: "No document content provided" });
+    }
+
+    // Initialize Gemini model
+    const model = genAI.getModel("gemini-1.5-pro");
+    
+    const prompt = `
+      Analyze the following legal document and provide a comprehensive legal analysis:
+
+      DOCUMENT:
+      ${content}
+
+      Provide a detailed analysis including:
+      1. Executive summary (brief overview of key points)
+      2. Legal principles identified
+      3. Relevant precedents and citations
+      4. Specific recommendations
+      5. Risk assessment
+
+      Format the response as a JSON object with the following structure:
+      {
+        "executiveSummary": "string",
+        "legalPrinciples": [{
+          "principle": "string",
+          "explanation": "string",
+          "relevance": "string"
+        }],
+        "precedents": [{
+          "case": "string",
+          "citation": "string",
+          "relevance": "string",
+          "holding": "string"
+        }],
+        "recommendations": [{
+          "suggestion": "string",
+          "rationale": "string",
+          "priority": "HIGH" | "MEDIUM" | "LOW"
+        }],
+        "riskAreas": [{
+          "area": "string",
+          "description": "string",
+          "severity": "HIGH" | "MEDIUM" | "LOW"
+        }]
+      }
+
+      Ensure the analysis is thorough, professional, and actionable.
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    
+    let analysis;
+    try {
+      analysis = JSON.parse(response.text());
+    } catch (error) {
+      throw new Error("Failed to parse analysis results");
+    }
+
+    // Store analysis in database
+    await db.insert(legalAnalyses).values({
+      userId: req.user.id,
+      documentContent: content,
+      analysis,
+      timestamp: new Date(),
+    });
+
+    return res.json(analysis);
+
+  } catch (error) {
+    console.error("Legal analysis error:", error);
+    return res.status(500).json({ error: "Failed to analyze document" });
   }
 });
 

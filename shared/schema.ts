@@ -934,3 +934,11 @@ export const legalResearchReports = pgTable('legal_research_reports', {
   results: jsonb('results').notNull(),
   timestamp: timestamp('timestamp').notNull().defaultNow(),
 });
+
+export const legalAnalyses = pgTable('legal_analyses', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull(),
+  documentContent: text('document_content').notNull(),
+  analysis: jsonb('analysis').notNull(),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+});

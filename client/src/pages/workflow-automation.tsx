@@ -25,6 +25,7 @@ import { generateDraftAnalysis } from "@/services/anthropic-service";
 import { LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { LegalResearchPanel } from "@/components/LegalResearch/LegalResearchPanel";
 
 // Add legal-themed loading messages
 const legalLoadingMessages = [
