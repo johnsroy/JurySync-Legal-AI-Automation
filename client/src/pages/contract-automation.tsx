@@ -16,19 +16,41 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
 import { ContractRedlining } from "@/components/ContractRedlining/ContractRedlining";
+import { ChevronDown, ChevronRight, FolderOpen } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 // Keep only necessary interfaces and schemas
 interface Template {
   id: string;
   name: string;
   description: string;
-  category: "EMPLOYMENT" | "NDA" | "SERVICE_AGREEMENT";
+  category: string;
+  subcategory?: string;
   baseContent: string;
   variables: Array<{
     name: string;
     description: string;
     required: boolean;
   }>;
+  metadata: {
+    complexity: "LOW" | "MEDIUM" | "HIGH";
+    estimatedTime: string;
+    industry?: string;
+    jurisdiction?: string;
+    popularityScore: number;
+  };
+}
+
+interface TemplateCategory {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  templates: Template[];
 }
 
 interface RequirementSuggestion {
@@ -292,6 +314,74 @@ function DiffViewer({ original, modified }: { original: string; modified: string
 }
 
 
+function TemplateCategoryGroup({ category, onSelectTemplate }: {
+  category: TemplateCategory;
+  onSelectTemplate: (template: Template) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
+      <CollapsibleTrigger className="flex items-center w-full p-4 bg-gray-800/70 rounded-lg hover:bg-gray-700/70 transition-colors">
+        <div className="flex items-center flex-1">
+          <FolderOpen className="h-5 w-5 text-blue-400 mr-2" />
+          <span className="text-lg font-medium text-white">{category.name}</span>
+          <span className="text-sm text-gray-400 ml-2">({category.templates.length})</span>
+        </div>
+        {isOpen ? (
+          <ChevronDown className="h-5 w-5 text-gray-400" />
+        ) : (
+          <ChevronRight className="h-5 w-5 text-gray-400" />
+        )}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-2">
+          {category.templates.map((template) => (
+            <Card key={template.id} className="flex flex-col bg-gray-800/50 border-gray-700 hover:border-blue-500/50 transition-colors">
+              <CardHeader>
+                <CardTitle className="text-xl text-white">{template.name}</CardTitle>
+                <CardDescription className="text-gray-400">{template.description}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow space-y-4">
+                <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                  <pre className="whitespace-pre-wrap text-sm text-gray-300 max-h-48 overflow-y-auto">
+                    {template.baseContent.slice(0, 200)}...
+                  </pre>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm text-gray-400">
+                    <span>Complexity: {template.metadata.complexity}</span>
+                    <span>~{template.metadata.estimatedTime}</span>
+                  </div>
+                  <h4 className="font-semibold text-gray-200 mb-2">Required Fields:</h4>
+                  <ul className="space-y-2">
+                    {template.variables
+                      .filter(v => v.required)
+                      .map(v => (
+                        <li key={v.name} className="flex items-start space-x-2 text-gray-300">
+                          <span className="text-emerald-400 mt-1">•</span>
+                          <span>{v.description}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              </CardContent>
+              <CardFooter>
+                <Button
+                  className="w-full bg-gray-700 hover:bg-gray-600 text-white"
+                  onClick={() => onSelectTemplate(template)}
+                >
+                  Use This Template
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 export default function ContractAutomation() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -306,6 +396,7 @@ export default function ContractAutomation() {
   } | null>(null);
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [categories, setCategories] = useState<TemplateCategory[]>([]); // Added state for categories
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -347,6 +438,24 @@ export default function ContractAutomation() {
         }
         const data = await response.json();
         console.log("Fetched templates:", data);
+        // Group templates by category
+        const groupedTemplates: TemplateCategory[] = [];
+        const categoryMap = new Map<string, TemplateCategory>();
+        data.forEach(template => {
+          const category = template.category;
+          if (!categoryMap.has(category)) {
+            categoryMap.set(category, {
+              id: category,
+              name: category,
+              description: "", // Assuming no category description available
+              icon: "", // Assuming no category icon available
+              templates: []
+            });
+          }
+          categoryMap.get(category)?.templates.push(template);
+        });
+        setCategories([...categoryMap.values()])
+
         setTemplates(data);
       } catch (error) {
         console.error('Failed to fetch templates:', error);
@@ -537,42 +646,13 @@ export default function ContractAutomation() {
       {!isCustomizing ? (
         <>
           <h2 className="text-3xl font-bold mb-8 text-white">Select a Contract Template</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {templates.map((template) => (
-              <Card key={template.id} className="flex flex-col bg-gray-800/50 border-gray-700">
-                <CardHeader>
-                  <CardTitle className="text-xl text-white">{template.name}</CardTitle>
-                  <CardDescription className="text-gray-400">{template.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="flex-grow space-y-4">
-                  <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                    <pre className="whitespace-pre-wrap text-sm text-gray-300 max-h-48 overflow-y-auto">
-                      {template.baseContent.slice(0, 200)}...
-                    </pre>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="font-semibold text-gray-200 mb-2">Required Fields:</h4>
-                    <ul className="space-y-2">
-                      {template.variables
-                        .filter(v => v.required)
-                        .map(v => (
-                          <li key={v.name} className="flex items-start space-x-2 text-gray-300">
-                            <span className="text-emerald-400 mt-1">•</span>
-                            <span>{v.description}</span>
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                </CardContent>
-                <CardFooter>
-                  <Button
-                    className="w-full bg-gray-700 hover:bg-gray-600 text-white"
-                    onClick={() => handleTemplateSelect(template)}
-                  >
-                    Use This Template
-                  </Button>
-                </CardFooter>
-              </Card>
+          <div className="space-y-4">
+            {categories.map((category) => (
+              <TemplateCategoryGroup
+                key={category.id}
+                category={category}
+                onSelectTemplate={handleTemplateSelect}
+              />
             ))}
           </div>
         </>

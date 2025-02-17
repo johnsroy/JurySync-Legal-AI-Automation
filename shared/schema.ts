@@ -87,7 +87,7 @@ export const ContractStatus = z.enum([
 
 export type ContractStatus = z.infer<typeof ContractStatus>;
 
-// Add an enum for template categories
+// Update the TemplateCategory enum with more specific categories
 export const TemplateCategory = z.enum([
   "EMPLOYMENT",
   "NDA",
@@ -98,7 +98,22 @@ export const TemplateCategory = z.enum([
   "PARTNERSHIP",
   "CONSULTING",
   "IP_LICENSE",
-  "REAL_ESTATE"
+  "REAL_ESTATE",
+  "LOAN_AGREEMENT",
+  "SOFTWARE_LICENSE",
+  "CONTRACTOR_AGREEMENT",
+  "DISTRIBUTION_AGREEMENT",
+  "SETTLEMENT_AGREEMENT",
+  "SUBSCRIPTION_AGREEMENT",
+  "SHAREHOLDERS_AGREEMENT",
+  "JOINT_VENTURE",
+  "MERGER_ACQUISITION",
+  "DATA_PROCESSING",
+  "PRIVACY_POLICY",
+  "TERMS_OF_SERVICE",
+  "WARRANTY_AGREEMENT",
+  "FRANCHISE_AGREEMENT",
+  "MANUFACTURING_AGREEMENT"
 ]);
 
 export type TemplateCategory = z.infer<typeof TemplateCategory>;
@@ -639,15 +654,19 @@ export const insertSignatureSchema = createInsertSchema(signatures);
 export type InsertApproval = z.infer<typeof insertApprovalSchema>;
 export type InsertSignature = z.infer<typeof insertSignatureSchema>;
 
-// Add new schema for contract templates
+// Update the contractTemplates table with additional metadata fields
 export const contractTemplates = pgTable("contract_templates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   category: text("category").notNull(),
+  subcategory: text("subcategory"),
   content: text("content").notNull(),
   metadata: jsonb("metadata").notNull(),
   industry: text("industry"),
   jurisdiction: text("jurisdiction"),
+  complexity: text("complexity").default("MEDIUM"),
+  estimatedCompletionTime: text("estimated_completion_time"),
+  popularityScore: integer("popularity_score").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -660,94 +679,51 @@ export const templateMetadataSchema = z.object({
   recommendedClauses: z.array(z.string()),
   variables: z.array(z.object({
     name: z.string(),
-    type: z.enum(["TEXT", "DATE", "NUMBER", "BOOLEAN"]),
+    type: z.enum(["TEXT", "DATE", "NUMBER", "BOOLEAN", "CURRENCY", "PERCENTAGE", "EMAIL", "PHONE"]),
     description: z.string(),
     required: z.boolean(),
+    defaultValue: z.string().optional(),
+    validationRules: z.array(z.string()).optional(),
   })),
+  sampleValues: z.record(z.string(), z.string()).optional(),
+  relatedTemplates: z.array(z.string()).optional(),
+  industrySpecific: z.boolean().default(false),
+  lastUpdated: z.string(),
+  version: z.string(),
+  aiAssistanceLevel: z.enum(["BASIC", "ADVANCED", "EXPERT"]).default("ADVANCED"),
 });
 
 export type ContractTemplate = typeof contractTemplates.$inferSelect;
 export type InsertContractTemplate = typeof contractTemplates.$inferInsert;
 
-// Add schema for template cache
-export const templateCache = pgTable("template_cache", {
+// Add new schema for template categories organization
+export const templateCategories = pgTable("template_categories", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  templateId: integer("template_id").notNull(),
-  generatedContent: text("generated_content").notNull(),
-  requirements: jsonb("requirements").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  icon: text("icon").notNull(),
+  displayOrder: integer("display_order").notNull(),
+  parentId: integer("parent_id"),
   createdAt: timestamp("created_at").defaultNow(),
-  expiresAt: timestamp("expires_at").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export type TemplateCache = typeof templateCache.$inferSelect;
-export type InsertTemplateCache = typeof templateCache.$inferInsert;
+// Add relations
+export const templateCategoriesRelations = relations(templateCategories, ({ one, many }) => ({
+  parent: one(templateCategories, {
+    fields: [templateCategories.parentId],
+    references: [templateCategories.id],
+  }),
+  children: many(templateCategories),
+  templates: many(contractTemplates),
+}));
 
-// Legal document types
-export const legalDocuments = pgTable("legal_documents", {
-  id: serial("id").primaryKey(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  documentType: text("document_type").notNull(),
-  jurisdiction: text("jurisdiction").notNull(),
-  date: timestamp("date").notNull(),
-  citations: jsonb("citations").$type<string[]>(),
-  vectorId: text("vector_id"), // Reference to ChromaDB embedding
-  metadata: jsonb("metadata").$type<Record<string, any>>(),
-  status: text("status").default("ACTIVE"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-
-// Citations and relationships
-export const legalCitations = pgTable("legal_citations", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id").notNull(),
-  citedCase: text("cited_case").notNull(),
-  context: text("context"),
-  relevance: text("relevance"),
-  createdAt: timestamp("created_at").defaultNow()
-});
-
-// Research queries and results
-export const researchQueries = pgTable("research_queries", {
-  id: serial("id").primaryKey(),
-  query: text("query").notNull(),
-  results: jsonb("results").$type<{
-    summary: string;
-    relevantCases: Array<{
-      id: number;
-      title: string;
-      similarity: number;
-    }>;
-    timeline?: Array<{
-      date: string;
-      event: string;
-      significance: string;
-    }>;
-    citationMap?: Array<{
-      id: string;
-      title: string;
-      citations: string[];
-    }>;
-  }>(),
-  createdAt: timestamp("created_at").defaultNow()
-});
-
-// Export types
-export type LegalDocument = typeof legalDocuments.$inferSelect;
-export type Citation = typeof legalCitations.$inferSelect;
-export type ResearchQuery = typeof researchQueries.$inferSelect;
-
-// Create insert schemas
-export const insertLegalDocumentSchema = createInsertSchema(legalDocuments);
-export const insertCitationSchema = createInsertSchema(legalCitations);
-export const insertResearchQuerySchema = createInsertSchema(researchQueries);
-
-export type InsertLegalDocument = typeof legalDocuments.$inferInsert;
-export type InsertCitation = typeof legalCitations.$inferInsert;
-export type InsertResearchQuery = typeof researchQueries.$inferInsert;
-
+export const contractTemplatesRelations = relations(contractTemplates, ({ one }) => ({
+  category: one(templateCategories, {
+    fields: [contractTemplates.category],
+    references: [templateCategories.name],
+  }),
+}));
 
 // Add this after the legal research types
 // Analytics data schema for metrics collection (This section is removed because it's duplicated)
@@ -885,7 +861,7 @@ export const documentAnalysis = pgTable("document_analysis", {
   updatedAt: timestamp("updated_at").defaultNow()
 });
 
-export type DocumentAnalysis = typeof documentAnalysis.$inferSelect;
+export type DocumentAnalysisRecord = typeof documentAnalysis.$inferSelect;
 export type InsertDocumentAnalysis = typeof documentAnalysis.$inferInsert;
 
 // Add relations
