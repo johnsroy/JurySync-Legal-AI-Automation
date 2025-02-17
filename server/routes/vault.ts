@@ -326,7 +326,7 @@ router.get('/documents', async (req, res) => {
         metadata: {
           ...doc.metadata,
           documentType: doc.documentType,
-          industry: doc.metadata?.industry || 'Unknown'
+          industry: doc.metadata?.industry || "Unknown"
         }
       })),
       ...workflowDocs.map(doc => ({
@@ -334,7 +334,7 @@ router.get('/documents', async (req, res) => {
         source: 'workflow' as const,
         metadata: {
           documentType: doc.agentType,
-          industry: 'Unknown'
+          industry: "Unknown"
         }
       }))
     ];

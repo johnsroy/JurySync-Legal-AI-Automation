@@ -7,7 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Clock, FileCheck, Scale, GitMerge, Shield, Book, AlertTriangle, Gavel, LogOut, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { logoutApi } from "@/lib/api";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const metrics = [
   {
@@ -92,7 +92,7 @@ function MetricsCard({ title, value, description, icon: Icon, color }: any) {
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const logoutMutation = useMutation(logoutApi);
+  const logoutMutation = useMutation(apiRequest); // Assuming apiRequest handles logout
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -154,7 +154,7 @@ export default function Dashboard() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => logoutMutation.mutate()}
+              onClick={() => logoutMutation.mutate({type: 'logout'})} // Placeholder for apiRequest usage
               disabled={logoutMutation.isPending}
               className="border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800"
             >

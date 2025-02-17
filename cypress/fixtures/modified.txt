@@ -1,0 +1,3 @@
+This is a modified contract document.
+The agreement is between Company A and Company C.
+The term of this agreement is 24 months.
