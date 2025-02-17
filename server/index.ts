@@ -153,14 +153,9 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
     }
 
     // Start main application server
-    let mainPort = Number(process.env.PORT) || 5000;
-    while (await isPortInUse(mainPort)) {
-      console.log(`Port ${mainPort} is in use, trying ${mainPort + 1}`);
-      mainPort++;
-    }
-
-    app.listen(mainPort, '0.0.0.0', () => {
-      console.log(`Main application server running at http://0.0.0.0:${mainPort}`);
+    const port = process.env.PORT || 3000;
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`Main application server running at http://0.0.0.0:${port}`);
     });
 
   } catch (error) {
