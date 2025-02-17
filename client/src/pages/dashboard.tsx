@@ -6,33 +6,34 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Clock, FileCheck, Scale, GitMerge, Shield, Book, AlertTriangle, Gavel, LogOut, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { logoutApi } from "@/lib/api";
 
 const metrics = [
   {
     title: "Documents Processed",
-    value: "2,450",
+    value: "0",
     description: "across all modules",
     icon: FileCheck,
     color: "text-emerald-400"
   },
   {
     title: "Average Processing Time",
-    value: "45s",
+    value: "0s",
     description: "per document",
     icon: Clock,
     color: "text-blue-400"
   },
   {
     title: "Compliance Score",
-    value: "95%",
+    value: "0%",
     description: "overall rating",
     icon: Shield,
     color: "text-yellow-400"
   },
   {
     title: "Active Documents",
-    value: "156",
+    value: "0",
     description: "in review",
     icon: GitMerge,
     color: "text-purple-400"
@@ -41,29 +42,29 @@ const metrics = [
 
 const modules = [
   {
-    id: "workflow-automation",
+    id: "workflowAutomation",
     title: "Workflow Automation",
-    description: "End-to-end automation of legal workflows",
+    description: "Automate document workflows",
     icon: GitMerge,
     path: "/workflow-automation",
     gradient: "from-purple-900/50 to-blue-900/50",
     metrics: {
       processed: 320,
-      efficiency: "85%",
-      automated: "75%"
+      reviews: 45,
+      success: "80%"
     }
   },
   {
-    id: "contract-automation",
+    id: "contractAutomation",
     title: "Contract Automation",
-    description: "AI-powered contract drafting and review",
+    description: "Generate and manage contracts",
     icon: GitMerge,
     path: "/contract-automation",
     gradient: "from-yellow-900/50 to-emerald-900/50",
     metrics: {
       processed: 450,
-      accuracy: "98%",
-      timeReduced: "70%"
+      merges: 23,
+      success: "92%"
     }
   }
 ];
@@ -90,7 +91,8 @@ function MetricsCard({ title, value, description, icon: Icon, color }: any) {
 }
 
 export default function Dashboard() {
-  const { user, logoutMutation } = useAuth();
+  const { user } = useAuth();
+  const logoutMutation = useMutation(logoutApi);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -159,7 +161,7 @@ export default function Dashboard() {
               {logoutMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <LogOut className="h-4 w-4" />
+                "Logout"
               )}
             </Button>
           </div>
@@ -191,7 +193,7 @@ export default function Dashboard() {
                 className={`bg-gradient-to-r ${module.gradient} hover:shadow-lg transition-all cursor-pointer border-gray-800`}
                 onClick={() => handleModuleSelect(module)}
               >
-                <CardContent className="p-8">
+                <CardContent className="p-8 group">
                   <div className="flex items-start gap-6">
                     <div className="relative">
                       <div className="absolute inset-0 bg-emerald-400/10 rounded-full scale-110 group-hover:scale-125 transition-transform" />

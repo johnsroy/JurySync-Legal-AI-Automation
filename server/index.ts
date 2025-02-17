@@ -11,6 +11,7 @@ import cors from 'cors';
 import { createServer } from 'net';
 import { handleStripeWebhook } from "./webhooks/stripe";
 import documentAnalyticsRouter from './routes/document-analytics';
+import redlineRouter from "./routes/redline";
 
 async function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -101,6 +102,9 @@ setupAuth(app);
 
 // Register document analytics route
 app.use('/api/document-analytics', documentAnalyticsRouter);
+
+// Register redline route
+app.use("/api/redline", redlineRouter);
 
 (async () => {
   try {
