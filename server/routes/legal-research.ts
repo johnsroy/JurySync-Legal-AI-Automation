@@ -5,23 +5,37 @@ import { legalResearchReports, legalAnalyses } from "@shared/schema";
 
 const router = Router();
 
-// Generate suggested questions based on the current query
+// Generate suggested questions based on the current query and filters
 router.post("/suggest-questions", async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { query } = req.body;
+    const { query, jurisdiction, legalTopic, dateRange } = req.body;
 
-    if (!query) {
-      return res.status(400).json({ error: "No query provided" });
+    if (!jurisdiction || !legalTopic) {
+      return res.status(400).json({ error: "Missing required filters" });
     }
 
-    const prompt = `
-      Given this legal research query: "${query}"
+    const dateContext = dateRange.start && dateRange.end
+      ? `between ${new Date(dateRange.start).toLocaleDateString()} and ${new Date(dateRange.end).toLocaleDateString()}`
+      : "with no specific date range";
 
-      Generate 5 relevant follow-up questions that would help expand the research scope. Format the response as a JSON array of strings.
+    const prompt = `
+      As a legal research expert, generate 5 relevant follow-up questions for research in ${jurisdiction} jurisdiction 
+      focusing on ${legalTopic} ${dateContext}.
+
+      Original query: "${query || 'No specific query provided'}"
+
+      Consider:
+      1. Relevant legal precedents in this jurisdiction
+      2. Recent developments in ${legalTopic}
+      3. Specific regulations and requirements
+      4. Common legal challenges in this area
+      5. Industry-specific considerations
+
+      Format the response as a JSON array of strings, where each string is a detailed question.
       The questions should be specific, actionable, and help deepen the legal analysis.
 
       Example format:
@@ -33,7 +47,7 @@ router.post("/suggest-questions", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: "You are a legal research expert specializing in generating relevant follow-up questions."
+          content: "You are a legal research expert specializing in generating relevant jurisdiction-specific follow-up questions."
         },
         {
           role: "user",
@@ -62,24 +76,30 @@ router.post("/", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { query, options } = req.body;
+    const { query, jurisdiction, legalTopic, dateRange, options } = req.body;
 
-    if (!query || query.trim().length === 0) {
-      return res.status(400).json({ error: "No query provided" });
+    if (!jurisdiction || !legalTopic) {
+      return res.status(400).json({ error: "Missing required filters" });
     }
 
-    console.log('Starting legal research for query:', query);
+    console.log('Starting legal research for query:', { query, jurisdiction, legalTopic, dateRange });
+
+    const dateContext = dateRange.start && dateRange.end
+      ? `between ${new Date(dateRange.start).toLocaleDateString()} and ${new Date(dateRange.end).toLocaleDateString()}`
+      : "with no specific date range";
 
     const prompt = `
-      Act as a legal research assistant. Analyze the following query and provide comprehensive research results:
+      Act as a legal research assistant specializing in ${jurisdiction} jurisdiction and ${legalTopic}.
+      Analyze the following query and provide comprehensive research results ${dateContext}:
 
       QUERY: ${query}
 
       Conduct thorough research considering:
-      1. Case law and precedents
-      2. Statutory regulations
+      1. Case law and precedents specific to ${jurisdiction}
+      2. Statutory regulations in ${legalTopic}
       3. Academic articles and journals
       4. Industry standards and best practices
+      5. Recent developments and trends
 
       Format your response as a JSON object with the following structure:
       {
@@ -89,17 +109,20 @@ router.post("/", async (req, res) => {
             "source": "string",
             "relevance": number (0-100),
             "summary": "string",
-            "citations": ["string"]
+            "citations": ["string"],
+            "urls": ["string"] // Include relevant legal resource URLs
           }
         ],
         "recommendations": ["string"]
       }
 
       Ensure each result includes:
-      - Specific case citations where applicable
-      - Relevant statutory references
+      - Specific case citations relevant to ${jurisdiction}
+      - Statutory references for ${legalTopic}
+      - URLs to official legal resources and relevant documents
       - Clear summaries of findings
       - Practical recommendations
+      ${dateRange.start ? '- Focus on materials within the specified date range' : ''}
     `;
 
     console.log('Sending request to OpenAI...');
@@ -108,7 +131,7 @@ router.post("/", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: "You are a legal research expert specializing in comprehensive legal analysis and research."
+          content: `You are a legal research expert specializing in ${jurisdiction} jurisdiction and ${legalTopic} analysis.`
         },
         {
           role: "user",
@@ -140,6 +163,9 @@ router.post("/", async (req, res) => {
     await db.insert(legalResearchReports).values({
       userId: req.user.id,
       query,
+      jurisdiction,
+      legalTopic,
+      dateRange,
       results: formattedResults,
       timestamp: new Date(),
     });

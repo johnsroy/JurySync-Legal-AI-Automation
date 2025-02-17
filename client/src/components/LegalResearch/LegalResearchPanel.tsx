@@ -1,10 +1,18 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Book, Search, ChevronRight } from "lucide-react";
+import { Loader2, Book, Search, ChevronRight, Link as LinkIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface LegalResearchResult {
   title: string;
@@ -12,6 +20,7 @@ interface LegalResearchResult {
   relevance: number;
   summary: string;
   citations: string[];
+  urls?: string[]; // Added optional URLs
 }
 
 interface ResearchResults {
@@ -20,25 +29,58 @@ interface ResearchResults {
   timestamp: string;
 }
 
+const jurisdictions = [
+  "Federal",
+  "State",
+  "International",
+  "Administrative",
+  "Tribal"
+];
+
+const legalTopics = [
+  "Constitutional Law",
+  "Criminal Law",
+  "Civil Rights",
+  "Environmental Law",
+  "Corporate Law",
+  "Intellectual Property",
+  "International Law",
+  "Administrative Law",
+  "Labor Law",
+  "Tax Law"
+];
+
 export function LegalResearchPanel() {
   const [query, setQuery] = useState("");
+  const [jurisdiction, setJurisdiction] = useState<string>("");
+  const [legalTopic, setLegalTopic] = useState<string>("");
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [results, setResults] = useState<ResearchResults | null>(null);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const { toast } = useToast();
 
-  // Fetch suggested questions when query changes
+  // Fetch suggested questions when filters change
   useEffect(() => {
     const getSuggestions = async () => {
-      if (!query.trim() || query.length < 10) return;
+      if (!jurisdiction || !legalTopic) return;
 
       setIsLoadingSuggestions(true);
       try {
         const response = await fetch("/api/legal-research/suggest-questions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query })
+          body: JSON.stringify({ 
+            query,
+            jurisdiction,
+            legalTopic,
+            dateRange: {
+              start: startDate?.toISOString(),
+              end: endDate?.toISOString()
+            }
+          })
         });
 
         if (!response.ok) throw new Error("Failed to get suggestions");
@@ -53,13 +95,13 @@ export function LegalResearchPanel() {
 
     const debounceTimer = setTimeout(getSuggestions, 500);
     return () => clearTimeout(debounceTimer);
-  }, [query]);
+  }, [query, jurisdiction, legalTopic, startDate, endDate]);
 
   const handleSearch = async (searchQuery: string = query) => {
-    if (!searchQuery.trim()) {
+    if (!jurisdiction || !legalTopic) {
       toast({
-        title: "No Query",
-        description: "Please enter a research query",
+        title: "Missing Filters",
+        description: "Please select both jurisdiction and legal topic",
         variant: "destructive"
       });
       return;
@@ -74,6 +116,12 @@ export function LegalResearchPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: searchQuery,
+          jurisdiction,
+          legalTopic,
+          dateRange: {
+            start: startDate?.toISOString(),
+            end: endDate?.toISOString()
+          },
           options: {
             deepResearch: true
           }
@@ -115,6 +163,46 @@ export function LegalResearchPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <Select value={jurisdiction} onValueChange={setJurisdiction}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Jurisdiction" />
+              </SelectTrigger>
+              <SelectContent>
+                {jurisdictions.map(j => (
+                  <SelectItem key={j} value={j}>{j}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={legalTopic} onValueChange={setLegalTopic}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Legal Topic" />
+              </SelectTrigger>
+              <SelectContent>
+                {legalTopics.map(topic => (
+                  <SelectItem key={topic} value={topic}>{topic}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <DatePicker
+              selected={startDate}
+              onChange={setStartDate}
+              placeholderText="Start Date"
+              maxDate={new Date()}
+            />
+
+            <DatePicker
+              selected={endDate}
+              onChange={setEndDate}
+              placeholderText="End Date"
+              minDate={startDate}
+              maxDate={new Date()}
+            />
+          </div>
+
           <div className="flex gap-4 mb-6">
             <Input
               placeholder="Enter your legal research query..."
@@ -125,7 +213,7 @@ export function LegalResearchPanel() {
             />
             <Button 
               onClick={() => handleSearch()}
-              disabled={isSearching || !query.trim()}
+              disabled={isSearching || !jurisdiction || !legalTopic}
             >
               {isSearching ? (
                 <>
@@ -151,7 +239,7 @@ export function LegalResearchPanel() {
                 className="mb-6"
               >
                 <h3 className="text-sm font-medium text-gray-500 mb-2">
-                  Suggested Questions:
+                  AI-Suggested Research Questions:
                 </h3>
                 <div className="space-y-2">
                   {suggestedQuestions.map((question, index) => (
@@ -199,6 +287,26 @@ export function LegalResearchPanel() {
                               <ul className="list-disc list-inside">
                                 {result.citations.map((citation, idx) => (
                                   <li key={idx}>{citation}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {result.urls && result.urls.length > 0 && (
+                            <div className="mt-2">
+                              <p className="font-medium">Related Resources:</p>
+                              <ul className="space-y-1">
+                                {result.urls.map((url, idx) => (
+                                  <li key={idx} className="flex items-center gap-2">
+                                    <LinkIcon className="h-4 w-4" />
+                                    <a
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline"
+                                    >
+                                      View Resource
+                                    </a>
+                                  </li>
                                 ))}
                               </ul>
                             </div>
