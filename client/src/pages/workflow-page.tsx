@@ -76,15 +76,18 @@ export function WorkflowPage() {
                 <div
                   key={stage.id}
                   className={`flex flex-col items-center p-4 rounded-lg border ${
-                    isCurrent ? "border-emerald-500 bg-emerald-500/10" : 
-                    isComplete ? "border-emerald-500/50 bg-emerald-900/20" : "border-gray-800 bg-gray-800/50"
+                    isCurrent ? "border-emerald-500 bg-emerald-500/20" : 
+                    isComplete ? "border-emerald-500/50 bg-emerald-900/30" : "border-gray-800 bg-gray-800/50"
                   }`}
                 >
                   <Icon className={`h-6 w-6 ${
                     isCurrent ? "text-emerald-400" :
                     isComplete ? "text-emerald-500" : "text-gray-400"
                   }`} />
-                  <span className="text-sm mt-2 text-center text-gray-300">{stage.label}</span>
+                  <span className={`text-sm mt-2 text-center ${
+                    isCurrent ? "text-emerald-300" :
+                    isComplete ? "text-emerald-400" : "text-gray-400"
+                  }`}>{stage.label}</span>
                 </div>
               );
             })}
@@ -99,7 +102,7 @@ export function WorkflowPage() {
               <CardHeader>
                 <CardTitle className="text-white">Contract Analysis</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="text-gray-300">
                 <ContractRedlining 
                   initialContent={uploadedContent} 
                   onUpdate={handleContentUpdate} 
@@ -123,7 +126,7 @@ export function WorkflowPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {metrics.map((metric) => (
-                  <div key={metric.label} className="flex justify-between items-center p-2 bg-gray-900/50 rounded">
+                  <div key={metric.label} className="flex justify-between items-center p-3 bg-gray-900/70 rounded-lg border border-gray-700">
                     <div>
                       <p className="font-medium text-gray-200">{metric.label}</p>
                       <p className="text-sm text-gray-400">{metric.description}</p>
