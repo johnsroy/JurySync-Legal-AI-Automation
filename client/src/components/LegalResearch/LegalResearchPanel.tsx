@@ -5,6 +5,7 @@ import { Loader2, Book, Search, ChevronRight, Link as LinkIcon } from "lucide-re
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -50,6 +51,15 @@ const legalTopics = [
   "Tax Law"
 ];
 
+const progressSteps = [
+  "Initializing research...",
+  "Analyzing jurisdictional precedents...",
+  "Processing legal frameworks...",
+  "Gathering relevant citations...",
+  "Generating recommendations...",
+  "Compiling final report..."
+];
+
 export function LegalResearchPanel() {
   const [query, setQuery] = useState("");
   const [jurisdiction, setJurisdiction] = useState<string>("");
@@ -61,8 +71,10 @@ export function LegalResearchPanel() {
   const [results, setResults] = useState<ResearchResults | null>(null);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const { toast } = useToast();
+  const [progress, setProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState(progressSteps[0]);
 
-  // Fetch suggested questions when filters change
   useEffect(() => {
     const getSuggestions = async () => {
       if (!jurisdiction || !legalTopic) return;
@@ -72,7 +84,7 @@ export function LegalResearchPanel() {
         const response = await fetch("/api/legal-research/suggest-questions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             query,
             jurisdiction,
             legalTopic,
@@ -97,6 +109,27 @@ export function LegalResearchPanel() {
     return () => clearTimeout(debounceTimer);
   }, [query, jurisdiction, legalTopic, startDate, endDate]);
 
+  useEffect(() => {
+    if (isSearching && progress < 100) {
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          const next = prev + 1;
+          if (next >= 100) {
+            clearInterval(interval);
+            return 100;
+          }
+          const stepIndex = Math.floor((next / 100) * progressSteps.length);
+          if (stepIndex !== currentStep && stepIndex < progressSteps.length) {
+            setCurrentStep(stepIndex);
+            setLoadingMessage(progressSteps[stepIndex]);
+          }
+          return next;
+        });
+      }, 50);
+      return () => clearInterval(interval);
+    }
+  }, [isSearching, currentStep]);
+
   const handleSearch = async (searchQuery: string = query) => {
     if (!jurisdiction || !legalTopic) {
       toast({
@@ -109,6 +142,8 @@ export function LegalResearchPanel() {
 
     setIsSearching(true);
     setResults(null);
+    setProgress(0);
+    setCurrentStep(0);
 
     try {
       const response = await fetch("/api/legal-research", {
@@ -123,6 +158,7 @@ export function LegalResearchPanel() {
             end: endDate?.toISOString()
           },
           options: {
+            useGemini: true,
             deepResearch: true
           }
         })
@@ -150,6 +186,7 @@ export function LegalResearchPanel() {
       });
     } finally {
       setIsSearching(false);
+      setProgress(100);
     }
   };
 
@@ -163,7 +200,6 @@ export function LegalResearchPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Filters */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <Select value={jurisdiction} onValueChange={setJurisdiction}>
               <SelectTrigger>
@@ -211,7 +247,7 @@ export function LegalResearchPanel() {
               onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
               className="flex-1"
             />
-            <Button 
+            <Button
               onClick={() => handleSearch()}
               disabled={isSearching || !jurisdiction || !legalTopic}
             >
@@ -229,7 +265,6 @@ export function LegalResearchPanel() {
             </Button>
           </div>
 
-          {/* Suggested Questions */}
           <AnimatePresence>
             {suggestedQuestions.length > 0 && !isSearching && (
               <motion.div
@@ -258,7 +293,23 @@ export function LegalResearchPanel() {
             )}
           </AnimatePresence>
 
-          {/* Research Results */}
+          {isSearching && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="mb-6"
+            >
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>{loadingMessage}</span>
+                  <span>{Math.round(progress)}%</span>
+                </div>
+                <Progress value={progress} className="h-2" />
+              </div>
+            </motion.div>
+          )}
+
           <AnimatePresence>
             {results && (
               <motion.div
@@ -317,7 +368,6 @@ export function LegalResearchPanel() {
                   ))}
                 </div>
 
-                {/* Recommendations */}
                 {results.recommendations.length > 0 && (
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-gray-800">Recommendations</h3>

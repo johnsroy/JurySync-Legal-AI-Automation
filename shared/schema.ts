@@ -931,7 +931,14 @@ export const legalResearchReports = pgTable('legal_research_reports', {
   id: serial('id').primaryKey(),
   userId: integer('user_id').notNull(),
   query: text('query').notNull(),
+  jurisdiction: text('jurisdiction').notNull(),
+  legalTopic: text('legal_topic').notNull(),
+  dateRange: jsonb('date_range').$type<{
+    start?: string;
+    end?: string;
+  }>(),
   results: jsonb('results').notNull(),
+  suggestions: jsonb('suggestions').$type<string[]>(),
   timestamp: timestamp('timestamp').notNull().defaultNow(),
 });
 
