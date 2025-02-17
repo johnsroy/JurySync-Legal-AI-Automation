@@ -82,14 +82,19 @@ const sessionStore = new PostgresStore({
 
 app.use(session({
   store: sessionStore,
-  secret: process.env.SESSION_SECRET || 'your-session-secret',
+  secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? undefined : 'development-secret'),
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+    sameSite: 'lax'
   }
 }));
+
+if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('SESSION_SECRET must be set in production environment');
+}
 
 // Setup auth
 setupAuth(app);
