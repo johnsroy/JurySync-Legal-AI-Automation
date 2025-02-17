@@ -25,8 +25,6 @@ import { generateDraftAnalysis } from "@/services/anthropic-service";
 import { LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { LegalResearchPanel } from "@/components/LegalResearch/LegalResearchPanel";
-import { LegalResearchSidebar } from "@/components/LegalResearch/LegalResearchSidebar";
 
 // Add legal-themed loading messages
 const legalLoadingMessages = [
@@ -221,19 +219,6 @@ interface Approver {
   role: string;
 }
 
-interface LegalResearchResult {
-  title: string;
-  source: string;
-  relevance: number;
-  summary: string;
-  citations: string[];
-}
-
-interface ResearchReport {
-  results: LegalResearchResult[];
-  recommendations: string[];
-  timestamp: Date;
-}
 
 export function WorkflowAutomation() {
   const { user, logoutMutation } = useAuth();
@@ -252,9 +237,7 @@ export function WorkflowAutomation() {
   }>>([]);
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState(legalLoadingMessages[0]);
-  const [researchQuery, setResearchQuery] = useState("");
-  const [researchResults, setResearchResults] = useState<ResearchReport | null>(null);
-  const [isResearching, setIsResearching] = useState(false);
+
 
   // Effect to update document analysis based on workflow completion
   useEffect(() => {
@@ -262,8 +245,8 @@ export function WorkflowAutomation() {
       state => state?.status === 'completed'
     );
 
-    if (isWorkflowComplete && stageStates[5]?.result?.metadata) {
-      const metadata = stageStates[5].result.metadata;
+    if (isWorkflowComplete && stageStates[4]?.result?.metadata) { //index changed after removing Legal Research stage
+      const metadata = stageStates[4].result.metadata;
       setDocumentAnalyses(prev => [...prev, {
         fileName: uploadedFiles[uploadedFiles.length - 1]?.name || 'Untitled Document',
         documentType: metadata.documentType,
@@ -446,24 +429,6 @@ export function WorkflowAutomation() {
         }
       },
       {
-        name: "Legal Research",
-        handler: async () => {
-          const researchContent = `
-            <h2>Legal Research Findings</h2>
-            <h3>Relevant Case Law:</h3>
-            <ul>
-              <li>Similar contract disputes</li>
-              <li>Regulatory precedents</li>
-            </ul>
-          `;
-
-          return {
-            content: researchContent,
-            title: "Legal Research Report"
-          };
-        }
-      },
-      {
         name: "Approval Process",
         handler: async () => {
           const approvalContent = `
@@ -632,11 +597,6 @@ export function WorkflowAutomation() {
       icon: Shield
     },
     {
-      title: "Legal Research",
-      description: "Context-aware legal research and analysis",
-      icon: Book
-    },
-    {
       title: "Approval Process",
       description: "Workflow approval and document execution",
       icon: History
@@ -663,61 +623,9 @@ export function WorkflowAutomation() {
     hover: { x: 10, opacity: 0.8, transition: { duration: 0.3 } }
   };
 
-  const handleLegalResearch = async () => {
-    if (!researchQuery.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a research query",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsResearching(true);
-    try {
-      const response = await fetch("/api/legal-research", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: researchQuery,
-          options: {
-            useGemini: true,
-            deepResearch: true,
-            sources: ["cases", "statutes", "articles", "regulations"]
-          }
-        })
-      });
-
-      if (!response.ok) throw new Error("Research failed");
-      const data = await response.json();
-      setResearchResults(data);
-      
-      // Update the workflow stage state
-      setStageStates(prev => ({
-        ...prev,
-        2: { // Legal Research is stage 2
-          status: 'completed',
-          result: {
-            content: data,
-            title: "Legal Research Report"
-          }
-        }
-      }));
-
-    } catch (error) {
-      toast({
-        title: "Research Error",
-        description: "Failed to complete legal research",
-        variant: "destructive"
-      });
-    } finally {
-      setIsResearching(false);
-    }
-  };
 
   return (
     <div className="flex">
-      <LegalResearchSidebar />
       <div className="flex-1 min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
         <header className="bg-white/80 backdrop-blur-lg border-b border-indigo-100">
           <div className="container mx-auto px-4 h-16 flex items-center justify-between">
@@ -954,7 +862,7 @@ export function WorkflowAutomation() {
                                     output.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
                                       output.status === 'success' ? 'border-green-200 bg-green-50' :
                                         'border-blue-200 bg-blue-50'
-                                  }`}
+                                }`}
                               >
                                 <p className="font-medium">{output.message}</p>
                                 {output.details && (
@@ -975,7 +883,7 @@ export function WorkflowAutomation() {
                                 metadata={state.result.metadata}
                                 onDownload={() => generatePDF(state.result.content, state.result.title)}
                               >
-                                {currentStage === 3 && (
+                                {currentStage === 2 && ( //index changed after removing Legal Research stage
                                   <Card className="bg-white/80 backdrop-blur-lg mt-4">
                                     <CardHeader>
                                       <CardTitle>Document Approval</CardTitle>
@@ -984,7 +892,7 @@ export function WorkflowAutomation() {
                                       </CardDescription>
                                     </CardHeader>
                                     <CardContent>
-                                      {!stageStates[3]?.isApproved ? (
+                                      {!stageStates[2]?.isApproved ? ( //index changed after removing Legal Research stage
                                         <ApprovalForm
                                           onApprove={async (approvers) => {
                                             try {
@@ -1016,7 +924,7 @@ export function WorkflowAutomation() {
                                               });
                                             }
                                           }}
-                                          isLoading={stageStates[3]?.status === 'processing'}
+                                          isLoading={stageStates[2]?.status === 'processing'} //index changed after removing Legal Research stage
                                         />
                                       ) : (
                                         <div className="text-center text-green-600">
