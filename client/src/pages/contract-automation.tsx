@@ -506,7 +506,7 @@ export default function ContractAutomation() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8 bg-gray-900 text-gray-100">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <MetricsWidget
           title="Time Saved"
@@ -536,34 +536,37 @@ export default function ContractAutomation() {
 
       {!isCustomizing ? (
         <>
-          <h2 className="text-2xl font-bold mb-6">Select a Contract Template</h2>
+          <h2 className="text-3xl font-bold mb-8 text-white">Select a Contract Template</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {templates.map((template) => (
-              <Card key={template.id} className="flex flex-col">
+              <Card key={template.id} className="flex flex-col bg-gray-800/50 border-gray-700">
                 <CardHeader>
-                  <CardTitle>{template.name}</CardTitle>
-                  <CardDescription>{template.description}</CardDescription>
+                  <CardTitle className="text-xl text-white">{template.name}</CardTitle>
+                  <CardDescription className="text-gray-400">{template.description}</CardDescription>
                 </CardHeader>
-                <CardContent className="flex-grow">
-                  <div className="bg-gray-50 p-4 rounded-md">
-                    <pre className="whitespace-pre-wrap text-sm max-h-48 overflow-y-auto">
+                <CardContent className="flex-grow space-y-4">
+                  <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                    <pre className="whitespace-pre-wrap text-sm text-gray-300 max-h-48 overflow-y-auto">
                       {template.baseContent.slice(0, 200)}...
                     </pre>
                   </div>
-                  <div className="mt-4">
-                    <h4 className="font-semibold mb-2">Required Fields:</h4>
-                    <ul className="list-disc list-inside text-sm text-gray-600">
+                  <div className="space-y-2">
+                    <h4 className="font-semibold text-gray-200 mb-2">Required Fields:</h4>
+                    <ul className="space-y-2">
                       {template.variables
                         .filter(v => v.required)
                         .map(v => (
-                          <li key={v.name}>{v.description}</li>
+                          <li key={v.name} className="flex items-start space-x-2 text-gray-300">
+                            <span className="text-emerald-400 mt-1">•</span>
+                            <span>{v.description}</span>
+                          </li>
                         ))}
                     </ul>
                   </div>
                 </CardContent>
                 <CardFooter>
                   <Button
-                    className="w-full"
+                    className="w-full bg-gray-700 hover:bg-gray-600 text-white"
                     onClick={() => handleTemplateSelect(template)}
                   >
                     Use This Template
@@ -576,7 +579,7 @@ export default function ContractAutomation() {
       ) : (
         <>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold">Customize Your Contract</h2>
+            <h2 className="text-2xl font-bold text-white">Customize Your Contract</h2>
             <Button variant="outline" onClick={() => setIsCustomizing(false)}>
               Change Template
             </Button>
@@ -585,8 +588,8 @@ export default function ContractAutomation() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="lg:col-span-1">
               <CardHeader>
-                <CardTitle>{selectedTemplate?.name}</CardTitle>
-                <CardDescription>
+                <CardTitle className="text-white">{selectedTemplate?.name}</CardTitle>
+                <CardDescription className="text-gray-400">
                   Add your requirements to customize this template
                 </CardDescription>
               </CardHeader>
@@ -595,7 +598,7 @@ export default function ContractAutomation() {
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
-                        <FormLabel>Requirements</FormLabel>
+                        <FormLabel className="text-white">Requirements</FormLabel>
                         <Button
                           type="button"
                           variant="outline"
@@ -619,7 +622,7 @@ export default function ContractAutomation() {
                             name={`requirements.${index}.importance`}
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Importance</FormLabel>
+                                <FormLabel className="text-white">Importance</FormLabel>
                                 <select
                                   {...field}
                                   className="w-full p-2 border rounded"
@@ -661,7 +664,7 @@ export default function ContractAutomation() {
                       name="customInstructions"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Custom Instructions (Optional)</FormLabel>
+                          <FormLabel className="text-white">Custom Instructions (Optional)</FormLabel>
                           <FormControl>
                             <div className="space-y-4">
                               <Textarea
@@ -685,14 +688,14 @@ export default function ContractAutomation() {
 
                     <Button
                       type="submit"
-                      className="w-full"
+                      className="w-full bg-gray-700 hover:bg-gray-600 text-white"
                       disabled={isGenerating}
                     >
                       {isGenerating ? (
                         <ContractGenerationLoadingIcon />
                       ) : (
                         <>
-                          <Gavel className="h-4 w-4 mr-2" />
+                          <Gavel className="h-4 w-4 mr-2 text-white" />
                           Generate Contract
                         </>
                       )}
@@ -707,8 +710,8 @@ export default function ContractAutomation() {
                 <>
                   <Card>
                     <CardHeader>
-                      <CardTitle>Contract Analysis</CardTitle>
-                      <CardDescription>
+                      <CardTitle className="text-white">Contract Analysis</CardTitle>
+                      <CardDescription className="text-gray-400">
                         Review and edit contract clauses with AI assistance
                       </CardDescription>
                     </CardHeader>
@@ -719,15 +722,15 @@ export default function ContractAutomation() {
 
                   <Card>
                     <CardHeader>
-                      <CardTitle>Download Options</CardTitle>
-                      <CardDescription>Export your contract in different formats</CardDescription>
+                      <CardTitle className="text-white">Download Options</CardTitle>
+                      <CardDescription className="text-gray-400">Export your contract in different formats</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="flex gap-4">
-                        <Button onClick={() => handleDownload('pdf')}>
+                        <Button onClick={() => handleDownload('pdf')} className="bg-gray-700 hover:bg-gray-600 text-white">
                           Download as PDF
                         </Button>
-                        <Button onClick={() => handleDownload('docx')}>
+                        <Button onClick={() => handleDownload('docx')} className="bg-gray-700 hover:bg-gray-600 text-white">
                           Download as DOCX
                         </Button>
                       </div>
