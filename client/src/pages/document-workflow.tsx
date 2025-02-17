@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, FileText, Download, Eye, BookOpen, ClipboardCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { LegalResearchResults } from "@/components/LegalResearchResults";
+import { analyzeLegalDocument, type LegalAnalysis } from '@/services/legalResearchService';
 
 interface AnalysisResult {
   documentType: string;
@@ -14,21 +15,7 @@ interface AnalysisResult {
   industryDescription: string;
   status: 'COMPLIANT' | 'NON_COMPLIANT';
   statusDescription: string;
-  legalResearch?: {
-    documentType: string;
-    industry: string;
-    status: string;
-    findings: {
-      relevantCaseLaw: {
-        title: string;
-        description: string;
-      }[];
-      regulatoryPrecedents: {
-        title: string;
-        description: string;
-      }[];
-    };
-  };
+  legalAnalysis?: LegalAnalysis;
 }
 
 export default function DocumentWorkflow() {
@@ -52,6 +39,7 @@ export default function DocumentWorkflow() {
     formData.append('document', selectedFile);
 
     try {
+      // First get basic document analysis
       const response = await fetch('/api/document/process', {
         method: 'POST',
         body: formData
@@ -60,7 +48,15 @@ export default function DocumentWorkflow() {
       if (!response.ok) throw new Error('Processing failed');
 
       const result = await response.json();
-      setAnalysisResult(result);
+
+      // Then perform legal analysis
+      const content = result.content || '';
+      const legalAnalysis = await analyzeLegalDocument(content);
+
+      setAnalysisResult({
+        ...result,
+        legalAnalysis
+      });
 
       toast({
         title: "Document Processed",
@@ -226,11 +222,94 @@ export default function DocumentWorkflow() {
 
             <TabsContent value="legal">
               <Card className="p-6">
-                {analysisResult.legalResearch ? (
-                  <LegalResearchResults 
-                    result={analysisResult.legalResearch}
-                    onDownload={() => downloadPDF('legal')}
-                  />
+                {analysisResult?.legalAnalysis ? (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xl font-semibold">Legal Research Findings</h3>
+                      <Button onClick={() => downloadPDF('legal')}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download Report
+                      </Button>
+                    </div>
+
+                    {/* Summary Section */}
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Executive Summary</h4>
+                      <Card className="p-4 bg-card/50">
+                        <p className="text-foreground">{analysisResult.legalAnalysis.summary}</p>
+                      </Card>
+                    </div>
+
+                    {/* Legal Principles Section */}
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Key Legal Principles</h4>
+                      <div className="grid gap-3">
+                        {analysisResult.legalAnalysis.analysis.legalPrinciples.map((principle, index) => (
+                          <Card key={index} className="p-4 bg-card/50">
+                            <div className="flex items-start gap-3">
+                              <span className="text-primary font-semibold">{index + 1}.</span>
+                              <p className="text-foreground">{principle}</p>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Key Precedents Section */}
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Key Legal Precedents</h4>
+                      <div className="grid gap-4">
+                        {analysisResult.legalAnalysis.analysis.keyPrecedents.map((precedent, index) => (
+                          <Card key={index} className="p-4 bg-card/50">
+                            <div className="space-y-3">
+                              <h5 className="font-semibold text-primary">{precedent.case}</h5>
+                              <div className="grid md:grid-cols-2 gap-4">
+                                <div>
+                                  <p className="text-sm font-medium text-muted-foreground">Relevance</p>
+                                  <p className="text-foreground">{precedent.relevance}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-muted-foreground">Impact</p>
+                                  <p className="text-foreground">{precedent.impact}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Citations Section */}
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Citations and References</h4>
+                      <div className="grid gap-4">
+                        {analysisResult.legalAnalysis.citations.map((citation, index) => (
+                          <Card key={index} className="p-4 bg-card/50">
+                            <div className="space-y-2">
+                              <h5 className="font-semibold text-primary">{citation.source}</h5>
+                              <p className="text-sm text-muted-foreground">{citation.reference}</p>
+                              <p className="text-sm italic">{citation.context}</p>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Recommendations Section */}
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Recommendations</h4>
+                      <div className="grid gap-3">
+                        {analysisResult.legalAnalysis.analysis.recommendations.map((recommendation, index) => (
+                          <Card key={index} className="p-4 bg-card/50">
+                            <div className="flex items-start gap-3">
+                              <FileText className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                              <p className="text-foreground">{recommendation}</p>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <TabActions type="legal" />
                 )}
