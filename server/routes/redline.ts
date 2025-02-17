@@ -1,9 +1,17 @@
 import { Router } from "express";
 import * as diff from "diff";
 import PDFDocument from "pdfkit";
-import { Readable } from "stream";
+import multer from "multer";
+import * as mammoth from "mammoth";
+import { PDFDocument as PDFLib } from "pdf-lib";
 
 const router = Router();
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  }
+});
 
 interface DiffSegment {
   value: string;
@@ -27,7 +35,51 @@ interface TextChange {
   position: number;
 }
 
-// POST /api/redline (original functionality)
+// POST /api/redline/upload - File upload endpoint
+router.post("/upload", upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    let text = '';
+    const fileType = req.file.originalname.toLowerCase();
+
+    if (fileType.endsWith('.pdf')) {
+      try {
+        // Parse PDF using pdf-lib
+        const pdfDoc = await PDFLib.load(req.file.buffer);
+        const pages = pdfDoc.getPages();
+        const textContent = pages.map(page => page.getTextContent());
+        text = (await Promise.all(textContent)).map(pageContent => pageContent.text).join('\n');
+      } catch (error) {
+        console.error('PDF parsing error:', error);
+        return res.status(400).json({ error: "Failed to parse PDF file" });
+      }
+    } else if (fileType.endsWith('.docx')) {
+      try {
+        // Parse Word document
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        text = result.value;
+      } catch (error) {
+        console.error('DOCX parsing error:', error);
+        return res.status(400).json({ error: "Failed to parse Word document" });
+      }
+    } else if (fileType.endsWith('.txt')) {
+      // Plain text
+      text = req.file.buffer.toString('utf-8');
+    } else {
+      return res.status(400).json({ error: "Unsupported file type. Please upload PDF, DOCX, or TXT files only." });
+    }
+
+    return res.json({ text });
+  } catch (error) {
+    console.error("File upload error:", error);
+    return res.status(500).json({ error: "Failed to process file" });
+  }
+});
+
+// POST /api/redline
 router.post("/", async (req, res) => {
   try {
     if (!req.user) {
@@ -39,11 +91,8 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Create word-level diff
-    const changes: diff.Change[] = diff.diffWords(originalText, proposedText);
-
-    // Transform into segments with proper formatting
-    const segments: DiffSegment[] = changes.map((change) => ({
+    const changes = diff.diffWords(originalText, proposedText);
+    const segments = changes.map((change) => ({
       value: change.value,
       added: change.added,
       removed: change.removed
@@ -65,7 +114,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-// POST /api/redline/export (new functionality)
+// POST /api/redline/export
 router.post("/export", async (req, res) => {
   try {
     const { content, changes } = req.body;

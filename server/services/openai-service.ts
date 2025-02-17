@@ -16,15 +16,15 @@ interface ComplianceAnalysisResult {
 
 export async function analyzeComplianceDocument(pdfBuffer: Buffer): Promise<ComplianceAnalysisResult> {
   try {
-    // Extract text from PDF
+    // Extract text from PDF using pdf-lib
     const pdfDoc = await PDFDocument.load(pdfBuffer);
     const pages = pdfDoc.getPages();
     let fullText = '';
 
     for (const page of pages) {
-      // Extract text content using pdf-lib's built-in text extraction
-      const { text } = await page.doc.embedFont(page.doc.registerFontkit());
-      fullText += text + '\n';
+      const { width, height } = page.getSize();
+      const textContent = await page.getTextContent();
+      fullText += textContent + '\n';
     }
 
     // Analyze with GPT-4o

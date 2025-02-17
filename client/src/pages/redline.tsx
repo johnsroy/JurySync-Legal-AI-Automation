@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Download, History, Check, X, Upload } from "lucide-react";
+import { Download, History, Check, X, Upload, Loader2 } from "lucide-react";
 
 interface TextChange {
   type: 'insertion' | 'deletion';
@@ -11,24 +11,47 @@ interface TextChange {
   position: number;
 }
 
-const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, setContent: (content: string) => void) => {
+const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, setContent: (content: string) => void, setIsLoading: (loading: boolean) => void, toast: any) => {
   const file = event.target.files?.[0];
   if (!file) return;
 
   try {
-    const text = await file.text();
-    setContent(text);
-    
+    setIsLoading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/redline/upload', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to upload file');
+    }
+
+    const data = await response.json();
+    setContent(data.text);
+    toast({
+      title: "Success",
+      description: "File uploaded and processed successfully",
+    });
   } catch (error) {
     console.error("Error reading file:", error);
+    toast({
+      title: "Error",
+      description: "Failed to process file",
+      variant: "destructive",
+    });
+  } finally {
+    setIsLoading(false);
   }
 };
-
 
 export default function Redline() {
   const [content, setContent] = useState<string>("");
   const [changes, setChanges] = useState<TextChange[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
   const trackChange = (type: 'insertion' | 'deletion', newContent: string, position: number) => {
@@ -45,14 +68,11 @@ export default function Redline() {
     const newContent = e.target.value;
     const oldContent = content;
 
-    // Find the difference and track changes
     if (newContent.length > oldContent.length) {
-      // Insertion
       const pos = e.target.selectionStart - 1;
       const inserted = newContent.slice(pos, pos + (newContent.length - oldContent.length));
       trackChange('insertion', inserted, pos);
     } else if (newContent.length < oldContent.length) {
-      // Deletion
       const pos = e.target.selectionStart;
       const deleted = oldContent.slice(pos, pos + (oldContent.length - newContent.length));
       trackChange('deletion', deleted, pos);
@@ -75,11 +95,9 @@ export default function Redline() {
     let newContent = content;
 
     if (change.type === 'insertion') {
-      // Remove the inserted content
       newContent = content.slice(0, change.position) + 
                   content.slice(change.position + change.content.length);
     } else {
-      // Restore the deleted content
       newContent = content.slice(0, change.position) + 
                   change.content + 
                   content.slice(change.position);
@@ -163,14 +181,26 @@ export default function Redline() {
             </CardHeader>
             <CardContent>
               <div className="flex justify-end mb-4">
-                <Button variant="outline" size="sm">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload File
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isLoading}
+                  className="relative"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload File
+                    </>
+                  )}
                   <input
                     type="file"
-                    className="hidden"
-                    accept=".txt,.doc,.docx"
-                    onChange={(e) => handleFileUpload(e, setContent)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    accept=".txt,.doc,.docx,.pdf"
+                    onChange={(e) => handleFileUpload(e, setContent, setIsLoading, toast)}
+                    disabled={isLoading}
                   />
                 </Button>
               </div>
