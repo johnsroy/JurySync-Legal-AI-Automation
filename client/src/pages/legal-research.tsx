@@ -43,8 +43,8 @@ interface LegalDocument {
 
 interface FilterState {
   jurisdiction: string;
-  startDate: Date | null;
-  endDate: Date | null;
+  startDate: Date | undefined;
+  endDate: Date | undefined;
   legalTopic: string;
 }
 
@@ -55,8 +55,8 @@ export default function LegalResearch() {
   const [result, setResult] = useState<LegalResearchResponse | null>(null);
   const [filters, setFilters] = useState<FilterState>({
     jurisdiction: "all",
-    startDate: null,
-    endDate: null,
+    startDate: undefined,
+    endDate: undefined,
     legalTopic: "all"
   });
 
@@ -116,17 +116,17 @@ export default function LegalResearch() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-green-50">
-      <header className="bg-white/80 backdrop-blur-lg border-b border-green-100">
+    <div className="min-h-screen bg-background">
+      <header className="bg-card/80 backdrop-blur-lg border-b border-border">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Link href="/dashboard" className="flex items-center space-x-4 hover:text-green-600">
-              <Gavel className="h-6 w-6 text-green-600" />
-              <h1 className="text-xl font-semibold">JurySync.io</h1>
+            <Link href="/dashboard" className="flex items-center space-x-4 hover:text-primary">
+              <Gavel className="h-6 w-6 text-primary" />
+              <h1 className="text-xl font-semibold text-foreground">JurySync.io</h1>
             </Link>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-muted-foreground">
               Welcome, {user?.firstName} {user?.lastName}
             </span>
             <Button
@@ -148,12 +148,12 @@ export default function LegalResearch() {
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex items-center gap-4 mb-8">
-            <Book className="h-8 w-8 text-green-600" />
-            <h2 className="text-3xl font-bold">Legal Research</h2>
+            <Book className="h-8 w-8 text-primary" />
+            <h2 className="text-3xl font-bold text-foreground">Legal Research</h2>
           </div>
 
           {/* Filters Section */}
-          <Card className="bg-white/80 backdrop-blur-lg">
+          <Card className="bg-card/80 backdrop-blur-lg border-border">
             <CardHeader>
               <CardTitle>Filters</CardTitle>
               <CardDescription>Refine your search results</CardDescription>
@@ -161,7 +161,7 @@ export default function LegalResearch() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Jurisdiction</label>
+                  <label className="text-sm font-medium text-muted-foreground">Jurisdiction</label>
                   <Select
                     value={filters.jurisdiction}
                     onValueChange={(value) => setFilters(prev => ({ ...prev, jurisdiction: value }))}
@@ -180,7 +180,7 @@ export default function LegalResearch() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Legal Topic</label>
+                  <label className="text-sm font-medium text-muted-foreground">Legal Topic</label>
                   <Select
                     value={filters.legalTopic}
                     onValueChange={(value) => setFilters(prev => ({ ...prev, legalTopic: value }))}
@@ -199,19 +199,19 @@ export default function LegalResearch() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Date Range</label>
+                  <label className="text-sm font-medium text-muted-foreground">Date Range</label>
                   <div className="flex gap-2">
                     <Calendar
                       mode="single"
                       selected={filters.startDate}
-                      onSelect={(date) => setFilters(prev => ({ ...prev, startDate: date }))}
-                      className="rounded-md border"
+                      onSelect={(date) => setFilters((prev) => ({ ...prev, startDate: date || undefined }))}
+                      className="rounded-md border border-input"
                     />
                     <Calendar
                       mode="single"
                       selected={filters.endDate}
-                      onSelect={(date) => setFilters(prev => ({ ...prev, endDate: date }))}
-                      className="rounded-md border"
+                      onSelect={(date) => setFilters((prev) => ({ ...prev, endDate: date || undefined }))}
+                      className="rounded-md border border-input"
                     />
                   </div>
                 </div>
@@ -222,10 +222,10 @@ export default function LegalResearch() {
           {/* Pre-populated Documents */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-8">
             {isLoadingDocs ? (
-              <Card className="col-span-full">
+              <Card className="col-span-full bg-card border-border">
                 <CardContent className="p-8">
                   <div className="flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin" />
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
                 </CardContent>
               </Card>
@@ -233,20 +233,20 @@ export default function LegalResearch() {
               prePoulatedDocs?.map((doc) => (
                 <Card
                   key={doc.id}
-                  className="bg-white/80 backdrop-blur-lg hover:shadow-lg transition-shadow cursor-pointer"
+                  className="bg-card/80 backdrop-blur-lg border-border hover:shadow-lg transition-shadow cursor-pointer"
                   onClick={() => setQuery(`Analyze the legal principles and implications of ${doc.title}`)}
                 >
                   <CardContent className="p-6">
                     <div className="space-y-4">
                       <div className="flex items-start justify-between">
-                        <h3 className="font-semibold">{doc.title}</h3>
+                        <h3 className="font-semibold text-foreground">{doc.title}</h3>
                         <Badge variant="secondary">{doc.documentType}</Badge>
                       </div>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         {doc.content.substring(0, 150)}...
                       </p>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">
+                        <span className="text-muted-foreground">
                           {new Date(doc.date).toLocaleDateString()}
                         </span>
                         <Badge variant="outline">{doc.jurisdiction}</Badge>
@@ -260,7 +260,7 @@ export default function LegalResearch() {
 
           <div className="grid gap-6">
             {/* Query Input */}
-            <Card className="bg-white/80 backdrop-blur-lg">
+            <Card className="bg-card/80 backdrop-blur-lg border-border">
               <CardHeader>
                 <CardTitle>Research Query</CardTitle>
                 <CardDescription>
@@ -271,7 +271,7 @@ export default function LegalResearch() {
                 <div className="space-y-4">
                   <Textarea
                     placeholder="Enter your legal research query (e.g., 'What are the recent precedents for fair use in digital content?')"
-                    className="min-h-[120px]"
+                    className="min-h-[120px] border border-input"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     disabled={researchMutation.isPending}
@@ -299,12 +299,12 @@ export default function LegalResearch() {
 
             {/* Results Display */}
             {researchMutation.isPending && (
-              <Card className="bg-white/80 backdrop-blur-lg">
+              <Card className="bg-card/80 backdrop-blur-lg border-border">
                 <CardContent className="p-8">
                   <div className="flex flex-col items-center justify-center space-y-4">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-lg font-medium">Analyzing Legal Sources...</p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-lg font-medium text-muted-foreground">Analyzing Legal Sources...</p>
+                    <p className="text-sm text-muted-foreground">
                       Searching through case law and legal databases
                     </p>
                   </div>
@@ -325,17 +325,17 @@ export default function LegalResearch() {
             {result && (
               <>
                 {/* Summary */}
-                <Card className="bg-white/80 backdrop-blur-lg">
+                <Card className="bg-card/80 backdrop-blur-lg border-border">
                   <CardHeader>
                     <CardTitle>Analysis Summary</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-gray-700">{result.summary}</p>
+                    <p className="text-foreground">{result.summary}</p>
                   </CardContent>
                 </Card>
 
                 {/* Relevant Cases */}
-                <Card className="bg-white/80 backdrop-blur-lg">
+                <Card className="bg-card/80 backdrop-blur-lg border-border">
                   <CardHeader>
                     <CardTitle>Relevant Cases</CardTitle>
                     <CardDescription>
@@ -346,18 +346,18 @@ export default function LegalResearch() {
                     <ScrollArea className="h-[400px] pr-4">
                       <div className="space-y-4">
                         {result.relevantCases.map((item, index) => (
-                          <Card key={index} className="bg-white">
+                          <Card key={index} className="bg-card border-border">
                             <CardContent className="pt-6">
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between">
-                                  <h3 className="font-semibold">{item.document.title}</h3>
+                                  <h3 className="font-semibold text-foreground">{item.document.title}</h3>
                                   <Badge variant="outline">{item.document.jurisdiction}</Badge>
                                 </div>
-                                <p className="text-sm text-gray-600">
+                                <p className="text-sm text-muted-foreground">
                                   {item.document.content.substring(0, 200)}...
                                 </p>
                                 <div className="flex items-center justify-between text-sm">
-                                  <span className="text-gray-500">
+                                  <span className="text-muted-foreground">
                                     {new Date(item.document.date).toLocaleDateString()}
                                   </span>
                                   <Badge>{item.relevance}</Badge>
@@ -372,7 +372,7 @@ export default function LegalResearch() {
                 </Card>
 
                 {/* Timeline */}
-                <Card className="bg-white/80 backdrop-blur-lg">
+                <Card className="bg-card/80 backdrop-blur-lg border-border">
                   <CardHeader>
                     <CardTitle>Legal Timeline</CardTitle>
                   </CardHeader>
@@ -381,10 +381,10 @@ export default function LegalResearch() {
                       {result.timeline.map((event, index) => (
                         <div key={index} className="flex items-start gap-4">
                           <div className="w-24 flex-shrink-0">
-                            <span className="text-sm font-medium">{event.date}</span>
+                            <span className="text-sm font-medium text-muted-foreground">{event.date}</span>
                           </div>
                           <div className="flex-1">
-                            <p className="text-gray-700">{event.event}</p>
+                            <p className="text-foreground">{event.event}</p>
                           </div>
                         </div>
                       ))}
@@ -393,7 +393,7 @@ export default function LegalResearch() {
                 </Card>
 
                 {/* Recommendations */}
-                <Card className="bg-white/80 backdrop-blur-lg">
+                <Card className="bg-card/80 backdrop-blur-lg border-border">
                   <CardHeader>
                     <CardTitle>Recommendations</CardTitle>
                   </CardHeader>
@@ -401,8 +401,8 @@ export default function LegalResearch() {
                     <ul className="space-y-2">
                       {result.recommendations.map((recommendation, index) => (
                         <li key={index} className="flex items-start gap-2">
-                          <FileText className="h-5 w-5 text-green-600 mt-0.5" />
-                          <span className="text-gray-700">{recommendation}</span>
+                          <FileText className="h-5 w-5 text-primary mt-0.5" />
+                          <span className="text-foreground">{recommendation}</span>
                         </li>
                       ))}
                     </ul>

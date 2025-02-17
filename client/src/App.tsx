@@ -21,8 +21,9 @@ import WorkflowPage from "@/pages/workflow-page";
 import WorkflowAutomation from "@/pages/workflow-automation";
 import VaultPage from "@/pages/vault-page";
 import { ProtectedRoute } from "./lib/protected-route";
+import { FC } from "react";
 
-function Router() {
+const Router: FC = () => {
   return (
     <Switch>
       {/* Public routes */}
@@ -102,7 +103,7 @@ function Router() {
   );
 }
 
-export default function App() {
+const App: FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
@@ -112,3 +113,5 @@ export default function App() {
     </QueryClientProvider>
   );
 }
+
+export default App;

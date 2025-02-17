@@ -139,7 +139,8 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
       }
     });
 
-    const mainPort = process.env.PORT || 3000;
+    // Configure ports
+    const mainPort = parseInt(process.env.PORT || '5000', 10);
     const webhookPort = process.env.REPLIT_DEPLOYMENT ? mainPort : 5001;
 
     if (!process.env.REPLIT_DEPLOYMENT) {
