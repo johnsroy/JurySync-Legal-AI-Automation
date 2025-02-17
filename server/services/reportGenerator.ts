@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { format } from "date-fns";
 import PDFDocument from 'pdfkit';
 import { ComplianceResult } from "../types/compliance";
+import { DeepResearchResult } from "./gemini";
 
 interface ReportConfig {
   filters?: Record<string, any>;
@@ -140,6 +141,129 @@ export async function generateCompliancePDF(
   });
 }
 
+export async function generateLegalResearchPDF(
+  result: DeepResearchResult,
+  config: ReportConfig = {}
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: 'A4',
+        margin: 50,
+        info: {
+          Title: 'Legal Research Report',
+          Author: config.branding?.companyName || 'JurySync.io',
+          Subject: 'Legal Research Analysis',
+          Keywords: 'legal research, analysis, precedents',
+          CreationDate: new Date(),
+        },
+      });
+
+      const chunks: Buffer[] = [];
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Header
+      doc
+        .fontSize(24)
+        .text('Legal Research Report', { align: 'center' })
+        .moveDown()
+        .fontSize(12)
+        .text(`Generated on: ${format(new Date(), 'PPP')}`, { align: 'center' })
+        .moveDown(2);
+
+      // Summary
+      doc
+        .fontSize(16)
+        .text('Executive Summary', { underline: true })
+        .moveDown()
+        .fontSize(12)
+        .text(result.summary)
+        .moveDown(2);
+
+      // Legal Principles
+      doc
+        .fontSize(16)
+        .text('Key Legal Principles', { underline: true })
+        .moveDown();
+
+      result.analysis.legalPrinciples.forEach((principle, index) => {
+        doc
+          .fontSize(12)
+          .text(`${index + 1}. ${principle}`)
+          .moveDown();
+      });
+      doc.moveDown();
+
+      // Key Precedents
+      doc
+        .fontSize(16)
+        .text('Relevant Precedents', { underline: true })
+        .moveDown();
+
+      result.analysis.keyPrecedents.forEach((precedent, index) => {
+        doc
+          .fontSize(14)
+          .text(precedent.case)
+          .fontSize(12)
+          .text(`Relevance: ${precedent.relevance}`)
+          .text(`Impact: ${precedent.impact}`)
+          .moveDown();
+      });
+      doc.moveDown();
+
+      // Recommendations
+      doc
+        .fontSize(16)
+        .text('Recommendations', { underline: true })
+        .moveDown();
+
+      result.analysis.recommendations.forEach((recommendation, index) => {
+        doc
+          .fontSize(12)
+          .text(`${index + 1}. ${recommendation}`)
+          .moveDown();
+      });
+      doc.moveDown();
+
+      // Citations
+      doc
+        .fontSize(16)
+        .text('Citations and References', { underline: true })
+        .moveDown();
+
+      result.citations.forEach((citation, index) => {
+        doc
+          .fontSize(12)
+          .text(`${citation.source}`)
+          .fontSize(10)
+          .text(`Reference: ${citation.reference}`)
+          .text(`Context: ${citation.context}`)
+          .moveDown();
+      });
+
+      // Footer with page numbers
+      const pageCount = doc.bufferedPageRange().count;
+      for (let i = 0; i < pageCount; i++) {
+        doc.switchToPage(i);
+        doc
+          .fontSize(10)
+          .text(
+            `Page ${i + 1} of ${pageCount}`,
+            doc.page.margins.left,
+            doc.page.height - doc.page.margins.bottom - 20,
+            { align: 'center' }
+          );
+      }
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 export async function generateReport(
   reportId: number,
   type: string,
@@ -163,6 +287,9 @@ export async function generateReport(
       case "CUSTOM":
         data.summary = await generateCustomReport(config);
         break;
+      case "LEGAL_RESEARCH":
+          // Add handling for the new report type
+          break;
     }
 
     // Update report with generated data

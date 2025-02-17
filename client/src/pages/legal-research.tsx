@@ -13,9 +13,24 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
+import { format } from 'date-fns';
 
 interface LegalResearchResponse {
   summary: string;
+  analysis: {
+    legalPrinciples: string[];
+    keyPrecedents: {
+      case: string;
+      relevance: string;
+      impact: string;
+    }[];
+    recommendations: string[];
+  };
+  citations: {
+    source: string;
+    reference: string;
+    context: string;
+  }[];
   relevantCases: Array<{
     document: {
       title: string;
@@ -29,7 +44,6 @@ interface LegalResearchResponse {
     date: string;
     event: string;
   }>;
-  recommendations: string[];
 }
 
 interface LegalDocument {
@@ -89,7 +103,11 @@ export default function LegalResearch() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ query, filters })
+        body: JSON.stringify({ 
+          query, 
+          filters,
+          useDeepResearch: true 
+        })
       });
 
       if (!response.ok) {
@@ -103,7 +121,7 @@ export default function LegalResearch() {
       setResult(data);
       toast({
         title: "Analysis Complete",
-        description: "Legal research results are ready",
+        description: "Deep legal research results are ready",
       });
     },
     onError: (error: Error) => {
@@ -114,6 +132,43 @@ export default function LegalResearch() {
       });
     }
   });
+
+  const downloadReport = async () => {
+    if (!result) return;
+
+    try {
+      const response = await fetch('/api/legal-research/report', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ result })
+      });
+
+      if (!response.ok) throw new Error('Failed to generate report');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `legal-research-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Report Downloaded",
+        description: "Legal research report has been generated and downloaded.",
+      });
+    } catch (error) {
+      toast({
+        title: "Download Failed",
+        description: error instanceof Error ? error.message : "Failed to download report",
+        variant: "destructive"
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -392,6 +447,7 @@ export default function LegalResearch() {
                   </CardContent>
                 </Card>
 
+
                 {/* Recommendations */}
                 <Card className="bg-card/80 backdrop-blur-lg border-border">
                   <CardHeader>
@@ -399,7 +455,7 @@ export default function LegalResearch() {
                   </CardHeader>
                   <CardContent>
                     <ul className="space-y-2">
-                      {result.recommendations.map((recommendation, index) => (
+                      {result.analysis.recommendations.map((recommendation, index) => (
                         <li key={index} className="flex items-start gap-2">
                           <FileText className="h-5 w-5 text-primary mt-0.5" />
                           <span className="text-foreground">{recommendation}</span>
