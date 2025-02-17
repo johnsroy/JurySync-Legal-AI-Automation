@@ -2,8 +2,7 @@ import { Router } from "express";
 import * as diff from "diff";
 import PDFDocument from "pdfkit";
 import multer from "multer";
-import * as mammoth from "mammoth";
-import { PDFDocument as PDFLib } from "pdf-lib";
+import { analyzePDFContent } from "../services/fileAnalyzer";
 
 const router = Router();
 const upload = multer({ 
@@ -47,11 +46,8 @@ router.post("/upload", upload.single('file'), async (req, res) => {
 
     if (fileType.endsWith('.pdf')) {
       try {
-        // Parse PDF using pdf-lib
-        const pdfDoc = await PDFLib.load(req.file.buffer);
-        const pages = pdfDoc.getPages();
-        const textContent = pages.map(page => page.getTextContent());
-        text = (await Promise.all(textContent)).map(pageContent => pageContent.text).join('\n');
+        // Use the fileAnalyzer service to parse PDF
+        text = await analyzePDFContent(req.file.buffer, -1); // -1 indicates no document ID
       } catch (error) {
         console.error('PDF parsing error:', error);
         return res.status(400).json({ error: "Failed to parse PDF file" });
@@ -59,8 +55,7 @@ router.post("/upload", upload.single('file'), async (req, res) => {
     } else if (fileType.endsWith('.docx')) {
       try {
         // Parse Word document
-        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-        text = result.value;
+        text = await analyzePDFContent(req.file.buffer, -1);
       } catch (error) {
         console.error('DOCX parsing error:', error);
         return res.status(400).json({ error: "Failed to parse Word document" });
