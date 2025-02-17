@@ -1,13 +1,7 @@
 import { Link, useLocation } from "wouter";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarProvider,
-} from "@/components/ui/sidebar";
+import { motion } from "framer-motion";
+import { useAuth } from "@/hooks/use-auth";
+import { Button } from "@/components/ui/button";
 import { 
   LayoutDashboard, 
   FileText, 
@@ -19,11 +13,18 @@ import {
   Workflow,
   Scale,
   BarChart2,
-  Split
+  Split,
+  Book
 } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
-import { Button } from "@/components/ui/button";
-import { motion } from "framer-motion";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarProvider,
+} from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Animation variants remain unchanged
@@ -97,6 +98,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       </TooltipTrigger>
                       <TooltipContent side="right" className="bg-gray-800 text-gray-100">
                         View analytics and insights
+                      </TooltipContent>
+                    </Tooltip>
+                  </SidebarMenuItem>
+
+                  <SidebarMenuItem>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={location === "/legal-research"}
+                        >
+                          <Link href="/legal-research" className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-colors">
+                            <Book className="h-5 w-5" />
+                            Legal Research
+                          </Link>
+                        </SidebarMenuButton>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="bg-gray-800 text-gray-100">
+                        Perform legal research and analysis
                       </TooltipContent>
                     </Tooltip>
                   </SidebarMenuItem>

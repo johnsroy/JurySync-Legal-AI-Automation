@@ -25,7 +25,7 @@ export interface LegalAnalysis {
 
 export async function analyzeLegalDocument(content: string): Promise<LegalAnalysis> {
   try {
-    console.log('Starting legal document analysis...'); // Debug log
+    console.log('Starting legal document analysis...');
 
     if (!content || content.trim().length === 0) {
       throw new Error('No content provided for analysis');
@@ -65,7 +65,7 @@ export async function analyzeLegalDocument(content: string): Promise<LegalAnalys
       ]
     }`;
 
-    console.log('Sending request to OpenAI...'); // Debug log
+    console.log('Sending request to OpenAI...');
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4-0125-preview",
@@ -84,16 +84,14 @@ export async function analyzeLegalDocument(content: string): Promise<LegalAnalys
       max_tokens: 4000
     });
 
-    console.log('Received response from OpenAI'); // Debug log
-
     const responseContent = completion.choices[0].message.content;
     if (!responseContent) {
       throw new Error('No analysis generated from AI model');
     }
 
-    console.log('Parsing response...'); // Debug log
+    console.log('Parsing response...');
     const parsedResponse = JSON.parse(responseContent) as LegalAnalysis;
-    console.log('Analysis complete:', parsedResponse); // Debug log
+    console.log('Analysis complete:', parsedResponse);
 
     return parsedResponse;
   } catch (error) {

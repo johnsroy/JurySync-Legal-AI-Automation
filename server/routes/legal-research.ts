@@ -1,13 +1,9 @@
 import { Router } from "express";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { openai } from "../openai";
 import { db } from "../db";
 import { legalResearchReports, legalAnalyses } from "@shared/schema";
-import { analyzeLegalDocument } from "../services/legalAnalysisService";
 
 const router = Router();
-
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 router.post("/", async (req, res) => {
   try {
@@ -17,10 +13,6 @@ router.post("/", async (req, res) => {
 
     const { query, options } = req.body;
 
-    // Initialize Gemini model
-    const model = genAI.getModel("gemini-1.5-pro");
-    
-    // Structured prompt for better results
     const prompt = `
       Act as a legal research assistant. Analyze the following query and provide comprehensive research results:
 
@@ -51,18 +43,28 @@ router.post("/", async (req, res) => {
       - Relevant statutory references
       - Clear summaries of findings
       - Practical recommendations
-      
-      Make the response detailed but concise, focusing on the most relevant information.
     `;
 
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    
-    // Parse and validate the response
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-0125-preview",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal research expert specializing in comprehensive legal analysis and research."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7
+    });
+
+    const response = completion.choices[0].message.content;
     let formattedResults;
     try {
-      formattedResults = JSON.parse(response.text());
-      // Ensure the response matches our expected structure
+      formattedResults = JSON.parse(response);
       if (!formattedResults.results || !formattedResults.recommendations) {
         throw new Error("Invalid response structure");
       }
@@ -101,9 +103,6 @@ router.post("/analyze", async (req, res) => {
       return res.status(400).json({ error: "No document content provided" });
     }
 
-    // Initialize Gemini model
-    const model = genAI.getModel("gemini-1.5-pro");
-    
     const prompt = `
       Analyze the following legal document and provide a comprehensive legal analysis:
 
@@ -111,13 +110,13 @@ router.post("/analyze", async (req, res) => {
       ${content}
 
       Provide a detailed analysis including:
-      1. Executive summary (brief overview of key points)
+      1. Executive summary
       2. Legal principles identified
       3. Relevant precedents and citations
       4. Specific recommendations
       5. Risk assessment
 
-      Format the response as a JSON object with the following structure:
+      Format your response as a JSON object with the following structure:
       {
         "executiveSummary": "string",
         "legalPrinciples": [{
@@ -142,16 +141,27 @@ router.post("/analyze", async (req, res) => {
           "severity": "HIGH" | "MEDIUM" | "LOW"
         }]
       }
-
-      Ensure the analysis is thorough, professional, and actionable.
     `;
 
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-0125-preview",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal expert specializing in document analysis and compliance."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" }
+    });
+
+    const response = completion.choices[0].message.content;
     let analysis;
     try {
-      analysis = JSON.parse(response.text());
+      analysis = JSON.parse(response);
     } catch (error) {
       throw new Error("Failed to parse analysis results");
     }
@@ -172,4 +182,4 @@ router.post("/analyze", async (req, res) => {
   }
 });
 
-export default router; 
+export default router;

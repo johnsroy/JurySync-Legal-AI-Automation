@@ -7,7 +7,7 @@ import complianceRouter from "./routes/compliance";
 import metricsRouter from "./routes/metrics";
 import { UserRole } from "@shared/schema";
 import { createCheckoutSession, createPortalSession, handleWebhook } from './stripe';
-import legalResearchRouter from "./routes/legalResearch";
+import legalResearchRouter from "./routes/legal-research";
 import predictiveMonitoringRouter from "./routes/predictiveMonitoring";
 import orchestratorRouter from "./routes/orchestrator";
 import contractAnalysisRouter from "./routes/contract-analysis";
@@ -40,7 +40,7 @@ export function registerRoutes(app: Express): Server {
   app.use("/api/vault", vaultRouter);
 
   // Add the legal research router
-  app.use("/api/legal", legalResearchRouter);
+  app.use("/api/legal-research", legalResearchRouter);
 
   // Register the documents router
   app.use(documentsRouter);
