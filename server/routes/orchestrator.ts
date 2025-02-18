@@ -34,23 +34,15 @@ const upload = multer({
 
 const router = Router();
 
-// Enhanced logging for jury analysis
-function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] [JurySync] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
-}
-
 // Input validation schemas
 const taskRequestSchema = z.object({
-  type: z.enum(['jury', 'analysis', 'research']),
+  type: z.enum(['research', 'contract', 'compliance']),
   data: z.object({
     timestamp: z.string(),
     priority: z.enum(['low', 'medium', 'high']).optional(),
-    jurorData: z.object({
-      demographics: z.boolean().optional(),
-      socialMedia: z.boolean().optional(),
-      questionnaire: z.boolean().optional()
-    }).optional()
+    document: z.string().optional(),
+    filename: z.string().optional(),
+    metadata: z.record(z.any()).optional()
   })
 });
 
@@ -78,7 +70,7 @@ type TaskResponse = {
 const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) =>
   (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch((error) => {
-      log('Route error:', 'error', error);
+      console.error('Route error:', error);
       res.setHeader('Content-Type', 'application/json');
       res.status(500).json({
         error: error.message || 'Internal server error',
@@ -94,7 +86,7 @@ router.post('/documents', (req: Request, res: Response) => {
   upload(req, res, async (err: any) => {
     try {
       if (err) {
-        log('File upload error:', 'error', err);
+        console.error('File upload error:', err);
         return res.status(400).json({
           error: err.message,
           status: 'error'
@@ -120,21 +112,20 @@ router.post('/documents', (req: Request, res: Response) => {
       }
 
       const task = await orchestratorService.createTask({
-        type: 'jury',
+        type: 'research',
         data: {
           document: content,
           filename: req.file.originalname,
           timestamp: new Date().toISOString(),
           priority: 'normal',
-          jurorData: {
-            questionnaire: true,
-            demographics: req.file.mimetype === 'text/csv',
-            socialMedia: false
+          metadata: {
+            documentType: req.file.mimetype,
+            fileSize: req.file.size
           }
         }
       });
 
-      log('Jury document uploaded and task created', 'info', { taskId: task.id });
+      console.log('Document uploaded and task created', { taskId: task.id });
 
       return res.status(200).json({
         taskId: task.id,
@@ -142,7 +133,7 @@ router.post('/documents', (req: Request, res: Response) => {
       });
 
     } catch (error: any) {
-      log('Document upload error:', 'error', error);
+      console.error('Document upload error:', error);
       return res.status(500).json({
         error: error.message || 'Failed to process document',
         status: 'error'
@@ -158,7 +149,7 @@ router.post('/analyze', (req: Request, res: Response) => {
   upload(req, res, async (err: any) => {
     try {
       if (err) {
-        log('File upload error:', 'error', err);
+        console.error('File upload error:', err);
         return res.status(400).json({
           error: err.message,
           status: 'error'
@@ -197,7 +188,7 @@ router.post('/analyze', (req: Request, res: Response) => {
       // Perform document analysis
       const analysis = await analyzeDocument(document.id, content);
 
-      log('Document analysis completed:', 'info', { analysis });
+      console.log('Document analysis completed:', { analysis });
 
       return res.status(200).json({
         analysis,
@@ -205,7 +196,7 @@ router.post('/analyze', (req: Request, res: Response) => {
       });
 
     } catch (error: any) {
-      log('Document analysis error:', 'error', error);
+      console.error('Document analysis error:', error);
       return res.status(500).json({
         error: error.message || 'Failed to analyze document',
         status: 'error'

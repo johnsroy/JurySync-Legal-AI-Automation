@@ -1,9 +1,9 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from 'express';
 import { db } from "../db";
 import { legalResearchReports, legalDocuments } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
 import { z } from "zod";
-import { desc, eq, and, gte, lte, ilike, or } from 'drizzle-orm';
+import { desc, eq, and, gte, lte } from 'drizzle-orm';
 
 const router = Router();
 
@@ -18,8 +18,46 @@ const researchRequestSchema = z.object({
   }).optional()
 });
 
+// Error handling middleware - must be first
+const errorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error('Legal Research Error:', {
+    error: err,
+    stack: err.stack,
+    message: err.message
+  });
+
+  // Ensure JSON response
+  res.setHeader('Content-Type', 'application/json');
+
+  // Handle Zod validation errors
+  if (err.name === 'ZodError') {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid request data",
+      details: err.errors
+    });
+  }
+
+  // Handle JSON parsing errors
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid JSON",
+      details: err.message
+    });
+  }
+
+  res.status(500).json({
+    success: false,
+    error: err.message || "Research failed",
+    details: err.stack
+  });
+};
+
+router.use(errorHandler); // Moved this line
+
 // Get example queries for new users
-router.get("/examples", async (req, res) => {
+router.get("/examples", async (req: Request, res: Response) => {
   try {
     const exampleQueries = [
       {
@@ -80,34 +118,34 @@ router.get("/examples", async (req, res) => {
 });
 
 // Get available research based on filters
-router.get("/available", async (req, res) => {
+router.get("/available", async (req: Request, res: Response) => {
   try {
     const { jurisdiction, legalTopic, startDate, endDate } = req.query;
-    
+
     let conditions = [];
-    
+
     if (jurisdiction && jurisdiction !== 'all') {
       conditions.push(eq(legalDocuments.jurisdiction, jurisdiction as string));
     }
-    
+
     if (legalTopic && legalTopic !== 'all') {
       conditions.push(eq(legalDocuments.legalTopic, legalTopic as string));
     }
-    
+
     if (startDate) {
       conditions.push(gte(legalDocuments.date, new Date(startDate as string)));
     }
-    
+
     if (endDate) {
       conditions.push(lte(legalDocuments.date, new Date(endDate as string)));
     }
-    
+
     const query = conditions.length > 0 
       ? db.select().from(legalDocuments).where(and(...conditions))
       : db.select().from(legalDocuments);
-    
+
     const documents = await query.limit(100);
-    
+
     return res.json({
       success: true,
       documents: documents.map(doc => ({
@@ -119,7 +157,7 @@ router.get("/available", async (req, res) => {
         summary: doc.content.substring(0, 200) + '...'
       }))
     });
-    
+
   } catch (error) {
     console.error("Error fetching available research:", error);
     return res.status(500).json({
@@ -129,20 +167,13 @@ router.get("/available", async (req, res) => {
   }
 });
 
-// Error handling middleware
-router.use((err: any, req: any, res: any, next: any) => {
-  console.error('Legal Research Error:', err);
-  res.status(500).json({
-    success: false,
-    error: err.message || "Research failed",
-    details: err.stack
-  });
-});
-
 // Main research endpoint
-router.post("/", async (req, res) => {
+router.post("/", async (req: Request, res: Response) => {
   try {
     console.log("Received research request:", req.body);
+
+    // Ensure JSON response
+    res.setHeader('Content-Type', 'application/json');
 
     const validatedData = researchRequestSchema.parse(req.body);
 
@@ -240,7 +271,7 @@ router.post("/", async (req, res) => {
 });
 
 // Get available research filters
-router.get("/filters", async (req, res) => {
+router.get("/filters", async (req: Request, res: Response) => {
   try {
     // Get unique jurisdictions and topics from existing documents
     const [jurisdictions, topics] = await Promise.all([

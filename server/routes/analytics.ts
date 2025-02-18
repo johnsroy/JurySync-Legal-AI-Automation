@@ -185,7 +185,7 @@ router.get("/metrics/models", async (req, res) => {
   }
 });
 
-// Get reports with template information
+// Get reports
 router.get("/reports", async (req, res) => {
   try {
     if (!req.user) {
@@ -193,35 +193,36 @@ router.get("/reports", async (req, res) => {
     }
 
     const { type = "all" } = req.query;
-    const query = db.select().from(reports);
+    let query = db.select().from(reports);
 
     if (type !== "all") {
-      query.where(eq(reports.type, type.toString()));
+      query = query.where(sql`${reports.type} = ${type.toString()}`);
     }
 
     const allReports = await query;
 
-    // Add template information to reports
-    const reportsWithTemplates = await Promise.all(
+    // Add document data to reports
+    const reportsWithData = await Promise.all(
       allReports.map(async (report) => {
         const documentData = await db
           .select({
-            templateUsed: documentMetrics.metadata.templateUsed,
-            templateCategory: documentMetrics.metadata.templateCategory
+            metadata: documentMetrics.metadata
           })
           .from(documentMetrics)
           .where(eq(documentMetrics.id, report.documentId))
           .limit(1);
 
+        const metadata = documentData[0]?.metadata || {};
+
         return {
           ...report,
-          template: documentData[0]?.templateUsed || 'Custom',
-          category: documentData[0]?.templateCategory || 'None'
+          template: metadata.templateUsed || 'Custom',
+          category: metadata.templateCategory || 'None'
         };
       })
     );
 
-    res.json(reportsWithTemplates);
+    res.json(reportsWithData);
   } catch (error) {
     console.error("Reports fetch error:", error);
     res.status(500).json({ error: "Failed to fetch reports" });
