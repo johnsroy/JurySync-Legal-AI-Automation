@@ -1,7 +1,7 @@
 import { Buffer } from "buffer";
 import mammoth from 'mammoth';
 import { db } from "../db";
-import { complianceDocuments } from "@shared/schema";
+import { legalDocuments } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { PDFExtract } from 'pdf.js-extract';
 
@@ -113,14 +113,14 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     if (documentId !== -1) {
       try {
         await db
-          .update(complianceDocuments)
+          .update(legalDocuments)
           .set({
             content: textContent,
             status: "MONITORING",
             lastScanned: new Date(),
             nextScanDue: new Date(Date.now() + 24 * 60 * 60 * 1000) // Next scan in 24 hours
           })
-          .where(eq(complianceDocuments.id, documentId));
+          .where(eq(legalDocuments.id, documentId));
 
         log('Database updated successfully');
       } catch (error) {
@@ -139,9 +139,9 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     if (documentId !== -1) {
       try {
         await db
-          .update(complianceDocuments)
+          .update(legalDocuments)
           .set({ status: "ERROR" })
-          .where(eq(complianceDocuments.id, documentId));
+          .where(eq(legalDocuments.id, documentId));
       } catch (dbError) {
         log('Failed to update error status:', 'error', { error: dbError });
       }

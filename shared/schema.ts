@@ -30,6 +30,87 @@ export const TreatmentStatus = z.enum([
   "DISTINGUISHED",
 ]);
 
+// Compliance Status
+export const ComplianceStatus = z.enum([
+  "COMPLIANT",
+  "NON_COMPLIANT",
+  "PENDING_REVIEW",
+  "REQUIRES_ACTION",
+  "EXEMPT"
+]);
+
+// Template Categories
+export const TemplateCategory = z.enum([
+  "EMPLOYMENT",
+  "NDA",
+  "SOFTWARE_LICENSE",
+  "SERVICE_AGREEMENT",
+  "REAL_ESTATE",
+  "PARTNERSHIP",
+  "IP_LICENSE",
+  "LOAN_AGREEMENT",
+  "MANUFACTURING_AGREEMENT",
+  "DISTRIBUTION_AGREEMENT",
+  "PRIVACY_POLICY",
+  "DATA_PROCESSING",
+  "SUBSCRIPTION_AGREEMENT",
+  "CORPORATE_GOVERNANCE",
+  "SHAREHOLDERS_AGREEMENT",
+  "MERGER_ACQUISITION",
+  "FRANCHISE_AGREEMENT",
+  "JOINT_VENTURE",
+  "WARRANTY_AGREEMENT",
+  "TERMS_OF_SERVICE",
+  "CONSULTING",
+  "CONTRACTOR_AGREEMENT"
+]);
+
+export type TemplateCategory = z.infer<typeof TemplateCategory>;
+
+// Documents Table
+export const documents = pgTable("documents", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  documentType: text("document_type").$type<z.infer<typeof DocumentType>>().notNull(),
+  jurisdiction: text("jurisdiction").notNull(),
+  dateCreated: timestamp("date_created").defaultNow(),
+  lastModified: timestamp("last_modified").defaultNow(),
+  status: text("status").notNull(),
+  metadata: jsonb("metadata"),
+  vectorEmbedding: text("vector_embedding"),
+});
+
+// Compliance Documents Table
+export const complianceDocuments = pgTable("compliance_documents", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  documentType: text("document_type").notNull(),
+  status: text("status").$type<z.infer<typeof ComplianceStatus>>().notNull(),
+  lastReviewDate: timestamp("last_review_date").notNull(),
+  nextReviewDate: timestamp("next_review_date").notNull(),
+  assignedReviewer: integer("assigned_reviewer"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Compliance Issues Table
+export const complianceIssues = pgTable("compliance_issues", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
+  issueType: text("issue_type").notNull(),
+  description: text("description").notNull(),
+  severity: text("severity").notNull(),
+  status: text("status").notNull(),
+  remediation: text("remediation"),
+  dueDate: timestamp("due_date"),
+  assignedTo: integer("assigned_to"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Legal Documents Table
 export const legalDocuments = pgTable("legal_documents", {
   id: serial("id").primaryKey(),
@@ -69,7 +150,7 @@ export const legalResearchReports = pgTable("legal_research_reports", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
   query: text("query").notNull(),
-  searchType: text("search_type").notNull().default("NATURAL"), // NATURAL, BOOLEAN, PARALLEL
+  searchType: text("search_type").notNull().default("NATURAL"),
   jurisdiction: text("jurisdiction").notNull(),
   legalTopic: text("legal_topic").notNull(),
   results: jsonb("results").notNull(),
@@ -113,13 +194,21 @@ export const citationNetwork = pgTable("citation_network", {
 });
 
 // Create insert schemas
+export const insertDocumentSchema = createInsertSchema(documents);
+export const insertComplianceDocumentSchema = createInsertSchema(complianceDocuments);
+export const insertComplianceIssueSchema = createInsertSchema(complianceIssues);
 export const insertLegalDocumentSchema = createInsertSchema(legalDocuments);
-export const insertLegalResearchReportSchema =
-  createInsertSchema(legalResearchReports);
+export const insertLegalResearchReportSchema = createInsertSchema(legalResearchReports);
 export const insertBriefAnalysisSchema = createInsertSchema(briefAnalysis);
 export const insertCitationNetworkSchema = createInsertSchema(citationNetwork);
 
 // Export types
+export type Document = typeof documents.$inferSelect;
+export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+export type ComplianceDocument = typeof complianceDocuments.$inferSelect;
+export type InsertComplianceDocument = z.infer<typeof insertComplianceDocumentSchema>;
+export type ComplianceIssue = typeof complianceIssues.$inferSelect;
+export type InsertComplianceIssue = z.infer<typeof insertComplianceIssueSchema>;
 export type LegalDocument = typeof legalDocuments.$inferSelect;
 export type InsertLegalDocument = z.infer<typeof insertLegalDocumentSchema>;
 export type LegalResearchReport = typeof legalResearchReports.$inferSelect;
