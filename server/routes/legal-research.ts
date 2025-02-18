@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../db";
 import { legalResearchReports, legalDocuments } from "@shared/schema";
-import { generateDeepResearch } from "../services/gemini-service";
+import { generateLegalResearch } from "../services/legal-research-service";
 import { z } from "zod";
 import { desc, eq, and, gte, lte } from 'drizzle-orm';
 
@@ -116,17 +116,16 @@ router.post("/analyze", async (req, res) => {
 
     console.log('Found relevant documents:', relevantDocs.length);
 
-    // Generate research using Gemini
-    const researchResults = await generateDeepResearch(validatedData.query, {
-      filters: validatedData.filters,
-      relevantDocs: relevantDocs.map(doc => ({
+    // Generate research using OpenAI
+    const researchResults = await generateLegalResearch(
+      validatedData.query,
+      validatedData.filters || {},
+      relevantDocs.map(doc => ({
         title: doc.title,
-        jurisdiction: doc.jurisdiction,
-        legalTopic: doc.legalTopic,
         content: doc.content,
         citation: doc.metadata?.citation
       }))
-    });
+    );
 
     // Store results if user is authenticated
     if (req.user?.id) {
@@ -142,17 +141,7 @@ router.post("/analyze", async (req, res) => {
 
     return res.json({
       success: true,
-      ...researchResults,
-      relevantDocuments: relevantDocs.map(doc => ({
-        id: doc.id,
-        title: doc.title,
-        jurisdiction: doc.jurisdiction,
-        topic: doc.legalTopic,
-        date: doc.date,
-        type: doc.documentType,
-        citation: doc.metadata?.citation,
-        content: doc.content.substring(0, 300) + '...'
-      }))
+      ...researchResults
     });
 
   } catch (error: any) {
@@ -164,7 +153,7 @@ router.post("/analyze", async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      error: "Research failed",
+      error: error.message || "Research failed",
       details: error.message
     });
   }
