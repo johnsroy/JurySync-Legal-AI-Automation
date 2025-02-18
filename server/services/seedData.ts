@@ -3,7 +3,6 @@ import { legalDocuments } from '@shared/schema';
 import { legalResearchService } from './legalResearchService';
 import { eq } from 'drizzle-orm';
 
-// Expanded case law examples covering multiple jurisdictions and topics
 const sampleCases = [
   {
     title: "Brown v. Board of Education",
@@ -98,6 +97,48 @@ const sampleCases = [
       citation: "5 U.S. 137"
     },
     citations: []
+  },
+  {
+    title: "State v. Environmental Protection Agency",
+    content: `Recent state supreme court ruling on environmental regulations and state authority. The court established new precedent for state-level environmental protection measures.`,
+    documentType: "CASE_LAW",
+    jurisdiction: "State",
+    legalTopic: "Constitutional",
+    date: new Date("2024-12-15"),
+    status: "ACTIVE",
+    metadata: {
+      court: "State Supreme Court",
+      citation: "123 S.Ct. 456"
+    },
+    citations: []
+  },
+  {
+    title: "State Legislature v. Executive Branch",
+    content: `Constitutional challenge regarding separation of powers at the state level. Important ruling on executive authority limits.`,
+    documentType: "CASE_LAW",
+    jurisdiction: "State",
+    legalTopic: "Constitutional",
+    date: new Date("2025-01-10"),
+    status: "ACTIVE",
+    metadata: {
+      court: "State Supreme Court",
+      citation: "124 S.Ct. 789"
+    },
+    citations: []
+  },
+  {
+    title: "Citizens United for State Rights",
+    content: `Major constitutional case addressing state sovereignty and federal preemption in emerging technology regulation.`,
+    documentType: "CASE_LAW",
+    jurisdiction: "State",
+    legalTopic: "Constitutional",
+    date: new Date("2024-11-20"),
+    status: "ACTIVE",
+    metadata: {
+      court: "State Supreme Court",
+      citation: "125 S.Ct. 012"
+    },
+    citations: []
   }
 ];
 
@@ -182,10 +223,37 @@ const statuteSamples = [
       publicLawNumber: "89-110"
     },
     citations: []
+  },
+  {
+    title: "State Constitutional Amendment on Digital Privacy",
+    content: `Recent state constitutional amendment establishing fundamental right to digital privacy and data protection at the state level.`,
+    documentType: "STATUTE",
+    jurisdiction: "State",
+    legalTopic: "Constitutional",
+    date: new Date("2025-01-15"),
+    status: "ACTIVE",
+    metadata: {
+      type: "State Constitutional Amendment",
+      citation: "State Const. Art. X, § 15"
+    },
+    citations: []
+  },
+  {
+    title: "State Digital Rights Act",
+    content: `Comprehensive state legislation establishing digital rights framework and enforcement mechanisms.`,
+    documentType: "STATUTE",
+    jurisdiction: "State",
+    legalTopic: "Constitutional",
+    date: new Date("2024-12-01"),
+    status: "ACTIVE",
+    metadata: {
+      type: "State Statute",
+      citation: "S.B. 2024-123"
+    },
+    citations: []
   }
 ];
 
-// Add regulatory guidance documents
 const regulatoryGuidanceSamples = [
   {
     title: "SEC Guidance on Cryptocurrency Assets",
@@ -198,6 +266,20 @@ const regulatoryGuidanceSamples = [
     metadata: {
       type: "Regulatory Guidance",
       agency: "SEC"
+    },
+    citations: []
+  },
+  {
+    title: "State Constitutional Rights Implementation Guidelines",
+    content: `Official guidance on implementing new constitutional privacy protections at the state level.`,
+    documentType: "GUIDANCE",
+    jurisdiction: "State",
+    legalTopic: "Constitutional",
+    date: new Date("2025-01-20"),
+    status: "ACTIVE",
+    metadata: {
+      type: "State Regulatory Guidance",
+      agency: "State Constitutional Rights Commission"
     },
     citations: []
   }
@@ -221,7 +303,17 @@ export async function seedLegalDatabase() {
         if (!existingDoc) {
           const [insertedDoc] = await db
             .insert(legalDocuments)
-            .values(doc)
+            .values({
+              ...doc,
+              content: doc.content,
+              documentType: doc.documentType,
+              jurisdiction: doc.jurisdiction,
+              legalTopic: doc.legalTopic,
+              date: doc.date,
+              status: doc.status,
+              metadata: doc.metadata,
+              citations: doc.citations || []
+            })
             .returning();
 
           await legalResearchService.addDocument(insertedDoc);

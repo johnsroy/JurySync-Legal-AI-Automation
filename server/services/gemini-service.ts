@@ -75,12 +75,12 @@ export async function generateDeepResearch(query: string, filters?: ResearchFilt
 
       console.log('Successfully parsed Gemini response');
       return parsedResponse;
-    } catch (parseError) {
-      console.error('JSON parse error:', parseError);
-      throw new Error(`Failed to parse Gemini response: ${parseError.message}`);
+    } catch (error: any) {
+      console.error('JSON parse error:', error);
+      throw new Error(`Failed to parse Gemini response: ${error?.message || 'Unknown error'}`);
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini service error:", error);
-    throw error;
+    throw new Error(`Research analysis failed: ${error?.message || 'Unknown error'}`);
   }
 }

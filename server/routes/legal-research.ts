@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db";
 import { legalResearchReports, legalDocuments } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
-import { Configuration, OpenAIApi } from "openai";
+import OpenAI from "openai";
 import { PDFDocument } from 'pdf-lib';
 import { z } from "zod";
 import { desc, eq, and, gte, lte, ilike } from 'drizzle-orm';
@@ -11,11 +11,9 @@ import multer from 'multer';
 const router = Router();
 
 // Configure OpenAI
-const openai = new OpenAIApi(
-  new Configuration({
-    apiKey: process.env.OPENAI_API_KEY
-  })
-);
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 // Validation schemas
 const researchRequestSchema = z.object({
@@ -88,7 +86,7 @@ router.post("/", async (req, res) => {
     }
 
     const validatedData = researchRequestSchema.parse(req.body);
-    console.log("Starting legal research:", validatedData);
+    console.log('Starting legal research:', validatedData);
 
     // Find relevant documents
     const relevantDocs = await db.select()
@@ -269,20 +267,7 @@ router.post("/suggest-questions", async (req, res) => {
       return res.status(400).json({ error: "Missing required filters" });
     }
 
-    // First check if we have cached suggestions
-    const cachedSuggestions = await db.query.legalResearchReports.findFirst({
-      where: (reports, { and, eq }) => and(
-        eq(reports.jurisdiction, jurisdiction),
-        eq(reports.legalTopic, legalTopic),
-      ),
-      orderBy: (reports, { desc }) => [desc(reports.timestamp)],
-    });
-
-    if (cachedSuggestions?.suggestions) {
-      return res.json(cachedSuggestions.suggestions);
-    }
-
-    const dateContext = dateRange.start && dateRange.end
+    const dateContext = dateRange?.start && dateRange?.end
       ? `between ${new Date(dateRange.start).toLocaleDateString()} and ${new Date(dateRange.end).toLocaleDateString()}`
       : "with no specific date range";
 
@@ -322,78 +307,30 @@ router.post("/suggest-questions", async (req, res) => {
       temperature: 0.7
     });
 
-    const response = JSON.parse(completion.choices[0].message.content);
+    const suggestions = JSON.parse(completion.choices[0].message.content);
 
-    // Store suggestions in the knowledge base
+    // Store suggestions in the database
     await db.insert(legalResearchReports).values({
       userId: req.user.id,
+      query: query || '',
       jurisdiction,
       legalTopic,
-      suggestions: response,
-      timestamp: new Date(),
+      results: {suggestions}, // Store suggestions in results field
+      timestamp: new Date()
     });
 
-    return res.json(response);
+    return res.json({
+      success: true,
+      suggestions
+    });
 
   } catch (error) {
     console.error("Error generating suggested questions:", error);
     return res.status(500).json({ 
+      success: false,
       error: "Failed to generate suggestions",
       details: error instanceof Error ? error.message : 'Unknown error'
     });
-  }
-});
-
-// Analyze endpoint
-router.post("/analyze", async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    let text = '';
-    const fileType = req.file.originalname.toLowerCase();
-
-    if (fileType.endsWith('.pdf')) {
-      try {
-        // Load the PDF document
-        const pdfDoc = await PDFDocument.load(req.file.buffer);
-        const pages = pdfDoc.getPages();
-
-        // Extract text from all pages
-        text = (await Promise.all(
-          pages.map(async (page) => {
-            const textContent = await page.extractText();
-            return textContent.replace(/\s+/g, ' ').trim();
-          })
-        )).join('\n');
-
-      } catch (error) {
-        console.error('PDF parsing error:', error);
-        return res.status(400).json({ error: "Failed to parse PDF file" });
-      }
-    } else if (fileType.endsWith('.txt')) {
-      text = req.file.buffer.toString('utf-8');
-    } else {
-      return res.status(400).json({ 
-        error: "Unsupported file type. Please upload PDF or TXT files only." 
-      });
-    }
-
-    // Clean the text
-    text = text
-      .replace(/<!DOCTYPE[^>]*>/g, '')
-      .replace(/<\?xml[^>]*\?>/g, '')
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&[a-z]+;/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    return res.json({ text });
-  } catch (error) {
-    console.error("File analysis error:", error);
-    return res.status(500).json({ error: "Failed to analyze file" });
   }
 });
 
