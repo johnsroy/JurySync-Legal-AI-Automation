@@ -78,12 +78,36 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Setup auth
 setupAuth(app);
 
-// Mount API routes BEFORE static files and ensure JSON responses
+// Add JSON handling middleware for API routes
 app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Content-Type', 'application/json');
-  next();
+
+  // Handle JSON parsing errors
+  if (req.is('application/json')) {
+    let data = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      if (data) {
+        try {
+          req.body = JSON.parse(data);
+        } catch (err) {
+          return res.status(400).json({
+            error: 'Invalid JSON',
+            message: 'Failed to parse request body as JSON'
+          });
+        }
+      }
+      next();
+    });
+  } else {
+    next();
+  }
 });
 
+// Mount API routes
 app.use('/api/legal-research', legalResearchRouter);
 app.use('/api/document-analytics', documentAnalyticsRouter);
 app.use("/api/redline", redlineRouter);
@@ -119,29 +143,34 @@ if (process.env.NODE_ENV !== "production") {
   serveStatic(app);
 }
 
-// Start server
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+// Start server first, then initialize services
+const PORT = 5000; // Changed to match workflow expectation
+console.log(`[${new Date().toISOString()}] Starting server...`);
 
-// Initialize services
-(async () => {
-  try {
-    const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
-    await seedLegalDatabase(numberOfDocuments);
-    console.log('Legal database seeded successfully');
+// Start server immediately
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`[${new Date().toISOString()}] Server running at http://0.0.0.0:${PORT}`);
 
+  // Initialize services after server is running
+  (async () => {
     try {
-      await continuousLearningService.startContinuousLearning();
-      console.log('Continuous learning service started successfully');
+      console.log(`[${new Date().toISOString()}] Starting to seed legal database...`);
+      const numberOfDocuments = 50; // Reduced initial seed count
+      await seedLegalDatabase(numberOfDocuments);
+      console.log(`[${new Date().toISOString()}] Legal database seeded successfully with ${numberOfDocuments} documents`);
+
+      try {
+        console.log(`[${new Date().toISOString()}] Starting continuous learning service...`);
+        await continuousLearningService.startContinuousLearning();
+        console.log(`[${new Date().toISOString()}] Continuous learning service started successfully`);
+      } catch (error) {
+        console.error('[${new Date().toISOString()}] Failed to start continuous learning service:', error);
+        // Don't exit process, allow server to continue running
+      }
+
     } catch (error) {
-      console.error('Failed to start continuous learning service:', error);
+      console.error('[${new Date().toISOString()}] Failed to initialize services:', error);
+      // Don't exit process, allow server to continue running
     }
-
-    httpServer.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running at http://0.0.0.0:${PORT}`);
-    });
-
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
-  }
-})();
+  })();
+});
