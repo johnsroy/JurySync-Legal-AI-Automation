@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
+import { Calendar } from "@/components/ui/calendar";
 
 interface ResearchResult {
   title: string;
@@ -41,8 +42,8 @@ export function LegalResearchSidebar() {
   const [filters, setFilters] = useState({
     jurisdiction: "all",
     legalTopic: "all",
-    startDate: undefined,
-    endDate: undefined
+    startDate: null as Date | null,
+    endDate: null as Date | null
   });
   const { toast } = useToast();
 
@@ -114,11 +115,12 @@ export function LegalResearchSidebar() {
         },
         body: JSON.stringify({
           query,
-          ...filters,
-          dateRange: {
-            start: filters.startDate?.toISOString(),
+          jurisdiction: filters.jurisdiction,
+          legalTopic: filters.legalTopic,
+          dateRange: filters.startDate ? {
+            start: filters.startDate.toISOString(),
             end: filters.endDate?.toISOString()
-          }
+          } : undefined
         })
       });
 
@@ -128,6 +130,7 @@ export function LegalResearchSidebar() {
       }
 
       const data = await response.json();
+      
       setFindings({
         executiveSummary: data.executiveSummary,
         keyFindings: data.results,

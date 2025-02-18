@@ -3,9 +3,37 @@ import { db } from "../db";
 import { legalResearchReports } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
 import { PDFDocument } from 'pdf-lib';
-import { desc } from 'drizzle-orm';
+import { desc, eq, and, gte, lte } from 'drizzle-orm';
 
 const router = Router();
+
+// Get example queries for new users
+router.get("/examples", async (req, res) => {
+  try {
+    const exampleQueries = [
+      {
+        query: "What are the key requirements for filing a patent application?",
+        jurisdiction: "United States",
+        legalTopic: "Intellectual Property"
+      },
+      {
+        query: "Recent developments in data privacy regulations",
+        jurisdiction: "European Union",
+        legalTopic: "Privacy Law"
+      },
+      {
+        query: "Legal framework for smart contracts and blockchain",
+        jurisdiction: "International",
+        legalTopic: "Technology Law"
+      }
+    ];
+
+    return res.json(exampleQueries);
+  } catch (error) {
+    console.error("Error fetching example queries:", error);
+    return res.status(500).json({ error: "Failed to fetch example queries" });
+  }
+});
 
 // Main research endpoint
 router.post("/", async (req, res) => {
@@ -30,21 +58,27 @@ router.post("/", async (req, res) => {
     });
 
     // Store results in database
-    await db.insert(legalResearchReports).values({
+    const storedResult = await db.insert(legalResearchReports).values({
       userId: req.user.id,
       query,
       jurisdiction: jurisdiction || 'All',
       legalTopic: legalTopic || 'All',
       results: researchResults,
+      dateRange: dateRange || null,
       timestamp: new Date()
-    });
+    }).returning();
 
     // Return formatted results
     return res.json({
       executiveSummary: researchResults.executiveSummary,
       results: researchResults.findings,
       recommendations: researchResults.recommendations,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      filters: {
+        jurisdiction,
+        legalTopic,
+        dateRange
+      }
     });
 
   } catch (error) {
@@ -56,38 +90,57 @@ router.post("/", async (req, res) => {
   }
 });
 
+// Get available research filters
+router.get("/filters", async (req, res) => {
+  try {
+    const filters = {
+      jurisdictions: [
+        "United States", "European Union", "United Kingdom", 
+        "International", "Canada", "Australia"
+      ],
+      legalTopics: [
+        "Constitutional Law", "Criminal Law", "Civil Rights",
+        "Corporate Law", "Environmental Law", "Intellectual Property",
+        "Privacy Law", "Technology Law", "International Law"
+      ]
+    };
+
+    return res.json(filters);
+  } catch (error) {
+    console.error("Error fetching filters:", error);
+    return res.status(500).json({ error: "Failed to fetch available filters" });
+  }
+});
+
 // Get available research for filters
 router.get("/available", async (req, res) => {
   try {
     const { jurisdiction, legalTopic, startDate, endDate } = req.query;
 
-    const query = db.select()
+    let conditions = [];
+
+    if (jurisdiction && jurisdiction !== 'all') {
+      conditions.push(eq(legalResearchReports.jurisdiction, jurisdiction as string));
+    }
+
+    if (legalTopic && legalTopic !== 'all') {
+      conditions.push(eq(legalResearchReports.legalTopic, legalTopic as string));
+    }
+
+    if (startDate) {
+      conditions.push(gte(legalResearchReports.timestamp, new Date(startDate as string)));
+    }
+
+    if (endDate) {
+      conditions.push(lte(legalResearchReports.timestamp, new Date(endDate as string)));
+    }
+
+    const results = await db.select()
       .from(legalResearchReports)
-      .where(eb => {
-        const conditions = [];
-        
-        if (jurisdiction && jurisdiction !== 'all') {
-          conditions.push(eb.eq(legalResearchReports.jurisdiction, jurisdiction));
-        }
-        
-        if (legalTopic && legalTopic !== 'all') {
-          conditions.push(eb.eq(legalResearchReports.legalTopic, legalTopic));
-        }
-        
-        if (startDate) {
-          conditions.push(eb.gte(legalResearchReports.timestamp, new Date(startDate as string)));
-        }
-        
-        if (endDate) {
-          conditions.push(eb.lte(legalResearchReports.timestamp, new Date(endDate as string)));
-        }
-        
-        return conditions.length ? eb.and(...conditions) : undefined;
-      })
+      .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(legalResearchReports.timestamp))
       .limit(50);
 
-    const results = await query;
     return res.json(results);
 
   } catch (error) {
