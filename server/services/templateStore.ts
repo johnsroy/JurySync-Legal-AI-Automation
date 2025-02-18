@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TemplateCategory } from "@shared/schema";
+import { TemplateCategory } from "@shared/schema/templates";
 import Anthropic from '@anthropic-ai/sdk';
 
 // Initialize Anthropic client
