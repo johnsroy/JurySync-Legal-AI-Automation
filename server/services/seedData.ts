@@ -7,12 +7,36 @@ const randomDate = (start: Date, end: Date) => {
   return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
 };
 
-// Additional state constitutional law cases
-const generateStateCases = (count: number) => Array.from({ length: count }, (_, index) => ({
-  title: `State v. ${faker.company.name()}`,
-  content: `${faker.lorem.paragraphs(3)} Case number: SC-${2024 + Math.floor(index/12)}-${100 + index}
+// Generate comprehensive legal topics
+const legalTopics = [
+  "Constitutional",
+  "Criminal",
+  "Civil Rights",
+  "Corporate",
+  "Environmental",
+  "Administrative",
+  "Labor",
+  "Tax",
+  "Intellectual Property",
+  "International"
+];
 
-    Key Constitutional Issues:
+// Additional jurisdictions
+const jurisdictions = [
+  "Federal",
+  "State",
+  "Supreme Court",
+  "District Court",
+  "Appellate Court"
+];
+
+// Generate diverse case law documents
+const generateCaseLaw = (count: number) => Array.from({ length: count }, (_, index) => ({
+  title: `${faker.company.name()} v. ${faker.company.name()}`,
+  content: `${faker.lorem.paragraphs(3)}
+    Case Citation: ${2024 + Math.floor(index/12)}-${100 + index}
+
+    Key Legal Issues:
     1. ${faker.lorem.sentence()}
     2. ${faker.lorem.sentence()}
     3. ${faker.lorem.sentence()}
@@ -20,109 +44,117 @@ const generateStateCases = (count: number) => Array.from({ length: count }, (_, 
     Legal Analysis:
     ${faker.lorem.paragraphs(2)}
 
-    Precedent Impact:
+    Holdings:
+    ${faker.lorem.paragraph()}
+
+    Precedential Value:
     ${faker.lorem.paragraph()}`,
   documentType: "CASE_LAW",
-  jurisdiction: "State",
-  legalTopic: "Constitutional",
+  jurisdiction: jurisdictions[Math.floor(Math.random() * jurisdictions.length)],
+  legalTopic: legalTopics[Math.floor(Math.random() * legalTopics.length)],
   date: randomDate(new Date('2024-11-01'), new Date('2025-02-15')),
   status: "ACTIVE",
   metadata: {
-    court: "State Supreme Court",
-    citation: `${2024 + Math.floor(index/12)} S.Ct. ${100 + index}`
+    court: jurisdictions[Math.floor(Math.random() * jurisdictions.length)],
+    citation: `${2024 + Math.floor(index/12)} ${faker.helpers.arrayElement(['F.Supp.', 'U.S.', 'S.Ct.'])} ${100 + index}`,
+    keyPrinciples: Array.from({length: 3}, () => faker.lorem.sentence())
   },
   citations: []
 }));
 
-// State constitutional statutes
-const generateStateStatutes = (count: number) => Array.from({ length: count }, (_, index) => ({
-  title: `State ${faker.company.name()} Constitutional Rights Act of ${2024 + Math.floor(index/12)}`,
+// Generate statutes with broader coverage
+const generateStatutes = (count: number) => Array.from({ length: count }, (_, index) => ({
+  title: `${faker.helpers.arrayElement(['Revised', 'Amended', 'Updated'])} ${faker.company.name()} Act of ${2024 + Math.floor(index/12)}`,
   content: `
-    WHEREAS, the protection of constitutional rights is paramount to the functioning of our state;
-
-    Section 1. Purpose
+    SECTION 1. Purpose and Intent
     ${faker.lorem.paragraphs(1)}
 
-    Section 2. Definitions
+    SECTION 2. Definitions
     ${faker.lorem.paragraphs(1)}
 
-    Section 3. Constitutional Protections
+    SECTION 3. Substantive Provisions
     ${faker.lorem.paragraphs(2)}
 
-    Section 4. Implementation
+    SECTION 4. Implementation
     ${faker.lorem.paragraphs(1)}
 
-    Section 5. Enforcement
-    ${faker.lorem.paragraphs(1)}`,
+    SECTION 5. Enforcement
+    ${faker.lorem.paragraphs(1)}
+
+    SECTION 6. Effective Date
+    This Act shall take effect on ${faker.date.future().toLocaleDateString()}.`,
   documentType: "STATUTE",
-  jurisdiction: "State",
-  legalTopic: "Constitutional",
+  jurisdiction: jurisdictions[Math.floor(Math.random() * jurisdictions.length)],
+  legalTopic: legalTopics[Math.floor(Math.random() * legalTopics.length)],
   date: randomDate(new Date('2024-11-01'), new Date('2025-02-15')),
   status: "ACTIVE",
   metadata: {
-    type: "State Statute",
-    citation: `S.B. ${2024}-${200 + index}`
+    type: "Statute",
+    citation: `Public Law ${2024}-${200 + index}`
   },
   citations: []
 }));
 
-// State constitutional guidance documents
-const generateStateGuidance = (count: number) => Array.from({ length: count }, (_, index) => ({
-  title: `Guidelines on ${faker.company.name()} Constitutional Compliance`,
+// Generate regulatory guidance
+const generateGuidance = (count: number) => Array.from({ length: count }, (_, index) => ({
+  title: `Regulatory Guidance on ${faker.company.name()} Compliance`,
   content: `
     Executive Summary:
     ${faker.lorem.paragraph()}
 
-    I. Background
+    I. Background and Purpose
     ${faker.lorem.paragraphs(1)}
 
     II. Scope of Application
     ${faker.lorem.paragraphs(1)}
 
-    III. Constitutional Requirements
+    III. Regulatory Requirements
     ${faker.lorem.paragraphs(2)}
 
     IV. Implementation Guidelines
     ${faker.lorem.paragraphs(1)}
 
-    V. Compliance Measures
+    V. Best Practices
     ${faker.lorem.paragraphs(1)}`,
   documentType: "GUIDANCE",
-  jurisdiction: "State",
-  legalTopic: "Constitutional",
+  jurisdiction: jurisdictions[Math.floor(Math.random() * jurisdictions.length)],
+  legalTopic: legalTopics[Math.floor(Math.random() * legalTopics.length)],
   date: randomDate(new Date('2024-11-01'), new Date('2025-02-15')),
   status: "ACTIVE",
   metadata: {
-    type: "State Regulatory Guidance",
-    agency: "State Constitutional Rights Commission"
+    type: "Regulatory Guidance",
+    agency: faker.company.name()
   },
   citations: []
 }));
 
-export async function seedLegalDatabase(numberOfDocuments: number = 500) {
+export async function seedLegalDatabase(numberOfDocuments: number = 1000) {
   try {
     // Check if data already exists
     const existingDocs = await db.select().from(legalDocuments).limit(1);
     if (existingDocs.length > 0) {
-      console.log("Legal Documents already seeded. Clearing existing data...");
-      await db.delete(legalDocuments);
+      console.log("Legal Documents already seeded, skipping...");
+      return;
     }
 
-    console.log(`Seeding Legal Documents...`);
+    console.log(`Seeding ${numberOfDocuments} Legal Documents...`);
 
     // Generate documents with a good mix of different types
     const allDocuments = [
-      ...generateStateCases(Math.floor(numberOfDocuments * 0.5)), // 50% cases
-      ...generateStateStatutes(Math.floor(numberOfDocuments * 0.3)), // 30% statutes
-      ...generateStateGuidance(Math.floor(numberOfDocuments * 0.2)) // 20% guidance
+      ...generateCaseLaw(Math.floor(numberOfDocuments * 0.4)), // 40% cases
+      ...generateStatutes(Math.floor(numberOfDocuments * 0.3)), // 30% statutes
+      ...generateGuidance(Math.floor(numberOfDocuments * 0.3)) // 30% guidance
     ];
 
-    // Insert documents in batches
-    const batchSize = 50;
+    // Insert documents in smaller batches to prevent memory issues
+    const batchSize = 25;
     for (let i = 0; i < allDocuments.length; i += batchSize) {
       const batch = allDocuments.slice(i, i + batchSize);
       await db.insert(legalDocuments).values(batch);
       console.log(`Inserted batch ${Math.floor(i/batchSize) + 1} of ${Math.ceil(allDocuments.length/batchSize)}`);
+
+      // Add a small delay between batches to prevent overwhelming the database
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     console.log(`Seeded ${allDocuments.length} Legal Documents successfully.`);

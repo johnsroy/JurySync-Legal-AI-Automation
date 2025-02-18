@@ -69,16 +69,10 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Setup auth
 setupAuth(app);
 
-// Register document analytics route
-app.use('/api/document-analytics', documentAnalyticsRouter);
-
-// Register redline route
-app.use("/api/redline", redlineRouter);
-
-// Register legal research route
-app.use("/api/legal-research", legalResearchRouter);
-
 // Register routes
+app.use('/api/document-analytics', documentAnalyticsRouter);
+app.use("/api/redline", redlineRouter);
+app.use("/api/legal-research", legalResearchRouter);
 registerRoutes(app);
 
 // API error handling middleware
@@ -106,58 +100,38 @@ if (process.env.NODE_ENV !== "production") {
   serveStatic(app);
 }
 
-// Start server
+// Start server first, then initialize background tasks
 const PORT = process.env.PORT || 5000;
 
-// Webhook handling
-app.post('/webhook', handleStripeWebhook);
-app.post('/webhook-test', (req: Request, res: Response) => {
-  try {
-    if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      return res.status(500).json({ error: 'Webhook secret not configured' });
-    }
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running at http://0.0.0.0:${PORT}`);
 
-    console.log('Headers:', req.headers);
-    console.log('Body:', req.body);
-
-    return res.status(200).json({
-      status: 'success',
-      message: 'Webhook endpoint is accessible',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Webhook test error:', error);
-    return res.status(500).json({ error: 'Webhook test failed' });
-  }
-});
-
-// Initialize services
-(async () => {
-  try {
-    const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
-    await seedLegalDatabase(numberOfDocuments);
-    console.log('Legal database seeded successfully');
-
+  // Initialize database and services after server is running
+  (async () => {
     try {
-      await continuousLearningService.startContinuousLearning();
-      console.log('Continuous learning service started successfully');
+      console.log('Starting background initialization...');
+
+      // Seed database in background
+      const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
+      seedLegalDatabase(numberOfDocuments)
+        .then(() => console.log('Legal database seeded successfully'))
+        .catch(error => console.error('Error seeding database:', error));
+
+      // Start continuous learning service in background
+      continuousLearningService.startContinuousLearning()
+        .then(() => console.log('Continuous learning service started successfully'))
+        .catch(error => console.error('Failed to start continuous learning service:', error));
+
     } catch (error) {
-      console.error('Failed to start continuous learning service:', error);
+      console.error('Background initialization error:', error);
+      // Don't exit process on background task failure
     }
-
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running at http://0.0.0.0:${PORT}`);
-    }).on('error', (error: any) => {
-      if (error.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use`);
-      } else {
-        console.error('Failed to start server:', error);
-      }
-      process.exit(1);
-    });
-
-  } catch (error) {
+  })();
+}).on('error', (error: any) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use`);
+  } else {
     console.error('Failed to start server:', error);
-    process.exit(1);
   }
-})();
+  process.exit(1);
+});
