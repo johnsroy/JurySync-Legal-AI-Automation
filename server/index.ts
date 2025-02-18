@@ -9,7 +9,6 @@ import cors from 'cors';
 import { handleStripeWebhook } from "./webhooks/stripe";
 import documentAnalyticsRouter from './routes/document-analytics';
 import redlineRouter from "./routes/redline";
-import legalResearchRouter from "./routes/legal-research";
 import { seedLegalDatabase } from './services/seedData';
 import { continuousLearningService } from './services/continuousLearningService';
 import passport from 'passport';
@@ -74,9 +73,6 @@ app.use('/api/document-analytics', documentAnalyticsRouter);
 
 // Register redline route
 app.use("/api/redline", redlineRouter);
-
-// Register legal research route
-app.use("/api/legal-research", legalResearchRouter);
 
 // Add this before your routes
 app.use((req, res, next) => {
