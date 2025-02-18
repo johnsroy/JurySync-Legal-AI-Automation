@@ -18,8 +18,14 @@ import cors from 'cors';
 import { json } from 'express';
 
 export function registerRoutes(app: Express): Server {
-  // Enable CORS for all routes
-  app.use(cors());
+  // Enable CORS with proper options
+  app.use(cors({
+    origin: true,
+    credentials: true
+  }));
+
+  // Parse JSON bodies
+  app.use(json());
 
   const server = createServer(app);
 
@@ -33,17 +39,17 @@ export function registerRoutes(app: Express): Server {
     handleWebhook
   );
 
+  // Legal Research routes - ensure it's mounted at the root path
+  app.use("/api/legal-research", legalResearchRouter);
+
   // Add redlining routes
   app.use("/api/redline", redlineRouter);
 
   // Add the vault router with enhanced AI capabilities
   app.use("/api/vault", vaultRouter);
 
-  // Add the legal research router
-  app.use("/api/legal-research", legalResearchRouter);
-
   // Register the documents router
-  app.use(documentsRouter);
+  app.use("/api", documentsRouter);
 
   // Add compliance routes
   app.use("/api/compliance", complianceRouter);

@@ -28,18 +28,24 @@ interface ResearchFindings {
 
 interface ResearchResponse {
   success: boolean;
-  executiveSummary: string;
-  findings: ResearchResult[];
-  recommendations: string[];
-  relevantDocuments: {
-    id: number;
+  error?: string;
+  executiveSummary?: string;
+  findings?: Array<{
     title: string;
-    jurisdiction: string;
-    topic: string;
-    date: string;
-    type: string;
-  }[];
+    source: string;
+    relevance: number;
+    summary: string;
+    citations: string[];
+  }>;
+  recommendations?: string[];
+}
+
+interface AvailableReport {
+  id: number;
+  query: string;
   timestamp: string;
+  jurisdiction: string;
+  legalTopic: string;
 }
 
 const progressSteps = [
@@ -66,29 +72,25 @@ export function LegalResearchSidebar() {
   const { toast } = useToast();
 
   // Fetch available research when filters change
-  const { data: availableResearch, refetch } = useQuery({
-    queryKey: ['available-research', filters],
+  const { data: availableResearch } = useQuery({
+    queryKey: ['/api/legal-research/available', filters],
     queryFn: async () => {
-      const params = new URLSearchParams({
+      const response = await fetch(`/api/legal-research/available?${new URLSearchParams({
         jurisdiction: filters.jurisdiction,
         legalTopic: filters.legalTopic,
         ...(filters.startDate && { startDate: filters.startDate.toISOString() }),
         ...(filters.endDate && { endDate: filters.endDate.toISOString() })
-      });
-
-      const response = await fetch(`/api/legal-research/available?${params}`);
+      })}`);
+      
       if (!response.ok) {
         throw new Error('Failed to fetch available research');
       }
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to fetch available research');
-      }
-      return data;
+      
+      return response.json();
     },
     enabled: filters.jurisdiction !== 'all' || filters.legalTopic !== 'all',
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 300000, // 5 minutes
+    gcTime: 600000, // 10 minutes
   });
 
   // Handle progress updates
@@ -193,18 +195,15 @@ export function LegalResearchSidebar() {
       }
 
       setFindings({
-        executiveSummary: data.executiveSummary,
-        keyFindings: data.findings,
-        recommendations: data.recommendations
+        executiveSummary: data.executiveSummary || "",
+        keyFindings: data.findings || [],
+        recommendations: data.recommendations || []
       });
 
       toast({
         title: "Research Complete",
         description: "Legal research results are ready"
       });
-
-      // Optionally refetch available research
-      refetch();
 
     } catch (error) {
       console.error("Research error:", error);
@@ -346,13 +345,19 @@ export function LegalResearchSidebar() {
           </Select>
 
           <DatePicker
-            date={filters.startDate || undefined}
-            onChange={(date) => setFilters(prev => ({ ...prev, startDate: date }))}
+            date={filters.startDate}
+            onChange={(date) => setFilters(prev => ({ 
+              ...prev, 
+              startDate: date 
+            }))}
           />
 
           <DatePicker
-            date={filters.endDate || undefined}
-            onChange={(date) => setFilters(prev => ({ ...prev, endDate: date }))}
+            date={filters.endDate}
+            onChange={(date) => setFilters(prev => ({ 
+              ...prev, 
+              endDate: date 
+            }))}
           />
         </div>
 
@@ -433,31 +438,23 @@ export function LegalResearchSidebar() {
         )}
 
         {/* Show available research */}
-        {availableResearch?.reports.length > 0 && (
-          <div className="mt-4">
+        {availableResearch?.reports?.map((report: AvailableReport) => (
+          <div key={report.id} className="mt-4">
             <h3 className="text-sm font-medium text-gray-400 mb-2">Available Research</h3>
-            <ScrollArea className="h-48">
-              {availableResearch.reports.map((report) => (
-                <Button
-                  key={report.id}
-                  variant="ghost"
-                  className="w-full justify-start text-left"
-                  onClick={() => {
-                    setQuery(report.query);
-                    handleSearch();
-                  }}
-                >
-                  <div className="flex flex-col">
-                    <span className="text-sm">{report.query}</span>
-                    <span className="text-xs text-gray-400">
-                      {new Date(report.timestamp).toLocaleDateString()}
-                    </span>
-                  </div>
-                </Button>
-              ))}
-            </ScrollArea>
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-left"
+              onClick={() => setQuery(report.query)}
+            >
+              <div className="flex flex-col">
+                <span className="text-sm">{report.query}</span>
+                <span className="text-xs text-gray-400">
+                  {new Date(report.timestamp).toLocaleDateString()}
+                </span>
+              </div>
+            </Button>
           </div>
-        )}
+        ))}
       </div>
     </div>
   );

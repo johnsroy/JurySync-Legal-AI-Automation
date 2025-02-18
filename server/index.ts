@@ -78,6 +78,12 @@ app.use("/api/redline", redlineRouter);
 // Register legal research route
 app.use("/api/legal-research", legalResearchRouter);
 
+// Add this before your routes
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 // Register routes
 registerRoutes(app);
 

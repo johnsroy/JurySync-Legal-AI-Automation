@@ -3,7 +3,7 @@ import { db } from "../db";
 import { legalResearchReports, legalDocuments } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
 import { z } from "zod";
-import { desc, eq, and, gte, lte, ilike, or, like } from 'drizzle-orm';
+import { desc, eq, and, gte, lte, ilike, or } from 'drizzle-orm';
 
 const router = Router();
 
@@ -101,13 +101,13 @@ router.get("/available", async (req, res) => {
     if (endDate) {
       conditions.push(lte(legalDocuments.date, new Date(endDate as string)));
     }
-
+    
     const query = conditions.length > 0 
       ? db.select().from(legalDocuments).where(and(...conditions))
       : db.select().from(legalDocuments);
-
+    
     const documents = await query.limit(100);
-
+    
     return res.json({
       success: true,
       documents: documents.map(doc => ({
@@ -119,7 +119,7 @@ router.get("/available", async (req, res) => {
         summary: doc.content.substring(0, 200) + '...'
       }))
     });
-
+    
   } catch (error) {
     console.error("Error fetching available research:", error);
     return res.status(500).json({
@@ -129,64 +129,112 @@ router.get("/available", async (req, res) => {
   }
 });
 
+// Error handling middleware
+router.use((err: any, req: any, res: any, next: any) => {
+  console.error('Legal Research Error:', err);
+  res.status(500).json({
+    success: false,
+    error: err.message || "Research failed",
+    details: err.stack
+  });
+});
+
 // Main research endpoint
 router.post("/", async (req, res) => {
   try {
-    const { query, filters } = req.body;
+    console.log("Received research request:", req.body);
 
-    if (!query) {
-      return res.status(400).json({
-        success: false,
-        error: "Query is required"
-      });
+    const validatedData = researchRequestSchema.parse(req.body);
+
+    // Build query conditions
+    const whereConditions = [];
+
+    if (validatedData.jurisdiction) {
+      whereConditions.push(eq(legalDocuments.jurisdiction, validatedData.jurisdiction));
     }
 
-    console.log('Processing research request:', { query, filters });
-
-    // Get relevant documents based on filters
-    let conditions = [];
-    
-    if (filters?.jurisdiction && filters.jurisdiction !== 'all') {
-      conditions.push(eq(legalDocuments.jurisdiction, filters.jurisdiction));
-    }
-    
-    if (filters?.legalTopic && filters.legalTopic !== 'all') {
-      conditions.push(eq(legalDocuments.legalTopic, filters.legalTopic));
+    if (validatedData.legalTopic) {
+      whereConditions.push(eq(legalDocuments.legalTopic, validatedData.legalTopic));
     }
 
-    const relevantDocs = conditions.length > 0
-      ? await db.select().from(legalDocuments).where(and(...conditions)).limit(5)
-      : await db.select().from(legalDocuments).limit(5);
+    if (validatedData.dateRange?.start) {
+      whereConditions.push(gte(legalDocuments.date, new Date(validatedData.dateRange.start)));
+    }
 
-    // Generate research using AI
-    const research = await generateDeepResearch(query, {
-      ...filters,
-      relevantDocs
+    if (validatedData.dateRange?.end) {
+      whereConditions.push(lte(legalDocuments.date, new Date(validatedData.dateRange.end)));
+    }
+
+    // Find relevant documents
+    const relevantDocs = await db.select({
+      id: legalDocuments.id,
+      title: legalDocuments.title,
+      jurisdiction: legalDocuments.jurisdiction,
+      legalTopic: legalDocuments.legalTopic,
+      date: legalDocuments.date,
+      documentType: legalDocuments.documentType,
+      content: legalDocuments.content,
+      metadata: legalDocuments.metadata
+    })
+    .from(legalDocuments)
+    .where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
+    .orderBy(desc(legalDocuments.date))
+    .limit(20);
+
+    console.log('Found relevant documents:', relevantDocs.length);
+
+    // Generate research using Gemini
+    const researchResults = await generateDeepResearch(validatedData.query, {
+      jurisdiction: validatedData.jurisdiction,
+      legalTopic: validatedData.legalTopic,
+      dateRange: validatedData.dateRange,
+      relevantDocs: relevantDocs.map(doc => ({
+        title: doc.title,
+        jurisdiction: doc.jurisdiction,
+        legalTopic: doc.legalTopic,
+        content: doc.content,
+        citation: doc.metadata?.citation
+      }))
     });
 
-    // Store the research results
+    // Store results if user is authenticated
     if (req.user?.id) {
       await db.insert(legalResearchReports).values({
         userId: req.user.id,
-        query,
-        jurisdiction: filters?.jurisdiction || 'all',
-        legalTopic: filters?.legalTopic || 'all',
-        results: research,
-        dateRange: filters?.dateRange || null
+        query: validatedData.query,
+        jurisdiction: validatedData.jurisdiction || 'all',
+        legalTopic: validatedData.legalTopic || 'all',
+        results: researchResults,
+        dateRange: validatedData.dateRange || null
       });
     }
 
     return res.json({
       success: true,
-      ...research
+      ...researchResults,
+      relevantDocuments: relevantDocs.map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        jurisdiction: doc.jurisdiction,
+        topic: doc.legalTopic,
+        date: doc.date,
+        type: doc.documentType,
+        citation: doc.metadata?.citation,
+        content: doc.content.substring(0, 300) + '...'
+      }))
     });
 
-  } catch (error) {
-    console.error("Research error:", error);
+  } catch (error: any) {
+    console.error("Legal Research Error:", {
+      error,
+      stack: error.stack,
+      message: error.message
+    });
+
     return res.status(500).json({
       success: false,
       error: "Research failed",
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error.message
     });
   }
 });
