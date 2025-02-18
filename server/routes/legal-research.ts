@@ -1,12 +1,63 @@
 import { Router } from "express";
-import { openai } from "../openai";
 import { db } from "../db";
-import { legalResearchReports, legalAnalyses } from "@shared/schema";
+import { legalResearchReports } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
+import { PDFDocument } from 'pdf-lib';
 
 const router = Router();
 
-// Generate suggested questions based on filters
+router.post("/", async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { query, options } = req.body;
+
+    if (!query?.trim()) {
+      return res.status(400).json({ error: "Query is required" });
+    }
+
+    console.log('Starting legal research with Gemini:', { query, options });
+
+    // Use Gemini for deep research
+    const researchResults = await generateDeepResearch(query);
+
+    // Ensure proper JSON structure
+    const formattedResults = {
+      executiveSummary: researchResults.executiveSummary,
+      results: researchResults.findings.map(finding => ({
+        title: finding.title,
+        source: finding.source,
+        relevance: finding.relevanceScore,
+        summary: finding.summary,
+        citations: finding.citations || []
+      })),
+      recommendations: researchResults.recommendations,
+      timestamp: new Date().toISOString()
+    };
+
+    // Store results in database
+    await db.insert(legalResearchReports).values({
+      userId: req.user.id,
+      query,
+      results: formattedResults,
+      timestamp: new Date()
+    });
+
+    // Set proper content type and ensure valid JSON response
+    res.setHeader('Content-Type', 'application/json');
+    return res.json(formattedResults);
+
+  } catch (error) {
+    console.error("Legal research error:", error);
+    return res.status(500).json({ 
+      error: "Failed to complete research",
+      details: error instanceof Error ? error.message : 'Unknown error occurred'
+    });
+  }
+});
+
 router.post("/suggest-questions", async (req, res) => {
   try {
     if (!req.user) {
@@ -94,127 +145,55 @@ router.post("/suggest-questions", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/analyze", async (req, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const { query, jurisdiction, legalTopic, dateRange, options } = req.body;
+    let text = '';
+    const fileType = req.file.originalname.toLowerCase();
 
-    if (!jurisdiction || !legalTopic) {
-      return res.status(400).json({ error: "Missing required filters" });
-    }
-
-    console.log('Starting legal research:', { query, jurisdiction, legalTopic, dateRange, options });
-
-    let researchResults;
-
-    if (options?.useGemini && options?.deepResearch) {
-      // Use Gemini for deep research
-      researchResults = await generateDeepResearch(query, jurisdiction, legalTopic, dateRange);
-    } else {
-      // Use existing OpenAI implementation
-      const dateContext = dateRange.start && dateRange.end
-        ? `between ${new Date(dateRange.start).toLocaleDateString()} and ${new Date(dateRange.end).toLocaleDateString()}`
-        : "with no specific date range";
-
-      const prompt = `
-        Act as a legal research assistant specializing in ${jurisdiction} jurisdiction and ${legalTopic}.
-        Analyze the following query and provide comprehensive research results ${dateContext}:
-
-        QUERY: ${query}
-
-        Conduct thorough research considering:
-        1. Case law and precedents specific to ${jurisdiction}
-        2. Statutory regulations in ${legalTopic}
-        3. Academic articles and journals
-        4. Industry standards and best practices
-        5. Recent developments and trends
-
-        Format your response as a JSON object with the following structure:
-        {
-          "results": [
-            {
-              "title": "string",
-              "source": "string",
-              "relevance": number (0-100),
-              "summary": "string",
-              "citations": ["string"],
-              "urls": ["string"] // Include relevant legal resource URLs
-            }
-          ],
-          "recommendations": ["string"]
-        }
-
-        Ensure each result includes:
-        - Specific case citations relevant to ${jurisdiction}
-        - Statutory references for ${legalTopic}
-        - URLs to official legal resources and relevant documents
-        - Clear summaries of findings
-        - Practical recommendations
-        ${dateRange.start ? '- Focus on materials within the specified date range' : ''}
-      `;
-
-      console.log('Sending request to OpenAI...');
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4-0125-preview",
-        messages: [
-          {
-            role: "system",
-            content: `You are a legal research expert specializing in ${jurisdiction} jurisdiction and ${legalTopic} analysis.`
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.7
-      });
-
-      console.log('Received response from OpenAI');
-      const response = completion.choices[0].message.content;
-      let formattedResults;
-
+    if (fileType.endsWith('.pdf')) {
       try {
-        if (!response) {
-          throw new Error('Empty response from AI model');
-        }
-        formattedResults = JSON.parse(response);
-        if (!formattedResults.results || !formattedResults.recommendations) {
-          throw new Error("Invalid response structure");
-        }
+        // Load the PDF document
+        const pdfDoc = await PDFDocument.load(req.file.buffer);
+        const pages = pdfDoc.getPages();
+        
+        // Extract text from all pages
+        text = (await Promise.all(
+          pages.map(async (page) => {
+            const textContent = await page.extractText();
+            return textContent.replace(/\s+/g, ' ').trim();
+          })
+        )).join('\n');
+
       } catch (error) {
-        console.error("Failed to parse AI response:", error);
-        throw new Error("Failed to generate valid research results");
+        console.error('PDF parsing error:', error);
+        return res.status(400).json({ error: "Failed to parse PDF file" });
       }
-      researchResults = formattedResults;
+    } else if (fileType.endsWith('.txt')) {
+      text = req.file.buffer.toString('utf-8');
+    } else {
+      return res.status(400).json({ 
+        error: "Unsupported file type. Please upload PDF or TXT files only." 
+      });
     }
 
-    // Store results in knowledge base
-    await db.insert(legalResearchReports).values({
-      userId: req.user.id,
-      query,
-      jurisdiction,
-      legalTopic,
-      dateRange,
-      results: researchResults,
-      timestamp: new Date(),
-    });
+    // Clean the text
+    text = text
+      .replace(/<!DOCTYPE[^>]*>/g, '')
+      .replace(/<\?xml[^>]*\?>/g, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-    console.log('Research completed successfully');
-    return res.json({
-      ...researchResults,
-      timestamp: new Date(),
-    });
-
+    return res.json({ text });
   } catch (error) {
-    console.error("Legal research error:", error);
-    return res.status(500).json({ 
-      error: "Failed to complete research",
-      details: error instanceof Error ? error.message : 'Unknown error occurred'
-    });
+    console.error("File analysis error:", error);
+    return res.status(500).json({ error: "Failed to analyze file" });
   }
 });
 

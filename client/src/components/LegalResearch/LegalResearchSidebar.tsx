@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Search, Book, Download, ArrowRight, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 
 interface ResearchResult {
   title: string;
@@ -20,11 +21,67 @@ interface ResearchFindings {
   recommendations: string[];
 }
 
+const progressSteps = [
+  "Initializing research...",
+  "Analyzing legal databases...",
+  "Processing citations...",
+  "Generating insights...",
+  "Compiling results..."
+];
+
 export function LegalResearchSidebar() {
   const [query, setQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [findings, setFindings] = useState<ResearchFindings | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const { toast } = useToast();
+
+  // Handle progress updates
+  useEffect(() => {
+    if (isSearching) {
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 100) {
+            clearInterval(interval);
+            return 100;
+          }
+          return prev + 2;
+        });
+        
+        setCurrentStep(prev => 
+          Math.min(Math.floor((progress / 100) * progressSteps.length), progressSteps.length - 1)
+        );
+      }, 100);
+
+      return () => clearInterval(interval);
+    }
+  }, [isSearching, progress]);
+
+  // Fetch suggestions when query changes
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      if (!query.trim() || query.length < 3) return;
+
+      try {
+        const response = await fetch("/api/legal-research/suggest-questions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query })
+        });
+
+        if (!response.ok) throw new Error("Failed to fetch suggestions");
+        const data = await response.json();
+        setSuggestions(data);
+      } catch (error) {
+        console.error("Suggestion error:", error);
+      }
+    };
+
+    const debounceTimer = setTimeout(fetchSuggestions, 500);
+    return () => clearTimeout(debounceTimer);
+  }, [query]);
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -37,10 +94,16 @@ export function LegalResearchSidebar() {
     }
 
     setIsSearching(true);
+    setProgress(0);
+    setCurrentStep(0);
+
     try {
       const response = await fetch("/api/legal-research", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"  // Add explicit Accept header
+        },
         body: JSON.stringify({
           query,
           options: {
@@ -51,17 +114,41 @@ export function LegalResearchSidebar() {
         })
       });
 
-      if (!response.ok) throw new Error("Research failed");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.details || "Research failed");
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Invalid response format from server");
+      }
+
       const data = await response.json();
-      setFindings(data);
-    } catch (error) {
+      if (!data.results) {
+        throw new Error("Invalid research results format");
+      }
+
+      setFindings({
+        executiveSummary: data.executiveSummary || "No summary available",
+        keyFindings: data.results || [],
+        recommendations: data.recommendations || []
+      });
+
       toast({
-        title: "Research Error",
-        description: "Failed to complete research",
+        title: "Research Complete",
+        description: "Legal research results are ready",
+      });
+    } catch (error) {
+      console.error("Research error:", error);
+      toast({
+        title: "Research Failed",
+        description: error instanceof Error ? error.message : "Failed to analyze query",
         variant: "destructive"
       });
     } finally {
       setIsSearching(false);
+      setProgress(100);
     }
   };
 
@@ -80,6 +167,29 @@ export function LegalResearchSidebar() {
             onChange={(e) => setQuery(e.target.value)}
             className="min-h-[100px] bg-gray-800 border-gray-700 text-gray-200"
           />
+
+          {/* Show suggestions */}
+          {suggestions.length > 0 && !isSearching && (
+            <div className="space-y-2 bg-gray-800/50 p-2 rounded-lg">
+              <p className="text-xs text-gray-400">Suggested queries:</p>
+              {suggestions.map((suggestion, index) => (
+                <Button
+                  key={index}
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-left text-gray-300 hover:text-white"
+                  onClick={() => {
+                    setQuery(suggestion);
+                    handleSearch();
+                  }}
+                >
+                  <ArrowRight className="h-4 w-4 mr-2" />
+                  {suggestion}
+                </Button>
+              ))}
+            </div>
+          )}
+
           <Button 
             onClick={handleSearch}
             disabled={isSearching || !query.trim()}
@@ -98,6 +208,17 @@ export function LegalResearchSidebar() {
             )}
           </Button>
         </div>
+
+        {/* Show progress during search */}
+        {isSearching && (
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-gray-400">
+              <span>{progressSteps[currentStep]}</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <Progress value={progress} className="h-1" />
+          </div>
+        )}
 
         {findings && (
           <ScrollArea className="h-[calc(100vh-280px)]">

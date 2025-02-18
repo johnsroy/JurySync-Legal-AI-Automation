@@ -1,91 +1,51 @@
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "../db";
 import { legalResearchReports } from "@shared/schema";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-export async function generateDeepResearch(query: string, jurisdiction: string, legalTopic: string, dateRange: { start?: string; end?: string }) {
-  console.log('Starting Gemini deep research:', { query, jurisdiction, legalTopic, dateRange });
-
-  const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-pro",
-    safetySettings: [
-      {
-        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-      },
-    ],
-  });
+export async function generateDeepResearch(query: string) {
+  const model = genAI.getModel("gemini-1.5-pro");
 
   const prompt = `
-    You are a legal research expert specializing in ${jurisdiction} jurisdiction and ${legalTopic}.
-    Conduct a comprehensive analysis with deep research capabilities.
+    As a legal research expert, conduct a comprehensive analysis on the following query:
+    "${query}"
 
-    Query: ${query}
-    Date Range: ${dateRange.start ? `${dateRange.start} to ${dateRange.end}` : 'No specific range'}
-
-    Provide a detailed analysis following this EXACT structure (do not deviate from this format):
+    IMPORTANT: Respond ONLY with a valid JSON object in the following structure, with no additional text or formatting:
     {
-      "keyFindings": [
+      "executiveSummary": "Brief overview of key findings",
+      "findings": [
         {
-          "title": "Finding Title",
-          "content": "Detailed explanation",
-          "citations": ["Relevant case citations"],
-          "urls": ["Links to legal resources"]
+          "title": "Main point or case name",
+          "source": "Source of information",
+          "relevanceScore": 95,
+          "summary": "Detailed explanation",
+          "citations": ["Relevant citations"]
         }
       ],
       "recommendations": [
-        "Specific actionable recommendations"
+        "Action-oriented recommendations based on findings"
       ]
     }
-
-    Include:
-    1. Key legal precedents in ${jurisdiction}
-    2. Statutory framework for ${legalTopic}
-    3. Recent judicial interpretations
-    4. Academic commentary
-    5. Practical implications
-
-    IMPORTANT: Respond ONLY with a valid JSON object following the exact structure above.
-    Do not include any other text or formatting outside the JSON structure.
   `;
 
   try {
-    console.log('Sending request to Gemini...');
     const result = await model.generateContent(prompt);
-    const response = result.response;
+    const response = await result.response;
     const text = response.text();
 
-    console.log('Received response from Gemini, attempting to parse...');
+    // Ensure we're only parsing valid JSON by removing any HTML-like content
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}') + 1;
 
-    try {
-      const parsed = JSON.parse(text);
-
-      // Validate the response structure
-      if (!parsed.keyFindings || !Array.isArray(parsed.keyFindings) || !parsed.recommendations) {
-        console.error('Invalid response structure:', parsed);
-        throw new Error('Response missing required fields');
-      }
-
-      // Transform to expected format
-      return {
-        results: parsed.keyFindings.map(finding => ({
-          title: finding.title,
-          source: "Gemini Legal Research",
-          relevance: 95,
-          summary: finding.content,
-          citations: finding.citations || [],
-          urls: finding.urls || []
-        })),
-        recommendations: parsed.recommendations
-      };
-    } catch (parseError) {
-      console.error("Failed to parse Gemini response:", parseError);
-      console.error("Raw response:", text);
-      throw new Error("Invalid JSON in AI model response");
+    if (jsonStart === -1 || jsonEnd === 0) {
+      throw new Error("No valid JSON found in response");
     }
+
+    const jsonStr = text.substring(jsonStart, jsonEnd);
+    return JSON.parse(jsonStr);
   } catch (error) {
-    console.error("Gemini API error:", error);
-    throw new Error("Failed to generate research results");
+    console.error("Failed to parse Gemini response:", error);
+    throw new Error(`Invalid response format from AI model: ${error.message}`);
   }
 }
