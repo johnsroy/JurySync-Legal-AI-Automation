@@ -2,36 +2,56 @@ import { Router } from "express";
 import { db } from "../db";
 import { legalResearchReports } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
-import { PDFDocument } from 'pdf-lib';
+import { z } from "zod";
 import { desc, eq, and, gte, lte } from 'drizzle-orm';
 
 const router = Router();
+
+// Validation schemas
+const researchRequestSchema = z.object({
+  query: z.string().min(1, "Query is required"),
+  jurisdiction: z.string().optional(),
+  legalTopic: z.string().optional(),
+  dateRange: z.object({
+    start: z.string().optional(),
+    end: z.string().optional()
+  }).optional()
+});
 
 // Get example queries for new users
 router.get("/examples", async (req, res) => {
   try {
     const exampleQueries = [
       {
+        id: 1,
         query: "What are the key requirements for filing a patent application?",
         jurisdiction: "United States",
         legalTopic: "Intellectual Property"
       },
       {
+        id: 2,
         query: "Recent developments in data privacy regulations",
         jurisdiction: "European Union",
         legalTopic: "Privacy Law"
       },
       {
+        id: 3,
         query: "Legal framework for smart contracts and blockchain",
         jurisdiction: "International",
         legalTopic: "Technology Law"
       }
     ];
 
-    return res.json(exampleQueries);
+    return res.json({ 
+      success: true,
+      examples: exampleQueries 
+    });
   } catch (error) {
     console.error("Error fetching example queries:", error);
-    return res.status(500).json({ error: "Failed to fetch example queries" });
+    return res.status(500).json({ 
+      success: false,
+      error: "Failed to fetch example queries" 
+    });
   }
 });
 
@@ -39,52 +59,56 @@ router.get("/examples", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json({ 
+        success: false,
+        error: "Authentication required" 
+      });
     }
 
-    const { query, jurisdiction, legalTopic, dateRange } = req.body;
+    const validatedData = researchRequestSchema.parse(req.body);
 
-    if (!query?.trim()) {
-      return res.status(400).json({ error: "Query is required" });
-    }
+    console.log('Starting legal research:', validatedData);
 
-    console.log('Starting legal research:', { query, jurisdiction, legalTopic, dateRange });
-
-    // Generate research using Gemini
-    const researchResults = await generateDeepResearch(query, {
-      jurisdiction,
-      legalTopic,
-      dateRange
-    });
+    const researchResults = await generateDeepResearch(
+      validatedData.query,
+      {
+        jurisdiction: validatedData.jurisdiction,
+        legalTopic: validatedData.legalTopic,
+        dateRange: validatedData.dateRange
+      }
+    );
 
     // Store results in database
-    const storedResult = await db.insert(legalResearchReports).values({
+    await db.insert(legalResearchReports).values({
       userId: req.user.id,
-      query,
-      jurisdiction: jurisdiction || 'All',
-      legalTopic: legalTopic || 'All',
+      query: validatedData.query,
+      jurisdiction: validatedData.jurisdiction || 'All',
+      legalTopic: validatedData.legalTopic || 'All',
       results: researchResults,
-      dateRange: dateRange || null,
+      dateRange: validatedData.dateRange || null,
       timestamp: new Date()
-    }).returning();
+    });
 
-    // Return formatted results
     return res.json({
-      executiveSummary: researchResults.executiveSummary,
-      results: researchResults.findings,
-      recommendations: researchResults.recommendations,
-      timestamp: new Date().toISOString(),
-      filters: {
-        jurisdiction,
-        legalTopic,
-        dateRange
+      success: true,
+      data: {
+        executiveSummary: researchResults.executiveSummary,
+        findings: researchResults.findings,
+        recommendations: researchResults.recommendations,
+        timestamp: new Date().toISOString(),
+        filters: {
+          jurisdiction: validatedData.jurisdiction,
+          legalTopic: validatedData.legalTopic,
+          dateRange: validatedData.dateRange
+        }
       }
     });
 
   } catch (error) {
     console.error("Legal research error:", error);
     return res.status(500).json({ 
-      error: "Failed to complete research",
+      success: false,
+      error: "Research failed",
       details: error instanceof Error ? error.message : 'Unknown error occurred'
     });
   }
@@ -105,10 +129,16 @@ router.get("/filters", async (req, res) => {
       ]
     };
 
-    return res.json(filters);
+    return res.json({
+      success: true,
+      filters
+    });
   } catch (error) {
     console.error("Error fetching filters:", error);
-    return res.status(500).json({ error: "Failed to fetch available filters" });
+    return res.status(500).json({
+      success: false, 
+      error: "Failed to fetch available filters"
+    });
   }
 });
 
@@ -141,14 +171,21 @@ router.get("/available", async (req, res) => {
       .orderBy(desc(legalResearchReports.timestamp))
       .limit(50);
 
-    return res.json(results);
+    return res.json({
+      success: true,
+      results
+    });
 
   } catch (error) {
     console.error("Error fetching available research:", error);
-    return res.status(500).json({ error: "Failed to fetch available research" });
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch available research"
+    });
   }
 });
 
+// Suggest questions endpoint remains unchanged.
 router.post("/suggest-questions", async (req, res) => {
   try {
     if (!req.user) {
@@ -236,6 +273,7 @@ router.post("/suggest-questions", async (req, res) => {
   }
 });
 
+// Analyze endpoint remains unchanged.
 router.post("/analyze", async (req, res) => {
   try {
     if (!req.file) {
@@ -250,7 +288,7 @@ router.post("/analyze", async (req, res) => {
         // Load the PDF document
         const pdfDoc = await PDFDocument.load(req.file.buffer);
         const pages = pdfDoc.getPages();
-        
+
         // Extract text from all pages
         text = (await Promise.all(
           pages.map(async (page) => {

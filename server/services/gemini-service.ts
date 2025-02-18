@@ -15,9 +15,13 @@ interface ResearchFilters {
 
 export async function generateDeepResearch(query: string, filters?: ResearchFilters) {
   try {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY not configured");
+    }
+
     console.log('Starting Gemini research with:', { query, filters });
 
-    const model = genAI.getModel("gemini-1.5-pro");
+    const model = await genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
     const jurisdictionContext = filters?.jurisdiction ? 
       `focusing on ${filters.jurisdiction} jurisdiction` : 
@@ -32,17 +36,17 @@ export async function generateDeepResearch(query: string, filters?: ResearchFilt
       'without date restrictions';
 
     const prompt = `
-      As a legal research expert, conduct a comprehensive analysis ${jurisdictionContext} ${topicContext} ${dateContext} on the following query:
+      Conduct a comprehensive legal analysis ${jurisdictionContext} ${topicContext} ${dateContext} for:
       "${query}"
 
-      IMPORTANT: Your response must be a valid JSON object with this exact structure:
+      Format your response EXACTLY as a JSON object with this structure:
       {
-        "executiveSummary": "Brief overview of findings",
+        "executiveSummary": "Brief overview of key findings",
         "findings": [
           {
             "title": "Main point or case name",
-            "source": "Source of information",
-            "relevanceScore": number between 0-100,
+            "source": "Source information",
+            "relevanceScore": "Number between 0-100",
             "summary": "Detailed explanation",
             "citations": ["Relevant citations"]
           }
@@ -53,55 +57,30 @@ export async function generateDeepResearch(query: string, filters?: ResearchFilt
       }
     `;
 
-    console.log('Sending prompt to Gemini:', prompt);
-
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
 
     console.log('Raw Gemini response:', text);
 
-    // Clean and parse JSON response
-    const jsonStart = text.indexOf('{');
-    const jsonEnd = text.lastIndexOf('}') + 1;
-
-    if (jsonStart === -1 || jsonEnd === 0) {
-      throw new Error("Invalid JSON structure in Gemini response");
-    }
-
-    const jsonStr = text.substring(jsonStart, jsonEnd)
-      .replace(/[\u0000-\u001F]+/g, '')
-      .replace(/\\[rnt]/g, '');
-
     try {
+      // Clean and parse JSON
+      const jsonStr = text.replace(/[\u0000-\u001F]+/g, '').replace(/\\[rnt]/g, '');
       const parsedResponse = JSON.parse(jsonStr);
+
+      // Validate response structure
+      if (!parsedResponse.executiveSummary || !Array.isArray(parsedResponse.findings)) {
+        throw new Error("Invalid response structure");
+      }
+
       console.log('Successfully parsed Gemini response');
       return parsedResponse;
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
-      console.log('Failed JSON string:', jsonStr);
       throw new Error(`Failed to parse Gemini response: ${parseError.message}`);
     }
   } catch (error) {
     console.error("Gemini service error:", error);
-
-    // Return a fallback response for failed queries
-    return {
-      executiveSummary: "Unable to process query at this time. Here's a sample research result:",
-      findings: [
-        {
-          title: "Sample Legal Analysis",
-          source: "Example Database",
-          relevanceScore: 85,
-          summary: "This is an example of how research results will appear. Please try your query again or contact support if the issue persists.",
-          citations: ["Example v. Case (2024)"]
-        }
-      ],
-      recommendations: [
-        "Please try refining your search terms",
-        "Consider using more specific legal terminology",
-        "Contact support if you continue experiencing issues"
-      ]
-    };
+    throw error;
   }
 }
