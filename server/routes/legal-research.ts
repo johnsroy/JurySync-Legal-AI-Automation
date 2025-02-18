@@ -32,13 +32,25 @@ router.get("/examples", async (req, res) => {
         id: 2,
         query: "Analyze the evolution of environmental protection measures at the state level",
         jurisdiction: "State",
-        legalTopic: "Constitutional"
+        legalTopic: "Environmental"
       },
       {
         id: 3,
-        query: "Recent precedents in state-level digital privacy regulations",
+        query: "Recent precedents in corporate governance regulations",
         jurisdiction: "State",
-        legalTopic: "Constitutional"
+        legalTopic: "Corporate"
+      },
+      {
+        id: 4,
+        query: "Criminal law developments in federal courts",
+        jurisdiction: "Federal",
+        legalTopic: "Criminal"
+      },
+      {
+        id: 5,
+        query: "Civil rights cases in education sector",
+        jurisdiction: "Supreme Court",
+        legalTopic: "Civil Rights"
       }
     ];
 
@@ -56,7 +68,7 @@ router.get("/examples", async (req, res) => {
     return res.json({ 
       success: true,
       examples: exampleQueries,
-      recentQueries: recentQueries
+      recentQueries
     });
   } catch (error) {
     console.error("Error fetching example queries:", error);
@@ -92,15 +104,16 @@ router.post("/", async (req, res) => {
       whereConditions.push(lte(legalDocuments.date, new Date(validatedData.dateRange.end)));
     }
 
-    // Add content search condition
+    // Add content search condition with broader search
     whereConditions.push(
       or(
         ilike(legalDocuments.content, `%${validatedData.query}%`),
-        ilike(legalDocuments.title, `%${validatedData.query}%`)
+        ilike(legalDocuments.title, `%${validatedData.query}%`),
+        ilike(legalDocuments.metadata.citation, `%${validatedData.query}%`)
       )
     );
 
-    // Find relevant documents
+    // Find relevant documents with improved limit
     const relevantDocs = await db.select({
       id: legalDocuments.id,
       title: legalDocuments.title,
@@ -108,14 +121,25 @@ router.post("/", async (req, res) => {
       legalTopic: legalDocuments.legalTopic,
       date: legalDocuments.date,
       documentType: legalDocuments.documentType,
-      content: legalDocuments.content
+      content: legalDocuments.content,
+      metadata: legalDocuments.metadata
     })
     .from(legalDocuments)
     .where(and(...whereConditions))
     .orderBy(desc(legalDocuments.date))
-    .limit(10);
+    .limit(20);
 
     console.log('Found relevant documents:', relevantDocs.length);
+
+    if (relevantDocs.length === 0) {
+      return res.json({
+        success: true,
+        executiveSummary: "No matching documents found for the given criteria.",
+        findings: [],
+        recommendations: ["Try broadening your search criteria", "Remove some filters to see more results"],
+        relevantDocuments: []
+      });
+    }
 
     // Generate research using Gemini
     const researchResults = await generateDeepResearch(validatedData.query, {
@@ -147,7 +171,8 @@ router.post("/", async (req, res) => {
         topic: doc.legalTopic,
         date: doc.date,
         type: doc.documentType,
-        content: doc.content.substring(0, 200) + '...' // Include preview of content
+        citation: doc.metadata?.citation,
+        content: doc.content.substring(0, 300) + '...' // Include longer preview
       }))
     });
 

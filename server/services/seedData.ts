@@ -34,6 +34,102 @@ const generateStateCases = (count: number) => Array.from({ length: count }, (_, 
   citations: []
 }));
 
+// Environmental law cases
+const generateEnvironmentalCases = (count: number) => Array.from({ length: count }, (_, index) => ({
+  title: `Environmental Protection Agency v. ${faker.company.name()}`,
+  content: `${faker.lorem.paragraphs(3)}
+    Environmental Impact Assessment:
+    ${faker.lorem.paragraphs(2)}
+
+    Regulatory Compliance:
+    ${faker.lorem.paragraphs(1)}
+
+    Legal Implications:
+    ${faker.lorem.paragraphs(2)}`,
+  documentType: "CASE_LAW",
+  jurisdiction: "Federal",
+  legalTopic: "Environmental",
+  date: randomDate(new Date('2024-11-01'), new Date('2025-02-15')),
+  status: "ACTIVE",
+  metadata: {
+    court: "Federal Circuit Court",
+    citation: `${2024 + Math.floor(index/12)} F.3d ${200 + index}`
+  },
+  citations: []
+}));
+
+// Criminal law cases
+const generateCriminalCases = (count: number) => Array.from({ length: count }, (_, index) => ({
+  title: `United States v. ${faker.person.lastName()}`,
+  content: `${faker.lorem.paragraphs(3)}
+    Criminal Charges:
+    ${faker.lorem.paragraphs(1)}
+
+    Evidence Analysis:
+    ${faker.lorem.paragraphs(2)}
+
+    Court's Decision:
+    ${faker.lorem.paragraphs(2)}`,
+  documentType: "CASE_LAW",
+  jurisdiction: "Federal",
+  legalTopic: "Criminal",
+  date: randomDate(new Date('2024-11-01'), new Date('2025-02-15')),
+  status: "ACTIVE",
+  metadata: {
+    court: "Federal District Court",
+    citation: `${2024 + Math.floor(index/12)} F.Supp.3d ${300 + index}`
+  },
+  citations: []
+}));
+
+// Civil rights cases
+const generateCivilRightsCases = (count: number) => Array.from({ length: count }, (_, index) => ({
+  title: `${faker.person.lastName()} v. ${faker.company.name()} School District`,
+  content: `${faker.lorem.paragraphs(3)}
+    Civil Rights Violations:
+    ${faker.lorem.paragraphs(1)}
+
+    Constitutional Analysis:
+    ${faker.lorem.paragraphs(2)}
+
+    Remedial Actions:
+    ${faker.lorem.paragraphs(2)}`,
+  documentType: "CASE_LAW",
+  jurisdiction: "Supreme Court",
+  legalTopic: "Civil Rights",
+  date: randomDate(new Date('2024-11-01'), new Date('2025-02-15')),
+  status: "ACTIVE",
+  metadata: {
+    court: "Supreme Court",
+    citation: `${2024 + Math.floor(index/12)} U.S. ${400 + index}`
+  },
+  citations: []
+}));
+
+// Corporate law cases
+const generateCorporateCases = (count: number) => Array.from({ length: count }, (_, index) => ({
+  title: `${faker.company.name()} Shareholders v. Board of Directors`,
+  content: `${faker.lorem.paragraphs(3)}
+    Corporate Governance Issues:
+    ${faker.lorem.paragraphs(1)}
+
+    Fiduciary Duties:
+    ${faker.lorem.paragraphs(2)}
+
+    Business Judgment Analysis:
+    ${faker.lorem.paragraphs(2)}`,
+  documentType: "CASE_LAW",
+  jurisdiction: "State",
+  legalTopic: "Corporate",
+  date: randomDate(new Date('2024-11-01'), new Date('2025-02-15')),
+  status: "ACTIVE",
+  metadata: {
+    court: "Delaware Court of Chancery",
+    citation: `${2024 + Math.floor(index/12)} Del. Ch. ${500 + index}`
+  },
+  citations: []
+}));
+
 // State constitutional statutes
 const generateStateStatutes = (count: number) => Array.from({ length: count }, (_, index) => ({
   title: `State ${faker.company.name()} Constitutional Rights Act of ${2024 + Math.floor(index/12)}`,
@@ -99,7 +195,7 @@ const generateStateGuidance = (count: number) => Array.from({ length: count }, (
   citations: []
 }));
 
-export async function seedLegalDatabase(numberOfDocuments: number = 500) {
+export async function seedLegalDatabase(numberOfDocuments: number = 2000) {
   try {
     // Check if data already exists
     const existingDocs = await db.select().from(legalDocuments).limit(1);
@@ -112,9 +208,13 @@ export async function seedLegalDatabase(numberOfDocuments: number = 500) {
 
     // Generate documents with a good mix of different types
     const allDocuments = [
-      ...generateStateCases(Math.floor(numberOfDocuments * 0.5)), // 50% cases
-      ...generateStateStatutes(Math.floor(numberOfDocuments * 0.3)), // 30% statutes
-      ...generateStateGuidance(Math.floor(numberOfDocuments * 0.2)) // 20% guidance
+      ...generateStateCases(Math.floor(numberOfDocuments * 0.2)), // 20% constitutional cases
+      ...generateEnvironmentalCases(Math.floor(numberOfDocuments * 0.2)), // 20% environmental cases
+      ...generateCriminalCases(Math.floor(numberOfDocuments * 0.2)), // 20% criminal cases
+      ...generateCivilRightsCases(Math.floor(numberOfDocuments * 0.2)), // 20% civil rights cases
+      ...generateCorporateCases(Math.floor(numberOfDocuments * 0.2)), // 20% corporate cases
+      ...generateStateStatutes(Math.floor(numberOfDocuments * 0.1)), // 10% statutes
+      ...generateStateGuidance(Math.floor(numberOfDocuments * 0.1)) // 10% guidance
     ];
 
     // Insert documents in batches
