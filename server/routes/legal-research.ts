@@ -8,78 +8,32 @@ import { generateEmbedding } from "../services/embedding-service";
 
 const router = Router();
 
-// Documents endpoint for getting pre-populated documents based on filters
-router.get("/documents", async (req, res) => {
+// Main legal research endpoint
+router.post("/", async (req, res) => {
   try {
-    const { jurisdiction, topic: legalTopic, startDate, endDate } = req.query;
+    const { query, jurisdiction, legalTopic, dateRange, options } = req.body;
+
+    if (!query || !jurisdiction || !legalTopic) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields: query, jurisdiction, and legalTopic"
+      });
+    }
 
     let conditions = [];
 
     // Add filter conditions
-    if (jurisdiction && jurisdiction !== 'all') {
-      conditions.push(eq(legalDocuments.jurisdiction, jurisdiction as string));
+    conditions.push(eq(legalDocuments.jurisdiction, jurisdiction));
+    conditions.push(eq(legalDocuments.legalTopic, legalTopic));
+
+    if (dateRange?.start) {
+      conditions.push(gte(legalDocuments.date, new Date(dateRange.start)));
+    }
+    if (dateRange?.end) {
+      conditions.push(lte(legalDocuments.date, new Date(dateRange.end)));
     }
 
-    if (legalTopic && legalTopic !== 'all') {
-      conditions.push(eq(legalDocuments.legalTopic, legalTopic as string));
-    }
-
-    if (startDate) {
-      conditions.push(gte(legalDocuments.date, new Date(startDate as string)));
-    }
-
-    if (endDate) {
-      conditions.push(lte(legalDocuments.date, new Date(endDate as string)));
-    }
-
-    const documents = await db
-      .select()
-      .from(legalDocuments)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(legalDocuments.date))
-      .limit(50);
-
-    return res.json(documents);
-  } catch (error: any) {
-    console.error("Error fetching documents:", error);
-    return res.status(500).json({
-      success: false,
-      error: "Failed to fetch documents",
-      details: error.message
-    });
-  }
-});
-
-// Analyze endpoint for deep research
-router.post("/analyze", async (req, res) => {
-  try {
-    const { query, filters, useDeepResearch } = req.body;
-
-    if (!query) {
-      return res.status(400).json({
-        success: false,
-        error: "Query is required"
-      });
-    }
-
-    // Get relevant documents based on filters
-    let conditions = [];
-    if (filters) {
-      if (filters.jurisdiction && filters.jurisdiction !== 'all') {
-        conditions.push(eq(legalDocuments.jurisdiction, filters.jurisdiction));
-      }
-      if (filters.legalTopic && filters.legalTopic !== 'all') {
-        conditions.push(eq(legalDocuments.legalTopic, filters.legalTopic));
-      }
-      if (filters.startDate) {
-        conditions.push(gte(legalDocuments.date, new Date(filters.startDate)));
-      }
-      if (filters.endDate) {
-        conditions.push(lte(legalDocuments.date, new Date(filters.endDate)));
-      }
-    }
-
-    // Get all relevant documents
+    // Get relevant documents
     const documents = await db
       .select()
       .from(legalDocuments)
@@ -90,25 +44,82 @@ router.post("/analyze", async (req, res) => {
     if (documents.length === 0) {
       return res.status(404).json({
         success: false,
-        error: "No relevant documents found for the given filters"
+        error: "No relevant documents found for the given criteria"
       });
     }
 
     // Generate research response using Gemini
     const researchResponse = await generateDeepResearch(query, documents);
 
-    return res.json({
-      success: true,
-      summary: researchResponse.summary,
-      analysis: researchResponse.analysis,
-      citations: researchResponse.citations
-    });
+    // Save research report
+    const [report] = await db
+      .insert(legalResearchReports)
+      .values({
+        userId: req.user?.id || 1, // Fallback for demo
+        query,
+        jurisdiction,
+        legalTopic,
+        results: researchResponse,
+        dateRange: dateRange || {},
+        searchType: options?.deepResearch ? "DEEP" : "NATURAL",
+        timestamp: new Date(),
+      })
+      .returning();
+
+    // Format the response to match frontend expectations
+    const response = {
+      results: researchResponse.documents.map(doc => ({
+        title: doc.title,
+        source: doc.source || doc.citation,
+        relevance: Math.round(doc.relevance * 100),
+        summary: doc.summary,
+        citations: doc.citations || [],
+        urls: doc.urls || []
+      })),
+      recommendations: researchResponse.recommendations || [],
+      timestamp: report.timestamp.toISOString()
+    };
+
+    return res.json(response);
 
   } catch (error: any) {
-    console.error("Analysis error:", error);
+    console.error("Legal research error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to analyze query",
+      error: "Failed to process legal research query",
+      details: error.message
+    });
+  }
+});
+
+// Suggest questions endpoint
+router.post("/suggest-questions", async (req, res) => {
+  try {
+    const { query, jurisdiction, legalTopic } = req.body;
+
+    if (!jurisdiction || !legalTopic) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields: jurisdiction and legalTopic"
+      });
+    }
+
+    // Generate suggested questions based on the context
+    const suggestedQuestions = [
+      `What are the key precedents in ${jurisdiction} regarding ${legalTopic}?`,
+      `How has ${legalTopic} legislation evolved in ${jurisdiction}?`,
+      `What are the current compliance requirements for ${legalTopic} in ${jurisdiction}?`,
+      `Recent landmark cases in ${jurisdiction} affecting ${legalTopic}?`,
+      `What are the standard practices for ${legalTopic} in ${jurisdiction}?`
+    ];
+
+    return res.json(suggestedQuestions);
+
+  } catch (error: any) {
+    console.error("Suggestion generation error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to generate suggestions",
       details: error.message
     });
   }
