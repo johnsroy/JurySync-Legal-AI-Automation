@@ -20,10 +20,10 @@ const researchRequestSchema = z.object({
   }).optional()
 });
 
-
 // Get available research filters
 router.get("/filters", async (req, res) => {
   try {
+    console.log("Fetching available filters");
     const [jurisdictions, topics] = await Promise.all([
       db.select({
         jurisdiction: legalDocuments.jurisdiction
@@ -37,6 +37,11 @@ router.get("/filters", async (req, res) => {
       .from(legalDocuments)
       .groupBy(legalDocuments.legalTopic)
     ]);
+
+    console.log("Retrieved filters:", {
+      jurisdictions: jurisdictions.length,
+      topics: topics.length
+    });
 
     return res.json({
       success: true,
@@ -70,6 +75,7 @@ router.post("/analyze", async (req, res) => {
     console.log("Received research request:", req.body);
 
     const validatedData = researchRequestSchema.parse(req.body);
+    console.log("Validated request data:", validatedData);
 
     // Build query conditions
     const whereConditions = [];
@@ -89,6 +95,8 @@ router.post("/analyze", async (req, res) => {
     if (validatedData.filters?.dateRange?.end) {
       whereConditions.push(lte(legalDocuments.date, new Date(validatedData.filters.dateRange.end)));
     }
+
+    console.log("Constructed where conditions:", whereConditions);
 
     // Find relevant documents
     const relevantDocs = await db.select({

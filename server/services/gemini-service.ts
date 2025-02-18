@@ -32,82 +32,108 @@ export async function generateDeepResearch(query: string, filters?: ResearchFilt
       },
     });
 
-    // Process natural language query into structured research query
-    const queryAnalysisPrompt = `
-      Analyze this legal research query and extract key components:
+    // First attempt to understand the query context
+    const contextPrompt = `
+      You are a legal research expert. For the following query:
       "${query}"
 
-      Return a JSON object with:
+      Provide a JSON response with key analysis points, strictly in this format:
       {
-        "structuredQuery": "reformulated query with legal terminology",
-        "legalIssues": ["list of identified legal issues"],
-        "keyTerms": ["important legal terms"],
-        "suggestedJurisdiction": "most relevant jurisdiction if not specified",
-        "suggestedTopic": "most relevant legal topic if not specified"
+        "queryType": "legal precedent search | regulatory compliance | case law analysis",
+        "relevantAreas": ["area1", "area2"],
+        "keyTerms": ["term1", "term2"],
+        "suggestedScope": {
+          "jurisdiction": "suggested jurisdiction",
+          "timeframe": "suggested timeframe",
+          "topics": ["topic1", "topic2"]
+        }
       }
     `;
 
-    const queryAnalysis = await model.generateContent(queryAnalysisPrompt);
-    const analysisResult = JSON.parse(queryAnalysis.response.text());
-    console.log("Query analysis:", analysisResult);
+    console.log("Analyzing query context...");
+    const contextAnalysis = await model.generateContent(contextPrompt);
+    const contextText = contextAnalysis.response.text();
+    console.log("Context analysis response:", contextText);
 
-    // Main research prompt
+    let analysisResult;
+    try {
+      analysisResult = JSON.parse(contextText);
+    } catch (parseError) {
+      console.error("Failed to parse context analysis:", parseError);
+      throw new Error("Failed to analyze query context");
+    }
+
+    // Main research generation
     const researchPrompt = `
-      You are a legal research expert. Analyze the following query and provide a comprehensive response.
-
-      Original Query: "${query}"
-      Structured Query: "${analysisResult.structuredQuery}"
-      Legal Issues: ${analysisResult.legalIssues.join(", ")}
+      Based on the analyzed context, provide comprehensive legal research for:
+      Query: "${query}"
+      Type: ${analysisResult.queryType}
+      Areas: ${analysisResult.relevantAreas.join(", ")}
 
       Context:
-      - Jurisdiction: ${filters?.jurisdiction || analysisResult.suggestedJurisdiction}
-      - Legal Topic: ${filters?.legalTopic || analysisResult.suggestedTopic}
-      - Date Range: ${filters?.dateRange?.start ? `${filters.dateRange.start} to ${filters.dateRange.end}` : "No specific range"}
+      - Jurisdiction: ${filters?.jurisdiction || analysisResult.suggestedScope.jurisdiction}
+      - Legal Topics: ${filters?.legalTopic || analysisResult.suggestedScope.topics.join(", ")}
+      ${filters?.dateRange?.start ? `- Date Range: ${filters.dateRange.start} to ${filters.dateRange.end}` : ''}
 
       ${filters?.relevantDocs?.length ? `
-      Relevant documents to consider:
-      ${filters.relevantDocs.map((doc, i) => `${i + 1}. ${doc.title} (${doc.jurisdiction}, ${doc.legalTopic}): ${doc.content.substring(0, 200)}...`).join("\n")}
-      ` : ""}
+      Relevant documents:
+      ${filters.relevantDocs.map((doc, i) => `${i + 1}. ${doc.title} (${doc.jurisdiction}): ${doc.content.substring(0, 200)}...`).join("\n")}
+      ` : ''}
 
-      Provide research findings in this exact JSON format:
+      Provide a focused analysis strictly in this JSON format:
       {
-        "executiveSummary": "Comprehensive summary of findings",
+        "executiveSummary": "string - comprehensive overview",
         "findings": [
           {
-            "title": "Key Finding Title",
-            "source": "Source Document or Authority",
-            "relevance": "Relevance score (1-100)",
-            "summary": "Detailed explanation",
-            "citations": ["Relevant case citations", "Statutory references"]
+            "title": "string - key finding",
+            "source": "string - authoritative source",
+            "relevance": number between 1-100,
+            "summary": "string - detailed explanation",
+            "citations": ["string - relevant citations"]
           }
         ],
-        "recommendations": [
-          "Actionable recommendations based on findings"
-        ]
+        "recommendations": ["string - actionable recommendations"]
       }
     `;
 
+    console.log("Generating research analysis...");
     const result = await model.generateContent(researchPrompt);
-    const response = await result.response;
-    const text = response.text();
-    console.log("Gemini raw response:", text);
+    const response = result.response.text();
+    console.log("Research generation raw response:", response);
 
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}(\s*|\n*)$/);
-    if (!jsonMatch) {
-      console.error("No JSON match found in AI response");
-      throw new Error("Invalid response format");
+    let parsedResponse;
+    try {
+      // Clean the response to ensure we only parse the JSON part
+      const jsonMatch = response.match(/\{[\s\S]*\}(\s*|\n*)$/);
+      if (!jsonMatch) {
+        throw new Error("No valid JSON found in response");
+      }
+      parsedResponse = JSON.parse(jsonMatch[0]);
+    } catch (parseError) {
+      console.error("Failed to parse research response:", parseError);
+      throw new Error("Failed to parse research results");
     }
 
-    const parsedResponse = JSON.parse(jsonMatch[0]);
-
-    // Validate response structure
+    // Validate the response structure
     if (!parsedResponse.executiveSummary || !Array.isArray(parsedResponse.findings)) {
-      throw new Error("Invalid response structure");
+      console.error("Invalid response structure:", parsedResponse);
+      throw new Error("Invalid research results structure");
     }
+
+    // Transform response to ensure proper types
+    const formattedResponse = {
+      ...parsedResponse,
+      findings: parsedResponse.findings.map(finding => ({
+        ...finding,
+        relevance: typeof finding.relevance === 'string' ? 
+          parseInt(finding.relevance, 10) : finding.relevance,
+        citations: Array.isArray(finding.citations) ? 
+          finding.citations : [finding.citations].filter(Boolean)
+      }))
+    };
 
     console.log("Successfully generated research response");
-    return parsedResponse;
+    return formattedResponse;
 
   } catch (error: any) {
     console.error("Gemini service error:", error);
