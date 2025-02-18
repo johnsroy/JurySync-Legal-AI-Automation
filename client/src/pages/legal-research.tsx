@@ -85,48 +85,26 @@ export default function LegalResearch() {
 
   const researchMutation = useMutation({
     mutationFn: async (query: string) => {
-      try {
-        const response = await fetch('/api/legal-research', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            query,
-            jurisdiction: filters.jurisdiction,
-            legalTopic: filters.legalTopic,
-            dateRange: {
-              start: filters.startDate?.toISOString(),
-              end: filters.endDate?.toISOString()
-            }
-          })
-        });
+      const response = await fetch('/api/legal-research/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          query,
+          filters,
+          useDeepResearch: true
+        })
+      });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorMessage = 'Research analysis failed';
-          try {
-            const errorData = JSON.parse(errorText);
-            errorMessage = errorData.error || errorData.message || errorMessage;
-          } catch (e) {
-            console.error('Failed to parse error response:', errorText);
-          }
-          throw new Error(errorMessage);
-        }
-
-        const data = await response.json();
-        if (!data.success) {
-          throw new Error(data.error || 'Research analysis failed');
-        }
-        return data;
-      } catch (error: any) {
-        console.error('Research request failed:', error);
-        throw new Error(error.message || 'Failed to complete research analysis');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to analyze query');
       }
+
+      return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data: LegalResearchResponse) => {
       setResult(data);
       toast({
         title: "Analysis Complete",
@@ -134,10 +112,9 @@ export default function LegalResearch() {
       });
     },
     onError: (error: Error) => {
-      console.error('Research error:', error);
       toast({
-        title: "Research Failed",
-        description: error.message || 'Failed to complete research analysis',
+        title: "Analysis Failed",
+        description: error.message,
         variant: "destructive"
       });
     }

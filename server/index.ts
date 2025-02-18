@@ -6,7 +6,6 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { db } from "./db";
 import cors from 'cors';
-import { createServer } from 'http';
 import { handleStripeWebhook } from "./webhooks/stripe";
 import documentAnalyticsRouter from './routes/document-analytics';
 import redlineRouter from "./routes/redline";
@@ -19,9 +18,8 @@ dotenv.config();
 
 // Create Express application
 const app = express();
-const httpServer = createServer(app);
 
-// Configure API specific middleware FIRST
+// Configure API specific middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' ? ['https://jurysync.io'] : true,
   credentials: true,
@@ -29,7 +27,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Parse JSON before any routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -42,7 +39,7 @@ const sessionStore = new PostgresStore({
   },
   createTableIfMissing: true,
   pruneSessionInterval: 60,
-  tableName: 'session'
+  tableName: 'session' // Explicit table name
 });
 
 const sessionMiddleware = session({
@@ -52,21 +49,15 @@ const sessionMiddleware = session({
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     sameSite: 'lax'
   },
-  name: 'jurysync.sid'
+  name: 'jurysync.sid' // Custom session name
 });
 
 app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
-
-// API request logging
-app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
 
 // Security headers
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -78,49 +69,27 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Setup auth
 setupAuth(app);
 
-// Add JSON handling middleware for API routes
-app.use('/api', (req: Request, res: Response, next: NextFunction) => {
-  res.setHeader('Content-Type', 'application/json');
-
-  // Handle JSON parsing errors
-  if (req.is('application/json')) {
-    let data = '';
-    req.setEncoding('utf8');
-    req.on('data', (chunk) => {
-      data += chunk;
-    });
-    req.on('end', () => {
-      if (data) {
-        try {
-          req.body = JSON.parse(data);
-        } catch (err) {
-          return res.status(400).json({
-            error: 'Invalid JSON',
-            message: 'Failed to parse request body as JSON'
-          });
-        }
-      }
-      next();
-    });
-  } else {
-    next();
-  }
-});
-
-// Mount API routes
-app.use('/api/legal-research', legalResearchRouter);
+// Register document analytics route
 app.use('/api/document-analytics', documentAnalyticsRouter);
+
+// Register redline route
 app.use("/api/redline", redlineRouter);
 
-// Register other routes
+// Register legal research route
+app.use("/api/legal-research", legalResearchRouter);
+
+// Add this before your routes
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
+// Register routes
 registerRoutes(app);
 
 // API error handling middleware
-app.use('/api', (err: any, req: Request, res: Response, next: NextFunction) => {
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(`API Error [${req.method} ${req.path}]:`, err);
-
-  // Ensure we don't send HTML errors
-  res.setHeader('Content-Type', 'application/json');
 
   if (err.name === 'UnauthorizedError') {
     return res.status(401).json({
@@ -136,41 +105,65 @@ app.use('/api', (err: any, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// Setup Vite or serve static files LAST
+// Setup Vite or serve static files
 if (process.env.NODE_ENV !== "production") {
-  setupVite(app, httpServer);
+  setupVite(app);
 } else {
   serveStatic(app);
 }
 
-// Start server first, then initialize services
-const PORT = 5000; // Changed to match workflow expectation
-console.log(`[${new Date().toISOString()}] Starting server...`);
+// Start server
+const PORT = process.env.PORT || 5000;
 
-// Start server immediately
-httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`[${new Date().toISOString()}] Server running at http://0.0.0.0:${PORT}`);
-
-  // Initialize services after server is running
-  (async () => {
-    try {
-      console.log(`[${new Date().toISOString()}] Starting to seed legal database...`);
-      const numberOfDocuments = 50; // Reduced initial seed count
-      await seedLegalDatabase(numberOfDocuments);
-      console.log(`[${new Date().toISOString()}] Legal database seeded successfully with ${numberOfDocuments} documents`);
-
-      try {
-        console.log(`[${new Date().toISOString()}] Starting continuous learning service...`);
-        await continuousLearningService.startContinuousLearning();
-        console.log(`[${new Date().toISOString()}] Continuous learning service started successfully`);
-      } catch (error) {
-        console.error('[${new Date().toISOString()}] Failed to start continuous learning service:', error);
-        // Don't exit process, allow server to continue running
-      }
-
-    } catch (error) {
-      console.error('[${new Date().toISOString()}] Failed to initialize services:', error);
-      // Don't exit process, allow server to continue running
+// Webhook handling
+app.post('/webhook', handleStripeWebhook);
+app.post('/webhook-test', (req: Request, res: Response) => {
+  try {
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      return res.status(500).json({ error: 'Webhook secret not configured' });
     }
-  })();
+
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Webhook endpoint is accessible',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Webhook test error:', error);
+    return res.status(500).json({ error: 'Webhook test failed' });
+  }
 });
+
+// Initialize services
+(async () => {
+  try {
+    const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
+    await seedLegalDatabase(numberOfDocuments);
+    console.log('Legal database seeded successfully');
+
+    try {
+      await continuousLearningService.startContinuousLearning();
+      console.log('Continuous learning service started successfully');
+    } catch (error) {
+      console.error('Failed to start continuous learning service:', error);
+    }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running at http://0.0.0.0:${PORT}`);
+    }).on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use`);
+      } else {
+        console.error('Failed to start server:', error);
+      }
+      process.exit(1);
+    });
+
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+})();
