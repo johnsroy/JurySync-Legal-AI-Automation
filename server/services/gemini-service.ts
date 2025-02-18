@@ -43,53 +43,61 @@ export async function generateDeepResearch(query: string, filters?: ResearchFilt
 
       ${filters?.relevantDocs?.length ? `
       Relevant documents to consider:
-      ${filters.relevantDocs.map((doc, i) => `${i + 1}. ${doc.title} (${doc.jurisdiction}, ${doc.legalTopic}): ${doc.content.substring(0, 200)}...`).join('\n')}
-      ` : ''}
+      ${filters.relevantDocs.map((doc, i) => `
+      ${i + 1}. ${doc.title} (${doc.jurisdiction}, ${doc.legalTopic})
+      Citation: ${doc.citation || 'N/A'}
+      Summary: ${doc.content.substring(0, 300)}...
+      `).join('\n')}
+      ` : 'No specific documents provided.'}
 
-      IMPORTANT: Respond with ONLY a valid JSON object using this EXACT structure. Do not include any other text or formatting:
+      Provide a comprehensive legal analysis including:
+      1. Executive summary of findings
+      2. Key legal principles identified
+      3. Relevant cases and their impact
+      4. Specific recommendations
 
+      Format your response as a JSON object with the following structure:
       {
-        "executiveSummary": "Brief overview of findings",
+        "executiveSummary": "string - A concise overview of the findings",
         "findings": [
           {
-            "title": "Finding title",
-            "source": "Source of information",
-            "relevanceScore": 95,
-            "summary": "Detailed explanation",
-            "citations": ["Citation 1", "Citation 2"]
+            "title": "string - Key finding or principle",
+            "source": "string - Citation or reference",
+            "relevance": "number - Score between 0-1",
+            "summary": "string - Detailed explanation",
+            "citations": ["string - List of relevant case citations"]
           }
         ],
-        "recommendations": [
-          "Recommendation 1",
-          "Recommendation 2"
-        ]
+        "recommendations": ["string - List of actionable recommendations"]
       }
     `;
+
+    console.log('Sending prompt to Gemini:', prompt);
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
 
-    try {
-      // Extract only the JSON part from the response
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("No valid JSON found in response");
-      }
+    console.log('Raw Gemini response:', text);
 
-      const parsedResponse = JSON.parse(jsonMatch[0]);
+    // Clean the response text to ensure it's valid JSON
+    const cleanedText = text.replace(/^[\s\S]*?(\{[\s\S]*\})[\s\S]*$/, '$1');
+
+    try {
+      const parsedResponse = JSON.parse(cleanedText);
 
       // Validate response structure
       if (!parsedResponse.executiveSummary || !Array.isArray(parsedResponse.findings)) {
+        console.error('Invalid response structure:', parsedResponse);
         throw new Error("Invalid response structure from AI");
       }
 
-      // Ensure findings have all required fields
+      // Ensure findings have required fields
       parsedResponse.findings = parsedResponse.findings.map(finding => ({
-        title: finding.title || "Untitled Finding",
-        source: finding.source || "Not specified",
-        relevanceScore: finding.relevanceScore || 80,
-        summary: finding.summary || "No summary provided",
+        title: finding.title || 'Untitled Finding',
+        source: finding.source || 'Unknown Source',
+        relevance: typeof finding.relevance === 'number' ? finding.relevance : 1.0,
+        summary: finding.summary || 'No summary provided',
         citations: Array.isArray(finding.citations) ? finding.citations : []
       }));
 
@@ -98,11 +106,11 @@ export async function generateDeepResearch(query: string, filters?: ResearchFilt
         parsedResponse.recommendations = [];
       }
 
-      console.log('Successfully parsed Gemini response');
+      console.log('Successfully processed research response');
       return parsedResponse;
+
     } catch (error: any) {
-      console.error('JSON parse error:', error);
-      console.error('Raw response:', text);
+      console.error('JSON parse error:', error, 'Raw text:', text);
       throw new Error(`Invalid AI response format: ${error?.message || 'Unknown error'}`);
     }
   } catch (error: any) {

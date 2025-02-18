@@ -3,7 +3,7 @@ import { db } from "../db";
 import { legalResearchReports, legalDocuments } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
 import { z } from "zod";
-import { desc, eq, and, gte, lte, ilike, or } from 'drizzle-orm';
+import { desc, eq, and, gte, lte, ilike, or, like } from 'drizzle-orm';
 
 const router = Router();
 
@@ -79,109 +79,114 @@ router.get("/examples", async (req, res) => {
   }
 });
 
-// Main research endpoint
-router.post("/", async (req, res) => {
+// Get available research based on filters
+router.get("/available", async (req, res) => {
   try {
-    const validatedData = researchRequestSchema.parse(req.body);
-    console.log('Starting legal research:', validatedData);
-
-    // Build where conditions for the query
-    const whereConditions = [];
-
-    if (validatedData.jurisdiction) {
-      whereConditions.push(eq(legalDocuments.jurisdiction, validatedData.jurisdiction));
+    const { jurisdiction, legalTopic, startDate, endDate } = req.query;
+    
+    let conditions = [];
+    
+    if (jurisdiction && jurisdiction !== 'all') {
+      conditions.push(eq(legalDocuments.jurisdiction, jurisdiction as string));
+    }
+    
+    if (legalTopic && legalTopic !== 'all') {
+      conditions.push(eq(legalDocuments.legalTopic, legalTopic as string));
+    }
+    
+    if (startDate) {
+      conditions.push(gte(legalDocuments.date, new Date(startDate as string)));
+    }
+    
+    if (endDate) {
+      conditions.push(lte(legalDocuments.date, new Date(endDate as string)));
     }
 
-    if (validatedData.legalTopic) {
-      whereConditions.push(eq(legalDocuments.legalTopic, validatedData.legalTopic));
-    }
+    const query = conditions.length > 0 
+      ? db.select().from(legalDocuments).where(and(...conditions))
+      : db.select().from(legalDocuments);
 
-    if (validatedData.dateRange?.start) {
-      whereConditions.push(gte(legalDocuments.date, new Date(validatedData.dateRange.start)));
-    }
-
-    if (validatedData.dateRange?.end) {
-      whereConditions.push(lte(legalDocuments.date, new Date(validatedData.dateRange.end)));
-    }
-
-    // Add content search condition with broader search
-    whereConditions.push(
-      or(
-        ilike(legalDocuments.content, `%${validatedData.query}%`),
-        ilike(legalDocuments.title, `%${validatedData.query}%`),
-        ilike(legalDocuments.metadata.citation, `%${validatedData.query}%`)
-      )
-    );
-
-    // Find relevant documents with improved limit
-    const relevantDocs = await db.select({
-      id: legalDocuments.id,
-      title: legalDocuments.title,
-      jurisdiction: legalDocuments.jurisdiction,
-      legalTopic: legalDocuments.legalTopic,
-      date: legalDocuments.date,
-      documentType: legalDocuments.documentType,
-      content: legalDocuments.content,
-      metadata: legalDocuments.metadata
-    })
-    .from(legalDocuments)
-    .where(and(...whereConditions))
-    .orderBy(desc(legalDocuments.date))
-    .limit(20);
-
-    console.log('Found relevant documents:', relevantDocs.length);
-
-    if (relevantDocs.length === 0) {
-      return res.json({
-        success: true,
-        executiveSummary: "No matching documents found for the given criteria.",
-        findings: [],
-        recommendations: ["Try broadening your search criteria", "Remove some filters to see more results"],
-        relevantDocuments: []
-      });
-    }
-
-    // Generate research using Gemini
-    const researchResults = await generateDeepResearch(validatedData.query, {
-      jurisdiction: validatedData.jurisdiction,
-      legalTopic: validatedData.legalTopic,
-      dateRange: validatedData.dateRange,
-      relevantDocs
-    });
-
-    // Store results
-    await db.insert(legalResearchReports).values({
-      query: validatedData.query,
-      jurisdiction: validatedData.jurisdiction || 'All',
-      legalTopic: validatedData.legalTopic || 'All',
-      results: researchResults,
-      dateRange: validatedData.dateRange || null,
-      timestamp: new Date()
-    });
+    const documents = await query.limit(100);
 
     return res.json({
       success: true,
-      executiveSummary: researchResults.executiveSummary,
-      findings: researchResults.findings,
-      recommendations: researchResults.recommendations,
-      relevantDocuments: relevantDocs.map(doc => ({
+      documents: documents.map(doc => ({
         id: doc.id,
         title: doc.title,
         jurisdiction: doc.jurisdiction,
-        topic: doc.legalTopic,
+        legalTopic: doc.legalTopic,
         date: doc.date,
-        type: doc.documentType,
-        citation: doc.metadata?.citation,
-        content: doc.content.substring(0, 300) + '...' // Include longer preview
+        summary: doc.content.substring(0, 200) + '...'
       }))
     });
 
-  } catch (error: any) {
-    console.error("Legal research error:", error);
+  } catch (error) {
+    console.error("Error fetching available research:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch available research"
+    });
+  }
+});
+
+// Main research endpoint
+router.post("/", async (req, res) => {
+  try {
+    const { query, filters } = req.body;
+
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        error: "Query is required"
+      });
+    }
+
+    console.log('Processing research request:', { query, filters });
+
+    // Get relevant documents based on filters
+    let conditions = [];
+    
+    if (filters?.jurisdiction && filters.jurisdiction !== 'all') {
+      conditions.push(eq(legalDocuments.jurisdiction, filters.jurisdiction));
+    }
+    
+    if (filters?.legalTopic && filters.legalTopic !== 'all') {
+      conditions.push(eq(legalDocuments.legalTopic, filters.legalTopic));
+    }
+
+    const relevantDocs = conditions.length > 0
+      ? await db.select().from(legalDocuments).where(and(...conditions)).limit(5)
+      : await db.select().from(legalDocuments).limit(5);
+
+    // Generate research using AI
+    const research = await generateDeepResearch(query, {
+      ...filters,
+      relevantDocs
+    });
+
+    // Store the research results
+    if (req.user?.id) {
+      await db.insert(legalResearchReports).values({
+        userId: req.user.id,
+        query,
+        jurisdiction: filters?.jurisdiction || 'all',
+        legalTopic: filters?.legalTopic || 'all',
+        results: research,
+        dateRange: filters?.dateRange || null
+      });
+    }
+
+    return res.json({
+      success: true,
+      ...research
+    });
+
+  } catch (error) {
+    console.error("Research error:", error);
     return res.status(500).json({
       success: false,
       error: "Research failed",
-      details: error.message || "Unknown error occurred"
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
