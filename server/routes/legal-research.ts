@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { db } from "../db";
-import { legalResearchReports } from "@shared/schema";
+import { legalResearchReports, legalDocuments } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
 import { z } from "zod";
-import { desc, eq, and, gte, lte } from 'drizzle-orm';
+import { desc, eq, and, gte, lte, ilike } from 'drizzle-orm';
 
 const router = Router();
 
@@ -42,9 +42,21 @@ router.get("/examples", async (req, res) => {
       }
     ];
 
+    // Also fetch recent successful queries from the database
+    const recentQueries = await db.select({
+      id: legalResearchReports.id,
+      query: legalResearchReports.query,
+      jurisdiction: legalResearchReports.jurisdiction,
+      legalTopic: legalResearchReports.legalTopic
+    })
+    .from(legalResearchReports)
+    .orderBy(desc(legalResearchReports.timestamp))
+    .limit(5);
+
     return res.json({ 
       success: true,
-      examples: exampleQueries 
+      examples: exampleQueries,
+      recentQueries: recentQueries
     });
   } catch (error) {
     console.error("Error fetching example queries:", error);
@@ -66,9 +78,23 @@ router.post("/", async (req, res) => {
     }
 
     const validatedData = researchRequestSchema.parse(req.body);
-
     console.log('Starting legal research:', validatedData);
 
+    // First check our legal documents database for relevant documents
+    let relevantDocs = await db.select()
+      .from(legalDocuments)
+      .where(
+        and(
+          validatedData.jurisdiction ? eq(legalDocuments.jurisdiction, validatedData.jurisdiction) : undefined,
+          validatedData.legalTopic ? eq(legalDocuments.legalTopic, validatedData.legalTopic) : undefined,
+          ilike(legalDocuments.content, `%${validatedData.query}%`)
+        )
+      )
+      .limit(5);
+
+    console.log('Found relevant documents:', relevantDocs.length);
+
+    // Generate AI research incorporating relevant documents
     const researchResults = await generateDeepResearch(
       validatedData.query,
       {
@@ -95,6 +121,12 @@ router.post("/", async (req, res) => {
         executiveSummary: researchResults.executiveSummary,
         findings: researchResults.findings,
         recommendations: researchResults.recommendations,
+        relevantDocuments: relevantDocs.map(doc => ({
+          title: doc.title,
+          jurisdiction: doc.jurisdiction,
+          date: doc.date,
+          type: doc.documentType
+        })),
         timestamp: new Date().toISOString(),
         filters: {
           jurisdiction: validatedData.jurisdiction,
@@ -117,16 +149,30 @@ router.post("/", async (req, res) => {
 // Get available research filters
 router.get("/filters", async (req, res) => {
   try {
+    // Get unique jurisdictions and topics from existing documents
+    const [jurisdictions, topics] = await Promise.all([
+      db.select({
+        jurisdiction: legalDocuments.jurisdiction
+      })
+      .from(legalDocuments)
+      .groupBy(legalDocuments.jurisdiction),
+
+      db.select({
+        topic: legalDocuments.legalTopic
+      })
+      .from(legalDocuments)
+      .groupBy(legalDocuments.legalTopic)
+    ]);
+
     const filters = {
-      jurisdictions: [
-        "United States", "European Union", "United Kingdom", 
-        "International", "Canada", "Australia"
-      ],
-      legalTopics: [
-        "Constitutional Law", "Criminal Law", "Civil Rights",
-        "Corporate Law", "Environmental Law", "Intellectual Property",
-        "Privacy Law", "Technology Law", "International Law"
-      ]
+      jurisdictions: jurisdictions
+        .map(j => j.jurisdiction)
+        .filter(Boolean)
+        .sort(),
+      legalTopics: topics
+        .map(t => t.topic)
+        .filter(Boolean)
+        .sort()
     };
 
     return res.json({
@@ -165,15 +211,37 @@ router.get("/available", async (req, res) => {
       conditions.push(lte(legalResearchReports.timestamp, new Date(endDate as string)));
     }
 
-    const results = await db.select()
-      .from(legalResearchReports)
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(legalResearchReports.timestamp))
-      .limit(50);
+    // Get both research reports and relevant documents
+    const [reports, documents] = await Promise.all([
+      db.select()
+        .from(legalResearchReports)
+        .where(conditions.length ? and(...conditions) : undefined)
+        .orderBy(desc(legalResearchReports.timestamp))
+        .limit(50),
+
+      db.select()
+        .from(legalDocuments)
+        .where(
+          and(
+            jurisdiction !== 'all' ? eq(legalDocuments.jurisdiction, jurisdiction as string) : undefined,
+            legalTopic !== 'all' ? eq(legalDocuments.legalTopic, legalTopic as string) : undefined
+          )
+        )
+        .limit(50)
+    ]);
 
     return res.json({
       success: true,
-      results
+      data: {
+        reports,
+        documents: documents.map(doc => ({
+          title: doc.title,
+          jurisdiction: doc.jurisdiction,
+          date: doc.date,
+          type: doc.documentType,
+          topic: doc.legalTopic
+        }))
+      }
     });
 
   } catch (error) {
@@ -185,7 +253,7 @@ router.get("/available", async (req, res) => {
   }
 });
 
-// Suggest questions endpoint remains unchanged.
+// Suggest questions endpoint
 router.post("/suggest-questions", async (req, res) => {
   try {
     if (!req.user) {
@@ -273,7 +341,7 @@ router.post("/suggest-questions", async (req, res) => {
   }
 });
 
-// Analyze endpoint remains unchanged.
+// Analyze endpoint
 router.post("/analyze", async (req, res) => {
   try {
     if (!req.file) {
