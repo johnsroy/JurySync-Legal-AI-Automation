@@ -105,22 +105,6 @@ export const aggregateMetrics = pgTable('aggregate_metrics', {
   metadata: jsonb('metadata').$type<Record<string, unknown>>(),
 });
 
-// Metrics Events table for tracking various operations
-export const metricsEvents = pgTable('metrics_events', {
-  id: serial('id').primaryKey(),
-  userId: integer('user_id').notNull(),
-  modelId: text('model_id').notNull(),
-  taskType: text('task_type').notNull(),
-  processingTimeMs: integer('processing_time_ms').notNull(),
-  successful: boolean('successful').notNull(),
-  costSavingEstimate: real('cost_saving_estimate').notNull(),
-  timestamp: timestamp('timestamp').defaultNow().notNull(),
-  metadata: jsonb('metadata').$type<{
-    error?: string;
-    details?: Record<string, unknown>;
-  }>(),
-});
-
 // Create insert schemas
 export const insertModelMetricsSchema = createInsertSchema(modelMetrics, {
   timestamp: z.coerce.date().optional(),
@@ -144,21 +128,15 @@ export const insertAggregateMetricsSchema = createInsertSchema(aggregateMetrics,
   timestamp: z.coerce.date().optional(),
 });
 
-export const insertMetricsEventSchema = createInsertSchema(metricsEvents, {
-  timestamp: z.coerce.date().optional(),
-});
-
 // Export types
 export type ModelMetric = typeof modelMetrics.$inferSelect;
 export type WorkflowMetric = typeof workflowMetrics.$inferSelect;
 export type DocumentMetric = typeof documentMetrics.$inferSelect;
 export type UserActivityMetric = typeof userActivityMetrics.$inferSelect;
 export type AggregateMetric = typeof aggregateMetrics.$inferSelect;
-export type MetricsEvent = typeof metricsEvents.$inferSelect;
 
 export type InsertModelMetric = z.infer<typeof insertModelMetricsSchema>;
 export type InsertWorkflowMetric = z.infer<typeof insertWorkflowMetricsSchema>;
 export type InsertDocumentMetric = z.infer<typeof insertDocumentMetricsSchema>;
 export type InsertUserActivityMetric = z.infer<typeof insertUserActivityMetricsSchema>;
 export type InsertAggregateMetric = z.infer<typeof insertAggregateMetricsSchema>;
-export type InsertMetricsEvent = z.infer<typeof insertMetricsEventSchema>;

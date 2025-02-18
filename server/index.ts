@@ -6,9 +6,12 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { db } from "./db";
 import cors from 'cors';
+import { handleStripeWebhook } from "./webhooks/stripe";
 import documentAnalyticsRouter from './routes/document-analytics';
 import redlineRouter from "./routes/redline";
 import legalResearchRouter from "./routes/legal-research";
+import { seedLegalDatabase } from './services/seedData';
+import { continuousLearningService } from './services/continuousLearningService';
 import passport from 'passport';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -36,7 +39,7 @@ const sessionStore = new PostgresStore({
   },
   createTableIfMissing: true,
   pruneSessionInterval: 60,
-  tableName: 'session'
+  tableName: 'session' // Explicit table name
 });
 
 const sessionMiddleware = session({
@@ -46,10 +49,10 @@ const sessionMiddleware = session({
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     sameSite: 'lax'
   },
-  name: 'jurysync.sid'
+  name: 'jurysync.sid' // Custom session name
 });
 
 app.use(sessionMiddleware);
@@ -66,18 +69,21 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Setup auth
 setupAuth(app);
 
-// Register routes
+// Register document analytics route
 app.use('/api/document-analytics', documentAnalyticsRouter);
+
+// Register redline route
 app.use("/api/redline", redlineRouter);
+
+// Register legal research route
 app.use("/api/legal-research", legalResearchRouter);
+
+// Register routes
 registerRoutes(app);
 
 // API error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(`API Error [${req.method} ${req.path}]:`, err);
-
-  // Ensure we always return JSON, even for errors
-  res.setHeader('Content-Type', 'application/json');
 
   if (err.name === 'UnauthorizedError') {
     return res.status(401).json({
@@ -101,15 +107,57 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 // Start server
-const PORT = parseInt(process.env.PORT || '5000', 10);
+const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running at http://0.0.0.0:${PORT}`);
-}).on('error', (error: any) => {
-  if (error.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} is already in use`);
-  } else {
-    console.error('Failed to start server:', error);
+// Webhook handling
+app.post('/webhook', handleStripeWebhook);
+app.post('/webhook-test', (req: Request, res: Response) => {
+  try {
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      return res.status(500).json({ error: 'Webhook secret not configured' });
+    }
+
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Webhook endpoint is accessible',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Webhook test error:', error);
+    return res.status(500).json({ error: 'Webhook test failed' });
   }
-  process.exit(1);
 });
+
+// Initialize services
+(async () => {
+  try {
+    const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
+    await seedLegalDatabase(numberOfDocuments);
+    console.log('Legal database seeded successfully');
+
+    try {
+      await continuousLearningService.startContinuousLearning();
+      console.log('Continuous learning service started successfully');
+    } catch (error) {
+      console.error('Failed to start continuous learning service:', error);
+    }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running at http://0.0.0.0:${PORT}`);
+    }).on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use`);
+      } else {
+        console.error('Failed to start server:', error);
+      }
+      process.exit(1);
+    });
+
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+})();
