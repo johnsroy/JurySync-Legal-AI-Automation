@@ -2,10 +2,20 @@ import { Router } from "express";
 import { db } from "../db";
 import { legalResearchReports, legalDocuments } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
+import { Configuration, OpenAIApi } from "openai";
+import { PDFDocument } from 'pdf-lib';
 import { z } from "zod";
 import { desc, eq, and, gte, lte, ilike } from 'drizzle-orm';
+import multer from 'multer';
 
 const router = Router();
+
+// Configure OpenAI
+const openai = new OpenAIApi(
+  new Configuration({
+    apiKey: process.env.OPENAI_API_KEY
+  })
+);
 
 // Validation schemas
 const researchRequestSchema = z.object({
@@ -71,40 +81,38 @@ router.get("/examples", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        error: "Authentication required" 
+        error: "Authentication required"
       });
     }
 
     const validatedData = researchRequestSchema.parse(req.body);
-    console.log('Starting legal research:', validatedData);
+    console.log("Starting legal research:", validatedData);
 
-    // First check our legal documents database for relevant documents
-    let relevantDocs = await db.select()
+    // Find relevant documents
+    const relevantDocs = await db.select()
       .from(legalDocuments)
       .where(
         and(
-          validatedData.jurisdiction ? eq(legalDocuments.jurisdiction, validatedData.jurisdiction) : undefined,
-          validatedData.legalTopic ? eq(legalDocuments.legalTopic, validatedData.legalTopic) : undefined,
+          validatedData.jurisdiction ? 
+            eq(legalDocuments.jurisdiction, validatedData.jurisdiction) : undefined,
+          validatedData.legalTopic ? 
+            eq(legalDocuments.legalTopic, validatedData.legalTopic) : undefined,
           ilike(legalDocuments.content, `%${validatedData.query}%`)
         )
       )
       .limit(5);
 
-    console.log('Found relevant documents:', relevantDocs.length);
+    // Generate research using Gemini
+    const researchResults = await generateDeepResearch(validatedData.query, {
+      jurisdiction: validatedData.jurisdiction,
+      legalTopic: validatedData.legalTopic,
+      dateRange: validatedData.dateRange,
+      relevantDocs
+    });
 
-    // Generate AI research incorporating relevant documents
-    const researchResults = await generateDeepResearch(
-      validatedData.query,
-      {
-        jurisdiction: validatedData.jurisdiction,
-        legalTopic: validatedData.legalTopic,
-        dateRange: validatedData.dateRange
-      }
-    );
-
-    // Store results in database
+    // Store results
     await db.insert(legalResearchReports).values({
       userId: req.user.id,
       query: validatedData.query,
@@ -115,33 +123,28 @@ router.post("/", async (req, res) => {
       timestamp: new Date()
     });
 
+    // Return flat results structure
     return res.json({
       success: true,
-      data: {
-        executiveSummary: researchResults.executiveSummary,
-        findings: researchResults.findings,
-        recommendations: researchResults.recommendations,
-        relevantDocuments: relevantDocs.map(doc => ({
-          title: doc.title,
-          jurisdiction: doc.jurisdiction,
-          date: doc.date,
-          type: doc.documentType
-        })),
-        timestamp: new Date().toISOString(),
-        filters: {
-          jurisdiction: validatedData.jurisdiction,
-          legalTopic: validatedData.legalTopic,
-          dateRange: validatedData.dateRange
-        }
-      }
+      executiveSummary: researchResults.executiveSummary,
+      findings: researchResults.findings,
+      recommendations: researchResults.recommendations,
+      relevantDocuments: relevantDocs.map(doc => ({
+        title: doc.title,
+        jurisdiction: doc.jurisdiction,
+        topic: doc.legalTopic,
+        date: doc.date,
+        type: doc.documentType
+      })),
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {
     console.error("Legal research error:", error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
       error: "Research failed",
-      details: error instanceof Error ? error.message : 'Unknown error occurred'
+      details: error instanceof Error ? error.message : "Unknown error occurred"
     });
   }
 });

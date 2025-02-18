@@ -272,6 +272,7 @@ export const legalDocuments = pgTable("legal_documents", {
   content: text("content").notNull(),
   documentType: text("document_type").notNull(),
   jurisdiction: text("jurisdiction").notNull(),
+  legalTopic: text("legal_topic").notNull(),
   date: timestamp("date").notNull(),
   status: text("status").notNull(),
   metadata: jsonb("metadata").$type<{
@@ -280,7 +281,7 @@ export const legalDocuments = pgTable("legal_documents", {
     type?: string;
     publicLawNumber?: string;
   }>(),
-  citations: jsonb("citations").default([]),
+  citations: jsonb("citations"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

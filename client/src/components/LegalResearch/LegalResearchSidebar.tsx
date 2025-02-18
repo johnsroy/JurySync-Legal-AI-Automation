@@ -24,6 +24,21 @@ interface ResearchFindings {
   recommendations: string[];
 }
 
+interface ResearchResponse {
+  success: boolean;
+  executiveSummary: string;
+  findings: ResearchResult[];
+  recommendations: string[];
+  relevantDocuments: {
+    title: string;
+    jurisdiction: string;
+    topic: string;
+    date: string;
+    type: string;
+  }[];
+  timestamp: string;
+}
+
 const progressSteps = [
   "Initializing research...",
   "Analyzing legal databases...",
@@ -109,7 +124,7 @@ export function LegalResearchSidebar() {
     try {
       const response = await fetch("/api/legal-research", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Accept": "application/json"
         },
@@ -129,17 +144,21 @@ export function LegalResearchSidebar() {
         throw new Error(errorData.details || "Research failed");
       }
 
-      const data = await response.json();
-      
+      const data: ResearchResponse = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || "Research unsuccessful");
+      }
+
       setFindings({
         executiveSummary: data.executiveSummary,
-        keyFindings: data.results,
+        keyFindings: data.findings,
         recommendations: data.recommendations
       });
 
       toast({
         title: "Research Complete",
-        description: "Legal research results are ready",
+        description: "Legal research results are ready"
       });
     } catch (error) {
       console.error("Research error:", error);
