@@ -9,6 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Calendar } from "@/components/ui/calendar";
+import { useQuery } from '@tanstack/react-query';
+import jsPDF from 'jspdf';
 
 interface ResearchResult {
   title: string;
@@ -30,6 +32,7 @@ interface ResearchResponse {
   findings: ResearchResult[];
   recommendations: string[];
   relevantDocuments: {
+    id: number;
     title: string;
     jurisdiction: string;
     topic: string;
@@ -62,6 +65,32 @@ export function LegalResearchSidebar() {
   });
   const { toast } = useToast();
 
+  // Fetch available research when filters change
+  const { data: availableResearch, refetch } = useQuery({
+    queryKey: ['available-research', filters],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        jurisdiction: filters.jurisdiction,
+        legalTopic: filters.legalTopic,
+        ...(filters.startDate && { startDate: filters.startDate.toISOString() }),
+        ...(filters.endDate && { endDate: filters.endDate.toISOString() })
+      });
+
+      const response = await fetch(`/api/legal-research/available?${params}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch available research');
+      }
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch available research');
+      }
+      return data;
+    },
+    enabled: filters.jurisdiction !== 'all' || filters.legalTopic !== 'all',
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 10 * 60 * 1000, // 10 minutes
+  });
+
   // Handle progress updates
   useEffect(() => {
     if (isSearching) {
@@ -91,13 +120,26 @@ export function LegalResearchSidebar() {
       try {
         const response = await fetch("/api/legal-research/suggest-questions", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query })
+          headers: { 
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({ 
+            query,
+            jurisdiction: filters.jurisdiction,
+            legalTopic: filters.legalTopic,
+            dateRange: filters.startDate ? {
+              start: filters.startDate.toISOString(),
+              end: filters.endDate?.toISOString()
+            } : undefined
+          })
         });
 
         if (!response.ok) throw new Error("Failed to fetch suggestions");
         const data = await response.json();
-        setSuggestions(data);
+        if (data.success && Array.isArray(data.suggestions)) {
+          setSuggestions(data.suggestions);
+        }
       } catch (error) {
         console.error("Suggestion error:", error);
       }
@@ -105,7 +147,7 @@ export function LegalResearchSidebar() {
 
     const debounceTimer = setTimeout(fetchSuggestions, 500);
     return () => clearTimeout(debounceTimer);
-  }, [query]);
+  }, [query, filters]);
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -160,6 +202,10 @@ export function LegalResearchSidebar() {
         title: "Research Complete",
         description: "Legal research results are ready"
       });
+
+      // Optionally refetch available research
+      refetch();
+
     } catch (error) {
       console.error("Research error:", error);
       toast({
@@ -171,6 +217,41 @@ export function LegalResearchSidebar() {
       setIsSearching(false);
       setProgress(100);
     }
+  };
+
+  const handleExportPDF = () => {
+    if (!findings) {
+      toast({
+        title: "No Findings",
+        description: "There are no findings to export.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const doc = new jsPDF();
+
+    doc.setFontSize(16);
+    doc.text("Legal Research Report", 10, 10);
+
+    doc.setFontSize(12);
+    doc.text(`Executive Summary:`, 10, 20);
+    doc.text(findings.executiveSummary, 10, 25);
+
+    doc.text(`\nKey Findings:`, 10, 35);
+    findings.keyFindings.forEach((finding, index) => {
+      doc.text(`${index + 1}. ${finding.title} (${finding.source})`, 10, 40 + index * 10);
+      doc.text(`   Summary: ${finding.summary}`, 10, 45 + index * 10);
+      doc.text(`   Relevance Score: ${finding.relevance}`, 10, 50 + index * 10);
+      doc.text(`   Citations: ${finding.citations.join(", ")}`, 10, 55 + index * 10);
+    });
+
+    doc.text(`\nRecommendations:`, 10, 65 + findings.keyFindings.length * 10);
+    findings.recommendations.forEach((rec, index) => {
+      doc.text(`${index + 1}. ${rec}`, 10, 70 + findings.keyFindings.length * 10 + index * 10);
+    });
+
+    doc.save('Legal_Research_Report.pdf');
   };
 
   return (
@@ -230,6 +311,51 @@ export function LegalResearchSidebar() {
           </Button>
         </div>
 
+        {/* Filters */}
+        <div className="space-y-2">
+          <Select
+            value={filters.jurisdiction}
+            onValueChange={(value) => setFilters(prev => ({ ...prev, jurisdiction: value }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Jurisdiction" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Jurisdictions</SelectItem>
+              <SelectItem value="federal">Federal</SelectItem>
+              <SelectItem value="state">State</SelectItem>
+              <SelectItem value="supreme">Supreme Court</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={filters.legalTopic}
+            onValueChange={(value) => setFilters(prev => ({ ...prev, legalTopic: value }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Legal Topic" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Topics</SelectItem>
+              <SelectItem value="constitutional">Constitutional Law</SelectItem>
+              <SelectItem value="criminal">Criminal Law</SelectItem>
+              <SelectItem value="corporate">Corporate Law</SelectItem>
+              <SelectItem value="civil">Civil Rights</SelectItem>
+              {/* Add more topics as needed */}
+            </SelectContent>
+          </Select>
+
+          <DatePicker
+            date={filters.startDate || undefined}
+            onChange={(date) => setFilters(prev => ({ ...prev, startDate: date }))}
+          />
+
+          <DatePicker
+            date={filters.endDate || undefined}
+            onChange={(date) => setFilters(prev => ({ ...prev, endDate: date }))}
+          />
+        </div>
+
         {/* Show progress during search */}
         {isSearching && (
           <div className="space-y-2">
@@ -242,53 +368,38 @@ export function LegalResearchSidebar() {
         )}
 
         {findings && (
-          <ScrollArea className="h-[calc(100vh-280px)]">
+          <ScrollArea className="h-[calc(100vh-400px)]">
             <div className="space-y-6 pr-4">
               {/* Executive Summary */}
               <section>
-                <h3 className="text-sm font-semibold text-gray-300 mb-2">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3">
                   Executive Summary
                 </h3>
-                <p className="text-gray-400 text-sm">
+                <p className="text-sm text-gray-400">
                   {findings.executiveSummary}
                 </p>
               </section>
 
-              {/* Research Findings */}
+              {/* Key Findings */}
               <section>
                 <h3 className="text-sm font-semibold text-gray-300 mb-3">
                   Key Findings
                 </h3>
-                <div className="space-y-4">
+                <ul className="space-y-2">
                   {findings.keyFindings.map((finding, index) => (
-                    <div key={index} className="bg-gray-800/50 p-3 rounded-lg border border-gray-700">
-                      <div className="flex justify-between items-start">
-                        <h4 className="text-sm font-medium text-gray-200">
-                          {finding.title}
-                        </h4>
-                        <span className="text-xs text-primary">
-                          {finding.relevance}% Match
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-400 mt-2">
-                        {finding.summary}
-                      </p>
-                      {finding.citations.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs text-gray-500">Citations:</p>
-                          <ul className="list-disc list-inside text-xs text-gray-400 mt-1">
-                            {finding.citations.map((citation, idx) => (
-                              <li key={idx}>{citation}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      <p className="text-xs text-gray-500 mt-2">
-                        Source: {finding.source}
-                      </p>
-                    </div>
+                    <li key={index} className="bg-gray-800 p-3 rounded-lg">
+                      <h4 className="text-sm font-medium text-gray-200">{finding.title}</h4>
+                      <p className="text-xs text-gray-400">{finding.source}</p>
+                      <p className="text-sm text-gray-300">{finding.summary}</p>
+                      <p className="text-xs text-gray-400">Relevance Score: {finding.relevance}</p>
+                      <ul className="list-disc list-inside text-xs text-gray-400">
+                        {finding.citations.map((citation, ci) => (
+                          <li key={ci}>{citation}</li>
+                        ))}
+                      </ul>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </section>
 
               {/* Recommendations */}
@@ -312,13 +423,40 @@ export function LegalResearchSidebar() {
               <Button 
                 variant="outline" 
                 className="w-full border-gray-700 text-gray-300 hover:text-white"
-                onClick={() => {/* Implement PDF export */}}
+                onClick={handleExportPDF}
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export Research Report
               </Button>
             </div>
           </ScrollArea>
+        )}
+
+        {/* Show available research */}
+        {availableResearch?.reports.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-sm font-medium text-gray-400 mb-2">Available Research</h3>
+            <ScrollArea className="h-48">
+              {availableResearch.reports.map((report) => (
+                <Button
+                  key={report.id}
+                  variant="ghost"
+                  className="w-full justify-start text-left"
+                  onClick={() => {
+                    setQuery(report.query);
+                    handleSearch();
+                  }}
+                >
+                  <div className="flex flex-col">
+                    <span className="text-sm">{report.query}</span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(report.timestamp).toLocaleDateString()}
+                    </span>
+                  </div>
+                </Button>
+              ))}
+            </ScrollArea>
+          </div>
         )}
       </div>
     </div>

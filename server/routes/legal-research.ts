@@ -2,18 +2,10 @@ import { Router } from "express";
 import { db } from "../db";
 import { legalResearchReports, legalDocuments } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
-import OpenAI from "openai";
-import { PDFDocument } from 'pdf-lib';
 import { z } from "zod";
-import { desc, eq, and, gte, lte, ilike } from 'drizzle-orm';
-import multer from 'multer';
+import { desc, eq, and, gte, lte, ilike, or } from 'drizzle-orm';
 
 const router = Router();
-
-// Configure OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
 
 // Validation schemas
 const researchRequestSchema = z.object({
@@ -32,25 +24,25 @@ router.get("/examples", async (req, res) => {
     const exampleQueries = [
       {
         id: 1,
-        query: "What are the key requirements for filing a patent application?",
-        jurisdiction: "United States",
-        legalTopic: "Intellectual Property"
+        query: "What are the recent developments in state constitutional privacy rights?",
+        jurisdiction: "State",
+        legalTopic: "Constitutional"
       },
       {
         id: 2,
-        query: "Recent developments in data privacy regulations",
-        jurisdiction: "European Union",
-        legalTopic: "Privacy Law"
+        query: "Analyze the evolution of environmental protection measures at the state level",
+        jurisdiction: "State",
+        legalTopic: "Constitutional"
       },
       {
         id: 3,
-        query: "Legal framework for smart contracts and blockchain",
-        jurisdiction: "International",
-        legalTopic: "Technology Law"
+        query: "Recent precedents in state-level digital privacy regulations",
+        jurisdiction: "State",
+        legalTopic: "Constitutional"
       }
     ];
 
-    // Also fetch recent successful queries from the database
+    // Fetch recent successful queries from the database
     const recentQueries = await db.select({
       id: legalResearchReports.id,
       query: legalResearchReports.query,
@@ -78,29 +70,52 @@ router.get("/examples", async (req, res) => {
 // Main research endpoint
 router.post("/", async (req, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: "Authentication required"
-      });
-    }
-
     const validatedData = researchRequestSchema.parse(req.body);
     console.log('Starting legal research:', validatedData);
 
-    // Find relevant documents
-    const relevantDocs = await db.select()
-      .from(legalDocuments)
-      .where(
-        and(
-          validatedData.jurisdiction ? 
-            eq(legalDocuments.jurisdiction, validatedData.jurisdiction) : undefined,
-          validatedData.legalTopic ? 
-            eq(legalDocuments.legalTopic, validatedData.legalTopic) : undefined,
-          ilike(legalDocuments.content, `%${validatedData.query}%`)
-        )
+    // Build where conditions for the query
+    const whereConditions = [];
+
+    if (validatedData.jurisdiction) {
+      whereConditions.push(eq(legalDocuments.jurisdiction, validatedData.jurisdiction));
+    }
+
+    if (validatedData.legalTopic) {
+      whereConditions.push(eq(legalDocuments.legalTopic, validatedData.legalTopic));
+    }
+
+    if (validatedData.dateRange?.start) {
+      whereConditions.push(gte(legalDocuments.date, new Date(validatedData.dateRange.start)));
+    }
+
+    if (validatedData.dateRange?.end) {
+      whereConditions.push(lte(legalDocuments.date, new Date(validatedData.dateRange.end)));
+    }
+
+    // Add content search condition
+    whereConditions.push(
+      or(
+        ilike(legalDocuments.content, `%${validatedData.query}%`),
+        ilike(legalDocuments.title, `%${validatedData.query}%`)
       )
-      .limit(5);
+    );
+
+    // Find relevant documents
+    const relevantDocs = await db.select({
+      id: legalDocuments.id,
+      title: legalDocuments.title,
+      jurisdiction: legalDocuments.jurisdiction,
+      legalTopic: legalDocuments.legalTopic,
+      date: legalDocuments.date,
+      documentType: legalDocuments.documentType,
+      content: legalDocuments.content
+    })
+    .from(legalDocuments)
+    .where(and(...whereConditions))
+    .orderBy(desc(legalDocuments.date))
+    .limit(10);
+
+    console.log('Found relevant documents:', relevantDocs.length);
 
     // Generate research using Gemini
     const researchResults = await generateDeepResearch(validatedData.query, {
@@ -112,7 +127,6 @@ router.post("/", async (req, res) => {
 
     // Store results
     await db.insert(legalResearchReports).values({
-      userId: req.user.id,
       query: validatedData.query,
       jurisdiction: validatedData.jurisdiction || 'All',
       legalTopic: validatedData.legalTopic || 'All',
@@ -121,28 +135,28 @@ router.post("/", async (req, res) => {
       timestamp: new Date()
     });
 
-    // Return flat results structure
     return res.json({
       success: true,
       executiveSummary: researchResults.executiveSummary,
       findings: researchResults.findings,
       recommendations: researchResults.recommendations,
       relevantDocuments: relevantDocs.map(doc => ({
+        id: doc.id,
         title: doc.title,
         jurisdiction: doc.jurisdiction,
         topic: doc.legalTopic,
         date: doc.date,
-        type: doc.documentType
-      })),
-      timestamp: new Date().toISOString()
+        type: doc.documentType,
+        content: doc.content.substring(0, 200) + '...' // Include preview of content
+      }))
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Legal research error:", error);
     return res.status(500).json({
       success: false,
       error: "Research failed",
-      details: error instanceof Error ? error.message : "Unknown error occurred"
+      details: error.message || "Unknown error occurred"
     });
   }
 });
@@ -185,151 +199,6 @@ router.get("/filters", async (req, res) => {
     return res.status(500).json({
       success: false, 
       error: "Failed to fetch available filters"
-    });
-  }
-});
-
-// Get available research for filters
-router.get("/available", async (req, res) => {
-  try {
-    const { jurisdiction, legalTopic, startDate, endDate } = req.query;
-
-    let conditions = [];
-
-    if (jurisdiction && jurisdiction !== 'all') {
-      conditions.push(eq(legalResearchReports.jurisdiction, jurisdiction as string));
-    }
-
-    if (legalTopic && legalTopic !== 'all') {
-      conditions.push(eq(legalResearchReports.legalTopic, legalTopic as string));
-    }
-
-    if (startDate) {
-      conditions.push(gte(legalResearchReports.timestamp, new Date(startDate as string)));
-    }
-
-    if (endDate) {
-      conditions.push(lte(legalResearchReports.timestamp, new Date(endDate as string)));
-    }
-
-    // Get both research reports and relevant documents
-    const [reports, documents] = await Promise.all([
-      db.select()
-        .from(legalResearchReports)
-        .where(conditions.length ? and(...conditions) : undefined)
-        .orderBy(desc(legalResearchReports.timestamp))
-        .limit(50),
-
-      db.select()
-        .from(legalDocuments)
-        .where(
-          and(
-            jurisdiction !== 'all' ? eq(legalDocuments.jurisdiction, jurisdiction as string) : undefined,
-            legalTopic !== 'all' ? eq(legalDocuments.legalTopic, legalTopic as string) : undefined
-          )
-        )
-        .limit(50)
-    ]);
-
-    return res.json({
-      success: true,
-      data: {
-        reports,
-        documents: documents.map(doc => ({
-          title: doc.title,
-          jurisdiction: doc.jurisdiction,
-          date: doc.date,
-          type: doc.documentType,
-          topic: doc.legalTopic
-        }))
-      }
-    });
-
-  } catch (error) {
-    console.error("Error fetching available research:", error);
-    return res.status(500).json({
-      success: false,
-      error: "Failed to fetch available research"
-    });
-  }
-});
-
-// Suggest questions endpoint
-router.post("/suggest-questions", async (req, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { query, jurisdiction, legalTopic, dateRange } = req.body;
-
-    if (!jurisdiction || !legalTopic) {
-      return res.status(400).json({ error: "Missing required filters" });
-    }
-
-    const dateContext = dateRange?.start && dateRange?.end
-      ? `between ${new Date(dateRange.start).toLocaleDateString()} and ${new Date(dateRange.end).toLocaleDateString()}`
-      : "with no specific date range";
-
-    const prompt = `
-      As a legal research expert, generate 5 relevant follow-up questions for research in ${jurisdiction} jurisdiction 
-      focusing on ${legalTopic} ${dateContext}.
-
-      Original query: "${query || 'No specific query provided'}"
-
-      Consider:
-      1. Relevant legal precedents in this jurisdiction
-      2. Recent developments in ${legalTopic}
-      3. Specific regulations and requirements
-      4. Common legal challenges in this area
-      5. Industry-specific considerations
-
-      Format the response as a JSON array of strings, where each string is a detailed question.
-      The questions should be specific, actionable, and help deepen the legal analysis.
-
-      Example format:
-      ["Question 1", "Question 2", "Question 3", "Question 4", "Question 5"]
-    `;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-0125-preview",
-      messages: [
-        {
-          role: "system",
-          content: "You are a legal research expert specializing in generating relevant jurisdiction-specific follow-up questions."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7
-    });
-
-    const suggestions = JSON.parse(completion.choices[0].message.content);
-
-    // Store suggestions in the database
-    await db.insert(legalResearchReports).values({
-      userId: req.user.id,
-      query: query || '',
-      jurisdiction,
-      legalTopic,
-      results: {suggestions}, // Store suggestions in results field
-      timestamp: new Date()
-    });
-
-    return res.json({
-      success: true,
-      suggestions
-    });
-
-  } catch (error) {
-    console.error("Error generating suggested questions:", error);
-    return res.status(500).json({ 
-      success: false,
-      error: "Failed to generate suggestions",
-      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });

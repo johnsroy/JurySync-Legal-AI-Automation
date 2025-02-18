@@ -11,6 +11,7 @@ interface ResearchFilters {
     start?: string;
     end?: string;
   };
+  relevantDocs?: any[];
 }
 
 export async function generateDeepResearch(query: string, filters?: ResearchFilters) {
@@ -21,38 +22,46 @@ export async function generateDeepResearch(query: string, filters?: ResearchFilt
 
     console.log('Starting Gemini research with:', { query, filters });
 
-    const model = await genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-
-    const jurisdictionContext = filters?.jurisdiction ? 
-      `focusing on ${filters.jurisdiction} jurisdiction` : 
-      'across all jurisdictions';
-
-    const topicContext = filters?.legalTopic ? 
-      `in the context of ${filters.legalTopic}` : 
-      'across all legal topics';
-
-    const dateContext = filters?.dateRange?.start ? 
-      `between ${filters.dateRange.start} and ${filters.dateRange.end}` : 
-      'without date restrictions';
+    const model = await genAI.getGenerativeModel({ 
+      model: "gemini-1.5-pro",
+      generationConfig: {
+        temperature: 0.7,
+        topP: 1,
+        topK: 40,
+        maxOutputTokens: 2048,
+      },
+    });
 
     const prompt = `
-      Conduct a comprehensive legal analysis ${jurisdictionContext} ${topicContext} ${dateContext} for:
-      "${query}"
+      You are a legal research expert. Analyze the following query and provide a comprehensive response.
+      Query: "${query}"
 
-      Format your response EXACTLY as a JSON object with this structure:
+      Context:
+      - Jurisdiction: ${filters?.jurisdiction || 'All jurisdictions'}
+      - Legal Topic: ${filters?.legalTopic || 'All legal topics'}
+      - Date Range: ${filters?.dateRange?.start ? `${filters.dateRange.start} to ${filters.dateRange.end}` : 'No specific range'}
+
+      ${filters?.relevantDocs?.length ? `
+      Relevant documents to consider:
+      ${filters.relevantDocs.map((doc, i) => `${i + 1}. ${doc.title} (${doc.jurisdiction}, ${doc.legalTopic}): ${doc.content.substring(0, 200)}...`).join('\n')}
+      ` : ''}
+
+      IMPORTANT: Respond with ONLY a valid JSON object using this EXACT structure. Do not include any other text or formatting:
+
       {
-        "executiveSummary": "Brief overview of key findings",
+        "executiveSummary": "Brief overview of findings",
         "findings": [
           {
-            "title": "Main point or case name",
-            "source": "Source information",
-            "relevanceScore": "Number between 0-100",
+            "title": "Finding title",
+            "source": "Source of information",
+            "relevanceScore": 95,
             "summary": "Detailed explanation",
-            "citations": ["Relevant citations"]
+            "citations": ["Citation 1", "Citation 2"]
           }
         ],
         "recommendations": [
-          "Action-oriented recommendations"
+          "Recommendation 1",
+          "Recommendation 2"
         ]
       }
     `;
@@ -61,26 +70,43 @@ export async function generateDeepResearch(query: string, filters?: ResearchFilt
     const response = await result.response;
     const text = response.text();
 
-    console.log('Raw Gemini response:', text);
-
     try {
-      // Clean and parse JSON
-      const jsonStr = text.replace(/[\u0000-\u001F]+/g, '').replace(/\\[rnt]/g, '');
-      const parsedResponse = JSON.parse(jsonStr);
+      // Extract only the JSON part from the response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("No valid JSON found in response");
+      }
+
+      const parsedResponse = JSON.parse(jsonMatch[0]);
 
       // Validate response structure
       if (!parsedResponse.executiveSummary || !Array.isArray(parsedResponse.findings)) {
-        throw new Error("Invalid response structure");
+        throw new Error("Invalid response structure from AI");
+      }
+
+      // Ensure findings have all required fields
+      parsedResponse.findings = parsedResponse.findings.map(finding => ({
+        title: finding.title || "Untitled Finding",
+        source: finding.source || "Not specified",
+        relevanceScore: finding.relevanceScore || 80,
+        summary: finding.summary || "No summary provided",
+        citations: Array.isArray(finding.citations) ? finding.citations : []
+      }));
+
+      // Ensure recommendations is an array
+      if (!Array.isArray(parsedResponse.recommendations)) {
+        parsedResponse.recommendations = [];
       }
 
       console.log('Successfully parsed Gemini response');
       return parsedResponse;
     } catch (error: any) {
       console.error('JSON parse error:', error);
-      throw new Error(`Failed to parse Gemini response: ${error?.message || 'Unknown error'}`);
+      console.error('Raw response:', text);
+      throw new Error(`Invalid AI response format: ${error?.message || 'Unknown error'}`);
     }
   } catch (error: any) {
     console.error("Gemini service error:", error);
-    throw new Error(`Research analysis failed: ${error?.message || 'Unknown error'}`);
+    throw new Error(`Research failed: ${error?.message || 'Unknown error'}`);
   }
 }

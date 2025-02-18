@@ -13,6 +13,8 @@ import legalResearchRouter from "./routes/legal-research";
 import { seedLegalDatabase } from './services/seedData';
 import { continuousLearningService } from './services/continuousLearningService';
 import passport from 'passport';
+import dotenv from 'dotenv';
+dotenv.config();
 
 // Create Express application
 const app = express();
@@ -79,37 +81,27 @@ app.use("/api/legal-research", legalResearchRouter);
 // Register routes
 registerRoutes(app);
 
-// Error handling middleware
+// API error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(`API Error [${req.method} ${req.path}]:`, err);
 
   if (err.name === 'UnauthorizedError') {
     return res.status(401).json({
+      success: false,
       error: 'Unauthorized',
       message: 'You must be logged in to access this resource'
     });
   }
 
-  if (!res.headersSent) {
-    const statusCode = err.status || 500;
-    const errorMessage = process.env.NODE_ENV === 'production'
-      ? 'Internal Server Error'
-      : (err.message || 'Internal Server Error');
-
-    res.status(statusCode).json({
-      error: errorMessage,
-      code: err.code || 'INTERNAL_ERROR',
-      ...(process.env.NODE_ENV !== 'production' && {
-        stack: err.stack,
-        details: err.details || null
-      })
-    });
-  }
+  return res.status(500).json({
+    success: false,
+    error: err.message || 'Internal Server Error'
+  });
 });
 
 // Setup Vite or serve static files
 if (process.env.NODE_ENV !== "production") {
-  setupVite(app, app.listen(0));
+  setupVite(app);
 } else {
   serveStatic(app);
 }
@@ -117,7 +109,7 @@ if (process.env.NODE_ENV !== "production") {
 // Start server
 const PORT = process.env.PORT || 5000;
 
-//Webhook handling
+// Webhook handling
 app.post('/webhook', handleStripeWebhook);
 app.post('/webhook-test', (req: Request, res: Response) => {
   try {
@@ -139,10 +131,11 @@ app.post('/webhook-test', (req: Request, res: Response) => {
   }
 });
 
+// Initialize services
 (async () => {
   try {
-    // Database setup
-    await seedLegalDatabase();
+    const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
+    await seedLegalDatabase(numberOfDocuments);
     console.log('Legal database seeded successfully');
 
     try {
