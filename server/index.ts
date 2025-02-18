@@ -12,9 +12,9 @@ import redlineRouter from "./routes/redline";
 import legalResearchRouter from "./routes/legal-research";
 import { seedLegalDatabase } from './services/seedData';
 import { continuousLearningService } from './services/continuousLearningService';
+import passport from 'passport';
 
-
-// Create main application
+// Create Express application
 const app = express();
 
 // Configure API specific middleware
@@ -28,14 +28,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Security headers
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  next();
-});
-
-// Session handling
+// Enhanced session handling
 const PostgresStore = connectPg(session);
 const sessionStore = new PostgresStore({
   conObject: {
@@ -43,20 +36,33 @@ const sessionStore = new PostgresStore({
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
   },
   createTableIfMissing: true,
-  pruneSessionInterval: 60
+  pruneSessionInterval: 60,
+  tableName: 'session' // Explicit table name
 });
 
-app.use(session({
+const sessionMiddleware = session({
   store: sessionStore,
-  secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? undefined : 'development-secret'),
+  secret: process.env.SESSION_SECRET || 'development-secret-do-not-use-in-prod',
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     sameSite: 'lax'
-  }
-}));
+  },
+  name: 'jurysync.sid' // Custom session name
+});
+
+app.use(sessionMiddleware);
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Security headers
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
 
 // Setup auth
 setupAuth(app);
@@ -70,13 +76,19 @@ app.use("/api/redline", redlineRouter);
 // Register legal research route
 app.use("/api/legal-research", legalResearchRouter);
 
-
 // Register routes
 registerRoutes(app);
 
-// API error handling
+// Error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(`API Error [${req.method} ${req.path}]:`, err);
+
+  if (err.name === 'UnauthorizedError') {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'You must be logged in to access this resource'
+    });
+  }
 
   if (!res.headersSent) {
     const statusCode = err.status || 500;
@@ -97,7 +109,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 
 // Setup Vite or serve static files
 if (process.env.NODE_ENV !== "production") {
-  setupVite(app);
+  setupVite(app, app.listen(0));
 } else {
   serveStatic(app);
 }
@@ -126,7 +138,6 @@ app.post('/webhook-test', (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Webhook test failed' });
   }
 });
-
 
 (async () => {
   try {

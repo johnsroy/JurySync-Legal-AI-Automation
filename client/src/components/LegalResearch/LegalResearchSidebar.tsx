@@ -6,6 +6,8 @@ import { Search, Book, Download, ArrowRight, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface ResearchResult {
   title: string;
@@ -36,6 +38,12 @@ export function LegalResearchSidebar() {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [filters, setFilters] = useState({
+    jurisdiction: "all",
+    legalTopic: "all",
+    startDate: undefined,
+    endDate: undefined
+  });
   const { toast } = useToast();
 
   // Handle progress updates
@@ -102,14 +110,14 @@ export function LegalResearchSidebar() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Accept": "application/json"  // Add explicit Accept header
+          "Accept": "application/json"
         },
         body: JSON.stringify({
           query,
-          options: {
-            useGemini: true,
-            deepResearch: true,
-            sources: ["cases", "statutes", "articles", "regulations"]
+          ...filters,
+          dateRange: {
+            start: filters.startDate?.toISOString(),
+            end: filters.endDate?.toISOString()
           }
         })
       });
@@ -119,20 +127,11 @@ export function LegalResearchSidebar() {
         throw new Error(errorData.details || "Research failed");
       }
 
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Invalid response format from server");
-      }
-
       const data = await response.json();
-      if (!data.results) {
-        throw new Error("Invalid research results format");
-      }
-
       setFindings({
-        executiveSummary: data.executiveSummary || "No summary available",
-        keyFindings: data.results || [],
-        recommendations: data.recommendations || []
+        executiveSummary: data.executiveSummary,
+        keyFindings: data.results,
+        recommendations: data.recommendations
       });
 
       toast({

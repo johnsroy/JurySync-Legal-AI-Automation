@@ -3,51 +3,49 @@ import { db } from "../db";
 import { legalResearchReports } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
 import { PDFDocument } from 'pdf-lib';
+import { desc } from 'drizzle-orm';
 
 const router = Router();
 
+// Main research endpoint
 router.post("/", async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { query, options } = req.body;
+    const { query, jurisdiction, legalTopic, dateRange } = req.body;
 
     if (!query?.trim()) {
       return res.status(400).json({ error: "Query is required" });
     }
 
-    console.log('Starting legal research with Gemini:', { query, options });
+    console.log('Starting legal research:', { query, jurisdiction, legalTopic, dateRange });
 
-    // Use Gemini for deep research
-    const researchResults = await generateDeepResearch(query);
-
-    // Ensure proper JSON structure
-    const formattedResults = {
-      executiveSummary: researchResults.executiveSummary,
-      results: researchResults.findings.map(finding => ({
-        title: finding.title,
-        source: finding.source,
-        relevance: finding.relevanceScore,
-        summary: finding.summary,
-        citations: finding.citations || []
-      })),
-      recommendations: researchResults.recommendations,
-      timestamp: new Date().toISOString()
-    };
+    // Generate research using Gemini
+    const researchResults = await generateDeepResearch(query, {
+      jurisdiction,
+      legalTopic,
+      dateRange
+    });
 
     // Store results in database
     await db.insert(legalResearchReports).values({
       userId: req.user.id,
       query,
-      results: formattedResults,
+      jurisdiction: jurisdiction || 'All',
+      legalTopic: legalTopic || 'All',
+      results: researchResults,
       timestamp: new Date()
     });
 
-    // Set proper content type and ensure valid JSON response
-    res.setHeader('Content-Type', 'application/json');
-    return res.json(formattedResults);
+    // Return formatted results
+    return res.json({
+      executiveSummary: researchResults.executiveSummary,
+      results: researchResults.findings,
+      recommendations: researchResults.recommendations,
+      timestamp: new Date().toISOString()
+    });
 
   } catch (error) {
     console.error("Legal research error:", error);
@@ -55,6 +53,46 @@ router.post("/", async (req, res) => {
       error: "Failed to complete research",
       details: error instanceof Error ? error.message : 'Unknown error occurred'
     });
+  }
+});
+
+// Get available research for filters
+router.get("/available", async (req, res) => {
+  try {
+    const { jurisdiction, legalTopic, startDate, endDate } = req.query;
+
+    const query = db.select()
+      .from(legalResearchReports)
+      .where(eb => {
+        const conditions = [];
+        
+        if (jurisdiction && jurisdiction !== 'all') {
+          conditions.push(eb.eq(legalResearchReports.jurisdiction, jurisdiction));
+        }
+        
+        if (legalTopic && legalTopic !== 'all') {
+          conditions.push(eb.eq(legalResearchReports.legalTopic, legalTopic));
+        }
+        
+        if (startDate) {
+          conditions.push(eb.gte(legalResearchReports.timestamp, new Date(startDate as string)));
+        }
+        
+        if (endDate) {
+          conditions.push(eb.lte(legalResearchReports.timestamp, new Date(endDate as string)));
+        }
+        
+        return conditions.length ? eb.and(...conditions) : undefined;
+      })
+      .orderBy(desc(legalResearchReports.timestamp))
+      .limit(50);
+
+    const results = await query;
+    return res.json(results);
+
+  } catch (error) {
+    console.error("Error fetching available research:", error);
+    return res.status(500).json({ error: "Failed to fetch available research" });
   }
 });
 
