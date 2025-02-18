@@ -18,16 +18,19 @@ import cors from 'cors';
 import { json } from 'express';
 
 export function registerRoutes(app: Express): Server {
-  // Enable CORS with proper options
+  // First set up essential middleware
   app.use(cors({
     origin: true,
     credentials: true
   }));
 
-  // Parse JSON bodies
-  app.use(json());
+  // Parse JSON bodies with larger limit for document processing
+  app.use(json({ limit: '50mb' }));
 
   const server = createServer(app);
+
+  // API Routes - ensure proper ordering
+  // Mount API routes before any static file handling
 
   // Special handling for Stripe webhook endpoint - needs raw body
   app.post("/api/webhook", 
@@ -39,34 +42,25 @@ export function registerRoutes(app: Express): Server {
     handleWebhook
   );
 
-  // Legal Research routes - ensure it's mounted at the root path
-  app.use("/api/legal-research", legalResearchRouter);
+  // Legal Research routes - ensure proper mounting
+  app.use("/api/legal-research", (req, res, next) => {
+    console.log('Legal Research API Request:', {
+      method: req.method,
+      path: req.path,
+      body: req.body
+    });
+    next();
+  }, legalResearchRouter);
 
-  // Add redlining routes
+  // Mount other API routes
   app.use("/api/redline", redlineRouter);
-
-  // Add the vault router with enhanced AI capabilities
   app.use("/api/vault", vaultRouter);
-
-  // Register the documents router
   app.use("/api", documentsRouter);
-
-  // Add compliance routes
   app.use("/api/compliance", complianceRouter);
-
-  // Add metrics routes
   app.use("/api/metrics", metricsRouter);
-
-  // Add reports routes
   app.use("/api", reportsRouter);
-
-  // Add predictive monitoring routes
   app.use("/api/monitoring", predictiveMonitoringRouter);
-
-  // Add orchestrator routes
   app.use("/api/orchestrator", orchestratorRouter);
-
-  // Add contract analysis routes
   app.use("/api/contract-analysis", contractAnalysisRouter);
 
   // Add Stripe payment endpoints
@@ -88,6 +82,15 @@ export function registerRoutes(app: Express): Server {
       });
     }
     await createPortalSession(req, res);
+  });
+
+  // Add catch-all handler for unmatched API routes
+  app.use('/api/*', (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: 'API endpoint not found',
+      path: req.originalUrl
+    });
   });
 
   return server;
