@@ -19,7 +19,7 @@ dotenv.config();
 // Create Express application
 const app = express();
 
-// Configure API specific middleware
+// Configure API specific middleware FIRST
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' ? ['https://jurysync.io'] : true,
   credentials: true,
@@ -27,6 +27,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// Parse JSON before any routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -39,7 +40,7 @@ const sessionStore = new PostgresStore({
   },
   createTableIfMissing: true,
   pruneSessionInterval: 60,
-  tableName: 'session' // Explicit table name
+  tableName: 'session'
 });
 
 const sessionMiddleware = session({
@@ -49,15 +50,21 @@ const sessionMiddleware = session({
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    maxAge: 30 * 24 * 60 * 60 * 1000,
     sameSite: 'lax'
   },
-  name: 'jurysync.sid' // Custom session name
+  name: 'jurysync.sid'
 });
 
 app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
+
+// API request logging
+app.use((req: Request, res: Response, next: NextFunction) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
 
 // Security headers
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -69,27 +76,20 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Setup auth
 setupAuth(app);
 
-// Register document analytics route
+// Mount API routes BEFORE static files
+app.use('/api/legal-research', legalResearchRouter);
 app.use('/api/document-analytics', documentAnalyticsRouter);
-
-// Register redline route
 app.use("/api/redline", redlineRouter);
 
-// Register legal research route
-app.use("/api/legal-research", legalResearchRouter);
-
-// Add this before your routes
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
-
-// Register routes
+// Register other routes
 registerRoutes(app);
 
 // API error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(`API Error [${req.method} ${req.path}]:`, err);
+
+  // Ensure we don't send HTML errors
+  res.setHeader('Content-Type', 'application/json');
 
   if (err.name === 'UnauthorizedError') {
     return res.status(401).json({
@@ -105,7 +105,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// Setup Vite or serve static files
+// Setup Vite or serve static files LAST
 if (process.env.NODE_ENV !== "production") {
   setupVite(app);
 } else {
@@ -113,29 +113,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 // Start server
-const PORT = process.env.PORT || 5000;
-
-// Webhook handling
-app.post('/webhook', handleStripeWebhook);
-app.post('/webhook-test', (req: Request, res: Response) => {
-  try {
-    if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      return res.status(500).json({ error: 'Webhook secret not configured' });
-    }
-
-    console.log('Headers:', req.headers);
-    console.log('Body:', req.body);
-
-    return res.status(200).json({
-      status: 'success',
-      message: 'Webhook endpoint is accessible',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Webhook test error:', error);
-    return res.status(500).json({ error: 'Webhook test failed' });
-  }
-});
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 // Initialize services
 (async () => {
@@ -153,13 +131,6 @@ app.post('/webhook-test', (req: Request, res: Response) => {
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running at http://0.0.0.0:${PORT}`);
-    }).on('error', (error: any) => {
-      if (error.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use`);
-      } else {
-        console.error('Failed to start server:', error);
-      }
-      process.exit(1);
     });
 
   } catch (error) {
