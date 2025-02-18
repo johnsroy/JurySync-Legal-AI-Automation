@@ -32,69 +32,83 @@ export async function generateDeepResearch(query: string, filters?: ResearchFilt
       },
     });
 
-    // Prompt includes instructions to only return JSON
-    const prompt = `
+    // Process natural language query into structured research query
+    const queryAnalysisPrompt = `
+      Analyze this legal research query and extract key components:
+      "${query}"
+
+      Return a JSON object with:
+      {
+        "structuredQuery": "reformulated query with legal terminology",
+        "legalIssues": ["list of identified legal issues"],
+        "keyTerms": ["important legal terms"],
+        "suggestedJurisdiction": "most relevant jurisdiction if not specified",
+        "suggestedTopic": "most relevant legal topic if not specified"
+      }
+    `;
+
+    const queryAnalysis = await model.generateContent(queryAnalysisPrompt);
+    const analysisResult = JSON.parse(queryAnalysis.response.text());
+    console.log("Query analysis:", analysisResult);
+
+    // Main research prompt
+    const researchPrompt = `
       You are a legal research expert. Analyze the following query and provide a comprehensive response.
-      Query: "${query}"
+
+      Original Query: "${query}"
+      Structured Query: "${analysisResult.structuredQuery}"
+      Legal Issues: ${analysisResult.legalIssues.join(", ")}
 
       Context:
-      - Jurisdiction: ${filters?.jurisdiction || "All jurisdictions"}
-      - Legal Topic: ${filters?.legalTopic || "All legal topics"}
+      - Jurisdiction: ${filters?.jurisdiction || analysisResult.suggestedJurisdiction}
+      - Legal Topic: ${filters?.legalTopic || analysisResult.suggestedTopic}
       - Date Range: ${filters?.dateRange?.start ? `${filters.dateRange.start} to ${filters.dateRange.end}` : "No specific range"}
+
       ${filters?.relevantDocs?.length ? `
       Relevant documents to consider:
       ${filters.relevantDocs.map((doc, i) => `${i + 1}. ${doc.title} (${doc.jurisdiction}, ${doc.legalTopic}): ${doc.content.substring(0, 200)}...`).join("\n")}
       ` : ""}
 
-      Provide ONLY a strictly valid JSON object (no extra formatting):
+      Provide research findings in this exact JSON format:
       {
-        "executiveSummary": "string",
+        "executiveSummary": "Comprehensive summary of findings",
         "findings": [
           {
-            "title": "string",
-            "source": "string",
-            "relevance": 85,
-            "summary": "string",
-            "citations": ["Cite1","Cite2"]
+            "title": "Key Finding Title",
+            "source": "Source Document or Authority",
+            "relevance": "Relevance score (1-100)",
+            "summary": "Detailed explanation",
+            "citations": ["Relevant case citations", "Statutory references"]
           }
         ],
-        "recommendations": ["string"]
+        "recommendations": [
+          "Actionable recommendations based on findings"
+        ]
       }
     `;
 
-    const result = await model.generateContent(prompt);
-
-    // The generative AI interface
+    const result = await model.generateContent(researchPrompt);
     const response = await result.response;
-
     const text = response.text();
     console.log("Gemini raw response:", text);
 
-    // Attempt to extract only the JSON part
-    // This is somewhat naive, but often works if the AI returns extraneous text
+    // Extract JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}(\s*|\n*)$/);
     if (!jsonMatch) {
-      console.error("No JSON match found in AI response. Possibly got HTML or extraneous text");
-      throw new Error("No valid JSON output found");
+      console.error("No JSON match found in AI response");
+      throw new Error("Invalid response format");
     }
 
-    const cleanedText = jsonMatch[0];
+    const parsedResponse = JSON.parse(jsonMatch[0]);
 
-    let parsedResponse: any;
-    try {
-      parsedResponse = JSON.parse(cleanedText);
-    } catch (parseErr) {
-      console.error("JSON parse error:", parseErr, "Raw cleaned text:", cleanedText);
-      throw new Error(`Invalid AI response format: ${String(parseErr)}`);
-    }
-
-    // Validate structure
+    // Validate response structure
     if (!parsedResponse.executiveSummary || !Array.isArray(parsedResponse.findings)) {
-      throw new Error("AI response is missing required fields (executiveSummary, findings)");
+      throw new Error("Invalid response structure");
     }
 
-    console.log("Gemini service successfully parsed JSON");
+    console.log("Successfully generated research response");
     return parsedResponse;
+
   } catch (error: any) {
     console.error("Gemini service error:", error);
     throw new Error(`Research failed: ${error?.message || "Unknown error"}`);

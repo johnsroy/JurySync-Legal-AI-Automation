@@ -30,27 +30,6 @@ interface ResearchResults {
   timestamp: string;
 }
 
-const jurisdictions = [
-  "Federal",
-  "State",
-  "International",
-  "Administrative",
-  "Tribal"
-];
-
-const legalTopics = [
-  "Constitutional Law",
-  "Criminal Law",
-  "Civil Rights",
-  "Environmental Law",
-  "Corporate Law",
-  "Intellectual Property",
-  "International Law",
-  "Administrative Law",
-  "Labor Law",
-  "Tax Law"
-];
-
 const progressSteps = [
   "Initializing research...",
   "Analyzing jurisdictional precedents...",
@@ -62,79 +41,48 @@ const progressSteps = [
 
 export function LegalResearchPanel() {
   const [query, setQuery] = useState("");
-  const [jurisdiction, setJurisdiction] = useState<string>("");
-  const [legalTopic, setLegalTopic] = useState<string>("");
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [results, setResults] = useState<ResearchResults | null>(null);
-  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const { toast } = useToast();
-  const [progress, setProgress] = useState(0);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [loadingMessage, setLoadingMessage] = useState(progressSteps[0]);
+  const [filters, setFilters] = useState({
+    jurisdiction: "",
+    legalTopic: "",
+    startDate: null,
+    endDate: null
+  });
+  const [isSearching, setIsSearching] = useState(false);
+  const [results, setResults] = useState(null);
+
+  // Add filter fetching
+  const [availableFilters, setAvailableFilters] = useState({
+    jurisdictions: [],
+    legalTopics: []
+  });
 
   useEffect(() => {
-    const getSuggestions = async () => {
-      if (!jurisdiction || !legalTopic) return;
-
-      setIsLoadingSuggestions(true);
+    async function fetchFilters() {
       try {
-        const response = await fetch("/api/legal-research/suggest-questions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query,
-            jurisdiction,
-            legalTopic,
-            dateRange: {
-              start: startDate?.toISOString(),
-              end: endDate?.toISOString()
-            }
-          })
-        });
-
-        if (!response.ok) throw new Error("Failed to get suggestions");
+        const response = await fetch("/api/legal-research/filters");
+        if (!response.ok) throw new Error("Failed to fetch filters");
         const data = await response.json();
-        setSuggestedQuestions(data);
+        if (data.success) {
+          setAvailableFilters(data.filters);
+        }
       } catch (error) {
-        console.error("Failed to get suggestions:", error);
-      } finally {
-        setIsLoadingSuggestions(false);
-      }
-    };
-
-    const debounceTimer = setTimeout(getSuggestions, 500);
-    return () => clearTimeout(debounceTimer);
-  }, [query, jurisdiction, legalTopic, startDate, endDate]);
-
-  useEffect(() => {
-    if (isSearching && progress < 100) {
-      const interval = setInterval(() => {
-        setProgress(prev => {
-          const next = prev + 1;
-          if (next >= 100) {
-            clearInterval(interval);
-            return 100;
-          }
-          const stepIndex = Math.floor((next / 100) * progressSteps.length);
-          if (stepIndex !== currentStep && stepIndex < progressSteps.length) {
-            setCurrentStep(stepIndex);
-            setLoadingMessage(progressSteps[stepIndex]);
-          }
-          return next;
+        console.error("Error fetching filters:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load filters",
+          variant: "destructive"
         });
-      }, 50);
-      return () => clearInterval(interval);
+      }
     }
-  }, [isSearching, currentStep]);
+    fetchFilters();
+  }, []);
 
-  const handleSearch = async (searchQuery: string = query) => {
-    if (!jurisdiction || !legalTopic) {
+  const handleSearch = async () => {
+    if (!query.trim()) {
       toast({
-        title: "Missing Filters",
-        description: "Please select both jurisdiction and legal topic",
+        title: "Invalid Query",
+        description: "Please enter a search query",
         variant: "destructive"
       });
       return;
@@ -142,36 +90,31 @@ export function LegalResearchPanel() {
 
     setIsSearching(true);
     setResults(null);
-    setProgress(0);
-    setCurrentStep(0);
 
     try {
-      const response = await fetch("/api/legal-research", {
+      const response = await fetch("/api/legal-research/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          query: searchQuery,
-          jurisdiction,
-          legalTopic,
-          dateRange: {
-            start: startDate?.toISOString(),
-            end: endDate?.toISOString()
-          },
-          options: {
-            useGemini: true,
-            deepResearch: true
+          query: query.trim(),
+          filters: {
+            jurisdiction: filters.jurisdiction || undefined,
+            legalTopic: filters.legalTopic || undefined,
+            dateRange: filters.startDate ? {
+              start: filters.startDate.toISOString(),
+              end: filters.endDate?.toISOString()
+            } : undefined
           }
         })
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.details || "Research failed");
+        throw new Error(errorData.error || "Research failed");
       }
 
       const data = await response.json();
       setResults(data);
-      setQuery(searchQuery);
 
       toast({
         title: "Research Complete",
@@ -186,7 +129,6 @@ export function LegalResearchPanel() {
       });
     } finally {
       setIsSearching(false);
-      setProgress(100);
     }
   };
 
@@ -201,40 +143,46 @@ export function LegalResearchPanel() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <Select value={jurisdiction} onValueChange={setJurisdiction}>
+            <Select 
+              value={filters.jurisdiction} 
+              onValueChange={(value) => setFilters(prev => ({ ...prev, jurisdiction: value }))}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select Jurisdiction" />
               </SelectTrigger>
               <SelectContent>
-                {jurisdictions.map(j => (
+                {availableFilters.jurisdictions.map(j => (
                   <SelectItem key={j} value={j}>{j}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
-            <Select value={legalTopic} onValueChange={setLegalTopic}>
+            <Select 
+              value={filters.legalTopic} 
+              onValueChange={(value) => setFilters(prev => ({ ...prev, legalTopic: value }))}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select Legal Topic" />
               </SelectTrigger>
               <SelectContent>
-                {legalTopics.map(topic => (
+                {availableFilters.legalTopics.map(topic => (
                   <SelectItem key={topic} value={topic}>{topic}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
             <DatePicker
-              selected={startDate}
-              onChange={setStartDate}
+              selected={filters.startDate}
+              onChange={(date) => setFilters(prev => ({ ...prev, startDate: date }))}
               placeholderText="Start Date"
               maxDate={new Date()}
             />
 
             <DatePicker
-              selected={endDate}
-              onChange={setEndDate}
+              selected={filters.endDate}
+              onChange={(date) => setFilters(prev => ({ ...prev, endDate: date }))}
               placeholderText="End Date"
-              minDate={startDate}
+              minDate={filters.startDate}
               maxDate={new Date()}
             />
           </div>
@@ -249,7 +197,7 @@ export function LegalResearchPanel() {
             />
             <Button
               onClick={() => handleSearch()}
-              disabled={isSearching || !jurisdiction || !legalTopic}
+              disabled={isSearching || !filters.jurisdiction || !filters.legalTopic || !query.trim()}
             >
               {isSearching ? (
                 <>
@@ -265,33 +213,6 @@ export function LegalResearchPanel() {
             </Button>
           </div>
 
-          <AnimatePresence>
-            {suggestedQuestions.length > 0 && !isSearching && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="mb-6"
-              >
-                <h3 className="text-sm font-medium text-gray-500 mb-2">
-                  AI-Suggested Research Questions:
-                </h3>
-                <div className="space-y-2">
-                  {suggestedQuestions.map((question, index) => (
-                    <Button
-                      key={index}
-                      variant="ghost"
-                      className="w-full justify-start text-left hover:bg-gray-100"
-                      onClick={() => handleSearch(question)}
-                    >
-                      <ChevronRight className="h-4 w-4 mr-2 text-gray-400" />
-                      {question}
-                    </Button>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {isSearching && (
             <motion.div
@@ -302,10 +223,10 @@ export function LegalResearchPanel() {
             >
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-gray-500">
-                  <span>{loadingMessage}</span>
-                  <span>{Math.round(progress)}%</span>
+                  <span>Analyzing your query...</span>
+                  <span>0%</span> {/* Placeholder - progress not implemented */}
                 </div>
-                <Progress value={progress} className="h-2" />
+                <Progress value={0} className="h-2" /> {/* Placeholder - progress not implemented */}
               </div>
             </motion.div>
           )}
