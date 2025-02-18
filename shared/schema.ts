@@ -7,9 +7,11 @@ import {
   integer,
   boolean,
   varchar,
+  pgEnum
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { sql } from "drizzle-orm";
 
 // Legal Document Types
 export const DocumentType = z.enum([
@@ -39,35 +41,42 @@ export const ComplianceStatus = z.enum([
   "EXEMPT"
 ]);
 
-// Template Categories
-export const TemplateCategory = z.enum([
-  "EMPLOYMENT",
-  "NDA",
-  "SOFTWARE_LICENSE",
-  "SERVICE_AGREEMENT",
-  "REAL_ESTATE",
-  "PARTNERSHIP",
-  "IP_LICENSE",
-  "LOAN_AGREEMENT",
-  "MANUFACTURING_AGREEMENT",
-  "DISTRIBUTION_AGREEMENT",
-  "PRIVACY_POLICY",
-  "DATA_PROCESSING",
-  "SUBSCRIPTION_AGREEMENT",
-  "CORPORATE_GOVERNANCE",
-  "SHAREHOLDERS_AGREEMENT",
-  "MERGER_ACQUISITION",
-  "FRANCHISE_AGREEMENT",
-  "JOINT_VENTURE",
-  "WARRANTY_AGREEMENT",
-  "TERMS_OF_SERVICE",
-  "CONSULTING",
-  "CONTRACTOR_AGREEMENT"
+// User Role Enum
+export const userRoleEnum = pgEnum('user_role', [
+  'ADMIN',
+  'LAWYER',
+  'PARALEGAL',
+  'CLIENT'
 ]);
 
-export type TemplateCategory = z.infer<typeof TemplateCategory>;
+// Agent Type Enum
+export const agentTypeEnum = pgEnum('agent_type', [
+  'RESEARCH',
+  'ANALYSIS',
+  'COMPLIANCE',
+  'DRAFTING'
+]);
 
-// Documents Table
+// Risk Status Enum
+export const riskStatusEnum = pgEnum('risk_status', [
+  'PENDING',
+  'IN_PROGRESS',
+  'COMPLETED',
+  'NEEDS_REVIEW',
+  'REJECTED'
+]);
+
+// Base Tables
+export const users = pgTable("users", {
+  id: integer("id").primaryKey(),
+  username: varchar("username", { length: 255 }).notNull().unique(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  password: varchar("password", { length: 255 }).notNull(),
+  role: userRoleEnum("role").notNull().default('CLIENT'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
@@ -81,44 +90,11 @@ export const documents = pgTable("documents", {
   vectorEmbedding: text("vector_embedding"),
 });
 
-// Compliance Documents Table
-export const complianceDocuments = pgTable("compliance_documents", {
-  id: serial("id").primaryKey(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  documentType: text("document_type").notNull(),
-  status: text("status").$type<z.infer<typeof ComplianceStatus>>().notNull(),
-  lastReviewDate: timestamp("last_review_date").notNull(),
-  nextReviewDate: timestamp("next_review_date").notNull(),
-  assignedReviewer: integer("assigned_reviewer"),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Compliance Issues Table
-export const complianceIssues = pgTable("compliance_issues", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id").notNull(),
-  issueType: text("issue_type").notNull(),
-  description: text("description").notNull(),
-  severity: text("severity").notNull(),
-  status: text("status").notNull(),
-  remediation: text("remediation"),
-  dueDate: timestamp("due_date"),
-  assignedTo: integer("assigned_to"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Legal Documents Table
 export const legalDocuments = pgTable("legal_documents", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   content: text("content").notNull(),
-  documentType: text("document_type")
-    .$type<z.infer<typeof DocumentType>>()
-    .notNull(),
+  documentType: text("document_type").$type<z.infer<typeof DocumentType>>().notNull(),
   jurisdiction: text("jurisdiction").notNull(),
   legalTopic: text("legal_topic").notNull(),
   date: timestamp("date").notNull(),
@@ -145,72 +121,50 @@ export const legalDocuments = pgTable("legal_documents", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Legal Research Reports
-export const legalResearchReports = pgTable("legal_research_reports", {
-  id: serial("id").primaryKey(),
+export const riskAssessments = pgTable("risk_assessments", {
+  id: integer("id").primaryKey(),
+  documentId: integer("document_id").notNull(),
   userId: integer("user_id").notNull(),
-  query: text("query").notNull(),
-  searchType: text("search_type").notNull().default("NATURAL"),
-  jurisdiction: text("jurisdiction").notNull(),
-  legalTopic: text("legal_topic").notNull(),
-  results: jsonb("results").notNull(),
-  dateRange: jsonb("date_range").$type<{
-    start?: string;
-    end?: string;
-  }>(),
-  savedFilters: jsonb("saved_filters"),
-  timestamp: timestamp("timestamp").notNull().defaultNow(),
-});
-
-// Brief Analysis
-export const briefAnalysis = pgTable("brief_analysis", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  analysis: jsonb("analysis").$type<{
-    citations: string[];
+  status: riskStatusEnum("status").notNull().default('PENDING'),
+  riskScore: integer("risk_score"),
+  findings: jsonb("findings").$type<{
+    highRisks: string[];
+    mediumRisks: string[];
+    lowRisks: string[];
     recommendations: string[];
-    similarCases: string[];
-    keyIssues: string[];
   }>(),
-  citationHealth: jsonb("citation_health").$type<{
-    status: Record<string, z.infer<typeof TreatmentStatus>>;
-    warnings: string[];
-    suggestions: string[];
-  }>(),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Citation Network
-export const citationNetwork = pgTable("citation_network", {
-  id: serial("id").primaryKey(),
-  sourceId: integer("source_id").notNull(),
-  targetId: integer("target_id").notNull(),
-  treatment: text("treatment").$type<z.infer<typeof TreatmentStatus>>(),
-  context: text("context"),
-  createdAt: timestamp("created_at").defaultNow(),
+// Re-export other schema modules
+export * from "./schema/reports";
+export * from "./schema/metrics";
+
+// Create Zod schemas
+export const insertUserSchema = createInsertSchema(users, {
+  role: z.enum(['ADMIN', 'LAWYER', 'PARALEGAL', 'CLIENT']).default('CLIENT'),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
 });
 
-// Create insert schemas
 export const insertDocumentSchema = createInsertSchema(documents);
-export const insertComplianceDocumentSchema = createInsertSchema(complianceDocuments);
-export const insertComplianceIssueSchema = createInsertSchema(complianceIssues);
 export const insertLegalDocumentSchema = createInsertSchema(legalDocuments);
-export const insertLegalResearchReportSchema = createInsertSchema(legalResearchReports);
-export const insertBriefAnalysisSchema = createInsertSchema(briefAnalysis);
-export const insertCitationNetworkSchema = createInsertSchema(citationNetwork);
+export const insertRiskAssessmentSchema = createInsertSchema(riskAssessments, {
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'NEEDS_REVIEW', 'REJECTED']).default('PENDING'),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
+});
 
 // Export types
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Document = typeof documents.$inferSelect;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
-export type ComplianceDocument = typeof complianceDocuments.$inferSelect;
-export type InsertComplianceDocument = z.infer<typeof insertComplianceDocumentSchema>;
-export type ComplianceIssue = typeof complianceIssues.$inferSelect;
-export type InsertComplianceIssue = z.infer<typeof insertComplianceIssueSchema>;
 export type LegalDocument = typeof legalDocuments.$inferSelect;
 export type InsertLegalDocument = z.infer<typeof insertLegalDocumentSchema>;
-export type LegalResearchReport = typeof legalResearchReports.$inferSelect;
-export type BriefAnalysis = typeof briefAnalysis.$inferSelect;
-export type CitationNetwork = typeof citationNetwork.$inferSelect;
+export type RiskAssessment = typeof riskAssessments.$inferSelect;
+export type InsertRiskAssessment = z.infer<typeof insertRiskAssessmentSchema>;
+export type UserRole = z.infer<typeof userRoleEnum>;
+export type AgentType = z.infer<typeof agentTypeEnum>;

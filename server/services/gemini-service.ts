@@ -1,19 +1,20 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "../db";
-import { legalResearchReports, LegalDocument } from "@shared/schema";
+import { legalResearchReports, type LegalDocument } from "@shared/schema";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-interface ResearchFindings {
-  title: string;
-  source: string;
-  relevanceScore: number;
-  summary: string;
-  citations: string[];
-}
-
 interface ResearchResponse {
   summary: string;
+  documents: {
+    title: string;
+    source: string;
+    citation?: string;
+    relevance: number;
+    summary: string;
+    citations: string[];
+    urls?: string[];
+  }[];
   analysis: {
     legalPrinciples: string[];
     keyPrecedents: {
@@ -23,23 +24,9 @@ interface ResearchResponse {
     }[];
     recommendations: string[];
   };
-  citations: {
-    source: string;
-    reference: string;
-    context: string;
-  }[];
 }
 
-interface ResearchFilters {
-  jurisdiction?: string;
-  legalTopic?: string;
-  dateRange?: {
-    start?: string;
-    end?: string;
-  };
-}
-
-export async function generateDeepResearch(query: string, relevantDocs: LegalDocument[]) {
+export async function generateDeepResearch(query: string, relevantDocs: LegalDocument[]): Promise<ResearchResponse> {
   try {
     if (!process.env.GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not configured");
@@ -58,39 +45,41 @@ export async function generateDeepResearch(query: string, relevantDocs: LegalDoc
     });
 
     const prompt = `
-      You are a legal research expert. Analyze the following query and provide a comprehensive response based on the provided documents.
+      As a legal research expert, analyze this query and relevant documents to provide a comprehensive research response.
       Query: "${query}"
 
       Relevant documents to consider:
       ${relevantDocs.map((doc, i) => `${i + 1}. ${doc.title} (${doc.jurisdiction}, ${doc.legalTopic}): ${doc.content.substring(0, 200)}...`).join('\n')}
 
-      IMPORTANT: Respond with ONLY a valid JSON object using this EXACT structure. Do not include any other text or formatting:
-
+      Respond with ONLY a valid JSON object using this EXACT structure:
       {
         "summary": "Brief overview of findings",
+        "documents": [
+          {
+            "title": "Document title",
+            "source": "Source name or citation",
+            "relevance": 0.95,
+            "summary": "Document-specific summary",
+            "citations": ["Relevant citations"],
+            "urls": ["Optional related URLs"]
+          }
+        ],
         "analysis": {
-          "legalPrinciples": ["Principle 1", "Principle 2"],
+          "legalPrinciples": ["Key legal principles identified"],
           "keyPrecedents": [
             {
               "case": "Case name and citation",
-              "relevance": "Why this case is relevant",
-              "impact": "How this case impacts the query"
+              "relevance": "Why this case matters",
+              "impact": "How it affects the query"
             }
           ],
-          "recommendations": ["Recommendation 1", "Recommendation 2"]
-        },
-        "citations": [
-          {
-            "source": "Source name",
-            "reference": "Specific reference or citation",
-            "context": "How this source supports the analysis"
-          }
-        ]
+          "recommendations": ["Actionable recommendations"]
+        }
       }
     `;
 
     const result = await model.generateContent(prompt);
-    const response = await result.response;
+    const response = result.response;
     const text = response.text();
 
     try {
@@ -100,42 +89,44 @@ export async function generateDeepResearch(query: string, relevantDocs: LegalDoc
         throw new Error("No valid JSON found in response");
       }
 
-      const parsedResponse = JSON.parse(jsonMatch[0]);
+      const parsedResponse = JSON.parse(jsonMatch[0]) as ResearchResponse;
 
       // Validate response structure
-      if (!parsedResponse.summary || !parsedResponse.analysis) {
+      if (!parsedResponse.summary || !parsedResponse.documents || !parsedResponse.analysis) {
         throw new Error("Invalid response structure from AI");
       }
 
-      // Ensure analysis has all required fields with proper types
-      const validatedResponse = {
-        summary: parsedResponse.summary || "",
+      // Ensure all required fields exist with proper types
+      const validatedResponse: ResearchResponse = {
+        summary: parsedResponse.summary,
+        documents: parsedResponse.documents.map(doc => ({
+          title: doc.title || "Untitled Document",
+          source: doc.source || "Unknown Source",
+          relevance: typeof doc.relevance === 'number' ? doc.relevance : 0.5,
+          summary: doc.summary || "No summary provided",
+          citations: Array.isArray(doc.citations) ? doc.citations : [],
+          urls: Array.isArray(doc.urls) ? doc.urls : []
+        })),
         analysis: {
           legalPrinciples: Array.isArray(parsedResponse.analysis.legalPrinciples) 
             ? parsedResponse.analysis.legalPrinciples 
             : [],
           keyPrecedents: Array.isArray(parsedResponse.analysis.keyPrecedents) 
-            ? parsedResponse.analysis.keyPrecedents.map((precedent: any) => ({
+            ? parsedResponse.analysis.keyPrecedents.map(precedent => ({
                 case: precedent.case || "Untitled Case",
                 relevance: precedent.relevance || "Not specified",
                 impact: precedent.impact || "Not specified"
               }))
             : [],
-          recommendations: Array.isArray(parsedResponse.analysis.recommendations) 
-            ? parsedResponse.analysis.recommendations 
+          recommendations: Array.isArray(parsedResponse.analysis.recommendations)
+            ? parsedResponse.analysis.recommendations
             : []
-        },
-        citations: Array.isArray(parsedResponse.citations) 
-          ? parsedResponse.citations.map((citation: any) => ({
-              source: citation.source || "Unknown Source",
-              reference: citation.reference || "No reference provided",
-              context: citation.context || "No context provided"
-            }))
-          : []
+        }
       };
 
       console.log('Successfully generated research response');
       return validatedResponse;
+
     } catch (error: any) {
       console.error('JSON parse error:', error);
       console.error('Raw response:', text);

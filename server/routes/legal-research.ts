@@ -3,8 +3,7 @@ import { db } from "../db";
 import { legalDocuments, legalResearchReports } from "@shared/schema";
 import { generateDeepResearch } from "../services/gemini-service";
 import { z } from "zod";
-import { desc, eq, and, gte, lte, ilike, or } from "drizzle-orm";
-import { generateEmbedding } from "../services/embedding-service";
+import { desc, eq, and, gte, lte } from "drizzle-orm";
 
 const router = Router();
 
@@ -14,11 +13,19 @@ router.post("/", async (req, res) => {
     const { query, jurisdiction, legalTopic, dateRange, options } = req.body;
 
     if (!query || !jurisdiction || !legalTopic) {
-      return res.status(400).json({
+      return res.status(400).json({ 
         success: false,
         error: "Missing required fields: query, jurisdiction, and legalTopic"
       });
     }
+
+    console.log('Starting legal research:', {
+      query,
+      jurisdiction,
+      legalTopic,
+      dateRange,
+      options
+    });
 
     let conditions = [];
 
@@ -41,6 +48,8 @@ router.post("/", async (req, res) => {
       .orderBy(desc(legalDocuments.date))
       .limit(20);
 
+    console.log(`Found ${documents.length} relevant documents`);
+
     if (documents.length === 0) {
       return res.status(404).json({
         success: false,
@@ -50,12 +59,13 @@ router.post("/", async (req, res) => {
 
     // Generate research response using Gemini
     const researchResponse = await generateDeepResearch(query, documents);
+    console.log('Generated research response successfully');
 
     // Save research report
     const [report] = await db
       .insert(legalResearchReports)
       .values({
-        userId: req.user?.id || 1, // Fallback for demo
+        userId: 1, // Fallback for demo
         query,
         jurisdiction,
         legalTopic,
@@ -66,17 +76,14 @@ router.post("/", async (req, res) => {
       })
       .returning();
 
-    // Format the response to match frontend expectations
+    console.log('Saved research report:', report.id);
+
+    // Format the response
     const response = {
-      results: researchResponse.documents.map(doc => ({
-        title: doc.title,
-        source: doc.source || doc.citation,
-        relevance: Math.round(doc.relevance * 100),
-        summary: doc.summary,
-        citations: doc.citations || [],
-        urls: doc.urls || []
-      })),
-      recommendations: researchResponse.recommendations || [],
+      success: true,
+      results: researchResponse.documents,
+      analysis: researchResponse.analysis,
+      summary: researchResponse.summary,
       timestamp: report.timestamp.toISOString()
     };
 
@@ -95,7 +102,7 @@ router.post("/", async (req, res) => {
 // Suggest questions endpoint
 router.post("/suggest-questions", async (req, res) => {
   try {
-    const { query, jurisdiction, legalTopic } = req.body;
+    const { jurisdiction, legalTopic } = req.body;
 
     if (!jurisdiction || !legalTopic) {
       return res.status(400).json({
@@ -120,36 +127,6 @@ router.post("/suggest-questions", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Failed to generate suggestions",
-      details: error.message
-    });
-  }
-});
-
-// Report generation endpoint
-router.post("/report", async (req, res) => {
-  try {
-    const { result } = req.body;
-
-    if (!result) {
-      return res.status(400).json({
-        success: false,
-        error: "Research result is required"
-      });
-    }
-
-    // Generate PDF report
-    // For now, just return a JSON response
-    return res.json({
-      success: true,
-      message: "Report generated successfully",
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error: any) {
-    console.error("Report generation error:", error);
-    return res.status(500).json({
-      success: false,
-      error: "Failed to generate report",
       details: error.message
     });
   }

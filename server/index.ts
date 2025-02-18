@@ -6,12 +6,9 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { db } from "./db";
 import cors from 'cors';
-import { handleStripeWebhook } from "./webhooks/stripe";
 import documentAnalyticsRouter from './routes/document-analytics';
 import redlineRouter from "./routes/redline";
 import legalResearchRouter from "./routes/legal-research";
-import { seedLegalDatabase } from './services/seedData';
-import { continuousLearningService } from './services/continuousLearningService';
 import passport from 'passport';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -39,7 +36,7 @@ const sessionStore = new PostgresStore({
   },
   createTableIfMissing: true,
   pruneSessionInterval: 60,
-  tableName: 'session' // Explicit table name
+  tableName: 'session'
 });
 
 const sessionMiddleware = session({
@@ -49,10 +46,10 @@ const sessionMiddleware = session({
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    maxAge: 30 * 24 * 60 * 60 * 1000,
     sameSite: 'lax'
   },
-  name: 'jurysync.sid' // Custom session name
+  name: 'jurysync.sid'
 });
 
 app.use(sessionMiddleware);
@@ -79,6 +76,9 @@ registerRoutes(app);
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(`API Error [${req.method} ${req.path}]:`, err);
 
+  // Ensure we always return JSON, even for errors
+  res.setHeader('Content-Type', 'application/json');
+
   if (err.name === 'UnauthorizedError') {
     return res.status(401).json({
       success: false,
@@ -100,33 +100,11 @@ if (process.env.NODE_ENV !== "production") {
   serveStatic(app);
 }
 
-// Start server first, then initialize background tasks
-const PORT = process.env.PORT || 5000;
+// Start server
+const PORT = parseInt(process.env.PORT || '5000', 10);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running at http://0.0.0.0:${PORT}`);
-
-  // Initialize database and services after server is running
-  (async () => {
-    try {
-      console.log('Starting background initialization...');
-
-      // Seed database in background
-      const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
-      seedLegalDatabase(numberOfDocuments)
-        .then(() => console.log('Legal database seeded successfully'))
-        .catch(error => console.error('Error seeding database:', error));
-
-      // Start continuous learning service in background
-      continuousLearningService.startContinuousLearning()
-        .then(() => console.log('Continuous learning service started successfully'))
-        .catch(error => console.error('Failed to start continuous learning service:', error));
-
-    } catch (error) {
-      console.error('Background initialization error:', error);
-      // Don't exit process on background task failure
-    }
-  })();
 }).on('error', (error: any) => {
   if (error.code === 'EADDRINUSE') {
     console.error(`Port ${PORT} is already in use`);
