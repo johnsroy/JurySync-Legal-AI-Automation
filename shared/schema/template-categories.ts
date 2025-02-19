@@ -19,24 +19,20 @@ export type TemplateCategory = z.infer<typeof TemplateCategoryEnum>;
 
 // Schema for template metadata
 export const templateMetadataSchema = z.object({
-  complexity: z.enum(["LOW", "MEDIUM", "HIGH"]),
-  estimatedTime: z.string(),
-  industry: z.string().optional(),
-  jurisdiction: z.string().optional(),
-  popularityScore: z.number(),
+  variables: z.array(z.object({
+    name: z.string(),
+    description: z.string(),
+    required: z.boolean(),
+    type: z.string()
+  })),
   tags: z.array(z.string()),
   useCase: z.string(),
-  recommendedClauses: z.array(z.string())
-});
-
-// Schema for template variables
-export const templateVariableSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-  required: z.boolean(),
-  type: z.string(),
-  defaultValue: z.string().optional(),
-  validationRules: z.array(z.string()).optional()
+  complexity: z.enum(["LOW", "MEDIUM", "HIGH"]),
+  recommendedClauses: z.array(z.string()),
+  industrySpecific: z.boolean(),
+  jurisdiction: z.string(),
+  lastUpdated: z.string(),
+  aiAssistanceLevel: z.string()
 });
 
 // Main template schema
@@ -45,13 +41,9 @@ export const templateSchema = z.object({
   name: z.string(),
   description: z.string(),
   category: TemplateCategoryEnum,
-  subcategory: z.string().optional(),
-  baseContent: z.string(),
-  variables: z.array(templateVariableSchema),
-  metadata: templateMetadataSchema,
-  popularity: z.number().default(0)
+  content: z.string(),
+  metadata: templateMetadataSchema
 });
 
 export type Template = z.infer<typeof templateSchema>;
 export type TemplateMetadata = z.infer<typeof templateMetadataSchema>;
-export type TemplateVariable = z.infer<typeof templateVariableSchema>;

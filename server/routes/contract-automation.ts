@@ -14,36 +14,46 @@ router.get('/templates', async (req, res) => {
     console.log("Fetching contract templates...");
     const { search, category } = req.query;
 
-    // Start with a base query
-    let baseQuery = db.select().from(contractTemplates);
+    let templates = await db.select().from(contractTemplates);
+    console.log(`Found ${templates.length} templates`);
 
-    // Add search condition if provided
-    if (search) {
-      const searchPattern = `%${search}%`;
-      baseQuery = baseQuery.where(
-        sql`name ILIKE ${searchPattern} OR description ILIKE ${searchPattern} OR category ILIKE ${searchPattern}`
+    // Filter templates if search is provided
+    if (search && typeof search === 'string') {
+      const searchLower = search.toLowerCase();
+      templates = templates.filter(template => 
+        template.name.toLowerCase().includes(searchLower) ||
+        template.description.toLowerCase().includes(searchLower) ||
+        template.category.toLowerCase().includes(searchLower)
       );
     }
 
-    // Add category filter if provided
-    if (category) {
-      baseQuery = baseQuery.where(eq(contractTemplates.category, category as string));
+    // Filter by category if provided
+    if (category && typeof category === 'string') {
+      templates = templates.filter(template => 
+        template.category === category
+      );
     }
 
-    const templates = await baseQuery;
-    console.log(`Found ${templates.length} templates`);
-
-    // Group templates by category for frontend display
+    // Group templates by category
     const groupedTemplates = templates.reduce((acc, template) => {
       const category = template.category;
       if (!acc[category]) {
         acc[category] = [];
       }
+
+      // Ensure template matches frontend expectations
       acc[category].push({
-        ...template,
         id: template.id.toString(),
-        variables: template.metadata?.variables || []
+        name: template.name,
+        description: template.description,
+        category: template.category,
+        content: template.content,
+        metadata: {
+          ...template.metadata,
+          variables: template.metadata.variables || []
+        }
       });
+
       return acc;
     }, {} as Record<string, any[]>);
 
@@ -74,7 +84,6 @@ router.get('/suggestions', async (req, res) => {
       });
     }
 
-    // Use Anthropic for intelligent suggestions
     const response = await anthropic.messages.create({
       model: "claude-3-opus-20240229",
       max_tokens: 1024,
