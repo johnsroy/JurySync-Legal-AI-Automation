@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, FileText, Download, Eye, BookOpen, ClipboardCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { analyzeLegalDocument, type LegalAnalysis } from '@/services/legalResearchService';
+import { Progress } from "@/components/ui/progress";
 
 interface AnalysisResult {
   documentType: string;
@@ -15,22 +15,32 @@ interface AnalysisResult {
   status: 'COMPLIANT' | 'NON_COMPLIANT';
   statusDescription: string;
   content?: string;
-  legalAnalysis?: LegalAnalysis;
+  legalAnalysis?: any;
 }
 
 export default function DocumentWorkflow() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const { toast } = useToast();
 
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      if (file.type !== 'application/pdf') {
+        toast({
+          title: "Invalid File Type",
+          description: "Please upload a PDF document",
+          variant: "destructive"
+        });
+        return;
+      }
       console.log('File selected:', file.name);
       setSelectedFile(file);
+      setUploadProgress(0);
     }
-  }, []);
+  }, [toast]);
 
   const processDocument = async () => {
     if (!selectedFile) return;
@@ -41,12 +51,17 @@ export default function DocumentWorkflow() {
 
     try {
       console.log('Starting document processing...');
+
+      // Upload and process document
       const response = await fetch('/api/document/process', {
         method: 'POST',
-        body: formData
+        body: formData,
       });
 
-      if (!response.ok) throw new Error('Processing failed');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Processing failed');
+      }
 
       const result = await response.json();
       console.log('Document processing result:', result);
@@ -55,18 +70,31 @@ export default function DocumentWorkflow() {
         throw new Error('No document content received for analysis');
       }
 
-      console.log('Starting legal analysis...');
-      const legalAnalysis = await analyzeLegalDocument(result.content);
-      console.log('Legal analysis completed:', legalAnalysis);
+      // Start analysis pipeline
+      console.log('Starting multi-agent analysis...');
+      const analysisResponse = await fetch('/api/document/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: result.content }),
+      });
+
+      if (!analysisResponse.ok) {
+        throw new Error('Analysis failed');
+      }
+
+      const analysisResult = await analysisResponse.json();
+      console.log('Analysis completed:', analysisResult);
 
       setAnalysisResult({
         ...result,
-        legalAnalysis
+        ...analysisResult
       });
 
       toast({
         title: "Analysis Complete",
-        description: "Document processed and legal analysis ready.",
+        description: "Document processed and analyzed successfully.",
       });
     } catch (error) {
       console.error('Document processing error:', error);
@@ -77,6 +105,7 @@ export default function DocumentWorkflow() {
       });
     } finally {
       setIsProcessing(false);
+      setUploadProgress(0);
     }
   };
 
@@ -147,7 +176,7 @@ export default function DocumentWorkflow() {
               <input
                 type="file"
                 onChange={handleFileUpload}
-                accept=".pdf,.docx,.doc"
+                accept=".pdf"
                 className="flex-1 p-2 border rounded-md"
               />
               <Button
@@ -164,42 +193,53 @@ export default function DocumentWorkflow() {
                 )}
               </Button>
             </div>
+
+            {(isProcessing || uploadProgress > 0) && (
+              <div className="space-y-2">
+                <Progress value={uploadProgress} />
+                <p className="text-sm text-center text-muted-foreground">
+                  {isProcessing ? 'Analyzing document...' : 'Uploading...'}
+                </p>
+              </div>
+            )}
           </div>
         </Card>
 
         {analysisResult && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="p-6 bg-blue-50 dark:bg-blue-900/10">
+              <Card className="p-6 bg-card/50">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold">Document Type</h3>
                     <p className="text-lg font-medium text-primary">{analysisResult.documentType}</p>
                     <p className="text-sm text-muted-foreground mt-1">{analysisResult.documentDescription}</p>
                   </div>
-                  <FileText className="h-10 w-10 text-blue-500" />
+                  <FileText className="h-10 w-10 text-primary" />
                 </div>
               </Card>
 
-              <Card className="p-6 bg-emerald-50 dark:bg-emerald-900/10">
+              <Card className="p-6 bg-card/50">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold">Industry</h3>
                     <p className="text-lg font-medium text-primary">{analysisResult.industry}</p>
                     <p className="text-sm text-muted-foreground mt-1">{analysisResult.industryDescription}</p>
                   </div>
-                  <BookOpen className="h-10 w-10 text-emerald-500" />
+                  <BookOpen className="h-10 w-10 text-primary" />
                 </div>
               </Card>
 
-              <Card className="p-6 bg-emerald-50 dark:bg-emerald-900/10">
+              <Card className="p-6 bg-card/50">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold">Compliance Status</h3>
-                    <p className="text-lg font-medium text-primary">{analysisResult.status}</p>
+                    <Badge variant={analysisResult.status === 'COMPLIANT' ? 'default' : 'destructive'}>
+                      {analysisResult.status}
+                    </Badge>
                     <p className="text-sm text-muted-foreground mt-1">{analysisResult.statusDescription}</p>
                   </div>
-                  <ClipboardCheck className="h-10 w-10 text-emerald-500" />
+                  <ClipboardCheck className="h-10 w-10 text-primary" />
                 </div>
               </Card>
             </div>
