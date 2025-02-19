@@ -1,24 +1,11 @@
 import { z } from "zod";
 import { TemplateCategory } from "@shared/schema";
-import Anthropic from '@anthropic-ai/sdk';
+import { anthropic } from '../anthropic';
+import { openai } from '../openai';
 
-// Initialize Anthropic client
+// Initialize AI clients
+// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 // the newest Anthropic model is "claude-3-5-sonnet-20241022" which was released October 22, 2024
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-// Schema validation for suggestions
-const suggestionSchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  category: z.string()
-});
-
-const customInstructionSchema = z.object({
-  instruction: z.string(),
-  explanation: z.string()
-});
 
 interface RequirementSuggestion {
   description: string;
@@ -28,62 +15,41 @@ interface RequirementSuggestion {
 
 export async function suggestRequirements(templateId: string, currentDescription?: string): Promise<RequirementSuggestion[]> {
   try {
-    console.log(`[TemplateStore] Starting suggestion generation for template: ${templateId}`, {
-      templateId,
-      currentDescription: currentDescription || 'Not provided'
-    });
+    console.log(`[TemplateStore] Starting suggestion generation for template: ${templateId}`);
 
     const template = getTemplate(templateId);
     if (!template) {
       throw new Error('Template not found');
     }
 
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1000,
-      system: `You are a legal document assistant. Generate specific, practical requirements for contract templates.
-      Return exactly 5 suggestions in JSON array format.
-      Each suggestion must have:
-      {
-        "description": "<requirement_description>",
-        "importance": "HIGH" | "MEDIUM" | "LOW",
-        "context": "<requirement_context>"
-      }`,
-      messages: [{
-        role: "user",
-        content: `Generate 5 specific requirements for this contract template:
-Template: ${template.name}
-Description: ${template.description}
-Current Description: ${currentDescription || 'Not provided'}
-
-Return ONLY a JSON array of suggestion objects.`
-      }]
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are a legal contract assistant. Generate specific, practical requirements for contract templates.
+          Return exactly 5 suggestions in JSON array format.`
+        },
+        {
+          role: "user",
+          content: `Generate 5 specific requirements for this contract template:
+          Template: ${template.name}
+          Description: ${template.description}
+          Current Description: ${currentDescription || 'Not provided'}`
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3
     });
 
-    const content = response.content[0];
-    if (!content || !('text' in content)) {
-      console.error('[TemplateStore] Invalid AI response format:', response);
-      throw new Error('Invalid response format from AI');
-    }
+    const content = response.choices[0].message.content;
+    if (!content) throw new Error('Invalid response from AI');
 
-    console.log('[TemplateStore] Raw AI response:', content.text);
-    const rawSuggestions = JSON.parse(content.text);
-
-    // Validate suggestions against schema
-    const suggestions = z.array(z.object({
-      description: z.string(),
-      importance: z.enum(["HIGH", "MEDIUM", "LOW"]),
-      context: z.string()
-    })).parse(rawSuggestions);
-
-    console.log(`[TemplateStore] Generated ${suggestions.length} valid suggestions:`,
-      JSON.stringify(suggestions, null, 2)
-    );
-
-    return suggestions;
+    const suggestions = JSON.parse(content);
+    return suggestions.suggestions;
   } catch (error) {
     console.error('[TemplateStore] Error generating suggestions:', error);
-    throw new Error('Failed to generate suggestions: ' + (error instanceof Error ? error.message : String(error)));
+    throw error;
   }
 }
 
@@ -92,57 +58,78 @@ export async function getCustomInstructionSuggestions(
   currentRequirements: string[]
 ): Promise<Array<{ instruction: string; explanation: string }>> {
   try {
-    console.log(`[TemplateStore] Starting custom instruction generation for template: ${templateId}`, {
-      templateId,
-      requirementsCount: currentRequirements.length
-    });
-
+    console.log(`[TemplateStore] Starting custom instruction generation for template: ${templateId}`);
     const template = getTemplate(templateId);
     if (!template) {
       throw new Error('Template not found');
     }
 
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1000,
-      system: `You are a legal document assistant. Generate specific instructions for customizing contract templates.
-      Return exactly 3 suggestions in JSON array format.
-      Each suggestion must have:
-      {
-        "instruction": "<specific_instruction>",
-        "explanation": "<explanation_of_benefit>"
-      }`,
-      messages: [{
-        role: "user",
-        content: `Generate 3 custom instruction suggestions for this contract template:
-
-Template: ${template.name}
-Description: ${template.description}
-Current Requirements: ${JSON.stringify(currentRequirements)}
-
-Return ONLY a JSON array of suggestion objects.`
-      }]
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are a legal document assistant. Generate specific instructions for customizing contract templates.
+          Return exactly 3 suggestions in JSON array format.`
+        },
+        {
+          role: "user",
+          content: `Generate 3 custom instruction suggestions for this contract template:
+          Template: ${template.name}
+          Description: ${template.description}
+          Current Requirements: ${JSON.stringify(currentRequirements)}`
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.2
     });
 
-    const content = response.content[0];
-    if (!content || !('text' in content)) {
-      console.error('[TemplateStore] Invalid AI response format:', response);
-      throw new Error('Invalid response format from AI');
-    }
+    const content = response.choices[0].message.content;
+    if (!content) throw new Error('Invalid response from AI');
 
-    console.log('[TemplateStore] Raw AI response:', content.text);
-    const rawSuggestions = JSON.parse(content.text);
-
-    // Validate suggestions against schema
-    const suggestions = z.array(customInstructionSchema).parse(rawSuggestions);
-    console.log(`[TemplateStore] Generated ${suggestions.length} valid custom instruction suggestions:`,
-      JSON.stringify(suggestions, null, 2)
-    );
-
-    return suggestions;
+    return JSON.parse(content).suggestions;
   } catch (error) {
     console.error('[TemplateStore] Error generating custom instructions:', error);
-    throw new Error('Failed to generate custom instruction suggestions: ' + (error instanceof Error ? error.message : String(error)));
+    throw error;
+  }
+}
+
+export async function getAutocomplete(templateId: string, partialText: string): Promise<{
+  suggestions: Array<{ text: string; description?: string }>;
+}> {
+  try {
+    console.log(`[TemplateStore] Generating autocomplete suggestions for: ${partialText}`);
+    const template = getTemplate(templateId);
+    if (!template) {
+      throw new Error('Template not found');
+    }
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are a legal document assistant. Generate relevant completions for contract text.
+          Return exactly 3 suggestions in JSON array format.`
+        },
+        {
+          role: "user",
+          content: `Given this partial text in a ${template.name}, suggest 3 relevant completions:
+          Partial text: "${partialText}"
+          Template context: ${template.description}`
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3
+    });
+
+    const content = response.choices[0].message.content;
+    if (!content) throw new Error('Invalid response from AI');
+
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('[TemplateStore] Error generating autocomplete:', error);
+    throw error;
   }
 }
 
@@ -746,57 +733,6 @@ export function getTemplatesByCategory(category: Template["category"]): Template
   return filtered;
 }
 
-interface Suggestion {
-  id: string;
-  text: string;
-  category?: string;
-}
-
-export async function getAutocomplete(templateId: string, partialText: string): Promise<{
-  suggestions: Array<{ text: string; description?: string }>;
-}> {
-  try {
-    console.log(`[TemplateStore] Generating autocomplete suggestions for: ${partialText}`);
-
-    const template = getTemplate(templateId);
-    if (!template) {
-      throw new Error('Template not found');
-    }
-
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 500,
-      system: `You are a legal document assistant. Generate relevant completions for contract text.
-      Always return a JSON array of 3-5 suggestions.
-      Each suggestion must follow this format exactly:
-      {
-        "text": "<completion_text>",
-        "description": "<brief_explanation>"
-      }`,
-      messages: [{
-        role: "user",
-        content: `Given this partial text in a ${template.name}, suggest 3-5 relevant completions:
-
-Partial text: "${partialText}"
-Template context: ${template.description}
-
-Return ONLY a JSON array of suggestion objects.`
-      }]
-    });
-
-    const content = response.content[0];
-    if (!content || !('text' in content)) {
-      throw new Error('Invalid response format from AI');
-    }
-
-    const suggestions = JSON.parse(content.text);
-    return { suggestions };
-  } catch (error) {
-    console.error('[TemplateStore] Error generating autocomplete:', error);
-    throw new Error('Failed to generate autocomplete suggestions: ' + (error instanceof Error ? error.message : String(error)));
-  }
-}
-
 export async function generateContract(
   templateId: string,
   requirements: Array<{ description: string; importance: "HIGH" | "MEDIUM" | "LOW" }>,
@@ -855,3 +791,14 @@ Return ONLY the generated contract text.`
     throw new Error('Failed to generate contract: ' + (error instanceof Error ? error.message : String(error)));
   }
 }
+
+// Export template store functions
+export const templateStore = {
+  suggestRequirements,
+  getCustomInstructionSuggestions,
+  getAutocomplete,
+  getTemplate,
+  getAllTemplates,
+  getTemplatesByCategory,
+  generateContract
+};

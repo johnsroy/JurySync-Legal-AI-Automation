@@ -1,26 +1,21 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { contractTemplates } from '@shared/schema';
-import { generateContract, getCustomInstructionSuggestions, suggestRequirements } from '../services/templateStore';
+import { templateStore } from '../services/templateStore';
 import { eq } from 'drizzle-orm';
-import { seedContractTemplates } from '../services/seedContractTemplates';
 import { sql } from 'drizzle-orm';
+import { seedContractTemplates } from '../services/seedContractTemplates';
 
 const router = Router();
 
-// Get all templates
+// Get all templates with search and filtering
 router.get('/templates', async (req, res) => {
   try {
     console.log("Fetching contract templates...");
-
-    // Get query parameters
     const { search, category } = req.query;
 
-    let query = db
-      .select()
-      .from(contractTemplates);
+    let query = db.select().from(contractTemplates);
 
-    // Add search conditions if provided
     if (search) {
       query = query.where(
         sql`name ILIKE ${`%${search}%`} OR 
@@ -29,12 +24,10 @@ router.get('/templates', async (req, res) => {
       );
     }
 
-    // Add category filter if provided
     if (category) {
       query = query.where(eq(contractTemplates.category, category as string));
     }
 
-    // Execute query
     const templates = await query;
     console.log(`Found ${templates.length} templates`);
 
@@ -43,18 +36,15 @@ router.get('/templates', async (req, res) => {
       console.log("No templates found, initiating seeding...");
       await seedContractTemplates();
 
-      // Fetch templates again after seeding
       const seededTemplates = await db
         .select()
-        .from(contractTemplates);
-
-      console.log(`Seeded and found ${seededTemplates.length} templates`);
+        .from(contractTemplates)
+        .orderBy(contractTemplates.category);
 
       if (seededTemplates.length === 0) {
         throw new Error("Failed to seed and fetch templates");
       }
 
-      // Group templates by category
       const groupedTemplates = seededTemplates.reduce((acc, template) => {
         if (!acc[template.category]) {
           acc[template.category] = [];
@@ -92,7 +82,7 @@ router.get('/templates', async (req, res) => {
   }
 });
 
-// Get template suggestions
+// AI Suggestions endpoint
 router.get('/suggestions', async (req, res) => {
   try {
     const { q: query } = req.query;
@@ -103,7 +93,7 @@ router.get('/suggestions', async (req, res) => {
       });
     }
 
-    const suggestions = await suggestRequirements('general', query);
+    const suggestions = await templateStore.suggestRequirements('general', query);
     return res.json({
       success: true,
       suggestions: suggestions.map(s => s.description)
@@ -117,7 +107,32 @@ router.get('/suggestions', async (req, res) => {
   }
 });
 
-// Get custom instructions
+// Autocomplete endpoint
+router.get('/autocomplete', async (req, res) => {
+  try {
+    const { templateId, text } = req.query;
+    if (!templateId || !text || typeof templateId !== 'string' || typeof text !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Template ID and text parameters are required'
+      });
+    }
+
+    const suggestions = await templateStore.getAutocomplete(templateId, text);
+    return res.json({
+      success: true,
+      ...suggestions
+    });
+  } catch (error) {
+    console.error('Failed to get autocomplete suggestions:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to get autocomplete suggestions'
+    });
+  }
+});
+
+// Custom instructions endpoint
 router.post('/custom-instructions', async (req, res) => {
   try {
     const { templateId, requirements } = req.body;
@@ -128,7 +143,7 @@ router.post('/custom-instructions', async (req, res) => {
       });
     }
 
-    const suggestions = await getCustomInstructionSuggestions(templateId, requirements);
+    const suggestions = await templateStore.getCustomInstructionSuggestions(templateId, requirements);
     return res.json({
       success: true,
       suggestions
@@ -138,33 +153,6 @@ router.post('/custom-instructions', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to get custom instructions'
-    });
-  }
-});
-
-// Generate contract from template
-router.post('/generate', async (req, res) => {
-  try {
-    const { templateId, customClauses } = req.body;
-
-    if (!templateId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Template ID is required'
-      });
-    }
-
-    const contract = await generateContract(templateId, [], customClauses);
-
-    res.json({
-      success: true,
-      contract
-    });
-  } catch (error) {
-    console.error('Contract generation error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate contract'
     });
   }
 });
