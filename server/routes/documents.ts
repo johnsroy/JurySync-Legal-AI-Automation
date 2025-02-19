@@ -1,35 +1,127 @@
 import { Router } from "express";
 import multer from "multer";
-import { openai } from "../openai";
 import { db } from "../db";
-import { documents, contractTemplates } from "@shared/schema";
-import { eq } from 'drizzle-orm';
+import { documents } from "@shared/schema";
 import { analyzePDFContent } from "../services/fileAnalyzer";
-import mammoth from 'mammoth';
-import PDFDocument from "pdfkit";
-import { approvalAuditService } from "../services/approvalAuditService";
 import { analyzeDocument } from "../services/documentAnalysisService";
-import { 
-  getAllTemplates, 
-  getTemplate, 
-  getTemplatesByCategory,
-  suggestRequirements,
-  getAutocomplete,
-  getCustomInstructionSuggestions,
-  generateContract 
-} from "../services/templateStore";
-import { anthropic } from "../anthropic";
-import { generateAllTemplates } from "../services/templateGenerator";
 
 const router = Router();
 
-// Add request logging middleware for this router
-router.use((req, res, next) => {
-  console.log(`[Documents Router] ${req.method} ${req.path}`, {
-    body: req.body,
-    query: req.query
-  });
-  next();
+// Configure multer with improved error handling
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024 // Increased to 25MB
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid file type: ${file.mimetype}. Only PDF and Word documents are supported.`));
+    }
+  }
+});
+
+router.post("/workflow/upload", upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ 
+        error: "No file uploaded",
+        code: "NO_FILE" 
+      });
+    }
+
+    console.log("Processing document upload:", {
+      filename: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    });
+
+    let content = '';
+    let extractionError = null;
+
+    try {
+      if (req.file.mimetype.includes('pdf')) {
+        content = await analyzePDFContent(req.file.buffer);
+      } else {
+        return res.status(400).json({
+          error: "Currently only supporting PDF files",
+          code: "UNSUPPORTED_FORMAT"
+        });
+      }
+    } catch (error) {
+      console.error("Content extraction error:", error);
+      extractionError = error;
+    }
+
+    if (!content || content.trim().length === 0) {
+      return res.status(400).json({
+        error: "Failed to extract content from document",
+        details: extractionError?.message || "No content could be extracted",
+        code: "EXTRACTION_FAILED"
+      });
+    }
+
+    console.log("Content extracted successfully, length:", content.length);
+
+    // Initial analysis metadata
+    const initialAnalysis = {
+      documentType: "Legal Document",
+      status: "Processing",
+      confidence: 0.8,
+      extractedLength: content.length,
+      processingSteps: ["upload", "extraction"],
+      uploadTimestamp: new Date().toISOString()
+    };
+
+    // Insert into database with initial status
+    const [document] = await db.insert(documents)
+      .values({
+        userId: req.user?.id || 1, // Fallback for testing
+        title: req.file.originalname,
+        content: content,
+        processingStatus: "PROCESSING",
+        agentType: "LEGAL_RESEARCH",
+        analysis: initialAnalysis
+      })
+      .returning();
+
+    if (!document) {
+      throw new Error("Failed to create document record");
+    }
+
+    console.log("Document record created:", {
+      id: document.id,
+      title: document.title,
+      status: document.processingStatus
+    });
+
+    // Start async analysis
+    analyzeDocument(document.id, content).catch(error => {
+      console.error("Analysis error for document", document.id, error);
+    });
+
+    return res.json({
+      documentId: document.id,
+      title: document.title,
+      status: "PROCESSING",
+      message: "Document uploaded and processing started"
+    });
+
+  } catch (error: any) {
+    console.error("Document upload error:", error);
+    return res.status(500).json({ 
+      error: "Failed to process document",
+      details: error.message,
+      code: "UPLOAD_ERROR"
+    });
+  }
 });
 
 router.post("/templates/generate", async (req, res) => {
@@ -162,7 +254,7 @@ ${content}`
   }
 });
 
-const upload = multer({ 
+const upload2 = multer({ 
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB limit
@@ -246,89 +338,6 @@ router.post("/documents/generate", async (req, res) => {
   }
 });
 
-router.post("/workflow/upload", upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    console.log("Processing document upload:", {
-      filename: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size
-    });
-
-    let content = '';
-
-    try {
-      if (req.file.mimetype.includes('pdf')) {
-        content = await analyzePDFContent(req.file.buffer, -1);
-      } else if (req.file.mimetype.includes('word')) {
-        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-        content = result.value;
-      } else if (req.file.mimetype.includes('plain')) {
-        content = req.file.buffer.toString('utf8');
-      }
-
-      if (!content || !content.trim()) {
-        throw new Error('Failed to extract content from document');
-      }
-
-      content = content
-        .replace(/\u0000/g, '')
-        .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
-        .replace(/[\u0000-\u001F]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .replace(/<!DOCTYPE[^>]*>/g, '')
-        .replace(/<\/?[^>]+(>|$)/g, '')
-        .trim();
-
-      console.log("Content extracted and cleaned, length:", content.length);
-
-      const [document] = await db.insert(documents).values({
-        userId: req.user?.id || 1,
-        title: req.file.originalname,
-        content: content,
-        processingStatus: "COMPLETED",
-        agentType: "LEGAL_RESEARCH",
-        analysis: {
-          documentType: "Unknown",
-          industry: "TECHNOLOGY",
-          classification: "Pending Analysis",
-          confidence: 0.75,
-          source: "workflow-automation"
-        }
-      }).returning();
-
-      console.log("Document uploaded successfully:", {
-        id: document.id,
-        title: document.title,
-        contentLength: content.length
-      });
-
-      return res.json({
-        documentId: document.id,
-        title: document.title,
-        text: content,
-        status: "COMPLETED"
-      });
-
-    } catch (extractError: any) {
-      console.error("Content extraction error:", extractError);
-      return res.status(400).json({
-        error: "Failed to process document content",
-        details: extractError.message
-      });
-    }
-
-  } catch (error: any) {
-    console.error("Document upload error:", error);
-    return res.status(500).json({ 
-      error: "Failed to process document",
-      details: error.message
-    });
-  }
-});
 
 router.delete("/workflow/documents/:id", async (req, res) => {
   try {
