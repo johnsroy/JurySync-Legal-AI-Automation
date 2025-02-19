@@ -1,6 +1,68 @@
 import { db } from '../db';
 import { contractTemplates } from '@shared/schema';
 import { sql } from 'drizzle-orm';
+import OpenAI from 'openai';
+
+const openai = new OpenAI();
+
+// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+
+async function generateTemplate(category: string) {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{
+        role: "system",
+        content: "You are a legal document expert. Generate a contract template with all necessary components."
+      }, {
+        role: "user",
+        content: `Generate a contract template for category: ${category}
+        Include:
+        1. Template name
+        2. Description
+        3. Content with variable placeholders in [VARIABLE_NAME] format
+        4. Required variables with descriptions
+        5. Tags
+        6. Use case
+        7. Complexity level (LOW, MEDIUM, HIGH)
+        8. Recommended clauses
+        9. Whether it's industry specific
+        10. Jurisdiction
+
+        Format as JSON with these exact keys:
+        {
+          name: string,
+          description: string,
+          content: string,
+          metadata: {
+            variables: Array<{name: string, description: string, required: boolean, type: string}>,
+            tags: string[],
+            useCase: string,
+            complexity: "LOW" | "MEDIUM" | "HIGH",
+            recommendedClauses: string[],
+            industrySpecific: boolean,
+            jurisdiction: string,
+            aiAssistanceLevel: string
+          }
+        }`
+      }],
+      response_format: { type: "json_object" }
+    });
+
+    const template = JSON.parse(completion.choices[0].message.content);
+    return {
+      ...template,
+      category,
+      metadata: {
+        ...template.metadata,
+        lastUpdated: new Date().toISOString()
+      }
+    };
+  } catch (error) {
+    console.error(`Failed to generate template for ${category}:`, error);
+    throw error;
+  }
+}
 
 export async function seedContractTemplates() {
   try {
@@ -10,85 +72,24 @@ export async function seedContractTemplates() {
     await db.delete(contractTemplates);
     console.log("Cleared existing templates");
 
-    const sampleTemplates = [
-      {
-        name: "Non-Disclosure Agreement (NDA)",
-        description: "Comprehensive NDA for protecting confidential information",
-        category: "NDA",
-        content: `CONFIDENTIALITY AND NON-DISCLOSURE AGREEMENT
-
-This Agreement is made between [COMPANY_NAME] ("Disclosing Party") and [RECIPIENT_NAME] ("Receiving Party").
-
-1. Confidential Information
-2. Non-Disclosure Obligations
-3. Term and Termination`,
-        metadata: {
-          variables: [
-            { 
-              name: "COMPANY_NAME", 
-              description: "Name of the company disclosing information", 
-              required: true, 
-              type: "text" 
-            },
-            { 
-              name: "RECIPIENT_NAME", 
-              description: "Name of the party receiving confidential information", 
-              required: true, 
-              type: "text" 
-            }
-          ],
-          tags: ["confidentiality", "business protection", "trade secrets"],
-          useCase: "Protecting sensitive business information",
-          complexity: "MEDIUM",
-          recommendedClauses: ["Confidentiality", "Non-Disclosure", "Term"],
-          industrySpecific: false,
-          jurisdiction: "US",
-          lastUpdated: new Date().toISOString(),
-          aiAssistanceLevel: "ADVANCED"
-        }
-      },
-      {
-        name: "Employment Agreement",
-        description: "Standard employment contract with key protections",
-        category: "EMPLOYMENT",
-        content: `EMPLOYMENT AGREEMENT
-
-This Employment Agreement is made between [EMPLOYER_NAME] and [EMPLOYEE_NAME].
-
-1. Position and Duties
-2. Compensation and Benefits
-3. Term and Termination`,
-        metadata: {
-          variables: [
-            { 
-              name: "EMPLOYER_NAME", 
-              description: "Name of the employing company", 
-              required: true, 
-              type: "text" 
-            },
-            { 
-              name: "EMPLOYEE_NAME", 
-              description: "Name of the employee", 
-              required: true, 
-              type: "text" 
-            }
-          ],
-          tags: ["employment", "labor law", "HR"],
-          useCase: "Establishing employment relationships",
-          complexity: "HIGH",
-          recommendedClauses: ["Duties", "Compensation", "Benefits"],
-          industrySpecific: false,
-          jurisdiction: "US",
-          lastUpdated: new Date().toISOString(),
-          aiAssistanceLevel: "EXPERT"
-        }
-      }
+    const categories = [
+      "NDA",
+      "EMPLOYMENT",
+      "REAL_ESTATE",
+      "BUSINESS",
+      "INTELLECTUAL_PROPERTY",
+      "SERVICE_AGREEMENT"
     ];
 
-    console.log(`Attempting to seed ${sampleTemplates.length} templates...`);
+    console.log("Generating AI-powered templates...");
+    const templates = await Promise.all(
+      categories.map(category => generateTemplate(category))
+    );
+
+    console.log(`Attempting to seed ${templates.length} templates...`);
 
     // Insert templates
-    await db.insert(contractTemplates).values(sampleTemplates);
+    await db.insert(contractTemplates).values(templates);
 
     // Verify insertion
     const [{ count }] = await db

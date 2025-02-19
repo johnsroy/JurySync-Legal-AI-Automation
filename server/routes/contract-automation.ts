@@ -4,8 +4,12 @@ import { contractTemplates } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { anthropic } from '../anthropic';
+import OpenAI from 'openai';
 
 const router = Router();
+const openai = new OpenAI();
+
+// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 
 // Get all templates with search and filtering
 router.get('/templates', async (req, res) => {
@@ -70,7 +74,7 @@ router.get('/templates', async (req, res) => {
   }
 });
 
-// AI Suggestions endpoint
+// AI Suggestions endpoint with improved context awareness
 router.get('/suggestions', async (req, res) => {
   try {
     const { q: query } = req.query;
@@ -81,21 +85,44 @@ router.get('/suggestions', async (req, res) => {
       });
     }
 
-    const response = await anthropic.messages.create({
+    // Use OpenAI for main suggestions
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{
+        role: "system",
+        content: "You are a legal document expert. Generate specific, actionable suggestions for contract requirements."
+      }, {
+        role: "user",
+        content: `Given this query about legal documents: "${query}"
+        Provide 3-5 specific suggestions focusing on:
+        - Required clauses
+        - Legal considerations
+        - Industry-specific requirements
+        Format as a bulleted list.`
+      }],
+      max_tokens: 1000
+    });
+
+    // Use Anthropic for additional context and refinement
+    const anthropicResponse = await anthropic.messages.create({
       model: "claude-3-opus-20240229",
       max_tokens: 1024,
       messages: [{
         role: "user",
-        content: `Given this query about legal documents: "${query}"
-        Suggest 3-5 relevant requirements or considerations that would be important for this type of document.
-        Format each suggestion as a clear, actionable item.`
+        content: `Given these initial suggestions for "${query}":
+        ${completion.choices[0].message.content}
+
+        Enhance these suggestions with:
+        1. Industry best practices
+        2. Regulatory requirements
+        3. Risk mitigation strategies`
       }]
     });
 
-    const suggestions = response.content[0].text
+    const suggestions = anthropicResponse.content[0].text
       .split('\n')
       .filter(line => line.trim())
-      .map(line => line.replace(/^\d+\.\s*/, '').trim());
+      .map(line => line.replace(/^[-•]\s*/, '').trim());
 
     return res.json({
       success: true,
@@ -106,6 +133,82 @@ router.get('/suggestions', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to get suggestions'
+    });
+  }
+});
+
+// Template usage endpoint
+router.post('/use-template/:templateId', async (req, res) => {
+  try {
+    const { templateId } = req.params;
+    const { variables } = req.body;
+
+    // Fetch the template
+    const [template] = await db
+      .select()
+      .from(contractTemplates)
+      .where(eq(contractTemplates.id, parseInt(templateId)));
+
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        error: 'Template not found'
+      });
+    }
+
+    // Validate required variables
+    const missingVariables = template.metadata.variables
+      .filter(v => v.required && !variables[v.name])
+      .map(v => v.name);
+
+    if (missingVariables.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required variables',
+        missingVariables
+      });
+    }
+
+    // Replace variables in content
+    let content = template.content;
+    Object.entries(variables).forEach(([key, value]) => {
+      content = content.replace(new RegExp(`\\[${key}\\]`, 'g'), value as string);
+    });
+
+    // Generate suggestions for the customized content using OpenAI
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{
+        role: "system",
+        content: "You are a legal document expert. Review this contract and suggest improvements."
+      }, {
+        role: "user",
+        content: `Review this contract and suggest specific improvements:
+        ${content}
+
+        Focus on:
+        1. Clarity and readability
+        2. Legal completeness
+        3. Risk mitigation
+        `
+      }],
+      max_tokens: 1000
+    });
+
+    return res.json({
+      success: true,
+      document: {
+        content,
+        suggestions: completion.choices[0].message.content,
+        metadata: template.metadata
+      }
+    });
+
+  } catch (error) {
+    console.error('Failed to process template:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to process template'
     });
   }
 });
