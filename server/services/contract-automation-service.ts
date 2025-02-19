@@ -22,6 +22,86 @@ export interface FieldSuggestion {
   fieldType: 'date' | 'name' | 'address' | 'company' | 'amount' | 'other';
 }
 
+export async function parsePdfTemplate(pdfBuffer: Buffer): Promise<string> {
+  if (!pdfBuffer || pdfBuffer.length === 0) {
+    throw new Error("Invalid PDF buffer provided");
+  }
+
+  let pdfdoc = null;
+  try {
+    // Initialize PDFTron with proper licensing
+    await PDFNet.initialize();
+
+    // Create document from buffer
+    pdfdoc = await PDFNet.PDFDoc.createFromBuffer(pdfBuffer);
+    await pdfdoc.initSecurityHandler();
+
+    let extractedText = '';
+    const pageCount = await pdfdoc.getPageCount();
+    console.log(`Processing PDF with ${pageCount} pages`);
+
+    for (let i = 1; i <= pageCount; i++) {
+      try {
+        const page = await pdfdoc.getPage(i);
+        const reader = await PDFNet.TextExtractor.create();
+        await reader.begin(page);
+
+        // Extract text with layout analysis
+        const pageText = await reader.getAsText();
+        extractedText += pageText + '\n';
+
+        console.log(`Successfully processed page ${i}`);
+      } catch (pageError) {
+        console.error(`Error processing page ${i}:`, pageError);
+        // Continue with next page even if current page fails
+        continue;
+      }
+    }
+
+    // Clean up extracted text with improved formatting
+    const cleanedText = extractedText
+      .replace(/\r\n/g, '\n')
+      .replace(/\s+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n') // Normalize multiple line breaks
+      .trim();
+
+    // If no text was extracted, throw error
+    if (!cleanedText) {
+      throw new Error("No text content could be extracted from the PDF");
+    }
+
+    return formatTemplateText(cleanedText);
+  } catch (error) {
+    console.error("PDF parsing error:", error);
+    throw new Error(`Enhanced PDF parsing failed: ${error.message}`);
+  } finally {
+    if (pdfdoc) {
+      pdfdoc.destroy();
+    }
+    await PDFNet.terminate();
+  }
+}
+
+function formatTemplateText(text: string): string {
+  // Improved text formatting with section detection
+  const sections = text.split(/(\d+\.\s+[A-Z][A-Z\s]+:?|\n[A-Z][A-Z\s]+:)/g);
+
+  // Process each section to maintain proper formatting
+  return sections
+    .map(section => section.trim())
+    .filter(Boolean)
+    .map(section => {
+      // Detect if section is a heading
+      if (/^\d+\.\s+[A-Z]/.test(section) || /^[A-Z][A-Z\s]+:$/.test(section)) {
+        return `\n${section}\n`;
+      }
+      return section;
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n') // Normalize multiple line breaks
+    .trim();
+}
+
 export async function generateContract(config: GenerateContractConfig) {
   try {
     const { templateId, variables, customClauses, aiAssistance = true } = config;
@@ -117,53 +197,6 @@ export async function generateContract(config: GenerateContractConfig) {
     console.error("Contract generation error:", error);
     throw error;
   }
-}
-
-export async function parsePdfTemplate(pdfBuffer: Buffer): Promise<string> {
-  try {
-    await PDFNet.initialize();
-
-    const doc = await PDFNet.PDFDoc.createFromBuffer(pdfBuffer);
-    await doc.initSecurityHandler();
-
-    let extractedText = '';
-    const pageCount = await doc.getPageCount();
-
-    for (let i = 1; i <= pageCount; i++) {
-      const page = await doc.getPage(i);
-      const reader = await PDFNet.TextExtractor.create();
-      reader.begin(page);
-
-      // Get all text blocks
-      const blocks = await reader.getAsText();
-      extractedText += blocks + '\n';
-    }
-
-    // Clean up extracted text
-    const cleanedText = extractedText
-      .replace(/\r\n/g, '\n')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    // Format the text into sections
-    return formatTemplateText(cleanedText);
-  } catch (error) {
-    console.error("PDF parsing error:", error);
-    throw new Error(`Enhanced PDF parsing failed: ${error.message}`);
-  } finally {
-    await PDFNet.terminate();
-  }
-}
-
-function formatTemplateText(text: string): string {
-  // Split into sections based on common patterns
-  const sections = text.split(/(\d+\.\s+[A-Z][A-Z\s]+:?|\n[A-Z][A-Z\s]+:)/g);
-
-  // Rejoin with proper formatting
-  return sections
-    .map(section => section.trim())
-    .filter(Boolean)
-    .join('\n\n');
 }
 
 export async function generateTemplatePreview(category: string): Promise<string> {
