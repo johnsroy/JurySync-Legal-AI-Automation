@@ -14,62 +14,41 @@ const openai = new OpenAI();
 // Get all templates with search and filtering
 router.get('/templates', async (req, res) => {
   try {
-    console.log("Fetching contract templates...");
     const { search, category } = req.query;
-
     let templates = await db.select().from(contractTemplates);
-    console.log(`Found ${templates.length} total templates`);
 
-    // Filter templates if search is provided
+    // Filter by search if provided
     if (search && typeof search === 'string') {
       const searchLower = search.toLowerCase();
       templates = templates.filter(template => 
         template.name.toLowerCase().includes(searchLower) ||
-        template.description.toLowerCase().includes(searchLower) ||
-        template.category.toLowerCase().includes(searchLower)
+        template.description.toLowerCase().includes(searchLower)
       );
-      console.log(`Found ${templates.length} templates after search filtering`);
     }
 
     // Filter by category if provided
     if (category && typeof category === 'string') {
-      templates = templates.filter(template => 
-        template.category === category
-      );
-      console.log(`Found ${templates.length} templates after category filtering`);
+      templates = templates.filter(template => template.category === category);
     }
 
-    // Group templates by category for frontend display
+    // Format response for frontend
     const groupedTemplates = templates.reduce((acc, template) => {
-      const category = template.category;
-      if (!acc[category]) {
-        acc[category] = [];
+      if (!acc[template.category]) {
+        acc[template.category] = [];
       }
-
-      acc[category].push({
-        id: template.id,
-        name: template.name,
-        description: template.description,
-        category: template.category,
-        content: template.content,
-        metadata: template.metadata
-      });
-
+      acc[template.category].push(template);
       return acc;
     }, {} as Record<string, any[]>);
 
     return res.json({
       success: true,
-      templates: groupedTemplates,
-      totalCount: templates.length
+      templates: groupedTemplates
     });
-
   } catch (error) {
     console.error('Failed to fetch templates:', error);
     return res.status(500).json({
       success: false,
-      error: 'Failed to fetch templates',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Failed to fetch templates'
     });
   }
 });
@@ -138,30 +117,48 @@ router.get('/suggestions', async (req, res) => {
   }
 });
 
-// Download endpoint
+// Download endpoint with improved handling
 router.post('/download', async (req, res) => {
   try {
     const { content, format } = req.body;
 
+    if (!content) {
+      return res.status(400).json({
+        success: false,
+        error: 'Content is required'
+      });
+    }
+
     if (format === 'pdf') {
       const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage();
-      const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+      const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+      const page = pdfDoc.addPage([612, 792]); // Standard US Letter size
+
+      const fontSize = 12;
+      const lineHeight = fontSize * 1.2;
+      let y = page.getHeight() - 50;
+      const margin = 50;
+      const maxWidth = page.getWidth() - (margin * 2);
 
       const lines = content.split('\n');
-      let y = page.getHeight() - 50;
-
-      lines.forEach(line => {
-        if (y > 50) { // Basic page overflow protection
-          page.drawText(line, {
-            x: 50,
-            y,
-            font,
-            size: 12
-          });
-          y -= 15;
+      for (const line of lines) {
+        if (y < margin) {
+          // Add new page if we run out of space
+          const newPage = pdfDoc.addPage([612, 792]);
+          y = newPage.getHeight() - 50;
         }
-      });
+
+        // Draw the text
+        page.drawText(line.trim(), {
+          x: margin,
+          y,
+          size: fontSize,
+          font: timesRomanFont,
+          maxWidth
+        });
+
+        y -= lineHeight;
+      }
 
       const pdfBytes = await pdfDoc.save();
       res.setHeader('Content-Type', 'application/pdf');
@@ -174,7 +171,13 @@ router.post('/download', async (req, res) => {
           properties: {},
           children: [
             new docx.Paragraph({
-              children: [new docx.TextRun(content)]
+              children: [
+                new docx.TextRun({
+                  text: content,
+                  font: "Times New Roman",
+                  size: 24 // 12pt
+                })
+              ]
             })
           ]
         }]

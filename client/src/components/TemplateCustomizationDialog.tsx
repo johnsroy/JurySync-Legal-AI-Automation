@@ -7,24 +7,27 @@ import ContentEditable from "react-contenteditable";
 import { Template } from "@shared/schema/template-categories";
 import { useToast } from "@/hooks/use-toast";
 
-interface TemplateCustomizationDialogProps {
+interface Props {
   template: Template;
+  isOpen: boolean;
   onClose: () => void;
 }
 
 export function TemplateCustomizationDialog({
   template,
+  isOpen,
   onClose
-}: TemplateCustomizationDialogProps) {
+}: Props) {
   const [editableContent, setEditableContent] = useState(template.content);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const contentEditableRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Load initial preview content
   useEffect(() => {
-    setEditableContent(template.content);
-  }, [template]);
+    if (isOpen) {
+      setEditableContent(template.content);
+    }
+  }, [isOpen, template]);
 
   const handleTextSelection = async () => {
     const selection = window.getSelection();
@@ -37,13 +40,17 @@ export function TemplateCustomizationDialog({
         setSuggestions(data.suggestions || []);
       } catch (error) {
         console.error('Error fetching suggestions:', error);
+        toast({
+          title: "Error",
+          description: "Failed to get suggestions. Please try again.",
+          variant: "destructive"
+        });
       }
     }
   };
 
   const handleContentChange = (evt: any) => {
-    const newContent = evt.target.value;
-    setEditableContent(newContent);
+    setEditableContent(evt.target.value);
   };
 
   const downloadContract = async (format: 'pdf' | 'docx') => {
@@ -61,6 +68,7 @@ export function TemplateCustomizationDialog({
 
       if (!response.ok) throw new Error('Download failed');
 
+      // Create blob from response and trigger download
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -72,10 +80,11 @@ export function TemplateCustomizationDialog({
       window.URL.revokeObjectURL(url);
 
       toast({
-        title: "Download Complete",
+        title: "Success",
         description: `Contract downloaded in ${format.toUpperCase()} format`,
       });
     } catch (error) {
+      console.error('Download error:', error);
       toast({
         title: "Download Failed",
         description: "Failed to download the contract. Please try again.",
@@ -85,7 +94,7 @@ export function TemplateCustomizationDialog({
   };
 
   return (
-    <Dialog open onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl h-[80vh] bg-gray-900 text-gray-100">
         <DialogHeader>
           <DialogTitle>{template.name}</DialogTitle>
@@ -106,35 +115,35 @@ export function TemplateCustomizationDialog({
             </div>
 
             {suggestions.length > 0 && (
-              <div className="fixed bottom-16 left-4 right-4 bg-gray-800 border border-gray-700 rounded-md shadow-lg">
-                <div className="p-2 border-b border-gray-700">
-                  <h4 className="text-sm font-medium text-gray-300">Suggestions</h4>
+              <div className="fixed bottom-16 left-4 right-4 bg-gray-800 border border-gray-700 rounded-md shadow-lg p-4">
+                <h4 className="text-sm font-medium text-gray-300 mb-2">Suggestions</h4>
+                <div className="space-y-2">
+                  {suggestions.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm rounded"
+                      onClick={() => {
+                        const selection = window.getSelection();
+                        if (selection && !selection.isCollapsed) {
+                          const range = selection.getRangeAt(0);
+                          range.deleteContents();
+                          range.insertNode(document.createTextNode(suggestion));
+                          setEditableContent(contentEditableRef.current?.innerHTML || '');
+                        }
+                        setSuggestions([]);
+                      }}
+                    >
+                      {suggestion}
+                    </div>
+                  ))}
                 </div>
-                {suggestions.map((suggestion, index) => (
-                  <div
-                    key={index}
-                    className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm"
-                    onClick={() => {
-                      const selection = window.getSelection();
-                      if (selection && !selection.isCollapsed) {
-                        const range = selection.getRangeAt(0);
-                        range.deleteContents();
-                        range.insertNode(document.createTextNode(suggestion));
-                        setEditableContent(contentEditableRef.current?.innerHTML || '');
-                      }
-                      setSuggestions([]);
-                    }}
-                  >
-                    {suggestion}
-                  </div>
-                ))}
               </div>
             )}
           </ScrollArea>
 
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center p-4 bg-gray-800 rounded-md">
             <div className="text-sm text-gray-400">
-              Edit the contract content directly or highlight text for suggestions
+              Highlight text to get suggestions for improvements
             </div>
             <div className="flex gap-2">
               <Button
