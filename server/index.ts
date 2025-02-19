@@ -16,6 +16,9 @@ import dotenv from 'dotenv';
 import { seedContractTemplates } from './services/seedContractTemplates';
 import contractAutomationRouter from './routes/contract-automation';
 import { errorHandler } from './middlewares/errorHandler';
+import { users } from "@shared/schema";
+import { eq } from "drizzle-orm";
+
 dotenv.config();
 
 // Create Express application
@@ -61,6 +64,29 @@ const sessionMiddleware = session({
 app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Add proper error handling for passport serialization
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id: number, done) => {
+  try {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, id));
+
+    if (!user) {
+      return done(null, false);
+    }
+    done(null, user);
+  } catch (error) {
+    console.error('User deserialization error:', error);
+    done(error, null);
+  }
+});
+
 
 // Security headers
 app.use((req: Request, res: Response, next: NextFunction) => {
