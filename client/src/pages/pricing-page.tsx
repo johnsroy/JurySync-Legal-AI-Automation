@@ -5,15 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Gavel, Check, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
 
 const PRICING_PLANS = [
   {
-    id: 1,
+    id: "student-monthly",
     name: "Student",
     description: "Perfect for law students and academic research",
     price: "24",
     interval: "month",
     tier: "student",
+    priceId: "price_student_monthly",
     features: [
       "Full access to legal research tools",
       "Basic document analysis",
@@ -22,12 +24,13 @@ const PRICING_PLANS = [
     ]
   },
   {
-    id: 2,
+    id: "professional-monthly",
     name: "Professional",
     description: "Ideal for law firms and legal professionals",
     price: "99",
     interval: "month",
     tier: "professional",
+    priceId: "price_professional_monthly",
     features: [
       "Everything in Student, plus:",
       "Advanced document automation",
@@ -37,7 +40,7 @@ const PRICING_PLANS = [
     ]
   },
   {
-    id: 3,
+    id: "enterprise",
     name: "Enterprise",
     description: "Custom solutions for large organizations",
     price: "Custom",
@@ -54,10 +57,10 @@ const PRICING_PLANS = [
 ];
 
 export default function PricingPage() {
-  const [billingPeriod] = useState<"monthly" | "yearly">("monthly");
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubscribe = async (plan: typeof PRICING_PLANS[0]) => {
     if (plan.tier === "enterprise") {
@@ -70,7 +73,34 @@ export default function PricingPage() {
       return;
     }
 
-    navigate(`/subscription?plan=${plan.id}`);
+    try {
+      setIsLoading(true);
+      const response = await apiRequest("POST", "/api/payments/create-checkout-session", {
+        priceId: plan.priceId,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to create checkout session");
+      }
+
+      const { sessionId, url } = await response.json();
+
+      if (url) {
+        window.location.href = url;
+      } else {
+        throw new Error("No checkout URL received");
+      }
+    } catch (error) {
+      console.error("Failed to start subscription:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to start subscription",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -142,8 +172,9 @@ export default function PricingPage() {
                 <Button 
                   className="w-full bg-green-600 hover:bg-green-700"
                   onClick={() => handleSubscribe(plan)}
+                  disabled={isLoading}
                 >
-                  {plan.tier === "enterprise" ? "Contact Us" : "Start Your Free Trial"}
+                  {isLoading ? "Processing..." : (plan.tier === "enterprise" ? "Contact Us" : "Pay Now")}
                   <ChevronRight className="h-4 w-4 ml-2" />
                 </Button>
               </CardContent>
