@@ -41,15 +41,22 @@ export default function ContractAutomation() {
   const { data: templatesData, isLoading: templatesLoading } = useQuery({
     queryKey: ["templates", searchQuery],
     queryFn: async () => {
+      console.log("Fetching templates with search:", searchQuery); // Added logging
       const params = new URLSearchParams();
       if (searchQuery) params.append("search", searchQuery);
 
       const response = await fetch(`/api/contract-automation/templates?${params}`);
+      console.log("Template response status:", response.status); // Added logging
+
       if (!response.ok) {
         const error = await response.json();
+        console.error("Template fetch error:", error); // Added logging
         throw new Error(error.error || 'Failed to fetch templates');
       }
-      return response.json();
+
+      const data = await response.json();
+      console.log("Received templates:", data); // Added logging
+      return data;
     }
   });
 

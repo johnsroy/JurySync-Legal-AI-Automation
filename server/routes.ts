@@ -10,6 +10,7 @@ import legalResearchRouter from "./routes/legal-research";
 import predictiveMonitoringRouter from "./routes/predictiveMonitoring";
 import orchestratorRouter from "./routes/orchestrator";
 import contractAnalysisRouter from "./routes/contract-analysis";
+import contractAutomationRouter from "./routes/contract-automation";
 import reportsRouter from "./routes/reports";
 import vaultRouter from "./routes/vault";
 import redlineRouter from "./routes/redline";
@@ -61,6 +62,7 @@ export function registerRoutes(app: Express): Server {
   app.use("/api/monitoring", predictiveMonitoringRouter);
   app.use("/api/orchestrator", orchestratorRouter);
   app.use("/api/contract-analysis", contractAnalysisRouter);
+  app.use("/api/contract-automation", contractAutomationRouter); // Added this line
 
   // Add catch-all handler for unmatched API routes
   app.use('/api/*', (req, res) => {
