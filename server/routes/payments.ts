@@ -11,45 +11,56 @@ const router = Router();
 router.post('/create-checkout-session', async (req: Request, res: Response) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ error: 'User not authenticated' });
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
     }
 
     const { priceId } = req.body;
     if (!priceId) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        error: 'Price ID is required' 
+        error: 'Price ID is required'
       });
     }
 
     const session = await stripeService.createCheckoutSession(req.user.id, priceId);
-    res.json({ 
+    res.json({
       success: true,
-      session 
+      session
     });
   } catch (error) {
     console.error('Checkout session error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to create checkout session' 
+      error: error instanceof Error ? error.message : 'Failed to create checkout session'
     });
   }
 });
 
 // Webhook handler
 router.post('/webhook', async (req: Request, res: Response) => {
-  const signature = req.headers['stripe-signature'];
-
-  if (!signature) {
-    return res.status(400).json({ error: 'No signature found' });
-  }
-
   try {
-    const result = await stripeService.handleWebhook(signature, req.body);
-    res.json(result);
+    const signature = req.headers['stripe-signature'];
+    if (!signature || typeof signature !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid signature found'
+      });
+    }
+
+    const result = await stripeService.handleWebhook(signature, req.rawBody);
+    res.json({
+      success: true,
+      ...result
+    });
   } catch (error) {
     console.error('Webhook error:', error);
-    res.status(400).json({ error: 'Webhook error' });
+    res.status(400).json({
+      success: false,
+      error: 'Webhook error'
+    });
   }
 });
 
@@ -57,7 +68,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
 router.post('/create-portal-session', async (req: Request, res: Response) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ error: 'User not authenticated' });
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
     }
 
     const [user] = await db
@@ -66,17 +80,23 @@ router.post('/create-portal-session', async (req: Request, res: Response) => {
       .where(eq(users.id, req.user.id));
 
     if (!user?.stripeCustomerId) {
-      return res.status(400).json({ error: 'No Stripe customer found' });
+      return res.status(400).json({
+        success: false,
+        error: 'No Stripe customer found'
+      });
     }
 
     const session = await stripeService.createCustomerPortalSession(user.stripeCustomerId);
-    res.json({ 
+    res.json({
       success: true,
-      session 
+      session
     });
   } catch (error) {
     console.error('Portal session error:', error);
-    res.status(500).json({ error: 'Failed to create portal session' });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create portal session'
+    });
   }
 });
 

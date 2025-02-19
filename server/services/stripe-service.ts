@@ -51,7 +51,7 @@ export const stripeService = {
             quantity: 1,
           },
         ],
-        success_url: `${process.env.CLIENT_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: `${process.env.CLIENT_URL}/dashboard`,
         cancel_url: `${process.env.CLIENT_URL}/subscription/cancel`,
         allow_promotion_codes: true,
         billing_address_collection: 'required',
@@ -102,7 +102,6 @@ export const stripeService = {
                 .update(users)
                 .set({
                   subscriptionStatus: 'active',
-                  subscriptionId: session.subscription as string,
                 })
                 .where(eq(users.id, user.id));
             }
@@ -120,7 +119,6 @@ export const stripeService = {
               .update(users)
               .set({
                 subscriptionStatus: 'inactive',
-                subscriptionId: null,
               })
               .where(eq(users.stripeCustomerId, customerId));
           }
@@ -131,34 +129,6 @@ export const stripeService = {
       return { received: true };
     } catch (error) {
       console.error('Webhook error:', error);
-      throw error;
-    }
-  },
-
-  async createTrialSubscription(userId: number) {
-    try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, userId));
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      // Update user with trial status
-      await db
-        .update(users)
-        .set({
-          subscriptionStatus: 'TRIAL',
-          subscriptionEndsAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day trial
-          trialUsed: true
-        })
-        .where(eq(users.id, userId));
-
-      return true;
-    } catch (error) {
-      console.error('Trial creation error:', error);
       throw error;
     }
   }
