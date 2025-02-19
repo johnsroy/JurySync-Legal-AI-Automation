@@ -16,8 +16,6 @@ import dotenv from 'dotenv';
 import { seedContractTemplates } from './services/seedContractTemplates';
 import contractAutomationRouter from './routes/contract-automation';
 import { errorHandler } from './middlewares/errorHandler';
-import { users } from "@shared/schema";
-import { eq } from "drizzle-orm";
 
 dotenv.config();
 
@@ -55,7 +53,7 @@ const sessionMiddleware = session({
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     sameSite: 'lax'
   },
   name: 'jurysync.sid'
@@ -66,7 +64,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Add proper error handling for passport serialization
-passport.serializeUser((user, done) => {
+passport.serializeUser((user: any, done) => {
   done(null, user.id);
 });
 
@@ -74,8 +72,8 @@ passport.deserializeUser(async (id: number, done) => {
   try {
     const [user] = await db
       .select()
-      .from(users)
-      .where(eq(users.id, id));
+      .from('users')
+      .where('id', '=', id);
 
     if (!user) {
       return done(null, false);
@@ -86,7 +84,6 @@ passport.deserializeUser(async (id: number, done) => {
     done(error, null);
   }
 });
-
 
 // Security headers
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -109,25 +106,6 @@ registerRoutes(app);
 app.use('/api/contract-automation', contractAutomationRouter);
 
 // API error handling middleware
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error(`API Error [${req.method} ${req.path}]:`, err);
-
-  // Common error types
-  if (err.name === 'UnauthorizedError') {
-    return res.status(401).json({
-      success: false,
-      error: 'Unauthorized',
-      message: 'You must be logged in to access this resource'
-    });
-  }
-
-  return res.status(500).json({
-    success: false,
-    error: err.message || 'Internal Server Error'
-  });
-});
-
-// Add this after your routes
 app.use(errorHandler);
 
 // Setup Vite for development or serve static files for production
@@ -143,9 +121,9 @@ const PORT = process.env.PORT || 5000;
 // Start server and initialize services
 (async () => {
   try {
-    // Set up database and seed data
+    // Set up database and seeding data
     console.log('Setting up database and seeding data...');
-    
+
     // Seed legal database
     const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
     await seedLegalDatabase(numberOfDocuments);
@@ -166,13 +144,6 @@ const PORT = process.env.PORT || 5000;
     // Start the server
     app.listen(Number(PORT), '0.0.0.0', () => {
       console.log(`Server running at http://0.0.0.0:${PORT}`);
-    }).on('error', (error: any) => {
-      if (error.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use`);
-      } else {
-        console.error('Failed to start server:', error);
-      }
-      process.exit(1);
     });
 
   } catch (error) {
