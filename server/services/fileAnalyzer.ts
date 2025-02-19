@@ -3,21 +3,24 @@ import PDFNet from '@pdftron/pdfnet-node';
 import { db } from "../db";
 import { complianceDocuments } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import mammoth from 'mammoth';
 
-const MAX_CONTENT_LENGTH = 128000; // Increased for complex documents
+const MAX_CONTENT_LENGTH = 500000; // Increased for large documents
 
 // Enhanced logging function
 function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] [FileAnalyzer] [${type.toUpperCase()}] ${message}`, context ? context : '');
+  console.log(`[${timestamp}] [FileAnalyzer] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context) : '');
 }
 
-export async function analyzePDFContent(buffer: Buffer, documentId: number): Promise<string> {
+export async function analyzePDFContent(buffer: Buffer, documentId: number = -1): Promise<string> {
   try {
-    log(`Starting document analysis${documentId !== -1 ? ` for document ${documentId}` : ''}`);
+    log(`Starting PDF analysis`, 'info', {
+      documentId,
+      bufferLength: buffer.length,
+      timestamp: new Date().toISOString()
+    });
 
-    // Ensure we have a valid buffer
+    // Validate input
     if (!Buffer.isBuffer(buffer)) {
       log('Invalid input: not a buffer', 'error');
       throw new Error('Invalid input: not a buffer');
@@ -29,128 +32,141 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number): Pro
     }
 
     let extractedText = '';
-    const fileType = await detectFileType(buffer);
-    log(`Detected file type: ${fileType}`);
 
-    if (fileType === 'pdf') {
+    try {
+      log('Initializing PDFNet...', 'info');
+      await PDFNet.initialize();
+
+      log('Creating PDF document from buffer...', 'info');
+      const doc = await PDFNet.PDFDoc.createFromBuffer(buffer);
+
+      log('Initializing security handler...', 'info');
+      await doc.initSecurityHandler();
+
+      const pageCount = await doc.getPageCount();
+      log(`Processing PDF document`, 'info', { pageCount });
+
+      for (let i = 1; i <= pageCount; i++) {
         try {
-          // Initialize PDFTron
-          await PDFNet.initialize();
+          log(`Processing page ${i}/${pageCount}`, 'debug');
 
-          // Create document from buffer
-          const doc = await PDFNet.PDFDoc.createFromBuffer(buffer);
-          await doc.initSecurityHandler();
+          const page = await doc.getPage(i);
+          const reader = await PDFNet.TextExtractor.create();
+          await reader.begin(page);
 
-          const pageCount = await doc.getPageCount();
-          log(`Processing PDF with ${pageCount} pages`);
+          // Enhanced text extraction options
+          const opts = await reader.getTextExtractorConfig();
+          opts.setOutputFormat(1); // Use XHTML format
+          opts.setPageSegmentationMode(1); // Use AUTO segmentation
 
-          for (let i = 1; i <= pageCount; i++) {
-            try {
-              const page = await doc.getPage(i);
-              const reader = await PDFNet.TextExtractor.create();
-              await reader.begin(page);
+          // Extract text with layout preservation
+          const pageText = await reader.getAsXML(opts);
 
-              // Use advanced text extraction options
-              const opts = await reader.getTextExtractorConfig();
-              opts.setOutputFormat(1); // PDFNet.TextExtractorOutputFormat.XHTML
-              opts.setPageSegmentationMode(1); // PDFNet.TextExtractorPageSegmentationMode.AUTO
+          // Clean and process the extracted text
+          const cleanPageText = processExtractedText(pageText);
+          extractedText += cleanPageText + '\n';
 
-              // Extract text with layout preservation
-              const pageText = await reader.getAsXML(opts);
-
-              // Process the XML to maintain formatting
-              const cleanPageText = processExtractedText(pageText);
-              extractedText += cleanPageText + '\n';
-
-              log(`Successfully processed page ${i}`);
-            } catch (pageError) {
-              log(`Error processing page ${i}`, 'error', pageError);
-              // Continue with next page even if current page fails
-              continue;
-            }
-          }
-
-          await doc.destroy();
-          await PDFNet.terminate();
-
-        } catch (pdfError) {
-          log('PDF processing error', 'error', pdfError);
-          throw new Error(`PDF processing failed: ${pdfError.message}`);
+          log(`Successfully processed page ${i}`, 'debug', {
+            pageTextLength: cleanPageText.length
+          });
+        } catch (pageError: any) {
+          log(`Error processing page ${i}`, 'error', {
+            error: pageError.message,
+            stack: pageError.stack
+          });
+          // Continue with next page
+          continue;
         }
-    } else if (fileType === 'docx') {
-      log('Starting Word document parsing');
-      try {
-        const result = await mammoth.extractRawText({ buffer });
-        extractedText = result.value;
-        log('Word document parsing completed', 'info', { contentLength: extractedText.length });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        log('Word document extraction error:', 'error', { error: errorMessage });
-        throw new Error(`Failed to extract content from Word document: ${errorMessage}`);
       }
-    } else {
-      throw new Error('Unsupported file format. Please upload PDF or Word documents only.');
-    }
 
+      log('Cleaning up PDFNet resources...', 'debug');
+      await doc.destroy();
+      await PDFNet.terminate();
+
+    } catch (pdfError: any) {
+      log('PDF processing error', 'error', {
+        error: pdfError.message,
+        stack: pdfError.stack,
+        type: pdfError.constructor.name
+      });
+      throw new Error(`PDF processing failed: ${pdfError.message}`);
+    }
 
     if (!extractedText || extractedText.trim().length === 0) {
       log('No valid content extracted from document', 'error');
       throw new Error('No valid content could be extracted from document');
     }
 
-    log(`Raw content extracted, length: ${extractedText.length}`);
+    log('Content extraction completed', 'info', {
+      extractedLength: extractedText.length,
+      previewStart: extractedText.substring(0, 100)
+    });
 
-    // Content cleaning and formatting
+    // Format and clean the extracted text
     extractedText = formatExtractedText(extractedText);
 
-    // Truncate if necessary while preserving word boundaries
+    // Handle large documents
     if (extractedText.length > MAX_CONTENT_LENGTH) {
-      log(`Content exceeds maximum length, truncating from ${extractedText.length} to ~${MAX_CONTENT_LENGTH} chars`);
-      extractedText = extractedText.substring(0, MAX_CONTENT_LENGTH).replace(/\s+[^\s]*$/, '');
+      log(`Content exceeds maximum length, truncating...`, 'info', {
+        originalLength: extractedText.length,
+        maxLength: MAX_CONTENT_LENGTH
+      });
+      extractedText = extractedText
+        .substring(0, MAX_CONTENT_LENGTH)
+        .replace(/\s+[^\s]*$/, '')
+        .trim();
     }
 
-    log(`Final content length: ${extractedText.length}`);
-
-    // Only update database if a valid document ID was provided
-    if (documentId !== -1) {
-      try {
-        await db
-          .update(complianceDocuments)
-          .set({
-            content: extractedText,
-            status: "MONITORING",
-            lastScanned: new Date(),
-            nextScanDue: new Date(Date.now() + 24 * 60 * 60 * 1000) // Next scan in 24 hours
-          })
-          .where(eq(complianceDocuments.id, documentId));
-
-        log('Database updated successfully');
-      } catch (error) {
-        const dbError = error instanceof Error ? error.message : String(error);
-        log('Database update error:', 'error', { error: dbError });
-        throw new Error('Failed to update document in database');
-      }
-    }
+    log('Text processing completed', 'info', {
+      finalLength: extractedText.length
+    });
 
     return extractedText;
 
-  } catch (error) {
-    const finalError = error instanceof Error ? error.message : String(error);
-    log("Document analysis error:", 'error', { error: finalError });
-
-    if (documentId !== -1) {
-      try {
-        await db
-          .update(complianceDocuments)
-          .set({ status: "ERROR" })
-          .where(eq(complianceDocuments.id, documentId));
-      } catch (dbError) {
-        log('Failed to update error status:', 'error', { error: dbError });
-      }
-    }
-
+  } catch (error: any) {
+    log('Fatal error in analyzePDFContent', 'error', {
+      error: error.message,
+      stack: error.stack,
+      type: error.constructor.name
+    });
     throw error;
   }
+}
+
+function processExtractedText(xmlText: string): string {
+  // Remove XML/HTML tags while preserving content structure
+  const cleaned = xmlText
+    .replace(/<\/?[^>]+(>|$)/g, '\n') // Replace tags with newlines
+    .replace(/&[a-z]+;/gi, ' ')       // Convert HTML entities to spaces
+    .replace(/\s+/g, ' ')             // Normalize whitespace
+    .split('\n')                      // Split into lines
+    .map(line => line.trim())         // Trim each line
+    .filter(Boolean)                  // Remove empty lines
+    .join('\n');                      // Rejoin with newlines
+
+  return cleaned;
+}
+
+function formatExtractedText(text: string): string {
+  // Initial cleaning
+  const cleaned = text
+    .replace(/\u0000/g, '')                    // Remove null bytes
+    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')      // Remove replacement chars
+    .replace(/[\u0000-\u001F]/g, ' ')          // Replace control chars
+    .replace(/\r\n/g, '\n')                    // Normalize line endings
+    .replace(/[ \t]+/g, ' ')                   // Normalize spaces and tabs
+    .replace(/\n{3,}/g, '\n\n')               // Max two consecutive breaks
+    .trim();
+
+  // Split into sections based on common document patterns
+  const sections = cleaned.split(/(?=\n\s*(?:\d+\.|\([a-z]\)|\([0-9]\)|[A-Z][A-Z\s]+:))/g);
+
+  // Process and rejoin sections
+  return sections
+    .map(section => section.trim())
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
 }
 
 async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
@@ -178,33 +194,4 @@ async function detectFileType(buffer: Buffer): Promise<'pdf' | 'docx'> {
 
   log('Unsupported file format detected', 'error');
   throw new Error('Unsupported file format. Please upload PDF or Word documents only.');
-}
-
-function processExtractedText(xmlText: string): string {
-  return xmlText
-    .replace(/<\/?[^>]+(>|$)/g, '') // Remove XML/HTML tags
-    .replace(/&[a-z]+;/gi, ' ') // Convert HTML entities to spaces
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .trim();
-}
-
-function formatExtractedText(text: string): string {
-  // Enhanced text cleaning and formatting
-  const cleaned = text
-    .replace(/\u0000/g, '') // Remove null bytes
-    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Remove replacement characters
-    .replace(/[\u0000-\u001F]/g, ' ') // Replace control characters
-    .replace(/\r\n/g, '\n') // Normalize line endings
-    .replace(/[ \t]+/g, ' ') // Normalize spaces and tabs
-    .replace(/\n{3,}/g, '\n\n') // Maximum two consecutive line breaks
-    .trim();
-
-  // Detect and preserve document structure (basic example - improve as needed)
-  const sections = cleaned.split(/(?=\n\s*(?:\d+\.|\([a-z]\)|\([0-9]\)|[A-Z][A-Z\s]+:))/g);
-
-  return sections
-    .map(section => section.trim())
-    .filter(Boolean)
-    .join('\n\n')
-    .trim();
 }
