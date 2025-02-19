@@ -1,68 +1,34 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Template } from "@shared/schema/template-categories";
-import { useToast } from "@/hooks/use-toast";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FileText, Download } from "lucide-react";
+import ContentEditable from "react-contenteditable";
+import { Template } from "@shared/schema/template-categories";
+import { useToast } from "@/hooks/use-toast";
 
 interface TemplateCustomizationDialogProps {
   template: Template;
-  onGenerate: (variables: Record<string, string>, customClauses: string[]) => void;
   onClose: () => void;
 }
 
 export function TemplateCustomizationDialog({
   template,
-  onGenerate,
   onClose
 }: TemplateCustomizationDialogProps) {
-  const [variables, setVariables] = useState<Record<string, string>>({});
-  const [customClauses, setCustomClauses] = useState<string[]>([]);
-  const [previewContent, setPreviewContent] = useState(template.content);
+  const [editableContent, setEditableContent] = useState(template.content);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const contentEditableRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   // Load initial preview content
   useEffect(() => {
-    updatePreview();
-    // Fetch initial suggestions
-    fetchSuggestions("");
+    setEditableContent(template.content);
   }, [template]);
 
-  const handleSubmit = () => {
-    // Validate required variables
-    const missingVariables = template.metadata.variables
-      .filter(v => v.required && !variables[v.name])
-      .map(v => v.name);
-
-    if (missingVariables.length > 0) {
-      toast({
-        title: "Missing Required Variables",
-        description: `Please fill in: ${missingVariables.join(", ")}`,
-        variant: "destructive"
-      });
-      return;
-    }
-
-    onGenerate(variables, customClauses);
-  };
-
-  const updatePreview = () => {
-    let content = template.content;
-    Object.entries(variables).forEach(([key, value]) => {
-      content = content.replace(new RegExp(`\\[${key}\\]`, 'g'), value || `[${key}]`);
-    });
-    setPreviewContent(content);
-  };
-
-  const fetchSuggestions = async (query: string) => {
+  const fetchSuggestions = async (text: string) => {
     try {
-      const response = await fetch(`/api/contract-automation/suggestions?q=${encodeURIComponent(query)}`);
+      const response = await fetch(`/api/contract-automation/suggestions?q=${encodeURIComponent(text)}`);
       if (!response.ok) throw new Error('Failed to fetch suggestions');
       const data = await response.json();
       setSuggestions(data.suggestions || []);
@@ -71,16 +37,15 @@ export function TemplateCustomizationDialog({
     }
   };
 
-  const handleInputChange = async (name: string, value: string) => {
-    setVariables(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    updatePreview();
+  const handleContentChange = (evt: any) => {
+    const newContent = evt.target.value;
+    setEditableContent(newContent);
 
-    // Fetch intelligent suggestions based on the input
-    if (value.length > 2) {
-      await fetchSuggestions(value);
+    // Get the last few words for suggestions
+    const words = newContent.split(/\s+/);
+    const lastWords = words.slice(-3).join(' ');
+    if (lastWords.length > 2) {
+      fetchSuggestions(lastWords);
     }
   };
 
@@ -92,7 +57,7 @@ export function TemplateCustomizationDialog({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: previewContent,
+          content: editableContent,
           format
         }),
       });
@@ -124,100 +89,65 @@ export function TemplateCustomizationDialog({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl bg-gray-900 text-gray-100">
+      <DialogContent className="max-w-4xl h-[80vh] bg-gray-900 text-gray-100">
         <DialogHeader>
-          <DialogTitle>Customize Template: {template.name}</DialogTitle>
+          <DialogTitle>{template.name}</DialogTitle>
+          <p className="text-sm text-gray-400">{template.description}</p>
         </DialogHeader>
 
-        <Tabs defaultValue="edit" className="w-full">
-          <TabsList className="bg-gray-800">
-            <TabsTrigger value="edit">Edit</TabsTrigger>
-            <TabsTrigger value="preview">Preview</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="edit" className="space-y-6">
-            <div className="space-y-4">
-              <h3 className="font-medium text-gray-200">Template Variables</h3>
-              {template.metadata.variables.map((variable) => (
-                <div key={variable.name} className="space-y-2">
-                  <Label className="text-gray-300">
-                    {variable.description}
-                    {variable.required && <span className="text-red-500 ml-1">*</span>}
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      className="bg-gray-800 border-gray-700 text-gray-100"
-                      value={variables[variable.name] || ""}
-                      onChange={(e) => handleInputChange(variable.name, e.target.value)}
-                      placeholder={`Enter ${variable.name.toLowerCase()}`}
-                    />
-                    {suggestions.length > 0 && variables[variable.name] && (
-                      <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-md shadow-lg">
-                        {suggestions.map((suggestion, index) => (
-                          <div
-                            key={index}
-                            className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm"
-                            onClick={() => handleInputChange(variable.name, suggestion)}
-                          >
-                            {suggestion}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="font-medium text-gray-200">Custom Requirements</h3>
-              <Textarea
-                className="bg-gray-800 border-gray-700 text-gray-100"
-                placeholder="Add custom requirements (one per line)"
-                value={customClauses.join("\n")}
-                onChange={(e) => setCustomClauses(e.target.value.split("\n"))}
-                rows={4}
+        <div className="flex flex-col h-full space-y-4">
+          <ScrollArea className="flex-grow rounded-md border border-gray-700 bg-gray-800 p-4">
+            <div className="prose prose-invert max-w-none">
+              <ContentEditable
+                innerRef={contentEditableRef}
+                html={editableContent}
+                onChange={handleContentChange}
+                className="focus:outline-none whitespace-pre-wrap font-mono text-sm"
               />
             </div>
-          </TabsContent>
 
-          <TabsContent value="preview">
-            <div className="space-y-4">
-              <ScrollArea className="h-[50vh] w-full rounded-md border border-gray-700 bg-gray-800 p-4">
-                <div className="prose prose-invert max-w-none">
-                  <pre className="whitespace-pre-wrap">{previewContent}</pre>
-                </div>
-              </ScrollArea>
-
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => downloadContract('pdf')}
-                  className="bg-gray-800 text-gray-300 border-gray-700"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download PDF
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => downloadContract('docx')}
-                  className="bg-gray-800 text-gray-300 border-gray-700"
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Download Word
-                </Button>
+            {suggestions.length > 0 && (
+              <div className="fixed bottom-16 left-4 right-4 bg-gray-800 border border-gray-700 rounded-md shadow-lg">
+                {suggestions.map((suggestion, index) => (
+                  <div
+                    key={index}
+                    className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm"
+                    onClick={() => {
+                      const content = editableContent + ' ' + suggestion;
+                      setEditableContent(content);
+                      setSuggestions([]);
+                    }}
+                  >
+                    {suggestion}
+                  </div>
+                ))}
               </div>
-            </div>
-          </TabsContent>
-        </Tabs>
+            )}
+          </ScrollArea>
 
-        <div className="flex justify-end gap-4 mt-6">
-          <Button variant="outline" onClick={onClose} className="bg-gray-800 text-gray-300 border-gray-700">
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} className="bg-blue-600 hover:bg-blue-700 text-white">
-            Generate Contract
-          </Button>
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-gray-400">
+              Edit the contract content directly in the editor above
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => downloadContract('pdf')}
+                className="bg-gray-800 text-gray-300 border-gray-700"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download PDF
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => downloadContract('docx')}
+                className="bg-gray-800 text-gray-300 border-gray-700"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Download Word
+              </Button>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

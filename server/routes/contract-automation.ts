@@ -2,17 +2,14 @@ import { Router } from 'express';
 import { db } from '../db';
 import { contractTemplates } from '@shared/schema';
 import { eq } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
 import { anthropic } from '../anthropic';
 import OpenAI from 'openai';
-import { generateContract } from '../services/contract-automation-service';
+import { generateContract, parsePdfTemplate, generateTemplatePreview } from '../services/contract-automation-service';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import * as docx from 'docx';
 
 const router = Router();
 const openai = new OpenAI();
-
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 
 // Get all templates with search and filtering
 router.get('/templates', async (req, res) => {
@@ -50,7 +47,7 @@ router.get('/templates', async (req, res) => {
       }
 
       acc[category].push({
-        id: template.id.toString(),
+        id: template.id,
         name: template.name,
         description: template.description,
         category: template.category,
@@ -88,81 +85,55 @@ router.get('/suggestions', async (req, res) => {
       });
     }
 
-    // Use OpenAI for main suggestions
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [{
-        role: "system",
-        content: "You are a legal document expert. Generate specific, actionable suggestions for contract requirements."
-      }, {
-        role: "user",
-        content: `Given this query about legal documents: "${query}"
-        Provide 3-5 specific suggestions focusing on:
-        - Required clauses
-        - Legal considerations
-        - Industry-specific requirements
-        Format as a bulleted list.`
-      }],
-      max_tokens: 1000
-    });
+    // Use both OpenAI and Anthropic for enhanced suggestions
+    const [openaiResponse, anthropicResponse] = await Promise.all([
+      openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{
+          role: "system",
+          content: "You are a legal document expert. Generate specific, actionable suggestions for contract requirements."
+        }, {
+          role: "user",
+          content: `Given this query about legal documents: "${query}"
+          Provide 3-5 specific suggestions focusing on:
+          - Required clauses
+          - Legal considerations
+          - Industry-specific requirements
+          Format as JSON array of strings.`
+        }],
+        response_format: { type: "json_object" },
+        max_tokens: 1000
+      }),
+      anthropic.messages.create({
+        model: "claude-3-opus-20240229",
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: `Given this query about legal documents: "${query}"
+          Provide 3-5 specific suggestions for legal document content and clauses.
+          Format as bullet points.`
+        }]
+      })
+    ]);
 
-    // Use Anthropic for additional context and refinement
-    const anthropicResponse = await anthropic.messages.create({
-      model: "claude-3-opus-20240229",
-      max_tokens: 1024,
-      messages: [{
-        role: "user",
-        content: `Given these initial suggestions for "${query}":
-        ${completion.choices[0].message.content}
-
-        Enhance these suggestions with:
-        1. Industry best practices
-        2. Regulatory requirements
-        3. Risk mitigation strategies`
-      }]
-    });
-
-    const suggestions = anthropicResponse.content[0].text
+    const openaiSuggestions = JSON.parse(openaiResponse.choices[0].message.content || "[]");
+    const anthropicSuggestions = anthropicResponse.content[0].text
       .split('\n')
       .filter(line => line.trim())
       .map(line => line.replace(/^[-•]\s*/, '').trim());
 
+    // Combine and deduplicate suggestions
+    const allSuggestions = [...new Set([...openaiSuggestions, ...anthropicSuggestions])];
+
     return res.json({
       success: true,
-      suggestions
+      suggestions: allSuggestions
     });
   } catch (error) {
     console.error('Failed to get suggestions:', error);
     return res.status(500).json({
       success: false,
       error: 'Failed to get suggestions'
-    });
-  }
-});
-
-// Template usage endpoint
-router.post('/use-template/:templateId', async (req, res) => {
-  try {
-    const { templateId } = req.params;
-    const { variables, customClauses } = req.body;
-
-    const result = await generateContract({
-      templateId,
-      variables,
-      customClauses,
-      aiAssistance: true
-    });
-
-    return res.json({
-      success: true,
-      document: result
-    });
-
-  } catch (error) {
-    console.error('Failed to process template:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to process template'
     });
   }
 });
@@ -181,7 +152,7 @@ router.post('/download', async (req, res) => {
       let y = page.getHeight() - 50;
 
       lines.forEach(line => {
-        if (y > 50) {
+        if (y > 50) { // Basic page overflow protection
           page.drawText(line, {
             x: 50,
             y,

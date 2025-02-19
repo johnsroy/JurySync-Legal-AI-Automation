@@ -2,6 +2,11 @@ import { openai } from "../openai";
 import { db } from "../db";
 import { contractTemplates } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import * as fs from "fs";
+import * as path from "path";
+import * as pdfParse from "pdf-parse";
+
+// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 
 interface GenerateContractConfig {
   templateId: string;
@@ -9,8 +14,6 @@ interface GenerateContractConfig {
   customClauses?: string[];
   aiAssistance?: boolean;
 }
-
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 
 export async function generateContract(config: GenerateContractConfig) {
   try {
@@ -107,4 +110,73 @@ export async function generateContract(config: GenerateContractConfig) {
     console.error("Contract generation error:", error);
     throw error;
   }
+}
+
+export async function parsePdfTemplate(pdfBuffer: Buffer): Promise<string> {
+  try {
+    // Parse PDF content
+    const data = await pdfParse(pdfBuffer);
+
+    // Clean up and format the extracted text
+    const cleanedText = data.text
+      .replace(/\r\n/g, '\n')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Format the text into sections
+    return formatTemplateText(cleanedText);
+  } catch (error) {
+    console.error("PDF parsing error:", error);
+    throw error;
+  }
+}
+
+function formatTemplateText(text: string): string {
+  // Split into sections based on common patterns
+  const sections = text.split(/(\d+\.\s+[A-Z][A-Z\s]+:?|\n[A-Z][A-Z\s]+:)/g);
+
+  // Rejoin with proper formatting
+  return sections
+    .map(section => section.trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+export async function generateTemplatePreview(category: string): Promise<string> {
+  const prompt = `Generate a professional legal contract template for category: ${category}. 
+    Include all standard sections, clauses, and formatting. 
+    Use placeholder variables in [VARIABLE_NAME] format.
+
+    Follow this structure:
+    1. Title and Date
+    2. Parties involved
+    3. Recitals/Background
+    4. Definitions
+    5. Main terms and conditions
+    6. Standard clauses
+    7. Signature block
+
+    Ensure proper formatting with:
+    - Clear section numbering
+    - Proper indentation
+    - Variable placeholders in brackets
+    - Professional legal language`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "system",
+        content: "You are a legal contract expert specializing in generating professional contract templates."
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ],
+    temperature: 0.2,
+    max_tokens: 3000
+  });
+
+  return response.choices[0].message.content || "";
 }
