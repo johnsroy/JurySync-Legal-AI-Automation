@@ -1,90 +1,42 @@
 import { db } from '../db';
+import { templateGenerator } from './template-generator';
+import { TemplateCategory, TemplateCategoryEnum } from '@shared/schema/template-categories';
 import { contractTemplates } from '@shared/schema';
-import { OpenAI } from 'openai';
-import { TemplateCategory } from '@shared/schema';
 import { sql } from 'drizzle-orm';
 
-const openai = new OpenAI();
+const TEMPLATES_PER_CATEGORY: Record<TemplateCategory, number> = {
+  GENERAL: 5,
+  EMPLOYMENT: 5,
+  REAL_ESTATE: 5,
+  BUSINESS: 5,
+  INTELLECTUAL_PROPERTY: 5,
+  SERVICE_AGREEMENT: 5,
+  NDA: 5,
+  LICENSING: 5,
+  PARTNERSHIP: 4,
+  CONSULTING: 3,
+  MERGER_ACQUISITION: 3
+};
 
-interface ContractTemplate {
-  name: string;
-  category: string;
-  description: string;
-  content: string;
-  metadata: {
-    variables: Array<{
-      name: string;
-      description: string;
-      required: boolean;
-      type: string;
-      defaultValue?: string;
-      validationRules?: string[];
-    }>;
-    tags: string[];
-    useCase: string;
-    complexity: "LOW" | "MEDIUM" | "HIGH";
-    recommendedClauses: string[];
-    industrySpecific: boolean;
-    lastUpdated: string;
-    version: string;
-    aiAssistanceLevel: "BASIC" | "ADVANCED" | "EXPERT";
-  };
-  subcategory?: string;
-  industry: string;
-  jurisdiction: string;
-  complexity: string;
-  estimatedCompletionTime: string;
-}
-
-async function generateTemplateWithAI(category: string): Promise<ContractTemplate> {
-  const prompt = `Generate a detailed contract template for the category: ${category}. 
-  Include standard clauses, variables for customization, and metadata.
-  Format as JSON with the following structure:
-  {
-    name: string,
-    description: string,
-    content: string (the actual contract template),
-    metadata: {
-      variables: Array of required fields,
-      tags: relevant tags,
-      useCase: primary use case,
-      complexity: LOW/MEDIUM/HIGH,
-      recommendedClauses: array of recommended clauses
-    }
-  }`;
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      {
-        role: "system",
-        content: "You are a legal contract expert generating detailed contract templates."
-      },
-      {
-        role: "user",
-        content: prompt
-      }
-    ],
-    temperature: 0.7,
-  });
-
-  const generatedTemplate = JSON.parse(response.choices[0].message.content || "{}");
-
-  return {
-    ...generatedTemplate,
-    category,
-    industry: "General",
-    jurisdiction: "United States",
-    complexity: generatedTemplate.metadata.complexity || "MEDIUM",
-    estimatedCompletionTime: "30 minutes",
-  };
-}
+const SPECIALIZATIONS: Record<TemplateCategory, string[]> = {
+  EMPLOYMENT: ['Executive', 'Entry-level', 'Contractor', 'Remote Work', 'Commission-based'],
+  REAL_ESTATE: ['Commercial Lease', 'Residential Sale', 'Property Management', 'Construction', 'Development'],
+  BUSINESS: ['Partnership', 'Joint Venture', 'Franchise', 'Distribution', 'Supply'],
+  INTELLECTUAL_PROPERTY: ['Software License', 'Patent', 'Trademark', 'Copyright', 'Trade Secret'],
+  SERVICE_AGREEMENT: ['IT Services', 'Consulting', 'Marketing', 'Maintenance', 'Professional Services'],
+  NDA: ['Mutual', 'Unilateral', 'Employee', 'Contractor', 'Vendor'],
+  LICENSING: ['Software', 'Technology', 'Brand', 'Content', 'Patent'],
+  PARTNERSHIP: ['General', 'Limited', 'Joint Venture', 'Strategic Alliance'],
+  CONSULTING: ['Technology', 'Management', 'Financial'],
+  MERGER_ACQUISITION: ['Asset Purchase', 'Stock Purchase', 'Merger'],
+  GENERAL: ['General Purpose', 'Standard Terms', 'Basic Agreement', 'Simple Contract', 'Framework Agreement']
+};
 
 export async function seedContractTemplates() {
   try {
     console.log("Checking existing contract templates...");
-    
-    // Check if templates already exist using proper SQL count
+
+    // Check if templates already exist
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(contractTemplates);
@@ -98,31 +50,25 @@ export async function seedContractTemplates() {
 
     console.log("Starting contract template seeding...");
 
-    // Define categories
-    const categories = [
-      "GENERAL",
-      "EMPLOYMENT",
-      "REAL_ESTATE",
-      "BUSINESS",
-      "INTELLECTUAL_PROPERTY",
-      "SERVICE_AGREEMENT",
-      "NDA",
-      "LICENSING"
-    ];
-
-    const templates: ContractTemplate[] = [];
+    const templates = [];
+    const categories = Object.values(TemplateCategoryEnum.Values);
 
     for (const category of categories) {
-      const numTemplates = category === "GENERAL" ? 5 : 2;
-      
+      const numTemplates = TEMPLATES_PER_CATEGORY[category];
+      const specializations = SPECIALIZATIONS[category] || [];
+
+      console.log(`Generating ${numTemplates} templates for category ${category}`);
+
       for (let i = 0; i < numTemplates; i++) {
         try {
-          const template = await generateTemplateWithAI(category);
+          const template = await templateGenerator.generateTemplate(
+            category,
+            specializations[i] || undefined
+          );
           templates.push(template);
           console.log(`Generated template for ${category} (${i + 1}/${numTemplates})`);
         } catch (error) {
           console.error(`Failed to generate template for ${category}:`, error);
-          // Continue with other templates even if one fails
           continue;
         }
       }
@@ -150,4 +96,4 @@ export async function seedContractTemplates() {
     console.error("Error seeding contract templates:", error);
     throw error;
   }
-} 
+}
