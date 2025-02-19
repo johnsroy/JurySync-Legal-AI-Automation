@@ -89,11 +89,20 @@ class StripeService {
         };
       }
 
+      // Find the plan in PRICING_PLANS
+      const plan = PRICING_PLANS.find(p => p.id === planId);
+      if (!plan) {
+        return {
+          success: false,
+          error: 'Invalid plan selected'
+        };
+      }
+
       const priceId = this.priceIds[planId];
       if (!priceId) {
         return {
           success: false,
-          error: 'Invalid plan selected'
+          error: 'Price not initialized yet. Please try again in a few moments.'
         };
       }
 
@@ -117,6 +126,8 @@ class StripeService {
           .where(eq(users.id, userId));
       }
 
+      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+
       // Create checkout session
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
@@ -128,8 +139,8 @@ class StripeService {
             quantity: 1,
           },
         ],
-        success_url: `${process.env.CLIENT_URL}/dashboard`,
-        cancel_url: `${process.env.CLIENT_URL}/subscription/cancel`,
+        success_url: `${baseUrl}/subscription-management?session_id={CHECKOUT_SESSION_ID}&success=true`,
+        cancel_url: `${baseUrl}/pricing?canceled=true`,
         allow_promotion_codes: true,
         billing_address_collection: 'required',
       });
@@ -150,9 +161,10 @@ class StripeService {
 
   async createCustomerPortalSession(customerId: string) {
     try {
+      const baseUrl = process.env.APP_URL || 'http://localhost:3000';
       const session = await stripe.billingPortal.sessions.create({
         customer: customerId,
-        return_url: `${process.env.CLIENT_URL}/settings`,
+        return_url: `${baseUrl}/subscription-management`,
       });
       return session;
     } catch (error) {

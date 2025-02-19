@@ -58,7 +58,7 @@ export default function PricingPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState<string | null>(null);
 
   const handleSubscribe = async (plan: typeof PRICING_PLANS[0]) => {
     if (plan.tier === "enterprise") {
@@ -72,7 +72,7 @@ export default function PricingPage() {
     }
 
     try {
-      setIsLoading(true);
+      setIsLoading(plan.id);
       const response = await apiRequest("POST", "/api/payments/create-checkout-session", {
         planId: plan.id,
       });
@@ -97,7 +97,7 @@ export default function PricingPage() {
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsLoading(null);
     }
   };
 
@@ -129,8 +129,8 @@ export default function PricingPage() {
 
       <main className="container mx-auto pt-32 px-4 pb-16">
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">Simple, Transparent Pricing</h1>
-          <p className="text-lg text-gray-600">Get started with JurySync.io today</p>
+          <h1 className="text-4xl font-bold mb-4">Get started with JurySync.io today</h1>
+          <p className="text-lg text-gray-600">Choose the plan that's right for you</p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-8 max-w-7xl mx-auto">
@@ -170,10 +170,16 @@ export default function PricingPage() {
                 <Button 
                   className="w-full bg-green-600 hover:bg-green-700"
                   onClick={() => handleSubscribe(plan)}
-                  disabled={isLoading}
+                  disabled={isLoading === plan.id}
                 >
-                  {isLoading ? "Processing..." : (plan.tier === "enterprise" ? "Contact Us" : "Pay Now")}
-                  <ChevronRight className="h-4 w-4 ml-2" />
+                  {isLoading === plan.id ? (
+                    "Processing..."
+                  ) : (
+                    <>
+                      {plan.tier === "enterprise" ? "Contact Us" : "Pay Now"}
+                      <ChevronRight className="h-4 w-4 ml-2" />
+                    </>
+                  )}
                 </Button>
               </CardContent>
             </Card>
