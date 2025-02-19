@@ -82,45 +82,56 @@ export function TemplateCard({ template }: TemplateCardProps) {
   };
 
   return (
-    <Card className="flex flex-col h-full bg-gray-800/50 border-gray-700 hover:border-blue-500/50 transition-colors mb-4">
-      <CardHeader>
-        <CardTitle className="text-xl text-white">{template.name}</CardTitle>
-        <CardDescription className="text-gray-400">{template.description}</CardDescription>
-        <div className="flex items-center gap-2">
-          <Badge variant={
-            template.metadata.complexity === "LOW" ? "secondary" :
-            template.metadata.complexity === "MEDIUM" ? "default" :
-            "destructive"
-          }>
+    <Card className="flex flex-col h-full bg-gray-800/50 border-gray-700 hover:border-blue-500/50 transition-colors mb-6">
+      <CardHeader className="space-y-4">
+        <div>
+          <CardTitle className="text-2xl font-bold text-white mb-2">{template.name}</CardTitle>
+          <CardDescription className="text-gray-400 text-base">{template.description}</CardDescription>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge 
+            variant={
+              template.metadata.complexity === "LOW" ? "secondary" :
+              template.metadata.complexity === "MEDIUM" ? "default" :
+              "destructive"
+            }
+            className="text-sm"
+          >
             {template.metadata.complexity}
           </Badge>
           {template.metadata.tags?.map((tag) => (
-            <Badge key={tag} variant="outline" className="text-gray-300 border-gray-600">
+            <Badge 
+              key={tag} 
+              variant="outline" 
+              className="text-gray-300 border-gray-600 text-sm"
+            >
               {tag}
             </Badge>
           ))}
         </div>
       </CardHeader>
 
-      <CardContent className="flex-grow">
-        <ScrollArea className="h-[400px] rounded-md border border-gray-700 bg-gray-800 p-4">
-          <ContentEditable
-            innerRef={contentEditableRef}
-            html={content}
-            onChange={handleContentChange}
-            onMouseUp={handleTextSelection}
-            onKeyUp={handleTextSelection}
-            className="focus:outline-none whitespace-pre-wrap font-mono text-sm min-h-[300px] text-gray-200"
-          />
+      <CardContent className="flex-grow p-6">
+        <ScrollArea className="h-[500px] rounded-lg border border-gray-700 bg-gray-800/80 overflow-hidden">
+          <div className="p-4">
+            <ContentEditable
+              innerRef={contentEditableRef}
+              html={content}
+              onChange={handleContentChange}
+              onMouseUp={handleTextSelection}
+              onKeyUp={handleTextSelection}
+              className="focus:outline-none whitespace-pre-wrap font-mono text-sm text-gray-200 min-h-[400px]"
+            />
+          </div>
 
           {suggestions.length > 0 && (
-            <div className="fixed bottom-16 left-4 right-4 bg-gray-800 border border-gray-700 rounded-md shadow-lg p-4">
-              <h4 className="text-sm font-medium text-gray-300 mb-2">Suggestions</h4>
-              <div className="space-y-2">
+            <div className="absolute bottom-24 left-6 right-6 bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 z-10">
+              <h4 className="text-sm font-medium text-gray-300 mb-3">Suggestions</h4>
+              <div className="space-y-2 max-h-[200px] overflow-y-auto">
                 {suggestions.map((suggestion, index) => (
                   <div
                     key={index}
-                    className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm rounded"
+                    className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm rounded-md transition-colors"
                     onClick={() => {
                       const selection = window.getSelection();
                       if (selection && !selection.isCollapsed) {
@@ -141,27 +152,29 @@ export function TemplateCard({ template }: TemplateCardProps) {
         </ScrollArea>
       </CardContent>
 
-      <CardFooter className="flex justify-between items-center p-4 bg-gray-800 rounded-md mt-4">
-        <div className="text-sm text-gray-400">
-          Highlight text to get suggestions for improvements
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => downloadContract('pdf')}
-            className="bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Download PDF
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => downloadContract('docx')}
-            className="bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
-          >
-            <FileText className="w-4 h-4 mr-2" />
-            Download Word
-          </Button>
+      <CardFooter className="p-6 bg-gray-800/80 rounded-b-lg border-t border-gray-700">
+        <div className="w-full flex justify-between items-center">
+          <div className="text-sm text-gray-400">
+            Highlight text to get contextual suggestions
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => downloadContract('pdf')}
+              className="bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600 hover:text-white transition-colors"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download PDF
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => downloadContract('docx')}
+              className="bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600 hover:text-white transition-colors"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Download Word
+            </Button>
+          </div>
         </div>
       </CardFooter>
     </Card>
