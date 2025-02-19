@@ -29,7 +29,7 @@ export async function seedContractTemplates() {
 
     console.log(`Seeding ${templates.length} templates from templateStore`);
 
-    // Map templates to match database schema
+    // Map templates to match exact database schema
     const dbTemplates = templates.map(template => ({
       name: template.name,
       description: template.description,
@@ -37,12 +37,12 @@ export async function seedContractTemplates() {
       content: template.baseContent,
       jurisdiction: template.metadata.jurisdiction || 'General',
       industry: template.metadata.industry || 'All',
+      complexity: 'MEDIUM',
+      subcategory: null, //Added Subcategory field
       metadata: {
         variables: template.variables,
         lastUpdated: template.metadata.lastUpdated,
-        complexity: 'MEDIUM',
-        tags: [],
-        popularity: 0
+        tags: []
       }
     }));
 

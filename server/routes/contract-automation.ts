@@ -4,7 +4,6 @@ import { contractTemplates } from '@shared/schema';
 import { templateStore } from '../services/templateStore';
 import { eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { seedContractTemplates } from '../services/seedContractTemplates';
 
 const router = Router();
 
@@ -14,57 +13,32 @@ router.get('/templates', async (req, res) => {
     console.log("Fetching contract templates...");
     const { search, category } = req.query;
 
-    let query = db.select().from(contractTemplates);
+    // Start with a base query
+    let baseQuery = db.select().from(contractTemplates);
 
+    // Add search condition if provided
     if (search) {
-      query = query.where(
-        sql`name ILIKE ${`%${search}%`} OR 
-            description ILIKE ${`%${search}%`} OR 
-            metadata->>'tags' ? ${search}`
+      const searchPattern = `%${search}%`;
+      baseQuery = baseQuery.where(
+        sql`name ILIKE ${searchPattern} OR description ILIKE ${searchPattern}`
       );
     }
 
+    // Add category filter if provided
     if (category) {
-      query = query.where(eq(contractTemplates.category, category as string));
+      baseQuery = baseQuery.where(eq(contractTemplates.category, category as string));
     }
 
-    const templates = await query;
+    const templates = await baseQuery;
     console.log(`Found ${templates.length} templates`);
 
-    // If no templates exist, seed the database
-    if (templates.length === 0) {
-      console.log("No templates found, initiating seeding...");
-      await seedContractTemplates();
-
-      const seededTemplates = await db
-        .select()
-        .from(contractTemplates)
-        .orderBy(contractTemplates.category);
-
-      if (seededTemplates.length === 0) {
-        throw new Error("Failed to seed and fetch templates");
-      }
-
-      const groupedTemplates = seededTemplates.reduce((acc, template) => {
-        if (!acc[template.category]) {
-          acc[template.category] = [];
-        }
-        acc[template.category].push(template);
-        return acc;
-      }, {} as Record<string, typeof seededTemplates>);
-
-      return res.json({
-        success: true,
-        templates: groupedTemplates
-      });
-    }
-
-    // Group existing templates by category
+    // Group templates by category for frontend display
     const groupedTemplates = templates.reduce((acc, template) => {
-      if (!acc[template.category]) {
-        acc[template.category] = [];
+      const category = template.category;
+      if (!acc[category]) {
+        acc[category] = [];
       }
-      acc[template.category].push(template);
+      acc[category].push(template);
       return acc;
     }, {} as Record<string, typeof templates>);
 
@@ -72,6 +46,7 @@ router.get('/templates', async (req, res) => {
       success: true,
       templates: groupedTemplates
     });
+
   } catch (error) {
     console.error('Failed to fetch templates:', error);
     return res.status(500).json({

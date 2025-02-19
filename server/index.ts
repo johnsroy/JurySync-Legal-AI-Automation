@@ -119,27 +119,7 @@ const PORT = process.env.PORT || 5000;
 // Start server and initialize services
 (async () => {
   try {
-    // Set up database and seed data
-    console.log('Setting up database and seeding data...');
-
-    // Seed legal database
-    const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
-    await seedLegalDatabase(numberOfDocuments);
-    console.log('Legal database seeded successfully');
-
-    // Seed contract templates
-    await seedContractTemplates();
-    console.log('Contract templates seeded successfully');
-
-    // Start continuous learning service
-    try {
-      await continuousLearningService.startContinuousLearning();
-      console.log('Continuous learning service started successfully');
-    } catch (error) {
-      console.error('Failed to start continuous learning service:', error);
-    }
-
-    // Start the server
+    // Start the server first
     server.listen(Number(PORT), '0.0.0.0', () => {
       console.log(`Server running at http://0.0.0.0:${PORT}`);
     }).on('error', (error: any) => {
@@ -151,8 +131,37 @@ const PORT = process.env.PORT || 5000;
       process.exit(1);
     });
 
+    // Then attempt to seed data asynchronously
+    try {
+      console.log('Setting up database and seeding data...');
+
+      // Seed legal database
+      const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
+      await seedLegalDatabase(numberOfDocuments);
+      console.log('Legal database seeded successfully');
+
+      // Try seeding contract templates, but don't let failure stop the server
+      try {
+        await seedContractTemplates();
+        console.log('Contract templates seeded successfully');
+      } catch (templateError) {
+        console.error('Warning: Failed to seed contract templates:', templateError);
+        // Continue running the server even if template seeding fails
+      }
+
+      // Start continuous learning service
+      try {
+        await continuousLearningService.startContinuousLearning();
+        console.log('Continuous learning service started successfully');
+      } catch (error) {
+        console.error('Warning: Failed to start continuous learning service:', error);
+      }
+    } catch (error) {
+      console.error('Warning: Data seeding failed but server will continue running:', error);
+    }
+
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('Critical error starting server:', error);
     process.exit(1);
   }
 })();
