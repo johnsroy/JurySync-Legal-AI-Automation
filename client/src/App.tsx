@@ -35,8 +35,10 @@ const Router: FC = () => {
       <Route path="/register" component={RegisterPage} />
       <Route path="/pricing" component={PricingPage} />
       <Route path="/subscription" component={SubscriptionPage} />
+      <Route path="/subscription/success" component={SubscriptionSuccess} />
+      <Route path="/subscription/cancel" component={SubscriptionCancel} />
 
-      {/* Protected routes with Layout */}
+      {/* Protected routes */}
       <Route path="/dashboard">
         <Layout>
           <ProtectedRoute>
@@ -125,9 +127,7 @@ const Router: FC = () => {
         </Layout>
       </Route>
 
-      <Route path="/subscription/success" component={SubscriptionSuccess} />
-      <Route path="/subscription/cancel" component={SubscriptionCancel} />
-
+      {/* Catch-all route */}
       <Route>
         <Layout>
           <NotFound />
