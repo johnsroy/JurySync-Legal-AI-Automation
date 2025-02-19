@@ -13,6 +13,9 @@ import { seedLegalDatabase } from './services/seedData';
 import { continuousLearningService } from './services/continuousLearningService';
 import passport from 'passport';
 import dotenv from 'dotenv';
+import { seedContractTemplates } from './services/seedContractTemplates';
+import contractAutomationRouter from './routes/contract-automation';
+import { errorHandler } from './middlewares/errorHandler';
 dotenv.config();
 
 // Create Express application
@@ -77,6 +80,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // Register all routes
 registerRoutes(app);
+app.use('/api/contract-automation', contractAutomationRouter);
 
 // API error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
@@ -97,6 +101,9 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
+// Add this after your routes
+app.use(errorHandler);
+
 // Setup Vite for development or serve static files for production
 if (process.env.NODE_ENV !== "production") {
   setupVite(app);
@@ -112,9 +119,15 @@ const PORT = process.env.PORT || 5000;
   try {
     // Set up database and seed data
     console.log('Setting up database and seeding data...');
+    
+    // Seed legal database
     const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
     await seedLegalDatabase(numberOfDocuments);
     console.log('Legal database seeded successfully');
+
+    // Seed contract templates
+    await seedContractTemplates();
+    console.log('Contract templates seeded successfully');
 
     // Start continuous learning service
     try {

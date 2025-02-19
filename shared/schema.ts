@@ -89,31 +89,14 @@ export type ContractStatus = z.infer<typeof ContractStatus>;
 
 // Update the TemplateCategory enum with more specific categories
 export const TemplateCategory = z.enum([
-  "EMPLOYMENT",
-  "NDA",
-  "SERVICE_AGREEMENT",
-  "LEASE",
   "GENERAL",
-  "SALES",
-  "PARTNERSHIP",
-  "CONSULTING",
-  "IP_LICENSE",
+  "EMPLOYMENT",
   "REAL_ESTATE",
-  "LOAN_AGREEMENT",
-  "SOFTWARE_LICENSE",
-  "CONTRACTOR_AGREEMENT",
-  "DISTRIBUTION_AGREEMENT",
-  "SETTLEMENT_AGREEMENT",
-  "SUBSCRIPTION_AGREEMENT",
-  "SHAREHOLDERS_AGREEMENT",
-  "JOINT_VENTURE",
-  "MERGER_ACQUISITION",
-  "DATA_PROCESSING",
-  "PRIVACY_POLICY",
-  "TERMS_OF_SERVICE",
-  "WARRANTY_AGREEMENT",
-  "FRANCHISE_AGREEMENT",
-  "MANUFACTURING_AGREEMENT"
+  "BUSINESS",
+  "INTELLECTUAL_PROPERTY",
+  "SERVICE_AGREEMENT",
+  "NDA",
+  "LICENSING"
 ]);
 
 export type TemplateCategory = z.infer<typeof TemplateCategory>;
@@ -652,11 +635,29 @@ export const contractTemplates = pgTable("contract_templates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   category: text("category").notNull(),
-  subcategory: text("subcategory"),
+  description: text("description").notNull(),
   content: text("content").notNull(),
-  metadata: jsonb("metadata").notNull(),
-  industry: text("industry"),
-  jurisdiction: text("jurisdiction"),
+  metadata: jsonb("metadata").$type<{
+    variables: Array<{
+      name: string;
+      description: string;
+      required: boolean;
+      type: string;
+      defaultValue?: string;
+      validationRules?: string[];
+    }>;
+    tags: string[];
+    useCase: string;
+    complexity: "LOW" | "MEDIUM" | "HIGH";
+    recommendedClauses: string[];
+    industrySpecific: boolean;
+    lastUpdated: string;
+    version: string;
+    aiAssistanceLevel: "BASIC" | "ADVANCED" | "EXPERT";
+  }>(),
+  subcategory: text("subcategory"),
+  industry: text("industry").notNull(),
+  jurisdiction: text("jurisdiction").notNull(),
   complexity: text("complexity").default("MEDIUM"),
   estimatedCompletionTime: text("estimated_completion_time"),
   popularityScore: integer("popularity_score").default(0),
@@ -664,30 +665,9 @@ export const contractTemplates = pgTable("contract_templates", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const templateMetadataSchema = z.object({
-  description: z.string(),
-  tags: z.array(z.string()),
-  useCase: z.string(),
-  complexity: z.enum(["LOW", "MEDIUM", "HIGH"]),
-  recommendedClauses: z.array(z.string()),
-  variables: z.array(z.object({
-    name: z.string(),
-    type: z.enum(["TEXT", "DATE", "NUMBER", "BOOLEAN", "CURRENCY", "PERCENTAGE", "EMAIL", "PHONE"]),
-    description: z.string(),
-    required: z.boolean(),
-    defaultValue: z.string().optional(),
-    validationRules: z.array(z.string()).optional(),
-  })),
-  sampleValues: z.record(z.string(), z.string()).optional(),
-  relatedTemplates: z.array(z.string()).optional(),
-  industrySpecific: z.boolean().default(false),
-  lastUpdated: z.string(),
-  version: z.string(),
-  aiAssistanceLevel: z.enum(["BASIC", "ADVANCED", "EXPERT"]).default("ADVANCED"),
-});
-
+export const insertContractTemplateSchema = createInsertSchema(contractTemplates);
 export type ContractTemplate = typeof contractTemplates.$inferSelect;
-export type InsertContractTemplate = typeof contractTemplates.$inferInsert;
+export type InsertContractTemplate = z.infer<typeof insertContractTemplateSchema>;
 
 // Add new schema for template categories organization
 export const templateCategories = pgTable("template_categories", {
