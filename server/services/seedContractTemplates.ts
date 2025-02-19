@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 
 export async function seedContractTemplates() {
   try {
-    console.log("Checking existing contract templates...");
+    console.log("Starting contract templates seeding process...");
 
     // Clear existing templates
     await db.delete(contractTemplates);
@@ -24,8 +24,18 @@ This Agreement is made between [COMPANY_NAME] ("Disclosing Party") and [RECIPIEN
 3. Term and Termination`,
         metadata: {
           variables: [
-            { name: "COMPANY_NAME", description: "Name of the company disclosing information", required: true, type: "text" },
-            { name: "RECIPIENT_NAME", description: "Name of the party receiving confidential information", required: true, type: "text" }
+            { 
+              name: "COMPANY_NAME", 
+              description: "Name of the company disclosing information", 
+              required: true, 
+              type: "text" 
+            },
+            { 
+              name: "RECIPIENT_NAME", 
+              description: "Name of the party receiving confidential information", 
+              required: true, 
+              type: "text" 
+            }
           ],
           tags: ["confidentiality", "business protection", "trade secrets"],
           useCase: "Protecting sensitive business information",
@@ -50,8 +60,18 @@ This Employment Agreement is made between [EMPLOYER_NAME] and [EMPLOYEE_NAME].
 3. Term and Termination`,
         metadata: {
           variables: [
-            { name: "EMPLOYER_NAME", description: "Name of the employing company", required: true, type: "text" },
-            { name: "EMPLOYEE_NAME", description: "Name of the employee", required: true, type: "text" }
+            { 
+              name: "EMPLOYER_NAME", 
+              description: "Name of the employing company", 
+              required: true, 
+              type: "text" 
+            },
+            { 
+              name: "EMPLOYEE_NAME", 
+              description: "Name of the employee", 
+              required: true, 
+              type: "text" 
+            }
           ],
           tags: ["employment", "labor law", "HR"],
           useCase: "Establishing employment relationships",
@@ -65,7 +85,7 @@ This Employment Agreement is made between [EMPLOYER_NAME] and [EMPLOYEE_NAME].
       }
     ];
 
-    console.log(`Seeding ${sampleTemplates.length} templates`);
+    console.log(`Attempting to seed ${sampleTemplates.length} templates...`);
 
     // Insert templates
     await db.insert(contractTemplates).values(sampleTemplates);

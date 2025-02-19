@@ -634,8 +634,8 @@ export type InsertSignature = z.infer<typeof insertSignatureSchema>;
 export const contractTemplates = pgTable("contract_templates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  category: text("category").notNull(),
   description: text("description").notNull(),
+  category: text("category").notNull(),
   content: text("content").notNull(),
   metadata: jsonb("metadata").$type<{
     variables: Array<{
@@ -643,31 +643,23 @@ export const contractTemplates = pgTable("contract_templates", {
       description: string;
       required: boolean;
       type: string;
-      defaultValue?: string;
-      validationRules?: string[];
     }>;
     tags: string[];
     useCase: string;
     complexity: "LOW" | "MEDIUM" | "HIGH";
     recommendedClauses: string[];
     industrySpecific: boolean;
+    jurisdiction: string;
     lastUpdated: string;
-    version: string;
-    aiAssistanceLevel: "BASIC" | "ADVANCED" | "EXPERT";
-  }>(),
-  subcategory: text("subcategory"),
-  industry: text("industry").notNull(),
-  jurisdiction: text("jurisdiction").notNull(),
-  complexity: text("complexity").default("MEDIUM"),
-  estimatedCompletionTime: text("estimated_completion_time"),
-  popularityScore: integer("popularity_score").default(0),
+    aiAssistanceLevel: string;
+  }>().notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
 });
 
 export const insertContractTemplateSchema = createInsertSchema(contractTemplates);
 export type ContractTemplate = typeof contractTemplates.$inferSelect;
-export type InsertContractTemplate = z.infer<typeof insertContractTemplateSchema>;
+export type InsertContractTemplate = typeof contractTemplates.$inferInsert;
 
 // Add new schema for template categories organization
 export const templateCategories = pgTable("template_categories", {
@@ -898,8 +890,7 @@ export const vaultDocuments = pgTable("vault_documents", {
   userId: integer("user_id").notNull(),
   title: text("title").notNull(),
   content: text("content").notNull(),
-  documentType: text("document_type").notNull(),
-  fileSize: integer("file_size").notNull(),
+  documentType: text("document_type").notNull(),fileSize: integer("file_size").notNull(),
   mimeType: text("mime_type").notNull(),
   aiSummary: text("ai_summary"),
   aiClassification: text("ai_classification"),

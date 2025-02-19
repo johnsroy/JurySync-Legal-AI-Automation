@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { contractTemplates } from '@shared/schema';
-import { templateStore } from '../services/templateStore';
 import { eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { anthropic } from '../anthropic';
@@ -15,7 +14,7 @@ router.get('/templates', async (req, res) => {
     const { search, category } = req.query;
 
     let templates = await db.select().from(contractTemplates);
-    console.log(`Found ${templates.length} templates`);
+    console.log(`Found ${templates.length} total templates`);
 
     // Filter templates if search is provided
     if (search && typeof search === 'string') {
@@ -25,6 +24,7 @@ router.get('/templates', async (req, res) => {
         template.description.toLowerCase().includes(searchLower) ||
         template.category.toLowerCase().includes(searchLower)
       );
+      console.log(`Found ${templates.length} templates after search filtering`);
     }
 
     // Filter by category if provided
@@ -32,26 +32,23 @@ router.get('/templates', async (req, res) => {
       templates = templates.filter(template => 
         template.category === category
       );
+      console.log(`Found ${templates.length} templates after category filtering`);
     }
 
-    // Group templates by category
+    // Group templates by category for frontend display
     const groupedTemplates = templates.reduce((acc, template) => {
       const category = template.category;
       if (!acc[category]) {
         acc[category] = [];
       }
 
-      // Ensure template matches frontend expectations
       acc[category].push({
         id: template.id.toString(),
         name: template.name,
         description: template.description,
         category: template.category,
         content: template.content,
-        metadata: {
-          ...template.metadata,
-          variables: template.metadata.variables || []
-        }
+        metadata: template.metadata
       });
 
       return acc;
