@@ -36,22 +36,27 @@ function determineFieldType(fieldName: string, context: string): 'date' | 'name'
   if (fieldLower.includes('date') || fieldLower.includes('period') || fieldLower.includes('term')) return 'date';
   if (fieldLower.includes('name') || fieldLower.includes('signer') || fieldLower.includes('party')) return 'name';
   if (fieldLower.includes('address') || fieldLower.includes('location')) return 'address';
-  if (fieldLower.includes('company') || fieldLower.includes('firm') || fieldLower.includes('organization') || fieldLower.includes('business')) return 'company';
-  if (fieldLower.includes('amount') || fieldLower.includes('rate') || fieldLower.includes('fee') || fieldLower.includes('payment') || fieldLower.includes('price')) return 'amount';
+  if (fieldLower.includes('company') || fieldLower.includes('firm') || fieldLower.includes('organization')) return 'company';
+  if (fieldLower.includes('amount') || fieldLower.includes('rate') || fieldLower.includes('fee') || fieldLower.includes('payment')) return 'amount';
 
   // Context-based detection
-  if (context.toLowerCase().includes(`${fieldLower} shall pay`)) return 'amount';
-  if (context.toLowerCase().includes(`located at ${fieldLower}`)) return 'address';
-  if (context.toLowerCase().includes(`represented by ${fieldLower}`)) return 'name';
+  const contextLower = context.toLowerCase();
+  if (contextLower.includes(`${fieldLower} shall pay`) || contextLower.includes(`payment of ${fieldLower}`)) return 'amount';
+  if (contextLower.includes(`located at ${fieldLower}`) || contextLower.includes(`address: ${fieldLower}`)) return 'address';
+  if (contextLower.includes(`represented by ${fieldLower}`) || contextLower.includes(`signed by ${fieldLower}`)) return 'name';
 
   return 'other';
 }
 
 export async function generateSmartSuggestions(selectedText: string, contractContent: string): Promise<FieldSuggestion[]> {
   try {
+    console.log("Generating smart suggestions for:", selectedText);
+
     // Extract all unique placeholders
     const allPlaceholders = extractPlaceholders(contractContent);
     const uniquePlaceholders = [...new Set(allPlaceholders)];
+
+    console.log("Found placeholders:", uniquePlaceholders);
 
     // If there's selected text, prioritize that placeholder
     let selectedPlaceholder = '';
@@ -73,57 +78,47 @@ export async function generateSmartSuggestions(selectedText: string, contractCon
           content: `Analyze this contract and provide key context about the type of agreement and expected fields:\n\n${contractContent}`
         }
       ],
-      response_format: { type: "json_object" },
-      temperature: 0.3
+      response_format: { type: "json_object" }
     });
 
     const contractAnalysis = JSON.parse(contextAnalysis.choices[0].message.content || "{}");
+    console.log("Contract analysis:", contractAnalysis);
 
     // Generate suggestions for all placeholders
-    const prompt = `As a legal contract expert, provide intelligent suggestions for each placeholder in this ${contractAnalysis.contractType} agreement.
-
-Contract Context:
-${contractContent}
-
-Selected Placeholder (prioritize if present): ${selectedPlaceholder}
-
-For each of these placeholders, provide a JSON object with context-appropriate suggestions:
-${uniquePlaceholders.join('\n')}
-
-Response should be an array of objects with this structure:
-{
-  "field": "placeholder name",
-  "fieldType": "date" | "name" | "address" | "company" | "amount" | "other",
-  "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
-  "description": "Clear description of what this field represents in the contract"
-}
-
-Ensure suggestions are:
-1. Contextually appropriate for the contract type
-2. Realistic and professionally formatted
-3. Include common/standard values for the field type
-4. Consider industry standards and legal requirements`;
-
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: `You are a legal document expert specializing in ${contractAnalysis.contractType} agreements. Generate professional, context-aware suggestions for contract fields.`
+          content: `You are a legal document expert specializing in ${contractAnalysis.type || 'legal'} agreements. Generate professional, context-aware suggestions for contract fields.`
         },
         {
           role: "user",
-          content: prompt
+          content: `Analyze this contract and provide intelligent suggestions for each placeholder. Focus on the selected placeholder if present: ${selectedPlaceholder}
+
+Contract Content:
+${contractContent}
+
+For each of these placeholders, provide suggestions:
+${uniquePlaceholders.join('\n')}
+
+Respond with an array of objects matching this structure:
+{
+  "field": "placeholder name",
+  "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
+  "description": "Clear description of what this field represents",
+  "fieldType": "date" | "name" | "address" | "company" | "amount" | "other"
+}`
         }
       ],
-      response_format: { type: "json_object" },
-      temperature: 0.3
+      response_format: { type: "json_object" }
     });
 
     const suggestions = JSON.parse(response.choices[0].message.content || "[]");
+    console.log("Raw suggestions:", suggestions);
 
     // Enhance suggestions with smart defaults and validation
-    return suggestions.map((suggestion: FieldSuggestion) => {
+    const enhancedSuggestions = suggestions.map((suggestion: FieldSuggestion) => {
       const fieldType = determineFieldType(suggestion.field, contractContent);
 
       // Add smart defaults based on field type
@@ -138,7 +133,7 @@ Ensure suggestions are:
       // Ensure all suggestions are unique
       suggestion.suggestions = [...new Set(suggestion.suggestions)];
 
-      // Move selected placeholder to the top if present
+      // Mark selected placeholder
       if (selectedPlaceholder && suggestion.field === selectedPlaceholder) {
         suggestion.selected = true;
       }
@@ -147,12 +142,18 @@ Ensure suggestions are:
         ...suggestion,
         fieldType
       };
-    }).sort((a, b) => {
-      // Sort with selected placeholder first, then by field type importance
+    });
+
+    // Sort suggestions with selected first
+    const sortedSuggestions = enhancedSuggestions.sort((a, b) => {
       if (a.selected) return -1;
       if (b.selected) return 1;
       return 0;
     });
+
+    console.log("Returning enhanced suggestions:", sortedSuggestions);
+    return sortedSuggestions;
+
   } catch (error) {
     console.error("Failed to generate smart suggestions:", error);
     throw error;
