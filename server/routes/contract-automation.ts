@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import multer from 'multer';
 import { generatePDF } from '../services/pdf-service';
 import { seedContractTemplates } from '../services/seedContractTemplates';
+import { sql } from 'drizzle-orm';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -15,13 +16,35 @@ router.get('/templates', async (req, res) => {
   try {
     console.log("Fetching contract templates...");
     
-    const templates = await db
+    // Get query parameters
+    const { search, category } = req.query;
+    
+    let query = db
       .select()
-      .from(contractTemplates)
-      .orderBy(contractTemplates.category, contractTemplates.name);
+      .from(contractTemplates);
+    
+    // Add search conditions if provided
+    if (search) {
+      query = query.where(
+        sql`(
+          name ILIKE ${`%${search}%`} OR 
+          description ILIKE ${`%${search}%`} OR 
+          metadata->>'tags' ? ${search}
+        )`
+      );
+    }
+    
+    // Add category filter if provided
+    if (category) {
+      query = query.where(eq(contractTemplates.category, category as string));
+    }
+    
+    // Execute query
+    const templates = await query.orderBy(contractTemplates.category, contractTemplates.name);
 
     console.log(`Found ${templates.length} templates`);
     
+    // If no templates exist, seed the database
     if (templates.length === 0) {
       console.log("No templates found, initiating seeding...");
       await seedContractTemplates();
@@ -38,10 +61,22 @@ router.get('/templates', async (req, res) => {
         throw new Error("Failed to seed and fetch templates");
       }
       
-      templates = seededTemplates;
+      // Group seeded templates by category
+      const groupedTemplates = seededTemplates.reduce((acc, template) => {
+        if (!acc[template.category]) {
+          acc[template.category] = [];
+        }
+        acc[template.category].push(template);
+        return acc;
+      }, {} as Record<string, typeof seededTemplates>);
+
+      return res.json({
+        success: true,
+        templates: groupedTemplates
+      });
     }
 
-    // Group templates by category
+    // Group existing templates by category
     const groupedTemplates = templates.reduce((acc, template) => {
       if (!acc[template.category]) {
         acc[template.category] = [];
@@ -50,16 +85,16 @@ router.get('/templates', async (req, res) => {
       return acc;
     }, {} as Record<string, typeof templates>);
 
-    res.json({
+    return res.json({
       success: true,
       templates: groupedTemplates
     });
   } catch (error) {
     console.error('Failed to fetch templates:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to fetch templates',
-      details: error.message
+      details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
@@ -111,6 +146,46 @@ router.post('/templates/download', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to generate PDF'
+    });
+  }
+});
+
+// Add to existing route file
+router.get('/templates/search', async (req, res) => {
+  try {
+    const { query, category } = req.query;
+    
+    let conditions = [];
+    
+    if (query) {
+      conditions.push(
+        sql`(
+          name ILIKE ${`%${query}%`} OR
+          description ILIKE ${`%${query}%`} OR
+          metadata->>'tags' ? ${query}
+        )`
+      );
+    }
+    
+    if (category) {
+      conditions.push(sql`category = ${category}`);
+    }
+    
+    const templates = await db
+      .select()
+      .from(contractTemplates)
+      .where(conditions.length ? sql`${sql.join(conditions, sql` AND `)}` : undefined)
+      .orderBy(sql`popularity_score DESC`);
+      
+    res.json({
+      success: true,
+      templates
+    });
+  } catch (error) {
+    console.error('Search error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Search failed'
     });
   }
 });

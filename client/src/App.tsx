@@ -23,6 +23,8 @@ import VaultPage from "@/pages/vault-page";
 import { ProtectedRoute } from "./lib/protected-route";
 import { FC } from "react";
 import Redline from "@/pages/redline";
+import SubscriptionSuccess from "@/pages/subscription-success";
+import SubscriptionCancel from "@/pages/subscription-cancel";
 
 const Router: FC = () => {
   return (
@@ -100,6 +102,9 @@ const Router: FC = () => {
           <ProtectedRoute component={Redline} path="/redline" />
         </Layout>
       </Route>
+
+      <Route path="/subscription/success" component={SubscriptionSuccess} />
+      <Route path="/subscription/cancel" component={SubscriptionCancel} />
 
       <Route>
         <Layout>

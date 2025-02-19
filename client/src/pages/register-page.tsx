@@ -21,9 +21,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Loader2, Gavel } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function RegisterPage() {
   const { user, registerMutation } = useAuth();
+  const { toast } = useToast();
 
   const form = useForm<InsertUser>({
     resolver: zodResolver(insertUserSchema),
@@ -36,6 +38,34 @@ export default function RegisterPage() {
       role: "CLIENT",
     },
   });
+
+  const onSubmit = async (data: InsertUser) => {
+    try {
+      // Register user
+      await registerMutation.mutateAsync(data);
+
+      // Start free trial
+      const response = await fetch('/api/subscription/trial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start trial');
+      }
+
+      toast({
+        title: "Welcome to JurySync!",
+        description: "Your free trial has started.",
+      });
+    } catch (error) {
+      toast({
+        title: "Registration Error",
+        description: error instanceof Error ? error.message : "Registration failed",
+        variant: "destructive",
+      });
+    }
+  };
 
   if (user) {
     return <Redirect to="/dashboard" />;
@@ -50,20 +80,15 @@ export default function RegisterPage() {
             <span className="text-2xl font-bold text-white">JurySync.io</span>
           </Link>
           <CardTitle className="text-3xl font-bold tracking-tight text-white">
-            Create an account
+            Start Your Free Trial
           </CardTitle>
           <CardDescription className="text-base text-gray-300">
-            Join JurySync.io today
+            1-day free trial, no credit card required
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit((data) =>
-                registerMutation.mutate(data),
-              )}
-              className="space-y-4"
-            >
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -139,7 +164,7 @@ export default function RegisterPage() {
                 {registerMutation.isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                Create Account
+                Start Free Trial
               </Button>
               <p className="text-center text-sm text-gray-300">
                 Already have an account?{" "}

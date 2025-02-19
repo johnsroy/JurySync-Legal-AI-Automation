@@ -4,12 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, FileText, Gavel, Scale, Check, Clock } from "lucide-react";
+import { Loader2, FileText, Gavel, Scale, Check, Clock, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { debounce } from "lodash";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -22,6 +22,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Keep only necessary interfaces and schemas
 interface Template {
@@ -35,6 +37,7 @@ interface Template {
     name: string;
     description: string;
     required: boolean;
+    type: string;
   }>;
   metadata: {
     complexity: "LOW" | "MEDIUM" | "HIGH";
@@ -42,7 +45,11 @@ interface Template {
     industry?: string;
     jurisdiction?: string;
     popularityScore: number;
+    tags: string[];
+    useCase: string;
+    recommendedClauses: string[];
   };
+  popularity: number;
 }
 
 interface TemplateCategory {
@@ -397,6 +404,8 @@ export default function ContractAutomation() {
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [categories, setCategories] = useState<TemplateCategory[]>([]); // Added state for categories
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -428,49 +437,47 @@ export default function ContractAutomation() {
     []
   );
 
-  useEffect(() => {
-    const fetchTemplates = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch('/api/templates');
-        if (!response.ok) {
-          throw new Error('Failed to fetch templates');
-        }
-        const data = await response.json();
-        console.log("Fetched templates:", data);
-        // Group templates by category
-        const groupedTemplates: TemplateCategory[] = [];
-        const categoryMap = new Map<string, TemplateCategory>();
-        data.forEach(template => {
-          const category = template.category;
-          if (!categoryMap.has(category)) {
-            categoryMap.set(category, {
-              id: category,
-              name: category,
-              description: "", // Assuming no category description available
-              icon: "", // Assuming no category icon available
-              templates: []
-            });
-          }
-          categoryMap.get(category)?.templates.push(template);
-        });
-        setCategories([...categoryMap.values()])
-
-        setTemplates(data);
-      } catch (error) {
-        console.error('Failed to fetch templates:', error);
-        toast({
-          title: "Error",
-          description: "Failed to load contract templates",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
+  // Fetch templates with react-query
+  const { data: templatesData, isLoading: templatesLoading } = useQuery({
+    queryKey: ["templates", searchQuery, selectedCategory],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (searchQuery) params.append("search", searchQuery);
+      if (selectedCategory) params.append("category", selectedCategory);
+      
+      const response = await fetch(`/api/contract-automation/templates?${params}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to fetch templates');
       }
-    };
+      return response.json();
+    }
+  });
 
-    fetchTemplates();
-  }, [toast]);
+  // Debounced search
+  const debouncedSearch = useCallback(
+    debounce((value: string) => {
+      setSearchQuery(value);
+    }, 300),
+    []
+  );
+
+  // Template generation mutation
+  const generateMutation = useMutation({
+    mutationFn: async (variables: {
+      templateId: string;
+      variables: Record<string, string>;
+      customClauses?: string[];
+    }) => {
+      const response = await fetch("/api/contract-automation/templates/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(variables),
+      });
+      if (!response.ok) throw new Error("Failed to generate contract");
+      return response.json();
+    }
+  });
 
   const handleTemplateSelect = (template: Template) => {
     setSelectedTemplate(template);
@@ -615,212 +622,78 @@ export default function ContractAutomation() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 bg-gray-900 text-gray-100">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <MetricsWidget
-          title="Time Saved"
-          value={metrics.timeSaved}
-          icon={Clock}
-          description="Average time saved per contract"
-        />
-        <MetricsWidget
-          title="Error Reduction"
-          value={metrics.errorReduction}
-          icon={Scale}
-          description="Reduction in contract errors"
-        />
-        <MetricsWidget
-          title="Completion Rate"
-          value={metrics.completionRate}
-          icon={Check}
-          description="Contracts completed successfully"
-        />
-        <MetricsWidget
-          title="Accuracy"
-          value={metrics.accuracy}
-          icon={Scale}
-          description="AI suggestions accuracy rate"
-        />
+    <div className="container mx-auto py-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Contract Automation</h1>
+        <div className="flex gap-4">
+          <div className="relative w-64">
+            <Input
+              placeholder="Search templates..."
+              onChange={(e) => debouncedSearch(e.target.value)}
+              className="pl-10"
+            />
+            <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
+          </div>
+        </div>
       </div>
 
-      {!isCustomizing ? (
-        <>
-          <h2 className="text-3xl font-bold mb-8 text-white">Select a Contract Template</h2>
-          <div className="space-y-4">
-            {categories.map((category) => (
-              <TemplateCategoryGroup
-                key={category.id}
-                category={category}
-                onSelectTemplate={handleTemplateSelect}
-              />
-            ))}
+      {templatesLoading ? (
+        <Card className="p-8">
+          <div className="flex justify-center items-center">
+            <Loader2 className="h-8 w-8 animate-spin" />
           </div>
-        </>
+        </Card>
       ) : (
-        <>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-white">Customize Your Contract</h2>
-            <Button variant="outline" onClick={() => setIsCustomizing(false)}>
-              Change Template
-            </Button>
-          </div>
+        <Tabs defaultValue="all">
+          <TabsList>
+            <TabsTrigger value="all">All Templates</TabsTrigger>
+            {Object.keys(templatesData?.templates || {}).map((category) => (
+              <TabsTrigger key={category} value={category}>
+                {category}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle className="text-white">{selectedTemplate?.name}</CardTitle>
-                <CardDescription className="text-gray-400">
-                  Add your requirements to customize this template
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <FormLabel className="text-white">Requirements</FormLabel>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleAddRequirement}
-                        >
-                          Add Requirement
-                        </Button>
-                      </div>
-
-                      {form.watch("requirements").map((_, index) => (
-                        <div key={index} className="space-y-4 p-4 border rounded">
-                          <RequirementField
-                            index={index}
-                            control={form.control}
-                            templateId={selectedTemplate?.id || ''}
-                            onSuggestionSelect={(suggestion) => handleAutocompleteSelect(index, suggestion)}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`requirements.${index}.importance`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className="text-white">Importance</FormLabel>
-                                <select
-                                  {...field}
-                                  className="w-full p-2 border rounded"
-                                >
-                                  <option value="HIGH">High Priority</option>
-                                  <option value="MEDIUM">Medium Priority</option>
-                                  <option value="LOW">Low Priority</option>
-                                </select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleRemoveRequirement(index)}
-                            disabled={form.watch("requirements").length <= 1}
-                          >
-                            Remove Requirement
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-
-                    {selectedTemplate && (
-                      <div className="mt-4">
-                        <RequirementSuggestions
-                          templateId={selectedTemplate.id}
-                          currentDescription={form.watch("requirements")[form.watch("requirements").length - 1]?.description}
-                          onSelect={handleSuggestionSelect}
-                        />
-                      </div>
-                    )}
-
-                    <FormField
-                      control={form.control}
-                      name="customInstructions"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-white">Custom Instructions (Optional)</FormLabel>
-                          <FormControl>
-                            <div className="space-y-4">
-                              <Textarea
-                                {...field}
-                                placeholder="Add any special instructions or notes..."
-                                className="min-h-[100px]"
-                              />
-                              {selectedTemplate && (
-                                <CustomInstructionsSuggestions
-                                  templateId={selectedTemplate.id}
-                                  currentRequirements={form.watch("requirements")}
-                                  onSelect={handleCustomInstructionSelect}
-                                />
-                              )}
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+          <TabsContent value="all">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Object.entries(templatesData?.templates || {}).map(([category, templates]) => (
+                <div key={category}>
+                  <h2 className="text-lg font-semibold mb-2">{category}</h2>
+                  {(templates as Template[]).map((template) => (
+                    <TemplateCard
+                      key={template.id}
+                      template={template}
+                      onSelect={() => handleTemplateSelect(template)}
                     />
-
-                    <Button
-                      type="submit"
-                      className="w-full bg-gray-700 hover:bg-gray-600 text-white"
-                      disabled={isGenerating}
-                    >
-                      {isGenerating ? (
-                        <ContractGenerationLoadingIcon />
-                      ) : (
-                        <>
-                          <Gavel className="h-4 w-4 mr-2 text-white" />
-                          Generate Contract
-                        </>
-                      )}
-                    </Button>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-
-            <div className="lg:col-span-1 space-y-6">
-              {generatedContract && (
-                <>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-white">Contract Analysis</CardTitle>
-                      <CardDescription className="text-gray-400">
-                        Review and edit contract clauses with AI assistance
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ContractRedlining initialContent={generatedContract.content} />
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-white">Download Options</CardTitle>
-                      <CardDescription className="text-gray-400">Export your contract in different formats</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex gap-4">
-                        <Button onClick={() => handleDownload('pdf')} className="bg-gray-700 hover:bg-gray-600 text-white">
-                          Download as PDF
-                        </Button>
-                        <Button onClick={() => handleDownload('docx')} className="bg-gray-700 hover:bg-gray-600 text-white">
-                          Download as DOCX
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </>
-              )}
+                  ))}
+                </div>
+              ))}
             </div>
-          </div>
-        </>
+          </TabsContent>
+
+          {Object.entries(templatesData?.templates || {}).map(([category, templates]) => (
+            <TabsContent key={category} value={category}>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(templates as Template[]).map((template) => (
+                  <TemplateCard
+                    key={template.id}
+                    template={template}
+                    onSelect={() => handleTemplateSelect(template)}
+                  />
+                ))}
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+      )}
+
+      {/* Template Customization Dialog */}
+      {selectedTemplate && (
+        <TemplateCustomizationDialog
+          template={selectedTemplate}
+          onGenerate={handleGenerateContract}
+          onClose={() => setSelectedTemplate(null)}
+        />
       )}
     </div>
   );
