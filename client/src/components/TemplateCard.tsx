@@ -5,16 +5,21 @@ import { Template } from "@shared/schema/template-categories";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ContentEditable from "react-contenteditable";
 import { useState, useRef } from "react";
-import { Download, FileText, X } from "lucide-react";
+import { Download, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { FieldSuggestion, SuggestionResponse } from "@/types/suggestions";
 
 interface TemplateCardProps {
   template: Template;
-  onSelect: (template: Template) => void;
 }
 
-export function TemplateCard({ template, onSelect }: TemplateCardProps) {
+interface FieldSuggestion {
+  field: string;
+  suggestions: string[];
+  description: string;
+  fieldType: 'date' | 'name' | 'address' | 'company' | 'amount' | 'other';
+}
+
+export function TemplateCard({ template }: TemplateCardProps) {
   const [content, setContent] = useState(template.content);
   const [suggestions, setSuggestions] = useState<FieldSuggestion[]>([]);
   const contentEditableRef = useRef<HTMLDivElement>(null);
@@ -25,35 +30,28 @@ export function TemplateCard({ template, onSelect }: TemplateCardProps) {
     if (selection && selection.toString().length > 0) {
       const selectedText = selection.toString();
       try {
-        const params = new URLSearchParams({
-          q: selectedText,
-          content: content
-        });
+        const response = await fetch(
+          `/api/contract-automation/suggestions?${new URLSearchParams({
+            q: selectedText,
+            content: content
+          })}`
+        );
 
-        const response = await fetch(`/api/contract-automation/suggestions?${params}`);
-        const data: SuggestionResponse = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to fetch suggestions');
-        }
-
-        if (data.success && data.suggestions) {
-          setSuggestions(data.suggestions);
-        } else {
-          throw new Error('No suggestions available');
-        }
+        if (!response.ok) throw new Error('Failed to fetch suggestions');
+        const data = await response.json();
+        setSuggestions(data.suggestions || []);
       } catch (error) {
         console.error('Error fetching suggestions:', error);
         toast({
           title: "Error",
-          description: error instanceof Error ? error.message : "Failed to get suggestions. Please try again.",
+          description: "Failed to get suggestions. Please try again.",
           variant: "destructive"
         });
       }
     }
   };
 
-  const handleContentChange = (evt: { target: { value: string } }) => {
+  const handleContentChange = (evt: any) => {
     setContent(evt.target.value);
   };
 
@@ -97,16 +95,16 @@ export function TemplateCard({ template, onSelect }: TemplateCardProps) {
   };
 
   return (
-    <Card className="relative flex flex-col h-full bg-gray-800/50 border-gray-700 hover:border-blue-500/50 transition-colors">
-      <CardHeader className="space-y-3 pb-4">
+    <Card className="flex flex-col h-full bg-gray-800/50 border-gray-700 hover:border-blue-500/50 transition-colors">
+      <CardHeader className="space-y-2">
         <CardTitle className="text-xl text-white">{template.name}</CardTitle>
-        <CardDescription className="text-gray-400 line-clamp-2">{template.description}</CardDescription>
+        <CardDescription className="text-gray-400">{template.description}</CardDescription>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={
             template.metadata.complexity === "LOW" ? "secondary" :
             template.metadata.complexity === "MEDIUM" ? "default" :
             "destructive"
-          } className="font-medium">
+          }>
             {template.metadata.complexity}
           </Badge>
           {template.metadata.tags?.map((tag) => (
@@ -117,25 +115,66 @@ export function TemplateCard({ template, onSelect }: TemplateCardProps) {
         </div>
       </CardHeader>
 
-      <CardContent className="flex-grow min-h-0 pb-4">
-        <div className="relative h-full">
-          <ScrollArea className="h-[350px] rounded-md border border-gray-700 bg-gray-800/50 p-4">
-            <ContentEditable
-              innerRef={contentEditableRef}
-              html={content}
-              onChange={handleContentChange}
-              onMouseUp={handleTextSelection}
-              onKeyUp={handleTextSelection}
-              className="focus:outline-none whitespace-pre-wrap font-mono text-sm text-gray-200"
-            />
-          </ScrollArea>
-        </div>
+      <CardContent className="flex-grow min-h-0">
+        <ScrollArea className="h-[400px] rounded-md border border-gray-700 bg-gray-800 p-4">
+          <ContentEditable
+            innerRef={contentEditableRef}
+            html={content}
+            onChange={handleContentChange}
+            onMouseUp={handleTextSelection}
+            onKeyUp={handleTextSelection}
+            className="focus:outline-none whitespace-pre-wrap font-mono text-sm text-gray-200"
+          />
+
+          {suggestions.length > 0 && (
+            <div className="fixed inset-x-4 bottom-24 max-h-64 overflow-y-auto bg-gray-800 border border-gray-700 rounded-md shadow-lg p-4 z-50">
+              <div className="space-y-4">
+                {suggestions.map((suggestion, index) => (
+                  <div key={index} className="border-b border-gray-700 last:border-0 pb-3 last:pb-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-medium text-gray-300">
+                        {suggestion.field}
+                      </h4>
+                      <Badge variant="outline" className="text-xs">
+                        {suggestion.fieldType}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-gray-400 mb-2">{suggestion.description}</p>
+                    <div className="space-y-2">
+                      {suggestion.suggestions.map((value, sIndex) => (
+                        <div
+                          key={sIndex}
+                          className="px-3 py-1.5 hover:bg-gray-700 cursor-pointer text-sm rounded flex items-center justify-between"
+                          onClick={() => {
+                            const selection = window.getSelection();
+                            if (selection && !selection.isCollapsed) {
+                              const range = selection.getRangeAt(0);
+                              range.deleteContents();
+                              range.insertNode(document.createTextNode(value));
+                              setContent(contentEditableRef.current?.innerHTML || '');
+                            }
+                            setSuggestions([]);
+                          }}
+                        >
+                          <span className="text-gray-200">{value}</span>
+                          <Badge variant="secondary" className="text-xs">
+                            {suggestion.fieldType === 'date' ? 'Today' : 'Suggested'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </ScrollArea>
       </CardContent>
 
-      <CardFooter className="mt-auto pt-4 border-t border-gray-700">
+      <CardFooter className="mt-auto border-t border-gray-700 p-4">
         <div className="w-full flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-sm text-gray-400">
-            Select text for smart suggestions
+            Highlight text to get suggestions
           </p>
           <div className="flex gap-2 shrink-0">
             <Button
@@ -157,62 +196,6 @@ export function TemplateCard({ template, onSelect }: TemplateCardProps) {
           </div>
         </div>
       </CardFooter>
-
-      {suggestions.length > 0 && (
-        <div className="absolute right-4 top-20 w-80 max-h-[500px] bg-gray-800 border border-gray-700 rounded-lg shadow-lg overflow-hidden z-50">
-          <div className="p-3 border-b border-gray-700 flex items-center justify-between bg-gray-800 sticky top-0">
-            <h4 className="text-sm font-medium text-gray-300">Available Suggestions</h4>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => setSuggestions([])}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-          <ScrollArea className="max-h-[calc(500px-3rem)]">
-            <div className="p-3 space-y-3">
-              {suggestions.map((suggestion, index) => (
-                <div key={index} className="border-b border-gray-700 last:border-0 pb-3 last:pb-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-medium text-gray-300">
-                      {suggestion.field}
-                    </h4>
-                    <Badge variant="outline" className="text-xs">
-                      {suggestion.fieldType}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-gray-400 mb-2">{suggestion.description}</p>
-                  <div className="grid grid-cols-1 gap-1">
-                    {suggestion.suggestions.map((value, sIndex) => (
-                      <button
-                        key={sIndex}
-                        className="px-3 py-1.5 hover:bg-gray-700 cursor-pointer text-sm rounded flex items-center justify-between transition-colors group"
-                        onClick={() => {
-                          const selection = window.getSelection();
-                          if (selection && !selection.isCollapsed) {
-                            const range = selection.getRangeAt(0);
-                            range.deleteContents();
-                            range.insertNode(document.createTextNode(value));
-                            setContent(contentEditableRef.current?.innerHTML || '');
-                          }
-                          setSuggestions([]);
-                        }}
-                      >
-                        <span className="text-gray-200 group-hover:text-white transition-colors">{value}</span>
-                        <Badge variant="secondary" className="text-xs ml-2">
-                          {suggestion.fieldType === 'date' ? 'Today' : 'Suggested'}
-                        </Badge>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </div>
-      )}
     </Card>
   );
 }

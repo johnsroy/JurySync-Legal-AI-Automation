@@ -6,13 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Search, Wand2, Sparkles, Bot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { debounce } from "lodash";
 import { Template } from "@shared/schema/template-categories";
 import { TemplateCard } from "@/components/TemplateCard";
 import { TemplateCustomizationDialog } from "@/components/TemplateCustomizationDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+
+// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 
 function AIFeatureCard({ title, description, icon: Icon }: { title: string; description: string; icon: any }) {
   return (
@@ -33,36 +35,41 @@ export default function ContractAutomation() {
   const { toast } = useToast();
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   // Fetch templates with react-query
-  const { data, isLoading: templatesLoading, error } = useQuery({
+  const { data: templatesData, isLoading: templatesLoading } = useQuery({
     queryKey: ["templates", searchQuery],
     queryFn: async () => {
+      console.log("Fetching templates with search:", searchQuery); // Added logging
       const params = new URLSearchParams();
       if (searchQuery) params.append("search", searchQuery);
 
       const response = await fetch(`/api/contract-automation/templates?${params}`);
+      console.log("Template response status:", response.status); // Added logging
+
       if (!response.ok) {
-        throw new Error('Failed to fetch templates');
+        const error = await response.json();
+        console.error("Template fetch error:", error); // Added logging
+        throw new Error(error.error || 'Failed to fetch templates');
       }
+
       const data = await response.json();
-      return data.templates as Template[];
+      console.log("Received templates:", data); // Added logging
+      return data;
     }
   });
 
-  // Group templates by category
-  const groupedTemplates = data?.reduce((acc, template) => {
-    const category = template.category;
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(template);
-    return acc;
-  }, {} as Record<string, Template[]>) || {};
-
-  // Get unique categories
-  const categories = Object.keys(groupedTemplates);
+  // Intelligent suggestions
+  const { data: aiSuggestions } = useQuery({
+    queryKey: ["suggestions", searchQuery],
+    queryFn: async () => {
+      const response = await fetch(`/api/contract-automation/suggestions?q=${searchQuery}`);
+      if (!response.ok) throw new Error("Failed to fetch suggestions");
+      return response.json();
+    },
+    enabled: searchQuery.length > 2
+  });
 
   // Debounced search
   const debouncedSearch = useCallback(
@@ -72,25 +79,59 @@ export default function ContractAutomation() {
     []
   );
 
+  // Template generation mutation
+  const generateMutation = useMutation({
+    mutationFn: async (variables: {
+      templateId: string;
+      variables: Record<string, string>;
+      customClauses?: string[];
+    }) => {
+      const response = await fetch("/api/contract-automation/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(variables),
+      });
+      if (!response.ok) throw new Error("Failed to generate contract");
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Contract generated successfully",
+      });
+      setSelectedTemplate(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
   const handleTemplateSelect = (template: Template) => {
     setSelectedTemplate(template);
   };
 
+  const handleGenerateContract = async (variables: Record<string, string>, customClauses: string[]) => {
+    if (!selectedTemplate) return;
+
+    generateMutation.mutate({
+      templateId: selectedTemplate.id,
+      variables,
+      customClauses
+    });
+  };
+
+  useEffect(() => {
+    if (aiSuggestions?.suggestions) {
+      setSuggestions(aiSuggestions.suggestions);
+    }
+  }, [aiSuggestions]);
+
   if (!user) {
     return null;
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-900 text-gray-100 flex items-center justify-center">
-        <Card className="bg-gray-800/50 border-gray-700 p-6">
-          <CardHeader>
-            <CardTitle className="text-red-400">Error Loading Templates</CardTitle>
-            <CardDescription>{error instanceof Error ? error.message : 'Failed to load templates'}</CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
   }
 
   return (
@@ -104,11 +145,24 @@ export default function ContractAutomation() {
           <div className="flex gap-4">
             <div className="relative w-96">
               <Input
-                placeholder="Search templates..."
+                placeholder="Search templates or describe your needs..."
                 onChange={(e) => debouncedSearch(e.target.value)}
                 className="pl-10 bg-gray-800 border-gray-700 text-white"
               />
               <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+              {suggestions.length > 0 && (
+                <div className="absolute w-full mt-2 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10">
+                  {suggestions.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm"
+                      onClick={() => setSearchQuery(suggestion)}
+                    >
+                      {suggestion}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -146,7 +200,7 @@ export default function ContractAutomation() {
               >
                 All Templates
               </TabsTrigger>
-              {categories.map((category) => (
+              {Object.keys(templatesData?.templates || {}).map((category) => (
                 <TabsTrigger
                   key={category}
                   value={category}
@@ -159,20 +213,20 @@ export default function ContractAutomation() {
 
             <TabsContent value="all">
               <ScrollArea className="h-[calc(100vh-300px)]">
-                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {Object.entries(groupedTemplates).map(([category, templates]) => (
-                    <div key={category} className="space-y-4">
-                      <div className="flex items-center gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {Object.entries(templatesData?.templates || {}).map(([category, templates]) => (
+                    <div key={category}>
+                      <div className="flex items-center gap-2 mb-4">
                         <h2 className="text-xl font-semibold text-white">{category}</h2>
                         <Badge variant="secondary" className="bg-blue-500/20 text-blue-300">
-                          {templates.length} templates
+                          {(templates as Template[]).length} templates
                         </Badge>
                       </div>
-                      {templates.map((template) => (
+                      {(templates as Template[]).map((template) => (
                         <TemplateCard
                           key={template.id}
                           template={template}
-                          onSelect={handleTemplateSelect}
+                          onSelect={() => handleTemplateSelect(template)}
                         />
                       ))}
                     </div>
@@ -181,15 +235,15 @@ export default function ContractAutomation() {
               </ScrollArea>
             </TabsContent>
 
-            {categories.map((category) => (
+            {Object.entries(templatesData?.templates || {}).map(([category, templates]) => (
               <TabsContent key={category} value={category}>
                 <ScrollArea className="h-[calc(100vh-300px)]">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {groupedTemplates[category].map((template) => (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {(templates as Template[]).map((template) => (
                       <TemplateCard
                         key={template.id}
                         template={template}
-                        onSelect={handleTemplateSelect}
+                        onSelect={() => handleTemplateSelect(template)}
                       />
                     ))}
                   </div>
@@ -202,7 +256,7 @@ export default function ContractAutomation() {
         {selectedTemplate && (
           <TemplateCustomizationDialog
             template={selectedTemplate}
-            isOpen={!!selectedTemplate}
+            onGenerate={handleGenerateContract}
             onClose={() => setSelectedTemplate(null)}
           />
         )}

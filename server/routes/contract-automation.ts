@@ -2,21 +2,20 @@ import { Router } from 'express';
 import { db } from '../db';
 import { contractTemplates } from '@shared/schema';
 import { eq } from 'drizzle-orm';
-import { openai } from '../openai';
+import { anthropic } from '../anthropic';
+import OpenAI from 'openai';
 import { generateContract, parsePdfTemplate, generateTemplatePreview, generateSmartSuggestions } from '../services/contract-automation-service';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import * as docx from 'docx';
 
 const router = Router();
+const openai = new OpenAI();
 
 // Get all templates with search and filtering
 router.get('/templates', async (req, res) => {
   try {
-    console.log("Fetching templates with query:", req.query);
     const { search, category } = req.query;
     let templates = await db.select().from(contractTemplates);
-
-    console.log(`Found ${templates.length} templates before filtering`);
 
     // Filter by search if provided
     if (search && typeof search === 'string') {
@@ -32,11 +31,18 @@ router.get('/templates', async (req, res) => {
       templates = templates.filter(template => template.category === category);
     }
 
-    console.log(`Returning ${templates.length} templates after filtering`);
+    // Format response for frontend
+    const groupedTemplates = templates.reduce((acc, template) => {
+      if (!acc[template.category]) {
+        acc[template.category] = [];
+      }
+      acc[template.category].push(template);
+      return acc;
+    }, {} as Record<string, any[]>);
 
     return res.json({
       success: true,
-      templates
+      templates: groupedTemplates
     });
   } catch (error) {
     console.error('Failed to fetch templates:', error);
@@ -50,9 +56,7 @@ router.get('/templates', async (req, res) => {
 // Update the suggestions endpoint
 router.get('/suggestions', async (req, res) => {
   try {
-    console.log("Received suggestion request:", req.query);
     const { q: selectedText, content } = req.query;
-
     if (!selectedText || typeof selectedText !== 'string') {
       return res.status(400).json({
         success: false,
@@ -60,16 +64,7 @@ router.get('/suggestions', async (req, res) => {
       });
     }
 
-    if (!content || typeof content !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Contract content is required'
-      });
-    }
-
-    console.log("Generating suggestions for selected text:", selectedText);
-    const suggestions = await generateSmartSuggestions(selectedText, content);
-    console.log("Generated suggestions:", suggestions);
+    const suggestions = await generateSmartSuggestions(selectedText, content as string);
 
     return res.json({
       success: true,
@@ -79,12 +74,12 @@ router.get('/suggestions', async (req, res) => {
     console.error('Failed to get suggestions:', error);
     return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to get suggestions'
+      error: 'Failed to get suggestions'
     });
   }
 });
 
-// Download endpoint
+// Download endpoint with improved handling
 router.post('/download', async (req, res) => {
   try {
     const { content, format } = req.body;
@@ -93,13 +88,6 @@ router.post('/download', async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Content is required'
-      });
-    }
-
-    if (!['pdf', 'docx'].includes(format)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid format specified'
       });
     }
 
