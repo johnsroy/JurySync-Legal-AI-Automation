@@ -18,6 +18,7 @@ import {
   generateContract 
 } from "../services/templateStore";
 import { anthropic } from "../anthropic";
+import { generateAllTemplates } from "../services/templateGenerator"; // Added import
 
 const router = Router();
 
@@ -114,12 +115,12 @@ const upload = multer({
   }
 });
 
-// Get all available templates
+// Get all available templates - MODIFIED
 router.get("/api/templates", async (_req, res) => {
   try {
     console.log("[Templates] Fetching all templates");
 
-    const templates = getAllTemplates();
+    const templates = await db.select().from(contractTemplates); // Assuming contractTemplates is defined elsewhere
     console.log(`[Templates] Found ${templates.length} templates`);
 
     if (!templates || templates.length === 0) {
@@ -130,7 +131,20 @@ router.get("/api/templates", async (_req, res) => {
       });
     }
 
-    return res.json(templates);
+    // Group templates by category
+    const groupedTemplates = templates.reduce((acc, template) => {
+      const category = template.category;
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(template);
+      return acc;
+    }, {} as Record<string, typeof templates>);
+
+    return res.json({
+      templates: groupedTemplates,
+      totalCount: templates.length
+    });
   } catch (error: any) {
     console.error("[Templates] Error fetching templates:", error);
     return res.status(500).json({ 
@@ -592,6 +606,23 @@ router.post("/api/workflow/risk-scorecard", async (req, res) => {
     return res.status(500).json({
       error: error.message || "Failed to generate risk scorecard",
       code: "SCORECARD_ERROR"
+    });
+  }
+});
+
+// Add this new endpoint after the existing routes
+router.post("/api/templates/generate", async (_req, res) => {
+  try {
+    console.log("[Templates] Starting template generation");
+    await generateAllTemplates();
+    console.log("[Templates] Templates generated successfully");
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("[Templates] Generation error:", error);
+    return res.status(500).json({ 
+      error: "Failed to generate templates",
+      code: "GENERATION_ERROR",
+      details: error.message 
     });
   }
 });
