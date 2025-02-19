@@ -11,9 +11,10 @@ import { FieldSuggestion, SuggestionResponse } from "@/types/suggestions";
 
 interface TemplateCardProps {
   template: Template;
+  onSelect: (template: Template) => void;
 }
 
-export function TemplateCard({ template }: TemplateCardProps) {
+export function TemplateCard({ template, onSelect }: TemplateCardProps) {
   const [content, setContent] = useState(template.content);
   const [suggestions, setSuggestions] = useState<FieldSuggestion[]>([]);
   const contentEditableRef = useRef<HTMLDivElement>(null);
