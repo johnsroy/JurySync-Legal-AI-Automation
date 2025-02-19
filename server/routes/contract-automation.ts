@@ -5,54 +5,8 @@ import { eq } from 'drizzle-orm';
 import { anthropic } from '../anthropic';
 import OpenAI from 'openai';
 import { generateContract, parsePdfTemplate, generateTemplatePreview } from '../services/contract-automation-service';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import * as docx from 'docx';
-
-async function generateSmartSuggestions(selectedText: string, documentContext: string) {
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: `You are a legal document expert specializing in contract analysis and variable replacement suggestions.
-          When analyzing selected text, identify if it represents a variable field (like names, dates, addresses, amounts) 
-          and suggest appropriate replacements based on common business contexts.
-          Format response as a JSON array of objects with 'suggestion' and 'explanation' fields.`
-        },
-        {
-          role: "user",
-          content: `Analyze this selected text from a legal document and provide smart suggestions for replacement:
-          Selected text: "${selectedText}"
-          Document context: "${documentContext.substring(0, 500)}..."
-
-          Consider:
-          1. If this is a variable field that needs replacement
-          2. Common business values for this type of field
-          3. Format requirements (dates, currency, legal terms)
-          4. Context-appropriate suggestions
-
-          Return format example:
-          [
-            {
-              "suggestion": "actual replacement text",
-              "explanation": "why this replacement makes sense"
-            }
-          ]`
-        }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-      max_tokens: 2000
-    });
-
-    const suggestions = JSON.parse(response.choices[0].message.content || "{}");
-    return suggestions;
-  } catch (error) {
-    console.error('Failed to generate smart suggestions:', error);
-    throw error;
-  }
-}
 
 const router = Router();
 const openai = new OpenAI();
@@ -66,7 +20,7 @@ router.get('/templates', async (req, res) => {
     // Filter by search if provided
     if (search && typeof search === 'string') {
       const searchLower = search.toLowerCase();
-      templates = templates.filter(template =>
+      templates = templates.filter(template => 
         template.name.toLowerCase().includes(searchLower) ||
         template.description.toLowerCase().includes(searchLower)
       );
@@ -102,23 +56,57 @@ router.get('/templates', async (req, res) => {
 // AI Suggestions endpoint with improved context awareness
 router.get('/suggestions', async (req, res) => {
   try {
-    const { q: selectedText, context } = req.query;
-
-    if (!selectedText || typeof selectedText !== 'string') {
+    const { q: query } = req.query;
+    if (!query || typeof query !== 'string') {
       return res.status(400).json({
         success: false,
-        error: 'Selected text is required'
+        error: 'Query parameter is required'
       });
     }
 
-    const smartSuggestions = await generateSmartSuggestions(
-      selectedText,
-      typeof context === 'string' ? context : ''
-    );
+    // Use both OpenAI and Anthropic for enhanced suggestions
+    const [openaiResponse, anthropicResponse] = await Promise.all([
+      openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{
+          role: "system",
+          content: "You are a legal document expert. Generate specific, actionable suggestions for contract requirements."
+        }, {
+          role: "user",
+          content: `Given this query about legal documents: "${query}"
+          Provide 3-5 specific suggestions focusing on:
+          - Required clauses
+          - Legal considerations
+          - Industry-specific requirements
+          Format as JSON array of strings.`
+        }],
+        response_format: { type: "json_object" },
+        max_tokens: 1000
+      }),
+      anthropic.messages.create({
+        model: "claude-3-opus-20240229",
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: `Given this query about legal documents: "${query}"
+          Provide 3-5 specific suggestions for legal document content and clauses.
+          Format as bullet points.`
+        }]
+      })
+    ]);
+
+    const openaiSuggestions = JSON.parse(openaiResponse.choices[0].message.content || "[]");
+    const anthropicSuggestions = anthropicResponse.content[0].text
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => line.replace(/^[-•]\s*/, '').trim());
+
+    // Combine and deduplicate suggestions
+    const allSuggestions = [...new Set([...openaiSuggestions, ...anthropicSuggestions])];
 
     return res.json({
       success: true,
-      suggestions: smartSuggestions
+      suggestions: allSuggestions
     });
   } catch (error) {
     console.error('Failed to get suggestions:', error);
@@ -144,69 +132,31 @@ router.post('/download', async (req, res) => {
     if (format === 'pdf') {
       const pdfDoc = await PDFDocument.create();
       const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+      const page = pdfDoc.addPage([612, 792]); // Standard US Letter size
 
-      // Function to create a new page with consistent margins
-      const createPage = () => {
-        const page = pdfDoc.addPage([612, 792]); // US Letter size
-        return page;
-      };
+      const fontSize = 12;
+      const lineHeight = fontSize * 1.2;
+      let y = page.getHeight() - 50;
+      const margin = 50;
+      const maxWidth = page.getWidth() - (margin * 2);
 
-      // Function to wrap text and return array of lines
-      const wrapText = (text: string, maxWidth: number, font: any, fontSize: number) => {
-        const words = text.split(' ');
-        const lines: string[] = [];
-        let currentLine = words[0];
-
-        for (let i = 1; i < words.length; i++) {
-          const word = words[i];
-          const width = font.widthOfTextAtSize(currentLine + ' ' + word, fontSize);
-
-          if (width < maxWidth) {
-            currentLine += ' ' + word;
-          } else {
-            lines.push(currentLine);
-            currentLine = word;
-          }
-        }
-        lines.push(currentLine);
-        return lines;
-      };
-
-      let currentPage = createPage();
-      const fontSize = 11;
-      const lineHeight = fontSize * 1.5;
-      const margin = 72; // 1 inch margins
-      const maxWidth = currentPage.getWidth() - (margin * 2);
-      let y = currentPage.getHeight() - margin;
-
-      // Split content into paragraphs
-      const paragraphs = content.split('\n').filter(para => para.trim());
-
-      for (const paragraph of paragraphs) {
-        // Wrap text to fit within margins
-        const lines = wrapText(paragraph.trim(), maxWidth, timesRomanFont, fontSize);
-
-        for (const line of lines) {
-          if (y < margin + lineHeight) {
-            // Create new page if we're out of space
-            currentPage = createPage();
-            y = currentPage.getHeight() - margin;
-          }
-
-          currentPage.drawText(line, {
-            x: margin,
-            y,
-            size: fontSize,
-            font: timesRomanFont,
-            color: rgb(0, 0, 0),
-            lineHeight,
-            maxWidth
-          });
-
-          y -= lineHeight;
+      const lines = content.split('\n');
+      for (const line of lines) {
+        if (y < margin) {
+          // Add new page if we run out of space
+          const newPage = pdfDoc.addPage([612, 792]);
+          y = newPage.getHeight() - 50;
         }
 
-        // Add extra space between paragraphs
+        // Draw the text
+        page.drawText(line.trim(), {
+          x: margin,
+          y,
+          size: fontSize,
+          font: timesRomanFont,
+          maxWidth
+        });
+
         y -= lineHeight;
       }
 
@@ -214,7 +164,8 @@ router.post('/download', async (req, res) => {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'attachment; filename=contract.pdf');
       return res.send(Buffer.from(pdfBytes));
-    } else if (format === 'docx') {
+    } 
+    else if (format === 'docx') {
       const doc = new docx.Document({
         sections: [{
           properties: {},

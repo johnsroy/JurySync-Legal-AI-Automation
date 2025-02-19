@@ -2,12 +2,10 @@ import { db } from '../db';
 import { contractTemplates } from '@shared/schema';
 import { sql } from 'drizzle-orm';
 import OpenAI from 'openai';
-import * as fs from 'fs';
-import * as path from 'path';
-import { parsePdfTemplate } from './contract-automation-service';
+
+const openai = new OpenAI();
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI();
 
 const LEGAL_SERVICES_TEMPLATE = {
   name: "Legal Services Agreement",
@@ -143,9 +141,7 @@ async function generateTemplate(category: string) {
           }
         }`
       }],
-      response_format: { type: "json_object" },
-      max_tokens: 4000,
-      temperature: 0.7
+      response_format: { type: "json_object" }
     });
 
     const template = JSON.parse(completion.choices[0].message.content || "{}");
@@ -177,11 +173,7 @@ export async function seedContractTemplates() {
       "REAL_ESTATE",
       "BUSINESS",
       "INTELLECTUAL_PROPERTY",
-      "SERVICE_AGREEMENT",
-      "LICENSING",
-      "PARTNERSHIP",
-      "CONSULTING",
-      "MERGER_ACQUISITION"
+      "SERVICE_AGREEMENT"
     ];
 
     console.log("Generating AI-powered templates...");
@@ -191,7 +183,7 @@ export async function seedContractTemplates() {
 
     console.log(`Attempting to seed ${templates.length} templates...`);
 
-    // Insert templates with generated IDs
+    // Insert templates
     await db.insert(contractTemplates).values(templates);
 
     // Verify insertion
