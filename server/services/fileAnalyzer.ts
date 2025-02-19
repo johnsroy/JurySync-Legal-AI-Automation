@@ -12,6 +12,16 @@ function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context
   console.log(`[${timestamp}] [FileAnalyzer] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context) : '');
 }
 
+async function initializePDFNet(): Promise<void> {
+  try {
+    await PDFNet.PDFNet.initialize();
+    log('PDFNet initialized successfully', 'info');
+  } catch (error: any) {
+    log('PDFNet initialization failed', 'error', error);
+    throw new Error(`PDFNet initialization failed: ${error.message}`);
+  }
+}
+
 export async function analyzePDFContent(buffer: Buffer, documentId: number = -1): Promise<string> {
   try {
     log(`Starting PDF analysis`, 'info', {
@@ -34,8 +44,7 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number = -1)
     let extractedText = '';
 
     try {
-      log('Initializing PDFNet...', 'info');
-      await PDFNet.initialize();
+      await initializePDFNet();
 
       log('Creating PDF document from buffer...', 'info');
       const doc = await PDFNet.PDFDoc.createFromBuffer(buffer);
@@ -81,7 +90,7 @@ export async function analyzePDFContent(buffer: Buffer, documentId: number = -1)
 
       log('Cleaning up PDFNet resources...', 'debug');
       await doc.destroy();
-      await PDFNet.terminate();
+      await PDFNet.PDFNet.terminate();
 
     } catch (pdfError: any) {
       log('PDF processing error', 'error', {

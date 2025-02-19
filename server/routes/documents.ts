@@ -2,129 +2,124 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
 import { documents } from "@shared/schema";
-import { analyzePDFContent } from "../services/fileAnalyzer";
+import { processDocument } from "../services/documentProcessor";
+import OpenAI from "openai";
 
 const router = Router();
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Configure multer with improved error handling
+// Configure multer for document uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 50 * 1024 * 1024 // Increased to 50MB for large PDFs
+    fileSize: 50 * 1024 * 1024 // 50MB limit
   },
   fileFilter: (_req, file, cb) => {
-    console.log("Incoming file:", {
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size
-    });
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
 
-    // More permissive MIME type checking
-    if (file.mimetype.includes('pdf') || 
-        file.mimetype === 'application/pdf' || 
+    if (allowedTypes.includes(file.mimetype) || 
         file.originalname.toLowerCase().endsWith('.pdf')) {
       cb(null, true);
     } else {
-      cb(new Error(`Invalid file type: ${file.mimetype}. Only PDF files are supported.`));
+      cb(new Error(`Invalid file type: ${file.mimetype}. Only PDF and Word documents are supported.`));
     }
   }
 });
 
-router.post("/workflow/upload", upload.single('file'), async (req, res) => {
+// Enhanced error handling middleware
+const asyncHandler = (fn: any) => (req: any, res: any, next: any) => {
+  return Promise.resolve(fn(req, res, next)).catch(next);
+};
+
+router.post("/workflow/upload", upload.single('file'), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      error: "No file uploaded",
+      code: "NO_FILE"
+    });
+  }
+
+  console.log("Processing upload:", {
+    filename: req.file.originalname,
+    size: req.file.size,
+    type: req.file.mimetype
+  });
+
   try {
-    if (!req.file) {
-      console.error("Upload failed: No file provided");
-      return res.status(400).json({ 
-        error: "No file uploaded",
-        code: "NO_FILE" 
-      });
+    const result = await processDocument(req.file.buffer, req.file.originalname);
+
+    if (!result.success || !result.content) {
+      throw new Error("Failed to extract content from document");
     }
 
-    console.log("Starting document upload process:", {
-      filename: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      timestamp: new Date().toISOString()
+    // Initial analysis with GPT-4o
+    const analysisResponse = await openai.chat.completions.create({
+      model: "gpt-4o", // Latest GPT-4o model
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal document analyzer. Analyze the document and provide a structured analysis."
+        },
+        {
+          role: "user",
+          content: result.content
+        }
+      ],
+      response_format: { type: "json_object" }
     });
 
-    try {
-      console.log("Attempting to analyze PDF content...");
-      const content = await analyzePDFContent(req.file.buffer, -1);
+    const analysis = JSON.parse(analysisResponse.choices[0].message.content);
 
-      console.log("PDF content extracted successfully:", {
-        contentLength: content.length,
-        previewStart: content.substring(0, 100)
-      });
+    // Create document record
+    const [document] = await db.insert(documents)
+      .values({
+        userId: req.user?.id || 1,
+        title: req.file.originalname,
+        content: result.content,
+        processingStatus: "PROCESSING",
+        agentType: "LEGAL_RESEARCH",
+        analysis: {
+          ...analysis,
+          metadata: result.metadata,
+          processingSteps: ["upload", "extraction", "initial_analysis"],
+          uploadTimestamp: new Date().toISOString()
+        }
+      })
+      .returning();
 
-      // Initial analysis metadata
-      const initialAnalysis = {
-        documentType: "Legal Document",
-        status: "Processing",
-        confidence: 0.8,
-        extractedLength: content.length,
-        processingSteps: ["upload", "extraction"],
-        uploadTimestamp: new Date().toISOString()
-      };
+    console.log("Document processed successfully:", {
+      id: document.id,
+      title: document.title,
+      contentLength: result.content.length,
+      processingTime: result.metadata?.processingTime
+    });
 
-      console.log("Creating document record...");
-      const [document] = await db.insert(documents)
-        .values({
-          userId: req.user?.id || 1,
-          title: req.file.originalname,
-          content: content,
-          processingStatus: "PROCESSING",
-          agentType: "LEGAL_RESEARCH",
-          analysis: initialAnalysis
-        })
-        .returning();
-
-      if (!document) {
-        throw new Error("Failed to create document record");
-      }
-
-      console.log("Document record created successfully:", {
-        id: document.id,
-        title: document.title,
-        status: document.processingStatus
-      });
-
-      return res.json({
-        success: true,
-        documentId: document.id,
-        title: document.title,
-        status: "PROCESSING",
-        contentLength: content.length,
-        message: "Document uploaded and processing started"
-      });
-
-    } catch (processingError: any) {
-      console.error("Document processing error:", {
-        error: processingError,
-        stack: processingError.stack,
-        filename: req.file.originalname
-      });
-
-      return res.status(400).json({
-        error: "Failed to process document",
-        details: processingError.message,
-        code: "PROCESSING_ERROR"
-      });
-    }
+    return res.json({
+      success: true,
+      documentId: document.id,
+      title: document.title,
+      status: "PROCESSING",
+      metadata: result.metadata,
+      message: "Document uploaded and processing started"
+    });
 
   } catch (error: any) {
-    console.error("Upload endpoint error:", {
-      error: error,
-      stack: error.stack,
-      type: error.constructor.name
+    console.error("Document processing error:", {
+      error: error.message,
+      stack: error.stack
     });
 
-    return res.status(500).json({ 
-      error: "Upload failed",
+    return res.status(400).json({
+      error: "Failed to process document",
       details: error.message,
-      code: "UPLOAD_ERROR"
+      code: "PROCESSING_ERROR"
     });
   }
-});
+}));
 
 router.post("/templates/generate", async (req, res) => {
   try {
