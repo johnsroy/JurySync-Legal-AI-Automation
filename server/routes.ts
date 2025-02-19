@@ -13,6 +13,7 @@ import contractAnalysisRouter from "./routes/contract-analysis";
 import reportsRouter from "./routes/reports";
 import vaultRouter from "./routes/vault";
 import redlineRouter from "./routes/redline";
+import paymentsRouter from "./routes/payments";
 import cors from 'cors';
 import { json } from 'express';
 import { setupVite, serveStatic } from "./vite";
@@ -25,7 +26,12 @@ export function registerRoutes(app: Express): Server {
   }));
 
   // Parse JSON bodies with larger limit for document processing
-  app.use(json({ limit: '50mb' }));
+  app.use(json({ 
+    limit: '50mb',
+    verify: (req: any, res, buf) => {
+      req.rawBody = buf; // Save raw body for Stripe webhook verification
+    }
+  }));
 
   const server = createServer(app);
 
@@ -41,18 +47,9 @@ export function registerRoutes(app: Express): Server {
     next();
   });
 
-  // Mount documents router first since it handles all template-related endpoints
+  // Mount important routers first
+  app.use("/api/payments", paymentsRouter); // Mount payments router early
   app.use("/api", documentsRouter);
-
-  // Special handling for Stripe webhook endpoint needs raw body
-  app.post("/api/webhook", 
-    json({
-      verify: (req: any, res, buf) => {
-        req.rawBody = buf;
-      }
-    }), 
-    handleWebhook
-  );
 
   // Mount other API routes
   app.use("/api/legal-research", legalResearchRouter);

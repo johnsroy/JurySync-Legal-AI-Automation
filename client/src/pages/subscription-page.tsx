@@ -20,10 +20,10 @@ export default function SubscriptionPage() {
   const planId = params.get('plan');
 
   useEffect(() => {
-    if (success) {
+    if (success === 'true') {
       toast({
         title: 'Success!',
-        description: 'Your subscription has been activated. Enjoy your premium access!',
+        description: 'Your subscription has been activated.',
       });
       setLocation('/dashboard');
     } else if (canceled) {

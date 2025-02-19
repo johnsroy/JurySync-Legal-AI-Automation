@@ -57,10 +57,17 @@ export const stripeService = {
         billing_address_collection: 'required',
       });
 
-      return session;
+      return {
+        success: true,
+        sessionId: session.id,
+        url: session.url
+      };
     } catch (error) {
       console.error('Stripe checkout error:', error);
-      throw error;
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create checkout session'
+      };
     }
   },
 
@@ -90,7 +97,6 @@ export const stripeService = {
           const session = event.data.object as Stripe.Checkout.Session;
           const customerId = session.customer as string;
 
-          // Update user subscription status
           if (customerId) {
             const [user] = await db
               .select()
@@ -113,7 +119,6 @@ export const stripeService = {
           const subscription = event.data.object as Stripe.Subscription;
           const customerId = subscription.customer as string;
 
-          // Update user subscription status
           if (customerId) {
             await db
               .update(users)

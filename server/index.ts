@@ -30,11 +30,16 @@ app.use(cors({
   origin: process.env.NODE_ENV === 'production' ? ['https://jurysync.io'] : true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'stripe-signature']
 }));
 
 // Body parsing middleware - increase limit for document processing
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ 
+  limit: '50mb',
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf; // Save raw body for Stripe webhook verification
+  }
+}));
 app.use(express.urlencoded({ extended: false }));
 
 // Enhanced session handling
@@ -88,7 +93,6 @@ passport.deserializeUser(async (id: number, done) => {
   }
 });
 
-
 // Security headers
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -96,45 +100,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Request logging
-app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
-    query: req.query,
-    body: req.body
-  });
-  next();
-});
-
 // Register all routes
-registerRoutes(app);
-app.use('/api/payments', paymentsRouter);
-app.use('/api/contract-automation', contractAutomationRouter);
+const server = registerRoutes(app);
 
 // API error handling middleware
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error(`API Error [${req.method} ${req.path}]:`, err);
-
-  // Common error types
-  if (err.name === 'UnauthorizedError') {
-    return res.status(401).json({
-      success: false,
-      error: 'Unauthorized',
-      message: 'You must be logged in to access this resource'
-    });
-  }
-
-  return res.status(500).json({
-    success: false,
-    error: err.message || 'Internal Server Error'
-  });
-});
-
-// Add this after your routes
 app.use(errorHandler);
 
 // Setup Vite for development or serve static files for production
 if (process.env.NODE_ENV !== "production") {
-  setupVite(app);
+  setupVite(app, server);
 } else {
   serveStatic(app);
 }
@@ -147,7 +121,7 @@ const PORT = process.env.PORT || 5000;
   try {
     // Set up database and seed data
     console.log('Setting up database and seeding data...');
-    
+
     // Seed legal database
     const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
     await seedLegalDatabase(numberOfDocuments);
@@ -166,7 +140,7 @@ const PORT = process.env.PORT || 5000;
     }
 
     // Start the server
-    app.listen(Number(PORT), '0.0.0.0', () => {
+    server.listen(Number(PORT), '0.0.0.0', () => {
       console.log(`Server running at http://0.0.0.0:${PORT}`);
     }).on('error', (error: any) => {
       if (error.code === 'EADDRINUSE') {

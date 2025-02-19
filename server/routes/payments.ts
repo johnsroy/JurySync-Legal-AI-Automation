@@ -25,16 +25,18 @@ router.post('/create-checkout-session', async (req: Request, res: Response) => {
       });
     }
 
-    const session = await stripeService.createCheckoutSession(req.user.id, priceId);
-    res.json({
-      success: true,
-      session
-    });
+    const result = await stripeService.createCheckoutSession(req.user.id, priceId);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
   } catch (error) {
-    console.error('Checkout session error:', error);
-    res.status(500).json({
+    console.error('Checkout error:', error);
+    return res.status(500).json({ 
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to create checkout session'
+      error: error instanceof Error ? error.message : 'Failed to create checkout session' 
     });
   }
 });

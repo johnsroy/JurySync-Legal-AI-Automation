@@ -1,20 +1,19 @@
 import { relations } from "drizzle-orm";
-import { integer, pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, timestamp, boolean, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { users } from "../schema";
 import { z } from "zod";
 
 export const subscriptionPlans = pgTable("subscription_plans", {
-  id: integer("id").primaryKey(),
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description").notNull(),
-  stripePriceIdMonthly: text("stripe_price_id_monthly").notNull(),
-  stripePriceIdYearly: text("stripe_price_id_yearly").notNull(),
-  priceMonthly: integer("price_monthly").notNull(),
-  priceYearly: integer("price_yearly").notNull(),
-  features: text("features").array().notNull(),
-  isStudent: boolean("is_student").default(false).notNull(),
-  isEnterprise: boolean("is_enterprise").default(false).notNull(),
+  stripePriceId: text("stripe_price_id").notNull(),
+  price: integer("price").notNull(),
+  interval: text("interval").notNull(),
+  features: text("features").array(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
 });
 
 export const subscriptions = pgTable("subscriptions", {
