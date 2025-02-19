@@ -1,8 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { type VaultDocument } from "@shared/schema";
-import PDFParser from 'pdf2json';
-import { promisify } from 'util';
 
 // Initialize APIs
 const anthropic = new Anthropic({
@@ -35,38 +33,11 @@ interface DocumentAnalysis {
   };
 }
 
-async function parsePdfContent(pdfBuffer: Buffer): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const pdfParser = new PDFParser();
-
-    pdfParser.on("pdfParser_dataReady", (pdfData) => {
-      try {
-        const content = pdfData.Pages.map(page => 
-          page.Texts.map(text => decodeURIComponent(text.R[0].T)).join(' ')
-        ).join('\n');
-
-        resolve(content);
-      } catch (error) {
-        reject(new Error(`PDF parsing failed: ${error.message}`));
-      }
-    });
-
-    pdfParser.on("pdfParser_dataError", (error) => {
-      reject(new Error(`PDF parsing error: ${error}`));
-    });
-
-    pdfParser.parseBuffer(pdfBuffer);
-  });
-}
-
-export async function analyzeDocument(pdfBuffer: Buffer): Promise<DocumentAnalysis> {
+export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
   try {
-    console.log("Starting multi-agent document analysis...");
+    console.log("Starting document analysis...");
 
-    // Parse PDF content
-    const content = await parsePdfContent(pdfBuffer);
-
-    // Step 1: Initial analysis with Claude for classification
+    // Use Claude for initial analysis and classification with specific examples
     const claudeResponse = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 1000,
@@ -87,46 +58,53 @@ Example 1 - SOC Report:
   "complianceStatus": {
     "status": "PASSED",
     "details": "All controls operating effectively",
-    "lastChecked": "2025-02-19T00:00:00Z"
+    "lastChecked": "2025-02-13T00:00:00Z"
   }
 }
+
+Classification Rules:
+1. SOC Documents:
+   - If document mentions "System and Organization Controls (SOC)" or "SOC":
+     * Set documentType to EXACTLY "SOC 3 Report", "SOC 2 Report", or "SOC 1 Report"
+     * Set industry to "Technology" for tech companies
+     * Set complianceStatus.status to "PASSED" if controls are effective
+
+2. Industry Classifications:
+   - Technology: For software, cloud services, IT companies
+   - Financial Services: For banking, investment firms
+   - Healthcare: For medical services, pharma
 
 Document to analyze:
 ${content.substring(0, 8000)}`
       }],
     });
 
-    // Parse Claude's response
     console.log("Claude analysis completed, parsing response...");
-    let claudeAnalysis;
-    try {
-      claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
-    } catch (error) {
-      console.error("Failed to parse Claude response:", error);
-      throw new Error("Invalid response from Claude");
-    }
+    const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
 
-    // Step 2: Detailed analysis with GPT-4 for deeper insights
+    // Use GPT-4 for summary focusing on compliance
     const gptResponse = await openai.chat.completions.create({
       model: GPT_MODEL,
       messages: [
         {
           role: "system",
-          content: "You are a compliance expert specializing in SOC reports. Focus on control effectiveness and compliance status. Provide a clear summary and actionable insights."
+          content: "You are a compliance expert specializing in SOC reports. Focus on control effectiveness and compliance status."
         },
         {
           role: "user",
-          content: `Analyze this document and provide detailed insights:\n${content.substring(0, 8000)}`
+          content: `Analyze this document and provide a clear summary, focusing on compliance status:\n${content.substring(0, 8000)}`
         }
       ],
-      temperature: 0.2,
-      max_tokens: 1000
     });
 
     const summary = gptResponse.choices[0].message.content || "";
+    console.log("Document analysis completed:", {
+      documentType: claudeAnalysis.documentType,
+      industry: claudeAnalysis.industry,
+      complianceStatus: claudeAnalysis.complianceStatus
+    });
 
-    // Combine analyses and return results
-    const combinedAnalysis: DocumentAnalysis = {
+    return {
       summary,
       classification: claudeAnalysis.classification,
       industry: claudeAnalysis.industry,
@@ -138,14 +116,8 @@ ${content.substring(0, 8000)}`
       documentType: claudeAnalysis.documentType,
       complianceStatus: claudeAnalysis.complianceStatus
     };
-
-    console.log("Document analysis completed successfully");
-    return combinedAnalysis;
-
   } catch (error) {
     console.error("Document analysis error:", error);
     throw new Error("Failed to analyze document: " + (error as Error).message);
   }
 }
-
-export { parsePdfContent };

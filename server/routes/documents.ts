@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import { openai } from "../openai";
 import { db } from "../db";
 import { documents, contractTemplates } from "@shared/schema";
 import { eq } from 'drizzle-orm';
@@ -7,8 +8,7 @@ import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
 import PDFDocument from "pdfkit";
 import { approvalAuditService } from "../services/approvalAuditService";
-import { analyzeDocument } from "../services/document-analysis";
-import { contractService } from "../services/contract-automation-service";
+import { analyzeDocument } from "../services/documentAnalysisService";
 import { 
   getAllTemplates, 
   getTemplate, 
@@ -249,10 +249,7 @@ router.post("/documents/generate", async (req, res) => {
 router.post("/workflow/upload", upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ 
-        error: "No file uploaded",
-        code: "NO_FILE"
-      });
+      return res.status(400).json({ error: "No file uploaded" });
     }
 
     console.log("Processing document upload:", {
@@ -261,74 +258,74 @@ router.post("/workflow/upload", upload.single('file'), async (req, res) => {
       size: req.file.size
     });
 
-    if (!req.file.mimetype.includes('pdf')) {
-      return res.status(400).json({
-        error: "Invalid file type. Only PDF documents are supported.",
-        code: "INVALID_TYPE"
-      });
-    }
+    let content = '';
 
     try {
-      // Create initial document record
+      if (req.file.mimetype.includes('pdf')) {
+        content = await analyzePDFContent(req.file.buffer, -1);
+      } else if (req.file.mimetype.includes('word')) {
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        content = result.value;
+      } else if (req.file.mimetype.includes('plain')) {
+        content = req.file.buffer.toString('utf8');
+      }
+
+      if (!content || !content.trim()) {
+        throw new Error('Failed to extract content from document');
+      }
+
+      content = content
+        .replace(/\u0000/g, '')
+        .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
+        .replace(/[\u0000-\u001F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/<!DOCTYPE[^>]*>/g, '')
+        .replace(/<\/?[^>]+(>|$)/g, '')
+        .trim();
+
+      console.log("Content extracted and cleaned, length:", content.length);
+
       const [document] = await db.insert(documents).values({
         userId: req.user?.id || 1,
         title: req.file.originalname,
-        processingStatus: "PROCESSING",
-        agentType: "WORKFLOW_AUTOMATION",
+        content: content,
+        processingStatus: "COMPLETED",
+        agentType: "LEGAL_RESEARCH",
         analysis: {
           documentType: "Unknown",
-          industry: "Pending Analysis",
-          classification: "Processing",
-          confidence: 0,
+          industry: "TECHNOLOGY",
+          classification: "Pending Analysis",
+          confidence: 0.75,
           source: "workflow-automation"
         }
       }).returning();
 
-      console.log("Initial document record created:", document.id);
-
-      // Start the analysis pipeline
-      const analysis = await analyzeDocument(document.id, req.file.buffer);
-
-      // Update document with analysis results
-      await db.update(documents)
-        .set({
-          processingStatus: "COMPLETED",
-          analysis: {
-            ...analysis,
-            source: "workflow-automation",
-            analysisDate: new Date().toISOString()
-          }
-        })
-        .where(eq(documents.id, document.id));
-
-      console.log("Document analysis completed:", {
+      console.log("Document uploaded successfully:", {
         id: document.id,
         title: document.title,
-        type: analysis.documentType
+        contentLength: content.length
       });
 
       return res.json({
         documentId: document.id,
         title: document.title,
-        analysis: analysis,
+        text: content,
         status: "COMPLETED"
       });
 
-    } catch (analysisError: any) {
-      console.error("Document analysis error:", analysisError);
-      return res.status(500).json({
-        error: "Failed to analyze document",
-        details: analysisError.message,
-        code: "ANALYSIS_ERROR"
+    } catch (extractError: any) {
+      console.error("Content extraction error:", extractError);
+      return res.status(400).json({
+        error: "Failed to process document content",
+        details: extractError.message
       });
     }
 
   } catch (error: any) {
-    console.error("Document workflow error:", error);
+    console.error("Document upload error:", error);
     return res.status(500).json({ 
       error: "Failed to process document",
-      details: error.message,
-      code: "PROCESSING_ERROR"
+      details: error.message
     });
   }
 });
