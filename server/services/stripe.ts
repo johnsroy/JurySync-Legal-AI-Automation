@@ -1,18 +1,13 @@
 import Stripe from 'stripe';
 
 if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY is not defined');
+  throw new Error('STRIPE_SECRET_KEY must be set');
 }
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
+  typescript: true,
 });
-
-// Define your product price IDs
-export const STRIPE_PRICE_IDS = {
-  BASIC: 'price_1QphA7H4iREzwvJFgKJPUdRTy9BgTISElQ27BCHJ0Uvk5dO9zcCoZkDidR3vofUn7b7AcDfXzCBXZdLkLmxbNJbH00aIojWHgl',
-  PRO: 'price_2QphA7H4iREzwvJFgKJPUdRTy9BgTISElQ27BCHJ0Uvk5dO9zcCoZkDidR3vofUn7b7AcDfXzCBXZdLkLmxbNJbH00aIojWHgl'
-};
 
 export class StripeService {
   async createCheckoutSession({

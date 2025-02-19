@@ -3,13 +3,6 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-  }
-
   * {
     @apply border-border;
   }

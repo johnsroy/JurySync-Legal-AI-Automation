@@ -1,105 +1,83 @@
-import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
-import { loadStripe } from "stripe";
+import { useState, useEffect } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Loader2, CreditCard } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import { useLocation } from 'wouter';
+import { apiRequest } from '@/lib/queryClient';
 
 export default function SubscriptionPage() {
-  const [, setLocation] = useLocation();
-  const { user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+
+  // Extract URL parameters
+  const params = new URLSearchParams(window.location.search);
+  const success = params.get('success');
+  const canceled = params.get('canceled');
+  const planId = params.get('plan');
 
   useEffect(() => {
-    // Get plan from URL
-    const params = new URLSearchParams(window.location.search);
-    const plan = params.get('plan');
-    if (plan) {
-      setSelectedPlan(plan);
-    }
-  }, []);
-
-  const handleSubscribe = async () => {
-    if (!user) {
-      setLocation('/login');
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-
-      // Create checkout session
-      const response = await fetch('/api/subscription/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          priceId: selectedPlan === '1' ? 'BASIC_PRICE_ID' : 'PRO_PRICE_ID'
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create checkout session');
-      }
-
-      const { sessionId } = await response.json();
-
-      // Redirect to Stripe Checkout
-      const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
-      if (!stripe) {
-        throw new Error('Stripe failed to load');
-      }
-
-      const { error } = await stripe.redirectToCheckout({ sessionId });
-      if (error) {
-        throw error;
-      }
-
-    } catch (error) {
-      console.error('Subscription error:', error);
+    if (success) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to start subscription',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleStartTrial = async () => {
-    if (!user) {
-      setLocation('/login');
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      const response = await fetch('/api/subscription/trial', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to start trial');
-      }
-
-      toast({
-        title: 'Success',
-        description: 'Your free trial has started!',
+        title: 'Success!',
+        description: 'Your subscription has been activated. Enjoy your premium access!',
       });
       setLocation('/dashboard');
-
-    } catch (error) {
-      console.error('Trial error:', error);
+    } else if (canceled) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to start trial',
+        title: 'Checkout canceled',
+        description: 'You have not been charged.',
+        variant: 'destructive',
+      });
+    }
+  }, [success, canceled, toast, setLocation]);
+
+  const handleCheckout = async () => {
+    try {
+      if (!user) {
+        toast({
+          title: 'Authentication Required',
+          description: 'Please sign in to continue.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!planId) {
+        toast({
+          title: 'Invalid Plan',
+          description: 'Please select a valid subscription plan.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setIsLoading(true);
+
+      const response = await apiRequest('POST', '/api/payments/create-checkout-session', {
+        planId: parseInt(planId),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create checkout session');
+      }
+
+      if (!data.url) {
+        throw new Error('No checkout URL received from server');
+      }
+
+      // Redirect to Stripe Checkout
+      window.location.href = data.url;
+    } catch (error) {
+      console.error('Checkout error:', error);
+      toast({
+        title: 'Checkout Error',
+        description: error instanceof Error ? error.message : 'Failed to start checkout process',
         variant: 'destructive',
       });
     } finally {
@@ -107,52 +85,79 @@ export default function SubscriptionPage() {
     }
   };
 
+  if (!planId) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-md mx-auto">
+          <Card>
+            <CardContent className="py-8">
+              <div className="text-center">
+                <h3 className="text-lg font-medium mb-2">No Plan Selected</h3>
+                <p className="text-muted-foreground mb-6">
+                  Please select a subscription plan to continue.
+                </p>
+                <Button asChild>
+                  <a href="/pricing">View Plans</a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800 p-4">
-      <Card className="w-full max-w-md p-8 text-center space-y-6 bg-background/95 backdrop-blur-lg shadow-xl border-border">
-        <h1 className="text-2xl font-bold text-white">Complete Your Subscription</h1>
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-md mx-auto">
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle>Complete Your Subscription</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              <div className="space-y-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-blue-900">Secure Payment with Stripe</h4>
+                  <p className="text-sm text-blue-700">
+                    Your payment information will be processed securely via Stripe.
+                  </p>
+                </div>
 
-        <div className="space-y-4">
-          <div className="bg-blue-100 text-blue-800 p-4 rounded">
-            <h2 className="font-semibold">Secure Payment with Stripe</h2>
-            <p className="text-sm">Your payment information will be processed securely via Stripe.</p>
-          </div>
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-green-900">Free Trial Included</h4>
+                  <p className="text-sm text-green-700">
+                    Start with a 1-day free trial. Cancel anytime.
+                  </p>
+                </div>
+              </div>
 
-          <div className="bg-green-100 text-green-800 p-4 rounded">
-            <h2 className="font-semibold">Free Trial Included</h2>
-            <p className="text-sm">Start with a 1-day free trial. Cancel anytime.</p>
-          </div>
-        </div>
+              <Button 
+                className="w-full"
+                size="lg"
+                onClick={handleCheckout}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="mr-2 h-5 w-5" />
+                    Start Free Trial
+                  </>
+                )}
+              </Button>
 
-        <div className="space-y-4">
-          <Button
-            onClick={handleStartTrial}
-            className="w-full h-12"
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : null}
-            Start Free Trial
-          </Button>
-
-          <Button
-            onClick={handleSubscribe}
-            variant="outline"
-            className="w-full h-12"
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : null}
-            Continue to Payment
-          </Button>
-        </div>
-
-        <p className="text-sm text-gray-400">
-          Secure payment powered by Stripe
-        </p>
-      </Card>
+              <p className="text-sm text-muted-foreground text-center">
+                Secure payment powered by Stripe
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

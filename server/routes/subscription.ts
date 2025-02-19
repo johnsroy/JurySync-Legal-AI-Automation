@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { stripe, STRIPE_PRICE_IDS } from '../services/stripe';
+import { stripeService } from '../services/stripe-service';
 import { db } from '../db';
 import { users } from '@shared/schema';
 import { eq } from 'drizzle-orm';
+import { stripe } from '../services/stripe';
 
 const router = Router();
 
@@ -40,51 +41,12 @@ router.post('/create-checkout-session', async (req, res) => {
 
     const { priceId } = req.body;
     
-    // Validate price ID
-    if (!Object.values(STRIPE_PRICE_IDS).includes(priceId)) {
-      return res.status(400).json({ error: 'Invalid price ID' });
+    if (!priceId) {
+      return res.status(400).json({ error: 'Price ID is required' });
     }
 
-    // Get or create Stripe customer
-    let customerId = req.user.stripeCustomerId;
+    const session = await stripeService.createCheckoutSession(req.user.id, priceId);
     
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: req.user.email,
-        metadata: {
-          userId: req.user.id.toString()
-        }
-      });
-      
-      customerId = customer.id;
-      
-      // Update user with Stripe customer ID
-      await db
-        .update(users)
-        .set({ stripeCustomerId: customerId })
-        .where(eq(users.id, req.user.id));
-    }
-
-    // Create checkout session
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      payment_method_types: ['card'],
-      mode: 'subscription',
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      success_url: `${process.env.CLIENT_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.CLIENT_URL}/subscription/cancel`,
-      subscription_data: {
-        trial_period_days: 1,
-      },
-      allow_promotion_codes: true,
-      billing_address_collection: 'required',
-    });
-
     res.json({ sessionId: session.id });
   } catch (error) {
     console.error('Checkout error:', error);
