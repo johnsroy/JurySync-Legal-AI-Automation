@@ -96,15 +96,15 @@ export function TemplateCard({ template }: TemplateCardProps) {
 
   return (
     <Card className="flex flex-col h-full bg-gray-800/50 border-gray-700 hover:border-blue-500/50 transition-colors">
-      <CardHeader className="space-y-2">
+      <CardHeader className="space-y-3 pb-4">
         <CardTitle className="text-xl text-white">{template.name}</CardTitle>
-        <CardDescription className="text-gray-400">{template.description}</CardDescription>
+        <CardDescription className="text-gray-400 line-clamp-2">{template.description}</CardDescription>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={
             template.metadata.complexity === "LOW" ? "secondary" :
             template.metadata.complexity === "MEDIUM" ? "default" :
             "destructive"
-          }>
+          } className="font-medium">
             {template.metadata.complexity}
           </Badge>
           {template.metadata.tags?.map((tag) => (
@@ -115,8 +115,8 @@ export function TemplateCard({ template }: TemplateCardProps) {
         </div>
       </CardHeader>
 
-      <CardContent className="flex-grow min-h-0">
-        <ScrollArea className="h-[400px] rounded-md border border-gray-700 bg-gray-800 p-4">
+      <CardContent className="flex-grow min-h-0 pb-4">
+        <ScrollArea className="h-[350px] rounded-md border border-gray-700 bg-gray-800/50 p-4">
           <ContentEditable
             innerRef={contentEditableRef}
             html={content}
@@ -125,62 +125,19 @@ export function TemplateCard({ template }: TemplateCardProps) {
             onKeyUp={handleTextSelection}
             className="focus:outline-none whitespace-pre-wrap font-mono text-sm text-gray-200"
           />
-
-          {suggestions.length > 0 && (
-            <div className="fixed inset-x-4 bottom-24 max-h-64 overflow-y-auto bg-gray-800 border border-gray-700 rounded-md shadow-lg p-4 z-50">
-              <div className="space-y-4">
-                {suggestions.map((suggestion, index) => (
-                  <div key={index} className="border-b border-gray-700 last:border-0 pb-3 last:pb-0">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-medium text-gray-300">
-                        {suggestion.field}
-                      </h4>
-                      <Badge variant="outline" className="text-xs">
-                        {suggestion.fieldType}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-gray-400 mb-2">{suggestion.description}</p>
-                    <div className="space-y-2">
-                      {suggestion.suggestions.map((value, sIndex) => (
-                        <div
-                          key={sIndex}
-                          className="px-3 py-1.5 hover:bg-gray-700 cursor-pointer text-sm rounded flex items-center justify-between"
-                          onClick={() => {
-                            const selection = window.getSelection();
-                            if (selection && !selection.isCollapsed) {
-                              const range = selection.getRangeAt(0);
-                              range.deleteContents();
-                              range.insertNode(document.createTextNode(value));
-                              setContent(contentEditableRef.current?.innerHTML || '');
-                            }
-                            setSuggestions([]);
-                          }}
-                        >
-                          <span className="text-gray-200">{value}</span>
-                          <Badge variant="secondary" className="text-xs">
-                            {suggestion.fieldType === 'date' ? 'Today' : 'Suggested'}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </ScrollArea>
       </CardContent>
 
-      <CardFooter className="mt-auto border-t border-gray-700 p-4">
+      <CardFooter className="mt-auto pt-4 border-t border-gray-700">
         <div className="w-full flex flex-col sm:flex-row justify-between items-center gap-4">
-          <p className="text-sm text-gray-400">
-            Highlight text to get suggestions
+          <p className="text-sm text-gray-400 whitespace-nowrap">
+            Select text for suggestions
           </p>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full sm:w-auto justify-end">
             <Button
               variant="outline"
               onClick={() => downloadContract('pdf')}
-              className="bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
+              className="flex-1 sm:flex-none bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
             >
               <Download className="w-4 h-4 mr-2" />
               Download PDF
@@ -188,7 +145,7 @@ export function TemplateCard({ template }: TemplateCardProps) {
             <Button
               variant="outline"
               onClick={() => downloadContract('docx')}
-              className="bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
+              className="flex-1 sm:flex-none bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
             >
               <FileText className="w-4 h-4 mr-2" />
               Download Word
@@ -196,6 +153,54 @@ export function TemplateCard({ template }: TemplateCardProps) {
           </div>
         </div>
       </CardFooter>
+
+      {suggestions.length > 0 && (
+        <div className="fixed inset-x-4 bottom-24 max-h-[40vh] overflow-y-auto bg-gray-800 border border-gray-700 rounded-lg shadow-lg p-4 z-50">
+          <div className="space-y-4">
+            <div className="sticky top-0 bg-gray-800 pb-2 border-b border-gray-700">
+              <h4 className="text-sm font-medium text-gray-300">Available Suggestions</h4>
+            </div>
+            <div className="space-y-4">
+              {suggestions.map((suggestion, index) => (
+                <div key={index} className="border-b border-gray-700 last:border-0 pb-3 last:pb-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-gray-300">
+                      {suggestion.field}
+                    </h4>
+                    <Badge variant="outline" className="text-xs">
+                      {suggestion.fieldType}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-gray-400 mb-2">{suggestion.description}</p>
+                  <div className="grid grid-cols-1 gap-1">
+                    {suggestion.suggestions.map((value, sIndex) => (
+                      <button
+                        key={sIndex}
+                        className="px-3 py-1.5 hover:bg-gray-700 cursor-pointer text-sm rounded flex items-center justify-between transition-colors"
+                        onClick={() => {
+                          const selection = window.getSelection();
+                          if (selection && !selection.isCollapsed) {
+                            const range = selection.getRangeAt(0);
+                            range.deleteContents();
+                            range.insertNode(document.createTextNode(value));
+                            setContent(contentEditableRef.current?.innerHTML || '');
+                          }
+                          setSuggestions([]);
+                        }}
+                      >
+                        <span className="text-gray-200">{value}</span>
+                        <Badge variant="secondary" className="text-xs ml-2">
+                          {suggestion.fieldType === 'date' ? 'Today' : 'Suggested'}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
