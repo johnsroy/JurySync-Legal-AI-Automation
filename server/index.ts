@@ -18,6 +18,7 @@ import contractAutomationRouter from './routes/contract-automation';
 import { errorHandler } from './middlewares/errorHandler';
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import paymentsRouter from './routes/payments';
 
 dotenv.config();
 
@@ -106,6 +107,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // Register all routes
 registerRoutes(app);
+app.use('/api/payments', paymentsRouter);
 app.use('/api/contract-automation', contractAutomationRouter);
 
 // API error handling middleware
