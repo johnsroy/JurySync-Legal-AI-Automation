@@ -26,27 +26,24 @@ export function TemplateCustomizationDialog({
     setEditableContent(template.content);
   }, [template]);
 
-  const fetchSuggestions = async (text: string) => {
-    try {
-      const response = await fetch(`/api/contract-automation/suggestions?q=${encodeURIComponent(text)}`);
-      if (!response.ok) throw new Error('Failed to fetch suggestions');
-      const data = await response.json();
-      setSuggestions(data.suggestions || []);
-    } catch (error) {
-      console.error('Error fetching suggestions:', error);
+  const handleTextSelection = async () => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().length > 0) {
+      const selectedText = selection.toString();
+      try {
+        const response = await fetch(`/api/contract-automation/suggestions?q=${encodeURIComponent(selectedText)}`);
+        if (!response.ok) throw new Error('Failed to fetch suggestions');
+        const data = await response.json();
+        setSuggestions(data.suggestions || []);
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+      }
     }
   };
 
   const handleContentChange = (evt: any) => {
     const newContent = evt.target.value;
     setEditableContent(newContent);
-
-    // Get the last few words for suggestions
-    const words = newContent.split(/\s+/);
-    const lastWords = words.slice(-3).join(' ');
-    if (lastWords.length > 2) {
-      fetchSuggestions(lastWords);
-    }
   };
 
   const downloadContract = async (format: 'pdf' | 'docx') => {
@@ -102,19 +99,29 @@ export function TemplateCustomizationDialog({
                 innerRef={contentEditableRef}
                 html={editableContent}
                 onChange={handleContentChange}
-                className="focus:outline-none whitespace-pre-wrap font-mono text-sm"
+                onMouseUp={handleTextSelection}
+                onKeyUp={handleTextSelection}
+                className="focus:outline-none whitespace-pre-wrap font-mono text-sm min-h-[300px]"
               />
             </div>
 
             {suggestions.length > 0 && (
               <div className="fixed bottom-16 left-4 right-4 bg-gray-800 border border-gray-700 rounded-md shadow-lg">
+                <div className="p-2 border-b border-gray-700">
+                  <h4 className="text-sm font-medium text-gray-300">Suggestions</h4>
+                </div>
                 {suggestions.map((suggestion, index) => (
                   <div
                     key={index}
                     className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm"
                     onClick={() => {
-                      const content = editableContent + ' ' + suggestion;
-                      setEditableContent(content);
+                      const selection = window.getSelection();
+                      if (selection && !selection.isCollapsed) {
+                        const range = selection.getRangeAt(0);
+                        range.deleteContents();
+                        range.insertNode(document.createTextNode(suggestion));
+                        setEditableContent(contentEditableRef.current?.innerHTML || '');
+                      }
                       setSuggestions([]);
                     }}
                   >
@@ -127,13 +134,13 @@ export function TemplateCustomizationDialog({
 
           <div className="flex justify-between items-center">
             <div className="text-sm text-gray-400">
-              Edit the contract content directly in the editor above
+              Edit the contract content directly or highlight text for suggestions
             </div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 onClick={() => downloadContract('pdf')}
-                className="bg-gray-800 text-gray-300 border-gray-700"
+                className="bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
               >
                 <Download className="w-4 h-4 mr-2" />
                 Download PDF
@@ -141,7 +148,7 @@ export function TemplateCustomizationDialog({
               <Button
                 variant="outline"
                 onClick={() => downloadContract('docx')}
-                className="bg-gray-800 text-gray-300 border-gray-700"
+                className="bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700"
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Download Word
