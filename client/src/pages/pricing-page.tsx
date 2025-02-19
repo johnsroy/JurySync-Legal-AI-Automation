@@ -15,7 +15,6 @@ const PRICING_PLANS = [
     price: "24",
     interval: "month",
     tier: "student",
-    priceId: "price_student_monthly",
     features: [
       "Full access to legal research tools",
       "Basic document analysis",
@@ -30,7 +29,6 @@ const PRICING_PLANS = [
     price: "99",
     interval: "month",
     tier: "professional",
-    priceId: "price_professional_monthly",
     features: [
       "Everything in Student, plus:",
       "Advanced document automation",
@@ -76,7 +74,7 @@ export default function PricingPage() {
     try {
       setIsLoading(true);
       const response = await apiRequest("POST", "/api/payments/create-checkout-session", {
-        priceId: plan.priceId,
+        planId: plan.id,
       });
 
       if (!response.ok) {
@@ -84,7 +82,7 @@ export default function PricingPage() {
         throw new Error(error.error || "Failed to create checkout session");
       }
 
-      const { sessionId, url } = await response.json();
+      const { url } = await response.json();
 
       if (url) {
         window.location.href = url;
