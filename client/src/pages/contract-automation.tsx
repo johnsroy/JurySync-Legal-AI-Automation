@@ -8,7 +8,7 @@ import { Loader2, Search, Wand2, Sparkles, Bot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { debounce } from "lodash";
-import { Template, TemplateCategory } from "@shared/schema/template-categories";
+import { Template } from "@shared/schema/template-categories";
 import { TemplateCard } from "@/components/TemplateCard";
 import { TemplateCustomizationDialog } from "@/components/TemplateCustomizationDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";

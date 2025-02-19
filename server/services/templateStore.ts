@@ -138,7 +138,16 @@ export const templateSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  category: TemplateCategory,
+  category: z.enum([
+    "GENERAL",
+    "EMPLOYMENT",
+    "REAL_ESTATE",
+    "BUSINESS",
+    "INTELLECTUAL_PROPERTY",
+    "SERVICE_AGREEMENT",
+    "NDA",
+    "LICENSING"
+  ]),
   baseContent: z.string(),
   variables: z.array(z.object({
     name: z.string(),
@@ -321,7 +330,7 @@ This Mutual Non-Disclosure Agreement (the "Agreement") is entered into as of [EF
     id: "ip-license",
     name: "Intellectual Property License Agreement",
     description: "License agreement for intellectual property rights",
-    category: "IP_LICENSE",
+    category: "INTELLECTUAL_PROPERTY",
     baseContent: `INTELLECTUAL PROPERTY LICENSE AGREEMENT
 
 This License Agreement (the "Agreement") is made effective as of [EFFECTIVE_DATE] by and between:
@@ -485,7 +494,7 @@ This Commercial Lease Agreement (the "Lease") is made as of [EFFECTIVE_DATE] by 
     id: "partnership-agreement",
     name: "General Partnership Agreement",
     description: "Formal partnership agreement for business ventures",
-    category: "PARTNERSHIP",
+    category: "BUSINESS",
     baseContent: `
 PARTNERSHIP AGREEMENT
 
@@ -523,7 +532,7 @@ This Partnership Agreement (the "Agreement") is made on [EFFECTIVE_DATE] by and 
     id: "consulting-agreement",
     name: "Professional Consulting Agreement",
     description: "Agreement for professional consulting services",
-    category: "CONSULTING",
+    category: "SERVICE_AGREEMENT",
     baseContent: `
 CONSULTING SERVICES AGREEMENT
 
@@ -561,7 +570,7 @@ This Consulting Agreement is entered into on [EFFECTIVE_DATE] between:
     id: "merger-acquisition-standard",
     name: "Standard Merger & Acquisition Agreement",
     description: "Comprehensive agreement for standard merger and acquisition transactions",
-    category: "PARTNERSHIP",
+    category: "BUSINESS",
     baseContent: `
 MERGER AND ACQUISITION AGREEMENT
 
@@ -615,7 +624,7 @@ and
     id: "asset-purchase-agreement",
     name: "Asset Purchase Agreement",
     description: "Template for the purchase of specific assets or business units",
-    category: "PARTNERSHIP",
+    category: "BUSINESS",
     baseContent: `
 ASSET PURCHASE AGREEMENT
 
@@ -662,7 +671,7 @@ and
     id: "stock-purchase-agreement",
     name: "Stock Purchase Agreement",
     description: "Agreement for the purchase of company stock or equity interests",
-    category: "PARTNERSHIP",
+    category: "BUSINESS",
     baseContent: `
 STOCK PURCHASE AGREEMENT
 
@@ -707,6 +716,12 @@ and
     }
   }
 };
+
+templates["consulting-agreement"].category = "SERVICE_AGREEMENT";
+templates["partnership-agreement"].category = "BUSINESS";
+templates["merger-acquisition-standard"].category = "BUSINESS";
+templates["asset-purchase-agreement"].category = "BUSINESS";
+templates["stock-purchase-agreement"].category = "BUSINESS";
 
 export function getTemplate(id: string): Template | undefined {
   console.log(`[TemplateStore] Retrieving template: ${id}`);
