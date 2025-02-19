@@ -1,7 +1,8 @@
 import { Router } from "express";
 import multer from "multer";
+import { openai } from "../openai";
 import { db } from "../db";
-import { documents } from "@shared/schema";
+import { documents, contractTemplates } from "@shared/schema";
 import { eq } from 'drizzle-orm';
 import { analyzePDFContent } from "../services/fileAnalyzer";
 import mammoth from 'mammoth';
@@ -18,12 +19,81 @@ import {
   generateContract 
 } from "../services/templateStore";
 import { anthropic } from "../anthropic";
-import { generateAllTemplates } from "../services/templateGenerator"; // Added import
+import { generateAllTemplates } from "../services/templateGenerator";
 
 const router = Router();
 
-// Add this new endpoint near the top of the file
-router.post("/api/analyze/draft", async (req, res) => {
+// Add request logging middleware for this router
+router.use((req, res, next) => {
+  console.log(`[Documents Router] ${req.method} ${req.path}`, {
+    body: req.body,
+    query: req.query
+  });
+  next();
+});
+
+router.post("/templates/generate", async (req, res) => {
+  try {
+    console.log("[Templates] Starting template generation process");
+    const count = await generateAllTemplates();
+    console.log("[Templates] Successfully generated templates:", count);
+
+    const templates = await db.select().from(contractTemplates);
+    console.log("[Templates] Current template count:", templates.length);
+
+    return res.json({ 
+      success: true,
+      count,
+      message: `Successfully generated ${count} templates`
+    });
+  } catch (error: any) {
+    console.error("[Templates] Generation error:", error);
+    return res.status(500).json({ 
+      error: error.message || "Failed to generate templates",
+      code: "GENERATION_ERROR" 
+    });
+  }
+});
+
+router.get("/templates", async (_req, res) => {
+  try {
+    console.log("[Templates] Fetching all templates");
+
+    const templates = await db.select().from(contractTemplates);
+    console.log(`[Templates] Found ${templates.length} templates`);
+
+    if (!templates || templates.length === 0) {
+      console.log("[Templates] No templates available");
+      return res.status(404).json({ 
+        error: "No templates available",
+        code: "NO_TEMPLATES"
+      });
+    }
+
+    const groupedTemplates = templates.reduce((acc, template) => {
+      const category = template.category;
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(template);
+      return acc;
+    }, {} as Record<string, typeof templates>);
+
+    return res.json({
+      templates: groupedTemplates,
+      totalCount: templates.length
+    });
+  } catch (error: any) {
+    console.error("[Templates] Error fetching templates:", error);
+    return res.status(500).json({ 
+      error: "Failed to fetch templates",
+      code: "TEMPLATE_FETCH_ERROR",
+      details: error.message 
+    });
+  }
+});
+
+router.post("/analyze/draft", async (req, res) => {
   try {
     const { content } = req.body;
 
@@ -92,8 +162,6 @@ ${content}`
   }
 });
 
-
-// Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
@@ -115,74 +183,7 @@ const upload = multer({
   }
 });
 
-// Get all available templates - MODIFIED
-router.get("/api/templates", async (_req, res) => {
-  try {
-    console.log("[Templates] Fetching all templates");
-
-    const templates = await db.select().from(contractTemplates); // Assuming contractTemplates is defined elsewhere
-    console.log(`[Templates] Found ${templates.length} templates`);
-
-    if (!templates || templates.length === 0) {
-      console.log("[Templates] No templates available");
-      return res.status(404).json({ 
-        error: "No templates available",
-        code: "NO_TEMPLATES"
-      });
-    }
-
-    // Group templates by category
-    const groupedTemplates = templates.reduce((acc, template) => {
-      const category = template.category;
-      if (!acc[category]) {
-        acc[category] = [];
-      }
-      acc[category].push(template);
-      return acc;
-    }, {} as Record<string, typeof templates>);
-
-    return res.json({
-      templates: groupedTemplates,
-      totalCount: templates.length
-    });
-  } catch (error: any) {
-    console.error("[Templates] Error fetching templates:", error);
-    return res.status(500).json({ 
-      error: "Failed to fetch templates",
-      code: "TEMPLATE_FETCH_ERROR",
-      details: error.message 
-    });
-  }
-});
-
-// Get specific template details
-router.get("/api/templates/:id", async (req, res) => {
-  try {
-    console.log(`[Templates] Fetching template: ${req.params.id}`);
-
-    const template = getTemplate(req.params.id);
-    if (!template) {
-      console.log(`[Templates] Template not found: ${req.params.id}`);
-      return res.status(404).json({ 
-        error: "Template not found",
-        code: "TEMPLATE_NOT_FOUND"
-      });
-    }
-
-    console.log(`[Templates] Successfully retrieved template: ${template.name}`);
-    return res.json(template);
-  } catch (error: any) {
-    console.error("[Templates] Template fetch error:", error);
-    return res.status(500).json({ 
-      error: "Failed to fetch template",
-      code: "TEMPLATE_FETCH_ERROR",
-      details: error.message 
-    });
-  }
-});
-
-// Generate contract from template
-router.post("/api/documents/generate", async (req, res) => {
+router.post("/documents/generate", async (req, res) => {
   try {
     const { templateId, requirements, customInstructions } = req.body;
 
@@ -245,8 +246,7 @@ router.post("/api/documents/generate", async (req, res) => {
   }
 });
 
-// Update the document upload endpoint
-router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
+router.post("/workflow/upload", upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -260,7 +260,6 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
 
     let content = '';
 
-    // Extract content based on file type
     try {
       if (req.file.mimetype.includes('pdf')) {
         content = await analyzePDFContent(req.file.buffer, -1);
@@ -275,7 +274,6 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
         throw new Error('Failed to extract content from document');
       }
 
-      // Clean content
       content = content
         .replace(/\u0000/g, '')
         .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
@@ -287,7 +285,6 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
 
       console.log("Content extracted and cleaned, length:", content.length);
 
-      // Create document record in database
       const [document] = await db.insert(documents).values({
         userId: req.user?.id || 1,
         title: req.file.originalname,
@@ -333,8 +330,7 @@ router.post("/api/workflow/upload", upload.single('file'), async (req, res) => {
   }
 });
 
-// Delete document endpoint
-router.delete("/api/workflow/documents/:id", async (req, res) => {
+router.delete("/workflow/documents/:id", async (req, res) => {
   try {
     const documentId = parseInt(req.params.id);
     const userId = req.user?.id;
@@ -371,8 +367,7 @@ router.delete("/api/workflow/documents/:id", async (req, res) => {
   }
 });
 
-// Get requirement suggestions
-router.post("/api/templates/:id/suggest-requirements", async (req, res) => {
+router.post("/templates/:id/suggest-requirements", async (req, res) => {
   try {
     const templateId = req.params.id;
     const { currentDescription } = req.body;
@@ -399,8 +394,7 @@ router.post("/api/templates/:id/suggest-requirements", async (req, res) => {
   }
 });
 
-// Get autocomplete suggestions
-router.get("/api/templates/:id/autocomplete", async (req, res) => {
+router.get("/templates/:id/autocomplete", async (req, res) => {
   try {
     const templateId = req.params.id;
     const partialText = req.query.text as string;
@@ -429,8 +423,7 @@ router.get("/api/templates/:id/autocomplete", async (req, res) => {
   }
 });
 
-// Download document as DOCX
-router.get("/api/documents/:id/download/docx", async (req, res) => {
+router.get("/documents/:id/download/docx", async (req, res) => {
   try {
     const documentId = parseInt(req.params.id);
     const [doc] = await db
@@ -452,8 +445,7 @@ router.get("/api/documents/:id/download/docx", async (req, res) => {
   }
 });
 
-// Download document as PDF
-router.get("/api/documents/:id/download/pdf", async (req, res) => {
+router.get("/documents/:id/download/pdf", async (req, res) => {
   try {
     const documentId = parseInt(req.params.id);
     const [doc] = await db
@@ -479,156 +471,7 @@ router.get("/api/documents/:id/download/pdf", async (req, res) => {
   }
 });
 
-
-// Get requirement suggestions
-router.post("/api/templates/:id/suggest-requirements", async (req, res) => {
-  try {
-    const templateId = req.params.id;
-    const { currentDescription } = req.body;
-
-    console.log(`[Templates] Generating suggestions for template: ${templateId}`, {
-      templateId,
-      currentDescription
-    });
-
-    const suggestions = await suggestRequirements(templateId, currentDescription);
-
-    console.log(`[Templates] Generated ${suggestions.length} suggestions:`, 
-      JSON.stringify(suggestions, null, 2)
-    );
-
-    return res.json(suggestions);
-  } catch (error: any) {
-    console.error("[Templates] Suggestion error:", error);
-    return res.status(500).json({ 
-      error: "Failed to generate suggestions",
-      code: "SUGGESTION_ERROR",
-      details: error.message 
-    });
-  }
-});
-
-// Get autocomplete suggestions
-router.get("/api/templates/:id/autocomplete", async (req, res) => {
-  try {
-    const templateId = req.params.id;
-    const partialText = req.query.text as string;
-
-    if (!partialText) {
-      return res.status(400).json({
-        error: "Missing partial text",
-        code: "INVALID_INPUT"
-      });
-    }
-
-    console.log(`[Templates] Getting autocomplete for: ${partialText}`);
-
-    const suggestions = await getAutocomplete(templateId, partialText);
-
-    console.log(`[Templates] Generated ${suggestions.suggestions.length} autocomplete suggestions`);
-
-    return res.json(suggestions);
-  } catch (error: any) {
-    console.error("[Templates] Autocomplete error:", error);
-    return res.status(500).json({ 
-      error: "Failed to get autocomplete suggestions",
-      code: "AUTOCOMPLETE_ERROR",
-      details: error.message 
-    });
-  }
-});
-
-// Approval Analysis endpoint
-router.post("/api/workflow/approval-analysis", async (req, res) => {
-  try {
-    const { documentContent } = req.body;
-
-    if (!documentContent) {
-      return res.status(400).json({
-        error: "Missing document content",
-        code: "INVALID_INPUT"
-      });
-    }
-
-    const result = await approvalAuditService.performApprovalAnalysis(documentContent);
-    return res.json(result);
-  } catch (error: any) {
-    console.error("[Approval Analysis] Error:", error);
-    return res.status(500).json({
-      error: error.message || "Failed to perform approval analysis",
-      code: "ANALYSIS_ERROR"
-    });
-  }
-});
-
-// Final Audit endpoint
-router.post("/api/workflow/final-audit", async (req, res) => {
-  try {
-    const { documentContent, workflowHistory } = req.body;
-
-    if (!documentContent) {
-      return res.status(400).json({
-        error: "Missing document content",
-        code: "INVALID_INPUT"
-      });
-    }
-
-    const result = await approvalAuditService.generateFinalAudit(
-      documentContent,
-      workflowHistory
-    );
-    return res.json(result);
-  } catch (error: any) {
-    console.error("[Final Audit] Error:", error);
-    return res.status(500).json({
-      error: error.message || "Failed to generate final audit",
-      code: "AUDIT_ERROR"
-    });
-  }
-});
-
-// Risk Scorecard endpoint
-router.post("/api/workflow/risk-scorecard", async (req, res) => {
-  try {
-    const { documentContent } = req.body;
-
-    if (!documentContent) {
-      return res.status(400).json({
-        error: "Missing document content",
-        code: "INVALID_INPUT"
-      });
-    }
-
-    const result = await approvalAuditService.getRiskScorecard(documentContent);
-    return res.json(result);
-  } catch (error: any) {
-    console.error("[Risk Scorecard] Error:", error);
-    return res.status(500).json({
-      error: error.message || "Failed to generate risk scorecard",
-      code: "SCORECARD_ERROR"
-    });
-  }
-});
-
-// Add this new endpoint after the existing routes
-router.post("/api/templates/generate", async (_req, res) => {
-  try {
-    console.log("[Templates] Starting template generation");
-    await generateAllTemplates();
-    console.log("[Templates] Templates generated successfully");
-    return res.json({ success: true });
-  } catch (error) {
-    console.error("[Templates] Generation error:", error);
-    return res.status(500).json({ 
-      error: "Failed to generate templates",
-      code: "GENERATION_ERROR",
-      details: error.message 
-    });
-  }
-});
-
-// Add this new endpoint after the existing routes
-router.post("/api/templates/:id/custom-instruction-suggestions", async (req, res) => {
+router.post("/templates/:id/custom-instruction-suggestions", async (req, res) => {
   try {
     const templateId = req.params.id;
     const { currentRequirements } = req.body;
@@ -658,6 +501,75 @@ router.post("/api/templates/:id/custom-instruction-suggestions", async (req, res
       error: "Failed to generate custom instruction suggestions",
       code: "SUGGESTION_ERROR",
       details: error.message 
+    });
+  }
+});
+
+router.post("/workflow/approval-analysis", async (req, res) => {
+  try {
+    const { documentContent } = req.body;
+
+    if (!documentContent) {
+      return res.status(400).json({
+        error: "Missing document content",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    const result = await approvalAuditService.performApprovalAnalysis(documentContent);
+    return res.json(result);
+  } catch (error: any) {
+    console.error("[Approval Analysis] Error:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to perform approval analysis",
+      code: "ANALYSIS_ERROR"
+    });
+  }
+});
+
+router.post("/workflow/final-audit", async (req, res) => {
+  try {
+    const { documentContent, workflowHistory } = req.body;
+
+    if (!documentContent) {
+      return res.status(400).json({
+        error: "Missing document content",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    const result = await approvalAuditService.generateFinalAudit(
+      documentContent,
+      workflowHistory
+    );
+    return res.json(result);
+  } catch (error: any) {
+    console.error("[Final Audit] Error:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to generate final audit",
+      code: "AUDIT_ERROR"
+    });
+  }
+});
+
+router.post("/workflow/risk-scorecard", async (req, res) => {
+  try {
+    const { documentContent } = req.body;
+
+    if (!documentContent) {
+      return res.status(400).json({
+        error: "Missing document content",
+        code: "INVALID_INPUT"
+      });
+    }
+
+    const result = await approvalAuditService.getRiskScorecard(documentContent);
+    return res.json(result);
+  } catch (error: any) {
+    console.error("[Risk Scorecard] Error:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to generate risk scorecard",
+      code: "SCORECARD_ERROR"
     });
   }
 });

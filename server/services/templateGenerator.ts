@@ -98,7 +98,7 @@ export async function generateContractTemplate(request: TemplateGenRequest): Pro
     // Insert into database with proper type matching
     const [savedTemplate] = await db.insert(contractTemplates).values({
       name: template.name,
-      category: request.category as TemplateCategory,
+      category: request.category,
       content: template.content,
       metadata: {
         ...metadata,
@@ -116,8 +116,8 @@ export async function generateContractTemplate(request: TemplateGenRequest): Pro
       jurisdiction: "USA",
       estimatedCompletionTime: "30-60 minutes",
       popularityScore: 0,
-      created_at: new Date(),
-      updated_at: new Date()
+      createdAt: new Date(),
+      updatedAt: new Date()
     }).returning();
 
     console.log("[Template Generator] Saved template to database with ID:", savedTemplate.id);

@@ -26,7 +26,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json());
+// Body parsing middleware - increase limit for document processing
+app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
 
 // Enhanced session handling
@@ -38,7 +39,7 @@ const sessionStore = new PostgresStore({
   },
   createTableIfMissing: true,
   pruneSessionInterval: 60,
-  tableName: 'session' // Explicit table name
+  tableName: 'session'
 });
 
 const sessionMiddleware = session({
@@ -48,10 +49,10 @@ const sessionMiddleware = session({
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    maxAge: 30 * 24 * 60 * 60 * 1000,
     sameSite: 'lax'
   },
-  name: 'jurysync.sid' // Custom session name
+  name: 'jurysync.sid'
 });
 
 app.use(sessionMiddleware);
@@ -65,28 +66,23 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Setup auth
-setupAuth(app);
-
-// Register document analytics route
-app.use('/api/document-analytics', documentAnalyticsRouter);
-
-// Register redline route
-app.use("/api/redline", redlineRouter);
-
-// Add this before your routes
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+// Request logging
+app.use((req: Request, res: Response, next: NextFunction) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
+    query: req.query,
+    body: req.body
+  });
   next();
 });
 
-// Register routes
+// Register all routes
 registerRoutes(app);
 
 // API error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(`API Error [${req.method} ${req.path}]:`, err);
 
+  // Common error types
   if (err.name === 'UnauthorizedError') {
     return res.status(401).json({
       success: false,
@@ -101,45 +97,26 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// Setup Vite or serve static files
+// Setup Vite for development or serve static files for production
 if (process.env.NODE_ENV !== "production") {
   setupVite(app);
 } else {
   serveStatic(app);
 }
 
-// Start server
+// Initialize services and start server
 const PORT = process.env.PORT || 5000;
 
-// Webhook handling
-app.post('/webhook', handleStripeWebhook);
-app.post('/webhook-test', (req: Request, res: Response) => {
-  try {
-    if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      return res.status(500).json({ error: 'Webhook secret not configured' });
-    }
-
-    console.log('Headers:', req.headers);
-    console.log('Body:', req.body);
-
-    return res.status(200).json({
-      status: 'success',
-      message: 'Webhook endpoint is accessible',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Webhook test error:', error);
-    return res.status(500).json({ error: 'Webhook test failed' });
-  }
-});
-
-// Initialize services
+// Start server and initialize services
 (async () => {
   try {
+    // Set up database and seed data
+    console.log('Setting up database and seeding data...');
     const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
     await seedLegalDatabase(numberOfDocuments);
     console.log('Legal database seeded successfully');
 
+    // Start continuous learning service
     try {
       await continuousLearningService.startContinuousLearning();
       console.log('Continuous learning service started successfully');
@@ -147,7 +124,8 @@ app.post('/webhook-test', (req: Request, res: Response) => {
       console.error('Failed to start continuous learning service:', error);
     }
 
-    app.listen(PORT, '0.0.0.0', () => {
+    // Start the server
+    app.listen(Number(PORT), '0.0.0.0', () => {
       console.log(`Server running at http://0.0.0.0:${PORT}`);
     }).on('error', (error: any) => {
       if (error.code === 'EADDRINUSE') {
