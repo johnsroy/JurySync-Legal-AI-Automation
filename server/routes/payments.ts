@@ -17,15 +17,15 @@ router.post('/create-checkout-session', async (req: Request, res: Response) => {
       });
     }
 
-    const { priceId } = req.body;
-    if (!priceId) {
+    const { planId } = req.body;
+    if (!planId) {
       return res.status(400).json({
         success: false,
-        error: 'Price ID is required'
+        error: 'Plan ID is required'
       });
     }
 
-    const result = await stripeService.createCheckoutSession(req.user.id, priceId);
+    const result = await stripeService.createCheckoutSession(req.user.id, planId);
 
     if (!result.success) {
       return res.status(400).json(result);
