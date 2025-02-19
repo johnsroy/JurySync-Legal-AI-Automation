@@ -15,6 +15,7 @@ import vaultRouter from "./routes/vault";
 import redlineRouter from "./routes/redline";
 import cors from 'cors';
 import { json } from 'express';
+import { setupVite, serveStatic } from "./vite";
 
 export function registerRoutes(app: Express): Server {
   // Essential middleware first
@@ -27,6 +28,9 @@ export function registerRoutes(app: Express): Server {
   app.use(json({ limit: '50mb' }));
 
   const server = createServer(app);
+
+  // Setup authentication routes first
+  setupAuth(app);
 
   // Request logging middleware
   app.use((req, res, next) => {
