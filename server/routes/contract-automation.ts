@@ -5,6 +5,9 @@ import { eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { anthropic } from '../anthropic';
 import OpenAI from 'openai';
+import { generateContract } from '../services/contract-automation-service';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+import * as docx from 'docx';
 
 const router = Router();
 const openai = new OpenAI();
@@ -141,67 +144,18 @@ router.get('/suggestions', async (req, res) => {
 router.post('/use-template/:templateId', async (req, res) => {
   try {
     const { templateId } = req.params;
-    const { variables } = req.body;
+    const { variables, customClauses } = req.body;
 
-    // Fetch the template
-    const [template] = await db
-      .select()
-      .from(contractTemplates)
-      .where(eq(contractTemplates.id, parseInt(templateId)));
-
-    if (!template) {
-      return res.status(404).json({
-        success: false,
-        error: 'Template not found'
-      });
-    }
-
-    // Validate required variables
-    const missingVariables = template.metadata.variables
-      .filter(v => v.required && !variables[v.name])
-      .map(v => v.name);
-
-    if (missingVariables.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required variables',
-        missingVariables
-      });
-    }
-
-    // Replace variables in content
-    let content = template.content;
-    Object.entries(variables).forEach(([key, value]) => {
-      content = content.replace(new RegExp(`\\[${key}\\]`, 'g'), value as string);
-    });
-
-    // Generate suggestions for the customized content using OpenAI
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [{
-        role: "system",
-        content: "You are a legal document expert. Review this contract and suggest improvements."
-      }, {
-        role: "user",
-        content: `Review this contract and suggest specific improvements:
-        ${content}
-
-        Focus on:
-        1. Clarity and readability
-        2. Legal completeness
-        3. Risk mitigation
-        `
-      }],
-      max_tokens: 1000
+    const result = await generateContract({
+      templateId,
+      variables,
+      customClauses,
+      aiAssistance: true
     });
 
     return res.json({
       success: true,
-      document: {
-        content,
-        suggestions: completion.choices[0].message.content,
-        metadata: template.metadata
-      }
+      document: result
     });
 
   } catch (error) {
@@ -209,6 +163,67 @@ router.post('/use-template/:templateId', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to process template'
+    });
+  }
+});
+
+// Download endpoint
+router.post('/download', async (req, res) => {
+  try {
+    const { content, format } = req.body;
+
+    if (format === 'pdf') {
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage();
+      const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+
+      const lines = content.split('\n');
+      let y = page.getHeight() - 50;
+
+      lines.forEach(line => {
+        if (y > 50) {
+          page.drawText(line, {
+            x: 50,
+            y,
+            font,
+            size: 12
+          });
+          y -= 15;
+        }
+      });
+
+      const pdfBytes = await pdfDoc.save();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename=contract.pdf');
+      return res.send(Buffer.from(pdfBytes));
+    } 
+    else if (format === 'docx') {
+      const doc = new docx.Document({
+        sections: [{
+          properties: {},
+          children: [
+            new docx.Paragraph({
+              children: [new docx.TextRun(content)]
+            })
+          ]
+        }]
+      });
+
+      const buffer = await docx.Packer.toBuffer(doc);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', 'attachment; filename=contract.docx');
+      return res.send(buffer);
+    }
+
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid format specified'
+    });
+  } catch (error) {
+    console.error('Failed to generate document:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to generate document'
     });
   }
 });

@@ -20,18 +20,18 @@ export async function generateContract(config: GenerateContractConfig) {
     const [template] = await db
       .select()
       .from(contractTemplates)
-      .where(eq(contractTemplates.id, templateId));
+      .where(eq(contractTemplates.id, parseInt(templateId)));
 
     if (!template) {
       throw new Error("Template not found");
     }
 
-    let content = template.baseContent;
+    let content = template.content;
 
     // Replace variables in the template
-    for (const [key, value] of Object.entries(variables)) {
-      content = content.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
-    }
+    Object.entries(variables).forEach(([key, value]) => {
+      content = content.replace(new RegExp(`\\[${key}\\]`, "g"), value);
+    });
 
     // If AI assistance is enabled, use GPT-4o to enhance the contract
     if (aiAssistance) {
@@ -94,7 +94,7 @@ export async function generateContract(config: GenerateContractConfig) {
         temperature: 0.2
       });
 
-      const metadata = JSON.parse(analysisResponse.choices[0].message.content);
+      const metadata = JSON.parse(analysisResponse.choices[0].message.content || "{}");
 
       return {
         content,

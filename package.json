@@ -73,7 +73,7 @@
     "cypress-file-upload": "^5.0.8",
     "date-fns": "^3.6.0",
     "diff": "^7.0.0",
-    "docx": "^8.2.3",
+    "docx": "^8.5.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.39.2",
     "drizzle-zod": "^0.7.0",
