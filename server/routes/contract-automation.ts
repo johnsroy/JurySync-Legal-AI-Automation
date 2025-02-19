@@ -41,14 +41,16 @@ router.get('/templates', async (req, res) => {
       }
       acc[category].push({
         ...template,
-        variables: template.metadata.variables || []
+        id: template.id.toString(),
+        variables: template.metadata?.variables || []
       });
       return acc;
-    }, {} as Record<string, typeof templates>);
+    }, {} as Record<string, any[]>);
 
     return res.json({
       success: true,
-      templates: groupedTemplates
+      templates: groupedTemplates,
+      totalCount: templates.length
     });
 
   } catch (error) {

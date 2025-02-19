@@ -1,7 +1,6 @@
 import { db } from '../db';
 import { contractTemplates } from '@shared/schema';
 import { sql } from 'drizzle-orm';
-import { templateStore } from './templateStore';
 
 export async function seedContractTemplates() {
   try {
@@ -23,69 +22,104 @@ export async function seedContractTemplates() {
         name: "Non-Disclosure Agreement (NDA)",
         description: "Standard NDA template for protecting confidential information",
         category: "CONFIDENTIALITY",
-        content: `This NON-DISCLOSURE AGREEMENT (the "Agreement") is made and entered into as of [DATE] by and between [PARTY A] and [PARTY B]...`,
-        jurisdiction: "US",
-        industry: "All",
-        complexity: "MEDIUM",
-        subcategory: "General NDA",
+        content: `CONFIDENTIALITY AND NON-DISCLOSURE AGREEMENT
+
+This Confidentiality and Non-Disclosure Agreement (the "Agreement") is made and entered into as of [DATE] by and between:
+
+[PARTY A NAME], located at [PARTY A ADDRESS] ("Disclosing Party")
+and
+[PARTY B NAME], located at [PARTY B ADDRESS] ("Receiving Party")
+
+1. Definition of Confidential Information...
+2. Use of Confidential Information...
+3. Term and Termination...`,
         metadata: {
           variables: [
-            { name: "DATE", description: "Agreement effective date", required: true },
-            { name: "PARTY_A", description: "First party name", required: true },
-            { name: "PARTY_B", description: "Second party name", required: true }
+            { name: "DATE", description: "Agreement effective date", required: true, type: "date" },
+            { name: "PARTY A NAME", description: "First party full name", required: true, type: "text" },
+            { name: "PARTY A ADDRESS", description: "First party address", required: true, type: "text" },
+            { name: "PARTY B NAME", description: "Second party full name", required: true, type: "text" },
+            { name: "PARTY B ADDRESS", description: "Second party address", required: true, type: "text" }
           ],
+          tags: ["confidentiality", "business", "protection"],
+          useCase: "Protecting confidential information in business relationships",
+          complexity: "MEDIUM",
+          recommendedClauses: ["Confidentiality", "Term", "Termination", "Return of Materials"],
+          industrySpecific: false,
+          jurisdiction: "US",
           lastUpdated: new Date().toISOString(),
-          tags: ["confidentiality", "business", "protection"]
+          aiAssistanceLevel: "ADVANCED"
         }
       },
       {
         name: "Employment Agreement",
         description: "Comprehensive employment contract template",
         category: "EMPLOYMENT",
-        content: `EMPLOYMENT AGREEMENT made this [DATE] between [EMPLOYER] and [EMPLOYEE]...`,
-        jurisdiction: "US",
-        industry: "All",
-        complexity: "HIGH",
-        subcategory: "Full-Time Employment",
+        content: `EMPLOYMENT AGREEMENT
+
+This Employment Agreement (the "Agreement") is made and entered into on [DATE], by and between:
+
+[COMPANY NAME], a corporation organized under the laws of [STATE] ("Employer")
+and
+[EMPLOYEE NAME] ("Employee")
+
+1. Position and Duties...
+2. Compensation...
+3. Benefits...`,
         metadata: {
           variables: [
-            { name: "DATE", description: "Agreement start date", required: true },
-            { name: "EMPLOYER", description: "Company name", required: true },
-            { name: "EMPLOYEE", description: "Employee full name", required: true }
+            { name: "DATE", description: "Agreement start date", required: true, type: "date" },
+            { name: "COMPANY NAME", description: "Employer company name", required: true, type: "text" },
+            { name: "STATE", description: "State of incorporation", required: true, type: "text" },
+            { name: "EMPLOYEE NAME", description: "Employee full name", required: true, type: "text" }
           ],
+          tags: ["employment", "hr", "contracts"],
+          useCase: "Creating employment relationships",
+          complexity: "HIGH",
+          recommendedClauses: ["Compensation", "Benefits", "Termination", "Confidentiality"],
+          industrySpecific: false,
+          jurisdiction: "US",
           lastUpdated: new Date().toISOString(),
-          tags: ["employment", "hr", "contracts"]
+          aiAssistanceLevel: "EXPERT"
         }
       },
       {
         name: "Software License Agreement",
-        description: "Template for software licensing agreements",
+        description: "Enterprise software licensing agreement template",
         category: "LICENSING",
-        content: `SOFTWARE LICENSE AGREEMENT between [LICENSOR] and [LICENSEE]...`,
-        jurisdiction: "US",
-        industry: "TECHNOLOGY",
-        complexity: "HIGH",
-        subcategory: "Software License",
+        content: `SOFTWARE LICENSE AGREEMENT
+
+This Software License Agreement (the "Agreement") is made on [DATE] between:
+
+[LICENSOR NAME] ("Licensor")
+and
+[LICENSEE NAME] ("Licensee")
+
+1. License Grant...
+2. Restrictions...
+3. Term and Termination...`,
         metadata: {
           variables: [
-            { name: "LICENSOR", description: "Software owner", required: true },
-            { name: "LICENSEE", description: "Software user", required: true }
+            { name: "DATE", description: "Agreement date", required: true, type: "date" },
+            { name: "LICENSOR NAME", description: "Software owner name", required: true, type: "text" },
+            { name: "LICENSEE NAME", description: "Software user name", required: true, type: "text" }
           ],
+          tags: ["software", "licensing", "technology"],
+          useCase: "Software licensing and distribution",
+          complexity: "HIGH",
+          recommendedClauses: ["License Grant", "Restrictions", "Warranties", "Support"],
+          industrySpecific: true,
+          jurisdiction: "US",
           lastUpdated: new Date().toISOString(),
-          tags: ["software", "licensing", "technology"]
+          aiAssistanceLevel: "EXPERT"
         }
       }
     ];
 
     console.log(`Seeding ${sampleTemplates.length} templates`);
 
-    // Insert templates in batches
-    const batchSize = 3;
-    for (let i = 0; i < sampleTemplates.length; i += batchSize) {
-      const batch = sampleTemplates.slice(i, i + batchSize);
-      await db.insert(contractTemplates).values(batch);
-      console.log(`Inserted batch ${Math.floor(i/batchSize) + 1}`);
-    }
+    // Insert all templates at once
+    await db.insert(contractTemplates).values(sampleTemplates);
 
     // Verify insertion
     const [{ finalCount }] = await db
@@ -93,7 +127,6 @@ export async function seedContractTemplates() {
       .from(contractTemplates);
 
     console.log(`Successfully seeded ${finalCount} contract templates`);
-
     return finalCount;
   } catch (error) {
     console.error("Error seeding contract templates:", error);
