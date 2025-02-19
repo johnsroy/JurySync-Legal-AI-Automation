@@ -4,7 +4,7 @@ import { contractTemplates } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
-import pdfParse from "pdf-parse";
+import PDFNet from '@pdftron/pdfnet-node';
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 
@@ -121,11 +121,26 @@ export async function generateContract(config: GenerateContractConfig) {
 
 export async function parsePdfTemplate(pdfBuffer: Buffer): Promise<string> {
   try {
-    // Parse PDF content
-    const data = await pdfParse(pdfBuffer);
+    await PDFNet.initialize();
 
-    // Clean up and format the extracted text
-    const cleanedText = data.text
+    const doc = await PDFNet.PDFDoc.createFromBuffer(pdfBuffer);
+    await doc.initSecurityHandler();
+
+    let extractedText = '';
+    const pageCount = await doc.getPageCount();
+
+    for (let i = 1; i <= pageCount; i++) {
+      const page = await doc.getPage(i);
+      const reader = await PDFNet.TextExtractor.create();
+      reader.begin(page);
+
+      // Get all text blocks
+      const blocks = await reader.getAsText();
+      extractedText += blocks + '\n';
+    }
+
+    // Clean up extracted text
+    const cleanedText = extractedText
       .replace(/\r\n/g, '\n')
       .replace(/\s+/g, ' ')
       .trim();
@@ -134,7 +149,9 @@ export async function parsePdfTemplate(pdfBuffer: Buffer): Promise<string> {
     return formatTemplateText(cleanedText);
   } catch (error) {
     console.error("PDF parsing error:", error);
-    throw error;
+    throw new Error(`Enhanced PDF parsing failed: ${error.message}`);
+  } finally {
+    await PDFNet.terminate();
   }
 }
 
