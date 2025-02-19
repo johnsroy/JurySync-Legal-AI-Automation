@@ -18,6 +18,7 @@ export interface FieldSuggestion {
   suggestions: string[];
   description: string;
   fieldType: 'date' | 'name' | 'address' | 'company' | 'amount' | 'other';
+  selected?: boolean;
 }
 
 // Helper function to extract all placeholders from content
@@ -27,14 +28,22 @@ function extractPlaceholders(content: string): string[] {
   return matches ? matches.map(m => m.slice(1, -1)) : [];
 }
 
-// Helper to determine field type based on name
-function determineFieldType(fieldName: string): 'date' | 'name' | 'address' | 'company' | 'amount' | 'other' {
+// Helper to determine field type based on name and context
+function determineFieldType(fieldName: string, context: string): 'date' | 'name' | 'address' | 'company' | 'amount' | 'other' {
   const fieldLower = fieldName.toLowerCase();
-  if (fieldLower.includes('date') || fieldLower.includes('period')) return 'date';
-  if (fieldLower.includes('name') || fieldLower.includes('signer')) return 'name';
-  if (fieldLower.includes('address')) return 'address';
-  if (fieldLower.includes('company') || fieldLower.includes('firm') || fieldLower.includes('organization')) return 'company';
-  if (fieldLower.includes('amount') || fieldLower.includes('rate') || fieldLower.includes('fee')) return 'amount';
+
+  // Enhanced type detection with context analysis
+  if (fieldLower.includes('date') || fieldLower.includes('period') || fieldLower.includes('term')) return 'date';
+  if (fieldLower.includes('name') || fieldLower.includes('signer') || fieldLower.includes('party')) return 'name';
+  if (fieldLower.includes('address') || fieldLower.includes('location')) return 'address';
+  if (fieldLower.includes('company') || fieldLower.includes('firm') || fieldLower.includes('organization') || fieldLower.includes('business')) return 'company';
+  if (fieldLower.includes('amount') || fieldLower.includes('rate') || fieldLower.includes('fee') || fieldLower.includes('payment') || fieldLower.includes('price')) return 'amount';
+
+  // Context-based detection
+  if (context.toLowerCase().includes(`${fieldLower} shall pay`)) return 'amount';
+  if (context.toLowerCase().includes(`located at ${fieldLower}`)) return 'address';
+  if (context.toLowerCase().includes(`represented by ${fieldLower}`)) return 'name';
+
   return 'other';
 }
 
@@ -51,31 +60,56 @@ export async function generateSmartSuggestions(selectedText: string, contractCon
       selectedPlaceholder = selected[0] || '';
     }
 
-    // Generate analysis prompt for GPT
-    const prompt = `Analyze this legal contract and provide intelligent suggestions for the following placeholders. If a specific placeholder (${selectedPlaceholder}) is selected, prioritize it in the response.
+    // First, get contract type and context analysis
+    const contextAnalysis = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal document expert. Analyze this contract to understand its type and key elements."
+        },
+        {
+          role: "user",
+          content: `Analyze this contract and provide key context about the type of agreement and expected fields:\n\n${contractContent}`
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3
+    });
+
+    const contractAnalysis = JSON.parse(contextAnalysis.choices[0].message.content || "{}");
+
+    // Generate suggestions for all placeholders
+    const prompt = `As a legal contract expert, provide intelligent suggestions for each placeholder in this ${contractAnalysis.contractType} agreement.
 
 Contract Context:
 ${contractContent}
 
-Generate suggestions for these placeholders:
+Selected Placeholder (prioritize if present): ${selectedPlaceholder}
+
+For each of these placeholders, provide a JSON object with context-appropriate suggestions:
 ${uniquePlaceholders.join('\n')}
 
-For each placeholder, provide a JSON object with:
+Response should be an array of objects with this structure:
 {
   "field": "placeholder name",
   "fieldType": "date" | "name" | "address" | "company" | "amount" | "other",
   "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
-  "description": "Description of what this field represents"
+  "description": "Clear description of what this field represents in the contract"
 }
 
-Respond with an array of these objects, sorted with the selected placeholder (if any) first.`;
+Ensure suggestions are:
+1. Contextually appropriate for the contract type
+2. Realistic and professionally formatted
+3. Include common/standard values for the field type
+4. Consider industry standards and legal requirements`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: "You are a legal document expert. Generate intelligent suggestions for contract field replacements, considering the full context of the document."
+          content: `You are a legal document expert specializing in ${contractAnalysis.contractType} agreements. Generate professional, context-aware suggestions for contract fields.`
         },
         {
           role: "user",
@@ -88,15 +122,36 @@ Respond with an array of these objects, sorted with the selected placeholder (if
 
     const suggestions = JSON.parse(response.choices[0].message.content || "[]");
 
-    // Add smart defaults based on field type
+    // Enhance suggestions with smart defaults and validation
     return suggestions.map((suggestion: FieldSuggestion) => {
-      if (suggestion.fieldType === 'date') {
+      const fieldType = determineFieldType(suggestion.field, contractContent);
+
+      // Add smart defaults based on field type
+      if (fieldType === 'date') {
         const today = new Date().toISOString().split('T')[0];
-        if (!suggestion.suggestions.includes(today)) {
-          suggestion.suggestions.unshift(today);
-        }
+        const nextMonth = new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0];
+        const nextYear = new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0];
+
+        suggestion.suggestions = [today, nextMonth, nextYear, ...suggestion.suggestions].slice(0, 5);
       }
-      return suggestion;
+
+      // Ensure all suggestions are unique
+      suggestion.suggestions = [...new Set(suggestion.suggestions)];
+
+      // Move selected placeholder to the top if present
+      if (selectedPlaceholder && suggestion.field === selectedPlaceholder) {
+        suggestion.selected = true;
+      }
+
+      return {
+        ...suggestion,
+        fieldType
+      };
+    }).sort((a, b) => {
+      // Sort with selected placeholder first, then by field type importance
+      if (a.selected) return -1;
+      if (b.selected) return 1;
+      return 0;
     });
   } catch (error) {
     console.error("Failed to generate smart suggestions:", error);
@@ -128,17 +183,17 @@ export async function generateContract(config: GenerateContractConfig) {
     // If AI assistance is enabled, use GPT-4o to enhance the contract
     if (aiAssistance) {
       const prompt = `As a legal contract expert, please review and enhance this contract while maintaining its legal validity:
-
+      
       ${content}
-
+      
       Additional clauses to consider: ${customClauses?.join("\n") || "None"}
-
+      
       Please analyze the contract for:
       1. Legal completeness and validity
       2. Clarity and readability
       3. Potential risks or ambiguities
       4. Compliance with standard legal practices
-
+      
       Return the enhanced contract text while maintaining proper formatting and incorporating the suggested improvements.`;
 
       const response = await openai.chat.completions.create({
@@ -252,7 +307,7 @@ export async function generateTemplatePreview(category: string): Promise<string>
   const prompt = `Generate a professional legal contract template for category: ${category}. 
     Include all standard sections, clauses, and formatting. 
     Use placeholder variables in [VARIABLE_NAME] format.
-
+    
     Follow this structure:
     1. Title and Date
     2. Parties involved
@@ -261,7 +316,7 @@ export async function generateTemplatePreview(category: string): Promise<string>
     5. Main terms and conditions
     6. Standard clauses
     7. Signature block
-
+    
     Ensure proper formatting with:
     - Clear section numbering
     - Proper indentation
