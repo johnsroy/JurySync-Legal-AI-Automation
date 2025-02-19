@@ -12,9 +12,16 @@ interface TemplateCardProps {
   template: Template;
 }
 
+interface FieldSuggestion {
+  field: string;
+  suggestions: string[];
+  description: string;
+  fieldType: 'date' | 'name' | 'address' | 'company' | 'amount' | 'other';
+}
+
 export function TemplateCard({ template }: TemplateCardProps) {
   const [content, setContent] = useState(template.content);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<FieldSuggestion[]>([]);
   const contentEditableRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -23,7 +30,13 @@ export function TemplateCard({ template }: TemplateCardProps) {
     if (selection && selection.toString().length > 0) {
       const selectedText = selection.toString();
       try {
-        const response = await fetch(`/api/contract-automation/suggestions?q=${encodeURIComponent(selectedText)}`);
+        const response = await fetch(
+          `/api/contract-automation/suggestions?${new URLSearchParams({
+            q: selectedText,
+            content: content
+          })}`
+        );
+
         if (!response.ok) throw new Error('Failed to fetch suggestions');
         const data = await response.json();
         setSuggestions(data.suggestions || []);
@@ -115,27 +128,42 @@ export function TemplateCard({ template }: TemplateCardProps) {
 
           {suggestions.length > 0 && (
             <div className="fixed bottom-16 left-4 right-4 bg-gray-800 border border-gray-700 rounded-md shadow-lg p-4">
-              <h4 className="text-sm font-medium text-gray-300 mb-2">Suggestions</h4>
-              <div className="space-y-2">
-                {suggestions.map((suggestion, index) => (
-                  <div
-                    key={index}
-                    className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm rounded"
-                    onClick={() => {
-                      const selection = window.getSelection();
-                      if (selection && !selection.isCollapsed) {
-                        const range = selection.getRangeAt(0);
-                        range.deleteContents();
-                        range.insertNode(document.createTextNode(suggestion));
-                        setContent(contentEditableRef.current?.innerHTML || '');
-                      }
-                      setSuggestions([]);
-                    }}
-                  >
-                    {suggestion}
+              {suggestions.map((suggestion, index) => (
+                <div key={index} className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-gray-300">
+                      {suggestion.field}
+                    </h4>
+                    <Badge variant="outline" className="text-xs">
+                      {suggestion.fieldType}
+                    </Badge>
                   </div>
-                ))}
-              </div>
+                  <p className="text-xs text-gray-400 mb-2">{suggestion.description}</p>
+                  <div className="space-y-2">
+                    {suggestion.suggestions.map((value, sIndex) => (
+                      <div
+                        key={sIndex}
+                        className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm rounded flex items-center justify-between"
+                        onClick={() => {
+                          const selection = window.getSelection();
+                          if (selection && !selection.isCollapsed) {
+                            const range = selection.getRangeAt(0);
+                            range.deleteContents();
+                            range.insertNode(document.createTextNode(value));
+                            setContent(contentEditableRef.current?.innerHTML || '');
+                          }
+                          setSuggestions([]);
+                        }}
+                      >
+                        <span>{value}</span>
+                        <Badge variant="secondary" className="text-xs">
+                          {suggestion.fieldType === 'date' ? 'Today' : 'Suggested'}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </ScrollArea>

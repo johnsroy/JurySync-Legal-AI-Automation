@@ -4,7 +4,7 @@ import { contractTemplates } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import { anthropic } from '../anthropic';
 import OpenAI from 'openai';
-import { generateContract, parsePdfTemplate, generateTemplatePreview } from '../services/contract-automation-service';
+import { generateContract, parsePdfTemplate, generateTemplatePreview, generateSmartSuggestions } from '../services/contract-automation-service';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import * as docx from 'docx';
 
@@ -53,60 +53,22 @@ router.get('/templates', async (req, res) => {
   }
 });
 
-// AI Suggestions endpoint with improved context awareness
+// Update the suggestions endpoint
 router.get('/suggestions', async (req, res) => {
   try {
-    const { q: query } = req.query;
-    if (!query || typeof query !== 'string') {
+    const { q: selectedText, content } = req.query;
+    if (!selectedText || typeof selectedText !== 'string') {
       return res.status(400).json({
         success: false,
-        error: 'Query parameter is required'
+        error: 'Selected text is required'
       });
     }
 
-    // Use both OpenAI and Anthropic for enhanced suggestions
-    const [openaiResponse, anthropicResponse] = await Promise.all([
-      openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{
-          role: "system",
-          content: "You are a legal document expert. Generate specific, actionable suggestions for contract requirements."
-        }, {
-          role: "user",
-          content: `Given this query about legal documents: "${query}"
-          Provide 3-5 specific suggestions focusing on:
-          - Required clauses
-          - Legal considerations
-          - Industry-specific requirements
-          Format as JSON array of strings.`
-        }],
-        response_format: { type: "json_object" },
-        max_tokens: 1000
-      }),
-      anthropic.messages.create({
-        model: "claude-3-opus-20240229",
-        max_tokens: 1024,
-        messages: [{
-          role: "user",
-          content: `Given this query about legal documents: "${query}"
-          Provide 3-5 specific suggestions for legal document content and clauses.
-          Format as bullet points.`
-        }]
-      })
-    ]);
-
-    const openaiSuggestions = JSON.parse(openaiResponse.choices[0].message.content || "[]");
-    const anthropicSuggestions = anthropicResponse.content[0].text
-      .split('\n')
-      .filter(line => line.trim())
-      .map(line => line.replace(/^[-•]\s*/, '').trim());
-
-    // Combine and deduplicate suggestions
-    const allSuggestions = [...new Set([...openaiSuggestions, ...anthropicSuggestions])];
+    const suggestions = await generateSmartSuggestions(selectedText, content as string);
 
     return res.json({
       success: true,
-      suggestions: allSuggestions
+      suggestions
     });
   } catch (error) {
     console.error('Failed to get suggestions:', error);

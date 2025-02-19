@@ -4,7 +4,7 @@ import { contractTemplates } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
-import * as pdfParse from "pdf-parse";
+import pdfParse from "pdf-parse";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 
@@ -13,6 +13,13 @@ interface GenerateContractConfig {
   variables: Record<string, string>;
   customClauses?: string[];
   aiAssistance?: boolean;
+}
+
+export interface FieldSuggestion {
+  field: string;
+  suggestions: string[];
+  description: string;
+  fieldType: 'date' | 'name' | 'address' | 'company' | 'amount' | 'other';
 }
 
 export async function generateContract(config: GenerateContractConfig) {
@@ -179,4 +186,48 @@ export async function generateTemplatePreview(category: string): Promise<string>
   });
 
   return response.choices[0].message.content || "";
+}
+
+export async function generateSmartSuggestions(selectedText: string, contractContent: string): Promise<FieldSuggestion[]> {
+  try {
+    const prompt = `Analyze this selected text from a legal contract: "${selectedText}"
+    Consider the full contract context: "${contractContent}"
+
+    Identify what type of field this is and generate appropriate suggestions.
+    Format the response as a JSON object with this structure:
+    {
+      "field": "the field name/identifier",
+      "fieldType": "date" | "name" | "address" | "company" | "amount" | "other",
+      "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
+      "description": "Description of what this field represents"
+    }`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal document expert. Generate intelligent suggestions for contract field replacements."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || "{}");
+
+    // Add smart defaults based on field type
+    if (result.fieldType === 'date' && !result.suggestions.includes(new Date().toISOString().split('T')[0])) {
+      result.suggestions.unshift(new Date().toISOString().split('T')[0]);
+    }
+
+    return [result];
+  } catch (error) {
+    console.error("Failed to generate smart suggestions:", error);
+    throw error;
+  }
 }
