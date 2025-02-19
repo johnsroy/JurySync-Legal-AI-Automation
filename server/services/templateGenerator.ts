@@ -1,24 +1,24 @@
 import { openai } from "../openai";
 import { db } from "../db";
-import { contractTemplates } from "@shared/schema";
+import { contractTemplates, type ContractTemplate, TemplateCategory } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 const TEMPLATE_CATEGORIES = [
   "EMPLOYMENT",
-  "NDA",
+  "NDA", 
   "SERVICE_AGREEMENT",
-  "LICENSE_AGREEMENT", 
-  "SALES_AGREEMENT",
-  "PARTNERSHIP_AGREEMENT",
-  "CONSULTING_AGREEMENT",
-  "LEASE_AGREEMENT",
   "LOAN_AGREEMENT",
-  "PURCHASE_AGREEMENT",
+  "REAL_ESTATE",
+  "LEASE",
+  "GENERAL",
+  "SALES",
+  "PARTNERSHIP",
+  "CONSULTING"
 ] as const;
 
 const INDUSTRIES = [
   "TECHNOLOGY",
-  "HEALTHCARE", 
+  "HEALTHCARE",
   "FINANCE",
   "REAL_ESTATE",
   "MANUFACTURING",
@@ -26,7 +26,7 @@ const INDUSTRIES = [
   "EDUCATION",
   "ENTERTAINMENT",
   "CONSTRUCTION",
-  "PROFESSIONAL_SERVICES",
+  "PROFESSIONAL_SERVICES"
 ] as const;
 
 interface TemplateGenRequest {
@@ -35,7 +35,24 @@ interface TemplateGenRequest {
   complexity: "LOW" | "MEDIUM" | "HIGH";
 }
 
-export async function generateContractTemplate(request: TemplateGenRequest) {
+async function generateTemplateMetadata() {
+  return {
+    description: "",
+    tags: [],
+    useCase: "",
+    complexity: "MEDIUM" as const,
+    recommendedClauses: [],
+    variables: [],
+    sampleValues: {},
+    relatedTemplates: [],
+    industrySpecific: false,
+    lastUpdated: new Date().toISOString(),
+    version: "1.0",
+    aiAssistanceLevel: "ADVANCED" as const
+  };
+}
+
+export async function generateContractTemplate(request: TemplateGenRequest): Promise<ContractTemplate> {
   try {
     console.log("[Template Generator] Generating template for:", {
       category: request.category,
@@ -46,21 +63,22 @@ export async function generateContractTemplate(request: TemplateGenRequest) {
     const prompt = `Generate a detailed ${request.category} contract template for the ${request.industry} industry. 
     The complexity level should be ${request.complexity}.
 
-    Provide the response in the following JSON format:
+    The template should include:
+    1. A clear title/name for the contract
+    2. Detailed content with proper legal clauses
+    3. Brief description of the template's purpose
+    4. Key variables that need to be customized (marked with <<VARIABLE>>)
+
+    Please format your response as a JSON object with these fields:
     {
       "name": "Contract name",
-      "description": "Brief description",
       "content": "Full contract text with proper sections and clauses",
-      "metadata": {
-        "useCase": "When to use this template",
-        "keyProvisions": ["List of key provisions"],
-        "risks": ["Potential risks to consider"],
-        "tags": ["Relevant tags"]
-      }
+      "description": "Brief description of what this contract is used for",
+      "variables": ["List of variable names found in content"]
     }`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o", // Using the latest model as per instructions
+      model: "gpt-4o", // Using the latest model
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
       response_format: { type: "json_object" }
@@ -74,16 +92,30 @@ export async function generateContractTemplate(request: TemplateGenRequest) {
     const template = JSON.parse(content);
     console.log("[Template Generator] Successfully generated template:", template.name);
 
+    // Generate metadata with default values
+    const metadata = await generateTemplateMetadata();
+
     // Insert into database with proper type matching
     const [savedTemplate] = await db.insert(contractTemplates).values({
       name: template.name,
-      category: request.category,
-      description: template.description,
+      category: request.category as TemplateCategory,
       content: template.content,
-      metadata: template.metadata,
+      metadata: {
+        ...metadata,
+        description: template.description,
+        variables: template.variables.map(name => ({
+          name,
+          type: "TEXT",
+          description: "Please fill in appropriate value",
+          required: true
+        }))
+      },
       industry: request.industry,
       complexity: request.complexity,
-      jurisdiction: "USA", // Default jurisdiction
+      subcategory: null,
+      jurisdiction: "USA",
+      estimatedCompletionTime: "30-60 minutes",
+      popularityScore: 0,
       created_at: new Date(),
       updated_at: new Date()
     }).returning();
@@ -130,8 +162,8 @@ export async function generateAllTemplates() {
   console.log(`[Template Generator] Prepared ${templates.length} template configurations`);
 
   // First clear existing templates
-  await db.delete(contractTemplates).where(eq(contractTemplates.id, contractTemplates.id));
-  console.log("[Template Generator] Cleared existing templates");
+  const count = await db.delete(contractTemplates).execute();
+  console.log("[Template Generator] Cleared existing templates:", count);
 
   // Generate templates in parallel, but in smaller batches to avoid rate limits
   const batchSize = 5;
