@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,15 @@ export function TemplateCustomizationDialog({
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [customClauses, setCustomClauses] = useState<string[]>([]);
   const [previewContent, setPreviewContent] = useState(template.content);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const { toast } = useToast();
+
+  // Load initial preview content
+  useEffect(() => {
+    updatePreview();
+    // Fetch initial suggestions
+    fetchSuggestions("");
+  }, [template]);
 
   const handleSubmit = () => {
     // Validate required variables
@@ -52,12 +60,28 @@ export function TemplateCustomizationDialog({
     setPreviewContent(content);
   };
 
-  const handleInputChange = (name: string, value: string) => {
+  const fetchSuggestions = async (query: string) => {
+    try {
+      const response = await fetch(`/api/contract-automation/suggestions?q=${encodeURIComponent(query)}`);
+      if (!response.ok) throw new Error('Failed to fetch suggestions');
+      const data = await response.json();
+      setSuggestions(data.suggestions || []);
+    } catch (error) {
+      console.error('Error fetching suggestions:', error);
+    }
+  };
+
+  const handleInputChange = async (name: string, value: string) => {
     setVariables(prev => ({
       ...prev,
       [name]: value
     }));
     updatePreview();
+
+    // Fetch intelligent suggestions based on the input
+    if (value.length > 2) {
+      await fetchSuggestions(value);
+    }
   };
 
   const downloadContract = async (format: 'pdf' | 'docx') => {
@@ -120,12 +144,27 @@ export function TemplateCustomizationDialog({
                     {variable.description}
                     {variable.required && <span className="text-red-500 ml-1">*</span>}
                   </Label>
-                  <Input
-                    className="bg-gray-800 border-gray-700 text-gray-100"
-                    value={variables[variable.name] || ""}
-                    onChange={(e) => handleInputChange(variable.name, e.target.value)}
-                    placeholder={`Enter ${variable.name.toLowerCase()}`}
-                  />
+                  <div className="relative">
+                    <Input
+                      className="bg-gray-800 border-gray-700 text-gray-100"
+                      value={variables[variable.name] || ""}
+                      onChange={(e) => handleInputChange(variable.name, e.target.value)}
+                      placeholder={`Enter ${variable.name.toLowerCase()}`}
+                    />
+                    {suggestions.length > 0 && variables[variable.name] && (
+                      <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-md shadow-lg">
+                        {suggestions.map((suggestion, index) => (
+                          <div
+                            key={index}
+                            className="px-4 py-2 hover:bg-gray-700 cursor-pointer text-sm"
+                            onClick={() => handleInputChange(variable.name, suggestion)}
+                          >
+                            {suggestion}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
