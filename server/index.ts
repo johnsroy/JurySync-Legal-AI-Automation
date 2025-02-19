@@ -16,6 +16,8 @@ import dotenv from 'dotenv';
 import { seedContractTemplates } from './services/seedContractTemplates';
 import contractAutomationRouter from './routes/contract-automation';
 import { errorHandler } from './middlewares/errorHandler';
+import { sql } from 'drizzle-orm';
+
 
 dotenv.config();
 
@@ -68,12 +70,10 @@ passport.serializeUser((user: any, done) => {
   done(null, user.id);
 });
 
+// Update the passport deserialization to use proper SQL query
 passport.deserializeUser(async (id: number, done) => {
   try {
-    const [user] = await db
-      .select()
-      .from('users')
-      .where('id', '=', id);
+    const [user] = await db.execute(sql`SELECT * FROM users WHERE id = ${id}`);
 
     if (!user) {
       return done(null, false);
@@ -121,6 +121,10 @@ const PORT = process.env.PORT || 5000;
 // Start server and initialize services
 (async () => {
   try {
+    // Verify database connection
+    await db.execute(sql`SELECT 1`);
+    console.log('Database connection verified');
+
     // Set up database and seeding data
     console.log('Setting up database and seeding data...');
 
