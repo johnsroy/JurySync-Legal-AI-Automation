@@ -24,7 +24,7 @@ import { ProtectedRoute } from "./lib/protected-route";
 import { FC } from "react";
 import Redline from "@/pages/redline";
 import SubscriptionSuccess from "@/pages/subscription-success";
-import SubscriptionCancel from "@/pages/subscription-cancel";
+import SubscriptionCancel from "./pages/subscription-cancel";
 
 const Router: FC = () => {
   return (
