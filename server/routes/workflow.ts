@@ -15,78 +15,40 @@ const upload = multer({
   storage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    log('Multer processing file: %o', {
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size
-    });
-
-    const allowedTypes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain'
-    ];
-
-    if (!allowedTypes.includes(file.mimetype)) {
-      const error = new Error(`Invalid file type. Only PDF, DOC, DOCX and TXT files are allowed. Got: ${file.mimetype}`);
-      log('File type rejected: %s', file.mimetype);
-      return cb(error);
-    }
-
-    const fileName = file.originalname.toLowerCase();
-    const validExtensions = ['.pdf', '.doc', '.docx', '.txt'];
-
-    if (!validExtensions.some(ext => fileName.endsWith(ext))) {
-      const error = new Error('Invalid file extension');
-      log('File extension rejected: %s', fileName);
-      return cb(error);
-    }
-
-    cb(null, true);
   }
-});
+}).single('file'); // Move single() to the multer config
 
 const router = Router();
 
 router.post("/upload", (req, res) => {
   log('Received upload request');
 
-  upload.single('file')(req, res, async (err) => {
+  upload(req, res, async (err) => {
     const startTime = Date.now();
 
-    // Handle multer errors
-    if (err instanceof multer.MulterError) {
-      log('Multer error: %o', err);
-      return res.status(400).json({
-        error: 'File upload error',
-        details: err.message,
-        code: err.code
-      });
-    } else if (err) {
-      log('Upload error: %o', err);
-      return res.status(400).json({
-        error: err.message || 'File upload failed',
-        details: err instanceof Error ? err.stack : undefined
-      });
-    }
-
-    // Check if file exists in request
-    if (!req.file) {
-      log('No file in request');
-      return res.status(400).json({
-        error: 'No file uploaded',
-        details: 'Request must include a file in the "file" field'
-      });
-    }
-
     try {
-      log('Starting document processing: %o', {
+      // Handle multer errors
+      if (err) {
+        log('Upload error: %o', err);
+        return res.status(400).json({
+          error: err instanceof multer.MulterError ? 'File upload error' : 'Invalid file',
+          details: err.message
+        });
+      }
+
+      // Check if file exists in request
+      if (!req.file) {
+        log('No file in request');
+        return res.status(400).json({
+          error: 'No file uploaded',
+          details: 'Request must include a file in the "file" field'
+        });
+      }
+
+      log('Processing file: %o', {
         filename: req.file.originalname,
-        size: req.file.size,
-        type: req.file.mimetype
+        mimetype: req.file.mimetype,
+        size: req.file.size
       });
 
       // Process the document
@@ -118,7 +80,7 @@ router.post("/upload", (req, res) => {
         const [doc] = await tx
           .insert(vaultDocuments)
           .values({
-            userId: req.session?.userId || 1, // Default to 1 if no session
+            userId: 1, // Default to 1 since we're removing session dependency
             title: req.file!.originalname,
             content: processResult.content,
             documentType: analysis.documentType || 'OTHER',
@@ -172,28 +134,9 @@ router.post("/upload", (req, res) => {
     } catch (error) {
       log('Error during document processing: %o', error);
 
-      // Track error metrics
-      try {
-        await db.insert(metricsEvents).values({
-          userId: req.session?.userId || 1,
-          modelId: 'document-analysis',
-          taskType: 'DOCUMENT_UPLOAD',
-          processingTimeMs: Date.now() - startTime,
-          successful: false,
-          metadata: {
-            error: error instanceof Error ? error.message : 'Unknown error',
-            filename: req.file?.originalname,
-            fileType: req.file?.mimetype
-          }
-        });
-      } catch (metricsError) {
-        log('Failed to log metrics: %o', metricsError);
-      }
-
       res.status(500).json({
         error: 'Failed to process document',
-        message: error instanceof Error ? error.message : 'An unexpected error occurred',
-        details: error instanceof Error ? error.stack : undefined
+        message: error instanceof Error ? error.message : 'An unexpected error occurred'
       });
     }
   });

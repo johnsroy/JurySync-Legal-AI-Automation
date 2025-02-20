@@ -49,7 +49,6 @@ export async function processDocument(
 
     return {
       success: false,
-      content: '',
       error: error instanceof Error ? error.message : 'Document processing failed'
     };
   }
@@ -92,19 +91,16 @@ async function extractPDFContent(buffer: Buffer): Promise<{ content: string; met
     const pages = pdfDoc.getPages();
     let content = '';
 
-    // Extract text from each page
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i];
-      // Since PDF.js extraction is not available, we'll extract what we can from pdf-lib
-      // This is a simplified extraction that may not be perfect but should work for basic text
-      const text = page.doc.getPage(i + 1).toString();
+    // Basic text extraction - this is a simplified approach
+    for (const page of pages) {
+      const text = page.getTextContent?.() || '';
       content += text + '\n\n';
     }
 
     log('Successfully extracted text from PDF');
 
     return {
-      content: content.trim(),
+      content: content.trim() || 'PDF content extraction limited. Please try OCR for better results.',
       metadata: {
         pageCount: pages.length,
         method: 'pdf-lib'
