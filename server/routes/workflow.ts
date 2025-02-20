@@ -144,21 +144,6 @@ router.post("/upload", (req, res) => {
           updatedAt: new Date()
         });
 
-        // Track metrics
-        await tx.insert(metricsEvents).values({
-          userId: req.session?.userId || 1,
-          modelId: 'document-analysis',
-          taskType: 'DOCUMENT_UPLOAD',
-          processingTimeMs: Date.now() - startTime,
-          successful: true,
-          metadata: {
-            documentId: doc.id,
-            documentType: doc.documentType,
-            processingMethod: processResult.metadata?.method,
-            fileSize: req.file!.size
-          }
-        });
-
         return [doc];
       });
 
@@ -185,21 +170,20 @@ router.post("/upload", (req, res) => {
     } catch (error) {
       log('Error during document processing: %o', error);
 
-      // Log error metrics
-      if (req.session?.userId) {
-        await db.insert(metricsEvents).values({
-          userId: req.session.userId,
-          modelId: 'document-analysis',
-          taskType: 'DOCUMENT_UPLOAD',
-          processingTimeMs: Date.now() - startTime,
-          successful: false,
-          metadata: {
-            error: error instanceof Error ? error.message : 'Unknown error',
-            filename: req.file?.originalname,
-            fileType: req.file?.mimetype
-          }
-        });
-      }
+      // Log error metrics -  RE-ADDED THIS SECTION
+      await db.insert(metricsEvents).values({
+        userId: req.session?.userId, // handles undefined case
+        modelId: 'document-analysis',
+        taskType: 'DOCUMENT_UPLOAD',
+        processingTimeMs: Date.now() - startTime,
+        successful: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          filename: req.file?.originalname,
+          fileType: req.file?.mimetype
+        }
+      });
+
 
       res.status(500).json({
         error: 'Failed to process document',
