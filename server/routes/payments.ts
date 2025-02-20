@@ -10,33 +10,34 @@ const router = Router();
 // Create checkout session
 router.post('/create-checkout-session', async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
+    if (!req.user?.id) {
       return res.status(401).json({
         success: false,
         error: 'User not authenticated'
       });
     }
 
-    const { planId } = req.body;
-    if (!planId) {
+    const { priceId } = req.body;
+    if (!priceId) {
       return res.status(400).json({
         success: false,
-        error: 'Plan ID is required'
+        error: 'Price ID is required'
       });
     }
 
-    const result = await stripeService.createCheckoutSession(req.user.id, planId);
-
+    const result = await stripeService.createCheckoutSession(req.user.id, priceId);
+    
     if (!result.success) {
       return res.status(400).json(result);
     }
 
     return res.json(result);
+
   } catch (error) {
     console.error('Checkout error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to create checkout session' 
+      error: error instanceof Error ? error.message : 'Failed to create checkout session'
     });
   }
 });

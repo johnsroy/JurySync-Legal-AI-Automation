@@ -87,6 +87,7 @@ router.post("/upload", (req, res) => {
         type: req.file.mimetype
       });
 
+      // Process the document
       const processResult = await processDocument(
         req.file.buffer,
         req.file.originalname,
@@ -101,12 +102,15 @@ router.post("/upload", (req, res) => {
         });
       }
 
+      // Generate vector embedding for search
       log('Document processed successfully, generating vector embedding');
       const vectorEmbedding = await createVectorEmbedding(processResult.content);
 
+      // Run AI analysis
       log('Running AI analysis');
       const analysis = await analyzeDocument(processResult.content);
 
+      // Store document in database
       log('Storing document in database');
       const [document] = await db.transaction(async (tx) => {
         const [doc] = await tx
@@ -130,6 +134,7 @@ router.post("/upload", (req, res) => {
           })
           .returning();
 
+        // Store analysis results
         await tx.insert(documentAnalysis).values({
           documentId: doc.id,
           documentType: doc.documentType,
@@ -139,6 +144,7 @@ router.post("/upload", (req, res) => {
           updatedAt: new Date()
         });
 
+        // Track metrics
         await tx.insert(metricsEvents).values({
           userId: req.session?.userId || 1,
           modelId: 'document-analysis',
@@ -179,6 +185,7 @@ router.post("/upload", (req, res) => {
     } catch (error) {
       log('Error during document processing: %o', error);
 
+      // Log error metrics
       if (req.session?.userId) {
         await db.insert(metricsEvents).values({
           userId: req.session.userId,

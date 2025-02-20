@@ -15,32 +15,8 @@ interface ProcessingResult {
     fileType?: string;
     processingTime?: number;
     method?: string;
-    structure?: {
-      sections: Section[];
-      tables: TableInfo[];
-    };
   };
   error?: string;
-}
-
-interface Section {
-  title?: string;
-  content: string;
-  pageNumber: number;
-}
-
-interface TableInfo {
-  pageNumber: number;
-  rowCount: number;
-  columnCount: number;
-  data: string[][];
-}
-
-function logError(message: string, error: any) {
-  log('ERROR %s: %o', message, {
-    error: error instanceof Error ? error.message : error,
-    stack: error instanceof Error ? error.stack : undefined
-  });
 }
 
 export async function processDocument(
@@ -52,7 +28,7 @@ export async function processDocument(
   const startTime = Date.now();
 
   try {
-    const result = await extractAndStructureContent(buffer, mimeType);
+    const result = await extractContent(buffer, mimeType);
 
     if (!result.content) {
       throw new Error(`Content extraction failed for ${filename}`);
@@ -70,7 +46,11 @@ export async function processDocument(
       }
     };
   } catch (error: any) {
-    logError(`Failed to process document ${filename}`, error);
+    log('ERROR in document processing: %o', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined
+    });
+
     return {
       success: false,
       content: '',
@@ -79,22 +59,27 @@ export async function processDocument(
   }
 }
 
-async function extractAndStructureContent(
+async function extractContent(
   buffer: Buffer,
   mimeType: string
 ): Promise<{ content: string; metadata?: any }> {
   log('Extracting content for mimetype: %s', mimeType);
 
-  switch (mimeType) {
-    case 'application/pdf':
-      return await extractPDFContent(buffer);
-    case 'application/msword':
-    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-      return await extractDocxContent(buffer);
-    case 'text/plain':
-      return { content: buffer.toString('utf-8') };
-    default:
-      throw new Error(`Unsupported file type: ${mimeType}`);
+  try {
+    switch (mimeType) {
+      case 'application/pdf':
+        return await extractPDFContent(buffer);
+      case 'application/msword':
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        return await extractDocxContent(buffer);
+      case 'text/plain':
+        return { content: buffer.toString('utf-8') };
+      default:
+        throw new Error(`Unsupported file type: ${mimeType}`);
+    }
+  } catch (error) {
+    log('Extraction error: %o', error);
+    throw error;
   }
 }
 
@@ -102,8 +87,13 @@ async function extractPDFContent(buffer: Buffer): Promise<{ content: string; met
   log('Starting PDF content extraction');
 
   try {
-    log('Initializing PDFTron');
-    await PDFNet.initialize();
+    // Initialize PDFTron with proper error handling
+    try {
+      await PDFNet.initialize();
+    } catch (initError) {
+      log('PDFTron initialization failed: %o', initError);
+      throw new Error('Failed to initialize PDF processor');
+    }
 
     try {
       const doc = await PDFNet.PDFDoc.createFromBuffer(buffer);
@@ -137,15 +127,17 @@ async function extractPDFContent(buffer: Buffer): Promise<{ content: string; met
         }
       };
 
+    } catch (pdfTronError) {
+      log('PDFTron extraction failed: %o', pdfTronError);
+      throw pdfTronError;
     } finally {
       await PDFNet.terminate();
     }
 
-  } catch (pdfTronError) {
-    logError('PDFTron extraction failed, falling back to pdf-lib', pdfTronError);
-
+  } catch (error) {
+    // Fallback to pdf-lib
+    log('Attempting fallback with pdf-lib');
     try {
-      log('Attempting extraction with pdf-lib');
       const pdfDoc = await PDFDocument.load(buffer);
       const pages = pdfDoc.getPages();
       let content = '';
@@ -165,7 +157,7 @@ async function extractPDFContent(buffer: Buffer): Promise<{ content: string; met
         }
       };
     } catch (pdfLibError) {
-      logError('PDF extraction failed with both methods', pdfLibError);
+      log('PDF extraction failed with both methods');
       throw new Error('Failed to extract PDF content using available methods');
     }
   }
@@ -176,6 +168,11 @@ async function extractDocxContent(buffer: Buffer): Promise<{ content: string; me
 
   try {
     const result = await mammoth.extractRawText({ buffer });
+
+    if (!result.value) {
+      throw new Error('Failed to extract content from DOCX file');
+    }
+
     log('Successfully extracted DOCX content');
 
     return {
@@ -185,7 +182,7 @@ async function extractDocxContent(buffer: Buffer): Promise<{ content: string; me
       }
     };
   } catch (error) {
-    logError('DOCX extraction failed', error);
+    log('DOCX extraction failed: %o', error);
     throw error;
   }
 }
