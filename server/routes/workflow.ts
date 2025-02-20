@@ -1,10 +1,13 @@
 import { Router } from "express";
 import multer from "multer";
+import debug from 'debug';
 import { db } from "../db";
 import { vaultDocuments, metricsEvents, documentAnalysis } from "@shared/schema";
 import { analyzeDocument } from "../services/documentAnalysisService";
 import { processDocument } from "../services/documentProcessor";
 import { createVectorEmbedding } from "../services/vectorService";
+
+const log = debug('jurysync:workflow');
 
 // Configure multer with memory storage and strict file filtering
 const upload = multer({
@@ -14,39 +17,30 @@ const upload = multer({
     files: 1
   },
   fileFilter: (req, file, cb) => {
-    console.log('Multer processing file:', {
-      originalname: file.originalname,
+    log('Processing uploaded file: %o', {
+      filename: file.originalname,
       mimetype: file.mimetype,
-      size: file.size,
-      timestamp: new Date().toISOString()
+      size: file.size
     });
 
     const allowedTypes = [
       'application/pdf',
       'application/msword',
-      'text/plain',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
     ];
 
     if (!allowedTypes.includes(file.mimetype)) {
-      console.log('File type rejection:', {
-        mimetype: file.mimetype,
-        allowed: allowedTypes,
-        timestamp: new Date().toISOString()
-      });
+      log('Rejected file type: %s', file.mimetype);
       cb(new Error(`Invalid file type. Only PDF, DOC, DOCX and TXT files are allowed. Got: ${file.mimetype}`));
       return;
     }
 
-    // Additional validation for file name and extension
     const fileName = file.originalname.toLowerCase();
     const validExtensions = ['.pdf', '.doc', '.docx', '.txt'];
+
     if (!validExtensions.some(ext => fileName.endsWith(ext))) {
-      console.log('File extension rejection:', {
-        filename: fileName,
-        valid: validExtensions,
-        timestamp: new Date().toISOString()
-      });
+      log('Rejected file extension: %s', fileName);
       cb(new Error('Invalid file extension'));
       return;
     }
@@ -60,67 +54,46 @@ const router = Router();
 router.post("/upload", upload.single("file"), async (req, res) => {
   const startTime = Date.now();
 
-  console.log("Processing upload request:", {
+  log('Received upload request: %o', {
     filename: req.file?.originalname,
-    size: req.file?.size,
-    type: req.file?.mimetype,
-    headers: req.headers['content-type'],
-    timestamp: new Date().toISOString()
+    contentType: req.headers['content-type']
   });
 
   try {
-    // Validate file presence
     if (!req.file) {
-      console.log('No file in request:', {
-        body: req.body,
-        headers: req.headers,
-        timestamp: new Date().toISOString()
-      });
+      log('No file in request');
       return res.status(400).json({ 
-        error: "No file uploaded",
-        timestamp: new Date().toISOString()
+        error: "No file uploaded"
       });
     }
 
-    console.log('File received, starting processing:', {
-      filename: req.file.originalname,
-      size: req.file.size,
-      type: req.file.mimetype,
-      timestamp: new Date().toISOString()
-    });
+    log('Processing file: %s', req.file.originalname);
 
-    // Process document content with enhanced extraction
+    // Process document content
     const processResult = await processDocument(
       req.file.buffer,
       req.file.originalname,
       req.file.mimetype
     );
 
-    console.log('Document processing result:', {
-      success: processResult.success,
-      contentLength: processResult.content?.length,
-      error: processResult.error,
-      timestamp: new Date().toISOString()
-    });
-
     if (!processResult.success || !processResult.content) {
+      log('Document processing failed: %o', { error: processResult.error });
       return res.status(400).json({
         error: "Failed to process document",
-        details: processResult.error,
-        timestamp: new Date().toISOString()
+        details: processResult.error
       });
     }
 
-    // Generate vector embedding for similarity search
-    console.log('Generating vector embedding...');
+    // Generate vector embedding
+    log('Generating vector embedding');
     const vectorEmbedding = await createVectorEmbedding(processResult.content);
 
-    // Get AI insights
-    console.log('Running AI analysis...');
+    // Run AI analysis
+    log('Running document analysis');
     const analysis = await analyzeDocument(processResult.content);
 
-    console.log('Storing document in database...');
-    // Store document in vault with transaction
+    // Store document with transaction
+    log('Storing document in database');
     const [document] = await db.transaction(async (tx) => {
       // Insert document
       const [doc] = await tx
@@ -139,12 +112,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
             ...processResult.metadata,
             keywords: analysis.keywords,
             confidence: analysis.confidence,
-            entities: analysis.entities,
-            processingDetails: {
-              method: processResult.metadata?.method,
-              pageCount: processResult.metadata?.pageCount,
-              processingTime: processResult.metadata?.processingTime
-            }
+            entities: analysis.entities
           }
         })
         .returning();
@@ -170,21 +138,18 @@ router.post("/upload", upload.single("file"), async (req, res) => {
           documentId: doc.id,
           documentType: doc.documentType,
           processingMethod: processResult.metadata?.method,
-          fileSize: req.file!.size,
-          aiModelUsed: 'enhanced-extraction'
+          fileSize: req.file!.size
         }
       });
 
       return [doc];
     });
 
-    console.log('Upload processing completed successfully:', {
+    log('Upload processing completed: %o', {
       documentId: document.id,
-      processingTime: Date.now() - startTime,
-      timestamp: new Date().toISOString()
+      processingTime: Date.now() - startTime
     });
 
-    // Return success response with detailed metadata
     res.json({
       status: 'success',
       documentId: document.id,
@@ -201,7 +166,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Error processing document:", error);
+    log('Error processing document: %o', error);
 
     // Track error metrics
     if (req.session?.userId) {
@@ -219,7 +184,6 @@ router.post("/upload", upload.single("file"), async (req, res) => {
       });
     }
 
-    // Return appropriate error response
     if (error instanceof multer.MulterError) {
       return res.status(400).json({ 
         error: "File upload error",
@@ -237,8 +201,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 
     res.status(500).json({ 
       error: "Failed to process document",
-      message: error instanceof Error ? error.message : "An unexpected error occurred during document processing",
-      timestamp: new Date().toISOString()
+      message: error instanceof Error ? error.message : "An unexpected error occurred"
     });
   }
 });
