@@ -6,7 +6,7 @@ import { analyzeDocument } from "../services/documentAnalysisService";
 import { processDocument } from "../services/documentProcessor";
 import { createVectorEmbedding } from "../services/vectorService";
 
-// Configure multer with proper limits and file filtering
+// Configure multer with memory storage and strict file filtering
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -25,6 +25,15 @@ const upload = multer({
       cb(new Error('Invalid file type. Only PDF, DOC, DOCX and TXT files are allowed.'));
       return;
     }
+
+    // Additional validation for file name and extension
+    const fileName = file.originalname.toLowerCase();
+    const validExtensions = ['.pdf', '.doc', '.docx', '.txt'];
+    if (!validExtensions.some(ext => fileName.endsWith(ext))) {
+      cb(new Error('Invalid file extension'));
+      return;
+    }
+
     cb(null, true);
   }
 });
@@ -33,19 +42,24 @@ const router = Router();
 
 router.post("/upload", upload.single("file"), async (req, res) => {
   const startTime = Date.now();
+
   console.log("Processing upload request:", {
     filename: req.file?.originalname,
     size: req.file?.size,
-    type: req.file?.mimetype
+    type: req.file?.mimetype,
+    timestamp: new Date().toISOString()
   });
 
   try {
     // Validate file presence
     if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+      return res.status(400).json({ 
+        error: "No file uploaded",
+        timestamp: new Date().toISOString()
+      });
     }
 
-    // Process document content
+    // Process document content with enhanced extraction
     const processResult = await processDocument(
       req.file.buffer,
       req.file.originalname,
@@ -55,7 +69,8 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     if (!processResult.success || !processResult.content) {
       return res.status(400).json({
         error: "Failed to process document",
-        details: processResult.error
+        details: processResult.error,
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -84,7 +99,12 @@ router.post("/upload", upload.single("file"), async (req, res) => {
             ...processResult.metadata,
             keywords: analysis.keywords,
             confidence: analysis.confidence,
-            entities: analysis.entities
+            entities: analysis.entities,
+            processingDetails: {
+              method: processResult.metadata?.method,
+              pageCount: processResult.metadata?.pageCount,
+              processingTime: processResult.metadata?.processingTime
+            }
           }
         })
         .returning();
@@ -109,20 +129,29 @@ router.post("/upload", upload.single("file"), async (req, res) => {
         metadata: {
           documentId: doc.id,
           documentType: doc.documentType,
-          processingMethod: processResult.metadata?.method
+          processingMethod: processResult.metadata?.method,
+          fileSize: req.file!.size,
+          aiModelUsed: 'enhanced-extraction'
         }
       });
 
       return [doc];
     });
 
-    // Return success response
+    // Return success response with detailed metadata
     res.json({
       status: 'success',
       documentId: document.id,
       text: processResult.content,
-      metadata: processResult.metadata,
-      analysis
+      metadata: {
+        ...processResult.metadata,
+        extractionQuality: analysis.confidence,
+        processingTime: Date.now() - startTime
+      },
+      analysis: {
+        ...analysis,
+        vectorId: vectorEmbedding.id
+      }
     });
 
   } catch (error) {
@@ -137,21 +166,34 @@ router.post("/upload", upload.single("file"), async (req, res) => {
         processingTimeMs: Date.now() - startTime,
         successful: false,
         metadata: {
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: error instanceof Error ? error.message : 'Unknown error',
+          filename: req.file?.originalname,
+          fileType: req.file?.mimetype
         }
       });
     }
 
     // Return appropriate error response
     if (error instanceof multer.MulterError) {
-      return res.status(400).json({ error: "File upload error: " + error.message });
+      return res.status(400).json({ 
+        error: "File upload error",
+        details: error.message,
+        code: error.code
+      });
     }
 
     if (error instanceof Error && error.message.includes('Invalid file type')) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ 
+        error: error.message,
+        allowedTypes: ['PDF', 'DOC', 'DOCX', 'TXT']
+      });
     }
 
-    res.status(500).json({ error: "Failed to process document. Please try again." });
+    res.status(500).json({ 
+      error: "Failed to process document",
+      message: "An unexpected error occurred during document processing",
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
