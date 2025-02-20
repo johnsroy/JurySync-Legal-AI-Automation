@@ -1,19 +1,28 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
-import { vaultDocuments } from "@shared/schema";
+import { vaultDocuments, type VaultDocument } from "@shared/schema";
 import { analyzeDocument } from "../services/documentAnalysisService";
+import { metricsEvents } from "@shared/schema";
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  }
+});
+
 const router = Router();
 
 router.post("/upload", upload.single("file"), async (req, res) => {
+  const startTime = Date.now();
+
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const userId = req.session.userId;
+    const userId = req.session?.userId;
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -27,6 +36,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     const [document] = await db
       .insert(vaultDocuments)
       .values({
+        userId,
         title: req.file.originalname,
         content,
         documentType: analysis.classification || 'OTHER',
@@ -38,10 +48,19 @@ router.post("/upload", upload.single("file"), async (req, res) => {
           keywords: analysis.keywords,
           confidence: analysis.confidence,
           entities: analysis.entities
-        },
-        userId
+        }
       })
       .returning();
+
+    // Track metrics
+    await db.insert(metricsEvents).values({
+      userId,
+      modelId: 'document-analysis',
+      taskType: 'DOCUMENT_UPLOAD',
+      processingTimeMs: Date.now() - startTime,
+      successful: true,
+      costSavingEstimate: analysis.costSavings || 0
+    });
 
     // Return both the document content and metadata
     res.json({
@@ -52,6 +71,18 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     });
   } catch (error) {
     console.error("Error processing document:", error);
+
+    // Track error metrics
+    if (req.session?.userId) {
+      await db.insert(metricsEvents).values({
+        userId: req.session.userId,
+        modelId: 'document-analysis',
+        taskType: 'DOCUMENT_UPLOAD',
+        processingTimeMs: Date.now() - startTime,
+        successful: false
+      });
+    }
+
     res.status(500).json({ error: "Failed to process document" });
   }
 });

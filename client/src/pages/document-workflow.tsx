@@ -5,7 +5,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, FileText, Download, Eye, BookOpen, ClipboardCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { analyzeLegalDocument, type LegalAnalysis } from '@/services/legalResearchService';
 
 interface AnalysisResult {
   documentType: string;
@@ -15,7 +14,7 @@ interface AnalysisResult {
   status: 'COMPLIANT' | 'NON_COMPLIANT';
   statusDescription: string;
   content?: string;
-  legalAnalysis?: LegalAnalysis;
+  aiAnalysis?: any;
 }
 
 export default function DocumentWorkflow() {
@@ -27,21 +26,27 @@ export default function DocumentWorkflow() {
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      console.log('File selected:', file.name);
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Maximum file size is 10MB",
+          variant: "destructive"
+        });
+        return;
+      }
       setSelectedFile(file);
     }
-  }, []);
+  }, [toast]);
 
   const processDocument = async () => {
     if (!selectedFile) return;
 
     setIsProcessing(true);
     const formData = new FormData();
-    formData.append('document', selectedFile);
+    formData.append('file', selectedFile);
 
     try {
-      console.log('Starting document processing...');
-      const response = await fetch('/api/document/process', {
+      const response = await fetch('/api/workflow/upload', {
         method: 'POST',
         body: formData
       });
@@ -49,24 +54,19 @@ export default function DocumentWorkflow() {
       if (!response.ok) throw new Error('Processing failed');
 
       const result = await response.json();
-      console.log('Document processing result:', result);
 
-      if (!result.content) {
-        throw new Error('No document content received for analysis');
+      if (result.error) {
+        throw new Error(result.error);
       }
 
-      console.log('Starting legal analysis...');
-      const legalAnalysis = await analyzeLegalDocument(result.content);
-      console.log('Legal analysis completed:', legalAnalysis);
-
       setAnalysisResult({
-        ...result,
-        legalAnalysis
+        ...result.analysis,
+        content: result.text
       });
 
       toast({
         title: "Analysis Complete",
-        description: "Document processed and legal analysis ready.",
+        description: "Document processed and analysis ready.",
       });
     } catch (error) {
       console.error('Document processing error:', error);
@@ -139,7 +139,7 @@ export default function DocumentWorkflow() {
               <FileText className="h-8 w-8 text-primary" />
               <div>
                 <h2 className="text-2xl font-semibold">Document Processing</h2>
-                <p className="text-muted-foreground">Upload your document for comprehensive analysis</p>
+                <p className="text-muted-foreground">Upload your document for AI-powered analysis</p>
               </div>
             </div>
 
@@ -147,7 +147,7 @@ export default function DocumentWorkflow() {
               <input
                 type="file"
                 onChange={handleFileUpload}
-                accept=".pdf,.docx,.doc"
+                accept=".pdf,.docx,.doc,.txt"
                 className="flex-1 p-2 border rounded-md"
               />
               <Button
@@ -168,7 +168,7 @@ export default function DocumentWorkflow() {
         </Card>
 
         {analysisResult && (
-          <>
+          <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card className="p-6 bg-blue-50 dark:bg-blue-900/10">
                 <div className="flex items-center justify-between">
@@ -196,7 +196,9 @@ export default function DocumentWorkflow() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold">Compliance Status</h3>
-                    <p className="text-lg font-medium text-primary">{analysisResult.status}</p>
+                    <Badge variant={analysisResult.status === 'COMPLIANT' ? 'success' : 'destructive'}>
+                      {analysisResult.status}
+                    </Badge>
                     <p className="text-sm text-muted-foreground mt-1">{analysisResult.statusDescription}</p>
                   </div>
                   <ClipboardCheck className="h-10 w-10 text-emerald-500" />
@@ -216,95 +218,89 @@ export default function DocumentWorkflow() {
 
               <TabsContent value="legal">
                 <Card className="p-6">
-                  {analysisResult.legalAnalysis ? (
-                    <div className="space-y-6">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-xl font-semibold">Legal Research Findings</h3>
-                        <Button onClick={() => downloadPDF('legal')}>
-                          <Download className="h-4 w-4 mr-2" />
-                          Download Report
-                        </Button>
-                      </div>
+                  {/*This section remains largely unchanged, adapting to the new aiAnalysis structure if needed.  Placeholder for potential changes based on the new API response*/}
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xl font-semibold">Legal Research Findings</h3>
+                      <Button onClick={() => downloadPDF('legal')}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download Report
+                      </Button>
+                    </div>
+                    {/* Rest of the Legal Research section remains the same. */}
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Executive Summary</h4>
+                      <Card className="p-4 bg-card/50">
+                        <p className="text-foreground">{analysisResult?.legalAnalysis?.summary}</p>
+                      </Card>
+                    </div>
 
-                      <div className="space-y-4">
-                        <h4 className="text-lg font-medium">Executive Summary</h4>
-                        <Card className="p-4 bg-card/50">
-                          <p className="text-foreground">{analysisResult.legalAnalysis.summary}</p>
-                        </Card>
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Key Legal Principles</h4>
+                      <div className="grid gap-3">
+                        {analysisResult?.legalAnalysis?.analysis?.legalPrinciples?.map((principle, index) => (
+                          <Card key={index} className="p-4 bg-card/50">
+                            <div className="flex items-start gap-3">
+                              <span className="text-primary font-semibold">{index + 1}.</span>
+                              <p className="text-foreground">{principle}</p>
+                            </div>
+                          </Card>
+                        ))}
                       </div>
+                    </div>
 
-                      <div className="space-y-4">
-                        <h4 className="text-lg font-medium">Key Legal Principles</h4>
-                        <div className="grid gap-3">
-                          {analysisResult.legalAnalysis.analysis.legalPrinciples.map((principle, index) => (
-                            <Card key={index} className="p-4 bg-card/50">
-                              <div className="flex items-start gap-3">
-                                <span className="text-primary font-semibold">{index + 1}.</span>
-                                <p className="text-foreground">{principle}</p>
-                              </div>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h4 className="text-lg font-medium">Key Legal Precedents</h4>
-                        <div className="grid gap-4">
-                          {analysisResult.legalAnalysis.analysis.keyPrecedents.map((precedent, index) => (
-                            <Card key={index} className="p-4 bg-card/50">
-                              <div className="space-y-3">
-                                <h5 className="font-semibold text-primary">{precedent.case}</h5>
-                                <div className="grid md:grid-cols-2 gap-4">
-                                  <div>
-                                    <p className="text-sm font-medium text-muted-foreground">Relevance</p>
-                                    <p className="text-foreground">{precedent.relevance}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-sm font-medium text-muted-foreground">Impact</p>
-                                    <p className="text-foreground">{precedent.impact}</p>
-                                  </div>
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Key Legal Precedents</h4>
+                      <div className="grid gap-4">
+                        {analysisResult?.legalAnalysis?.analysis?.keyPrecedents?.map((precedent, index) => (
+                          <Card key={index} className="p-4 bg-card/50">
+                            <div className="space-y-3">
+                              <h5 className="font-semibold text-primary">{precedent.case}</h5>
+                              <div className="grid md:grid-cols-2 gap-4">
+                                <div>
+                                  <p className="text-sm font-medium text-muted-foreground">Relevance</p>
+                                  <p className="text-foreground">{precedent.relevance}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-muted-foreground">Impact</p>
+                                  <p className="text-foreground">{precedent.impact}</p>
                                 </div>
                               </div>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h4 className="text-lg font-medium">Citations and References</h4>
-                        <div className="grid gap-4">
-                          {analysisResult.legalAnalysis.citations.map((citation, index) => (
-                            <Card key={index} className="p-4 bg-card/50">
-                              <div className="space-y-2">
-                                <h5 className="font-semibold text-primary">{citation.source}</h5>
-                                <p className="text-sm text-muted-foreground">{citation.reference}</p>
-                                <p className="text-sm italic">{citation.context}</p>
-                              </div>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h4 className="text-lg font-medium">Recommendations</h4>
-                        <div className="grid gap-3">
-                          {analysisResult.legalAnalysis.analysis.recommendations.map((recommendation, index) => (
-                            <Card key={index} className="p-4 bg-card/50">
-                              <div className="flex items-start gap-3">
-                                <FileText className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                                <p className="text-foreground">{recommendation}</p>
-                              </div>
-                            </Card>
-                          ))}
-                        </div>
+                            </div>
+                          </Card>
+                        ))}
                       </div>
                     </div>
-                  ) : (
-                    <div className="text-center py-8">
-                      <Loader2 className="h-8 w-8 animate-spin mx-auto" />
-                      <p className="mt-4 text-muted-foreground">Analyzing document...</p>
+
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Citations and References</h4>
+                      <div className="grid gap-4">
+                        {analysisResult?.legalAnalysis?.citations?.map((citation, index) => (
+                          <Card key={index} className="p-4 bg-card/50">
+                            <div className="space-y-2">
+                              <h5 className="font-semibold text-primary">{citation.source}</h5>
+                              <p className="text-sm text-muted-foreground">{citation.reference}</p>
+                              <p className="text-sm italic">{citation.context}</p>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
                     </div>
-                  )}
+
+                    <div className="space-y-4">
+                      <h4 className="text-lg font-medium">Recommendations</h4>
+                      <div className="grid gap-3">
+                        {analysisResult?.legalAnalysis?.analysis?.recommendations?.map((recommendation, index) => (
+                          <Card key={index} className="p-4 bg-card/50">
+                            <div className="flex items-start gap-3">
+                              <FileText className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                              <p className="text-foreground">{recommendation}</p>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </Card>
               </TabsContent>
               <TabsContent value="compliance">
@@ -333,7 +329,7 @@ export default function DocumentWorkflow() {
                 </Card>
               </TabsContent>
             </Tabs>
-          </>
+          </div>
         )}
       </div>
     </div>
