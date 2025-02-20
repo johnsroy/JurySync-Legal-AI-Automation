@@ -33,8 +33,6 @@ export async function processDocument(buffer: Buffer, filename: string): Promise
   let attempts = 0;
   let lastError: Error | null = null;
 
-  log('Starting document processing', 'info', { filename, bufferSize: buffer.length });
-
   while (attempts < MAX_RETRIES) {
     attempts++;
     try {
@@ -42,9 +40,7 @@ export async function processDocument(buffer: Buffer, filename: string): Promise
 
       // Try PDFTron first
       try {
-        log('Attempting PDFTron processing', 'info');
         const result = await processPDFWithPDFTron(buffer);
-        log('PDFTron processing successful', 'info');
         return {
           success: true,
           content: result.content,
@@ -55,17 +51,12 @@ export async function processDocument(buffer: Buffer, filename: string): Promise
           }
         };
       } catch (pdfTronError) {
-        log('PDFTron processing failed, trying fallback method', 'error', { 
-          error: pdfTronError.message,
-          stack: pdfTronError.stack 
-        });
+        log('PDFTron processing failed, trying fallback method', 'error', { error: pdfTronError });
       }
 
       // Fallback to pdf-lib
       try {
-        log('Attempting pdf-lib processing', 'info');
         const result = await processPDFWithPDFLib(buffer);
-        log('pdf-lib processing successful', 'info');
         return {
           success: true,
           content: result.content,
@@ -76,16 +67,11 @@ export async function processDocument(buffer: Buffer, filename: string): Promise
           }
         };
       } catch (pdfLibError) {
-        log('pdf-lib processing failed, trying Python fallback', 'error', { 
-          error: pdfLibError.message,
-          stack: pdfLibError.stack 
-        });
+        log('pdf-lib processing failed, trying Python fallback', 'error', { error: pdfLibError });
       }
 
       // Final fallback to Python processing
-      log('Attempting Python processing', 'info');
       const result = await processPDFWithPython(buffer);
-      log('Python processing successful', 'info');
       return {
         success: true,
         content: result.content,
@@ -104,28 +90,21 @@ export async function processDocument(buffer: Buffer, filename: string): Promise
       });
 
       if (attempts < MAX_RETRIES) {
-        const delay = 1000 * attempts;
-        log(`Waiting ${delay}ms before next attempt`, 'info');
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
       }
     }
   }
-
-  log('All processing attempts failed', 'error', { 
-    attempts,
-    lastError: lastError?.message
-  });
 
   throw new Error(`Failed to process document after ${MAX_RETRIES} attempts: ${lastError?.message}`);
 }
 
 async function processPDFWithPDFTron(buffer: Buffer): Promise<ProcessingResult> {
-  let doc;
+  await PDFNet.initialize();
+  
   try {
-    await PDFNet.initialize();
-    doc = await PDFNet.PDFDoc.createFromBuffer(buffer);
+    const doc = await PDFNet.PDFDoc.createFromBuffer(buffer);
     await doc.initSecurityHandler();
-
+    
     const pageCount = await doc.getPageCount();
     let extractedText = '';
 
@@ -133,14 +112,17 @@ async function processPDFWithPDFTron(buffer: Buffer): Promise<ProcessingResult> 
       const page = await doc.getPage(i);
       const reader = await PDFNet.TextExtractor.create();
       await reader.begin(page);
-
+      
       const opts = await reader.getTextExtractorConfig();
       opts.setOutputFormat(1);
       opts.setPageSegmentationMode(1);
-
+      
       const text = await reader.getAsXML(opts);
       extractedText += cleanExtractedText(text) + '\n';
     }
+
+    await doc.destroy();
+    await PDFNet.terminate();
 
     return {
       success: true,
@@ -148,24 +130,16 @@ async function processPDFWithPDFTron(buffer: Buffer): Promise<ProcessingResult> 
       metadata: { pageCount }
     };
   } catch (error) {
-    throw error;
-  } finally {
-    if (doc) {
-      await doc.destroy();
-    }
     await PDFNet.terminate();
+    throw error;
   }
 }
 
 async function processPDFWithPDFLib(buffer: Buffer): Promise<ProcessingResult> {
-  const pdfDoc = await PDFDocument.load(buffer, { 
-    ignoreEncryption: true,
-    updateMetadata: false
-  });
-
+  const pdfDoc = await PDFDocument.load(buffer);
   const pageCount = pdfDoc.getPageCount();
+  
   let content = '';
-
   for (let i = 0; i < pageCount; i++) {
     const page = pdfDoc.getPages()[i];
     const text = await page.getText();
@@ -185,27 +159,18 @@ async function processPDFWithPython(buffer: Buffer): Promise<ProcessingResult> {
       mode: 'text',
       pythonPath: 'python3',
       pythonOptions: ['-u'],
-      scriptPath: path.join(process.cwd(), 'server', 'scripts'),
+      scriptPath: './server/scripts',
       args: [buffer.toString('base64')]
     };
 
-    log('Starting Python PDF processor', 'debug', { scriptPath: options.scriptPath });
-
     PythonShell.run('pdf_processor.py', options).then(results => {
       if (results && results.length > 0) {
-        try {
-          const result = JSON.parse(results[0]);
-          if (!result.success) {
-            throw new Error(result.error || 'Python processing failed');
-          }
-          resolve({
-            success: true,
-            content: cleanExtractedText(result.text),
-            metadata: { pageCount: result.pageCount }
-          });
-        } catch (parseError) {
-          reject(new Error(`Failed to parse Python processor output: ${parseError.message}`));
-        }
+        const result = JSON.parse(results[0]);
+        resolve({
+          success: true,
+          content: cleanExtractedText(result.text),
+          metadata: { pageCount: result.pageCount }
+        });
       } else {
         reject(new Error('No output from Python processor'));
       }
@@ -215,12 +180,12 @@ async function processPDFWithPython(buffer: Buffer): Promise<ProcessingResult> {
 
 function cleanExtractedText(text: string): string {
   return text
-    .replace(/<\/?[^>]+(>|$)/g, '\n') // Remove XML/HTML tags
-    .replace(/&[a-z]+;/gi, ' ')       // Convert HTML entities to spaces
-    .replace(/\s+/g, ' ')             // Normalize whitespace
-    .split('\n')                      // Split into lines
-    .map(line => line.trim())         // Trim each line
-    .filter(Boolean)                  // Remove empty lines
-    .join('\n')                       // Rejoin with newlines
-    .trim();                          // Trim final result
+    .replace(/<\/?[^>]+(>|$)/g, '\n')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
