@@ -57,6 +57,7 @@ router.post("/upload", (req, res) => {
   upload.single('file')(req, res, async (err) => {
     const startTime = Date.now();
 
+    // Handle multer errors
     if (err instanceof multer.MulterError) {
       log('Multer error: %o', err);
       return res.status(400).json({
@@ -72,11 +73,12 @@ router.post("/upload", (req, res) => {
       });
     }
 
+    // Check if file exists in request
     if (!req.file) {
       log('No file in request');
       return res.status(400).json({
         error: 'No file uploaded',
-        details: 'Request must include a file'
+        details: 'Request must include a file in the "file" field'
       });
     }
 
@@ -116,7 +118,7 @@ router.post("/upload", (req, res) => {
         const [doc] = await tx
           .insert(vaultDocuments)
           .values({
-            userId: req.session?.userId || 1,
+            userId: req.session?.userId || 1, // Default to 1 if no session
             title: req.file!.originalname,
             content: processResult.content,
             documentType: analysis.documentType || 'OTHER',
@@ -170,20 +172,23 @@ router.post("/upload", (req, res) => {
     } catch (error) {
       log('Error during document processing: %o', error);
 
-      // Log error metrics -  RE-ADDED THIS SECTION
-      await db.insert(metricsEvents).values({
-        userId: req.session?.userId, // handles undefined case
-        modelId: 'document-analysis',
-        taskType: 'DOCUMENT_UPLOAD',
-        processingTimeMs: Date.now() - startTime,
-        successful: false,
-        metadata: {
-          error: error instanceof Error ? error.message : 'Unknown error',
-          filename: req.file?.originalname,
-          fileType: req.file?.mimetype
-        }
-      });
-
+      // Track error metrics
+      try {
+        await db.insert(metricsEvents).values({
+          userId: req.session?.userId || 1,
+          modelId: 'document-analysis',
+          taskType: 'DOCUMENT_UPLOAD',
+          processingTimeMs: Date.now() - startTime,
+          successful: false,
+          metadata: {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            filename: req.file?.originalname,
+            fileType: req.file?.mimetype
+          }
+        });
+      } catch (metricsError) {
+        log('Failed to log metrics: %o', metricsError);
+      }
 
       res.status(500).json({
         error: 'Failed to process document',
