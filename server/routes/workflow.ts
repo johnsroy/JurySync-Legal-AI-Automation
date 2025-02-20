@@ -14,6 +14,13 @@ const upload = multer({
     files: 1
   },
   fileFilter: (req, file, cb) => {
+    console.log('Multer processing file:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      timestamp: new Date().toISOString()
+    });
+
     const allowedTypes = [
       'application/pdf',
       'application/msword',
@@ -22,7 +29,12 @@ const upload = multer({
     ];
 
     if (!allowedTypes.includes(file.mimetype)) {
-      cb(new Error('Invalid file type. Only PDF, DOC, DOCX and TXT files are allowed.'));
+      console.log('File type rejection:', {
+        mimetype: file.mimetype,
+        allowed: allowedTypes,
+        timestamp: new Date().toISOString()
+      });
+      cb(new Error(`Invalid file type. Only PDF, DOC, DOCX and TXT files are allowed. Got: ${file.mimetype}`));
       return;
     }
 
@@ -30,6 +42,11 @@ const upload = multer({
     const fileName = file.originalname.toLowerCase();
     const validExtensions = ['.pdf', '.doc', '.docx', '.txt'];
     if (!validExtensions.some(ext => fileName.endsWith(ext))) {
+      console.log('File extension rejection:', {
+        filename: fileName,
+        valid: validExtensions,
+        timestamp: new Date().toISOString()
+      });
       cb(new Error('Invalid file extension'));
       return;
     }
@@ -47,17 +64,30 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     filename: req.file?.originalname,
     size: req.file?.size,
     type: req.file?.mimetype,
+    headers: req.headers['content-type'],
     timestamp: new Date().toISOString()
   });
 
   try {
     // Validate file presence
     if (!req.file) {
+      console.log('No file in request:', {
+        body: req.body,
+        headers: req.headers,
+        timestamp: new Date().toISOString()
+      });
       return res.status(400).json({ 
         error: "No file uploaded",
         timestamp: new Date().toISOString()
       });
     }
+
+    console.log('File received, starting processing:', {
+      filename: req.file.originalname,
+      size: req.file.size,
+      type: req.file.mimetype,
+      timestamp: new Date().toISOString()
+    });
 
     // Process document content with enhanced extraction
     const processResult = await processDocument(
@@ -65,6 +95,13 @@ router.post("/upload", upload.single("file"), async (req, res) => {
       req.file.originalname,
       req.file.mimetype
     );
+
+    console.log('Document processing result:', {
+      success: processResult.success,
+      contentLength: processResult.content?.length,
+      error: processResult.error,
+      timestamp: new Date().toISOString()
+    });
 
     if (!processResult.success || !processResult.content) {
       return res.status(400).json({
@@ -75,11 +112,14 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     }
 
     // Generate vector embedding for similarity search
+    console.log('Generating vector embedding...');
     const vectorEmbedding = await createVectorEmbedding(processResult.content);
 
     // Get AI insights
+    console.log('Running AI analysis...');
     const analysis = await analyzeDocument(processResult.content);
 
+    console.log('Storing document in database...');
     // Store document in vault with transaction
     const [document] = await db.transaction(async (tx) => {
       // Insert document
@@ -138,6 +178,12 @@ router.post("/upload", upload.single("file"), async (req, res) => {
       return [doc];
     });
 
+    console.log('Upload processing completed successfully:', {
+      documentId: document.id,
+      processingTime: Date.now() - startTime,
+      timestamp: new Date().toISOString()
+    });
+
     // Return success response with detailed metadata
     res.json({
       status: 'success',
@@ -191,7 +237,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 
     res.status(500).json({ 
       error: "Failed to process document",
-      message: "An unexpected error occurred during document processing",
+      message: error instanceof Error ? error.message : "An unexpected error occurred during document processing",
       timestamp: new Date().toISOString()
     });
   }
