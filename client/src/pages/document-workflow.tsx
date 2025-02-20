@@ -46,18 +46,24 @@ export default function DocumentWorkflow() {
     formData.append('file', selectedFile);
 
     try {
-      const response = await fetch('/api/workflow/upload', {
-        method: 'POST',
-        body: formData
+      console.log('Uploading file:', {
+        name: selectedFile.name,
+        type: selectedFile.type,
+        size: selectedFile.size
       });
 
-      if (!response.ok) throw new Error('Processing failed');
+      const response = await fetch('/api/workflow/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.message || 'Upload failed');
+      }
 
       const result = await response.json();
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
+      console.log('Upload response:', result);
 
       setAnalysisResult({
         ...result.analysis,
@@ -218,7 +224,6 @@ export default function DocumentWorkflow() {
 
               <TabsContent value="legal">
                 <Card className="p-6">
-                  {/*This section remains largely unchanged, adapting to the new aiAnalysis structure if needed.  Placeholder for potential changes based on the new API response*/}
                   <div className="space-y-6">
                     <div className="flex items-center justify-between">
                       <h3 className="text-xl font-semibold">Legal Research Findings</h3>
@@ -227,7 +232,6 @@ export default function DocumentWorkflow() {
                         Download Report
                       </Button>
                     </div>
-                    {/* Rest of the Legal Research section remains the same. */}
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Executive Summary</h4>
                       <Card className="p-4 bg-card/50">
