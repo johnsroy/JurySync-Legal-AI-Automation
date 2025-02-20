@@ -1,6 +1,7 @@
 import { PDFDocument } from 'pdf-lib';
 import mammoth from 'mammoth';
 import debug from 'debug';
+import pdfParse from 'pdf-parse';
 
 const log = debug('jurysync:document-processor');
 
@@ -87,23 +88,17 @@ async function extractPDFContent(buffer: Buffer): Promise<{ content: string; met
   log('Starting PDF content extraction');
 
   try {
-    const pdfDoc = await PDFDocument.load(buffer);
-    const pages = pdfDoc.getPages();
-    let content = '';
-
-    // Basic text extraction - this is a simplified approach
-    for (const page of pages) {
-      const text = page.getTextContent?.() || '';
-      content += text + '\n\n';
-    }
+    // Use pdf-parse for text extraction
+    const data = await pdfParse(buffer);
 
     log('Successfully extracted text from PDF');
 
     return {
-      content: content.trim() || 'PDF content extraction limited. Please try OCR for better results.',
+      content: data.text.trim() || 'PDF content extraction limited. Please try OCR for better results.',
       metadata: {
-        pageCount: pages.length,
-        method: 'pdf-lib'
+        pageCount: data.numpages,
+        method: 'pdf-parse',
+        info: data.info
       }
     };
   } catch (error) {
