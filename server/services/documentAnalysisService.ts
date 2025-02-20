@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { type VaultDocument } from "@shared/schema";
+import { type DocumentAnalysis } from "@shared/schema"; // Kept from original, assuming this is the correct import path.
 
 // Initialize APIs
 const anthropic = new Anthropic({
@@ -11,12 +11,10 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// the newest Anthropic model is "claude-3-5-sonnet-20241022" which was released October 22, 2024
-const CLAUDE_MODEL = "claude-3-5-sonnet-20241022";
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024
-const GPT_MODEL = "gpt-4o";
+const CLAUDE_MODEL = "claude-3-sonnet-20240229";
+const GPT_MODEL = "gpt-4-0125-preview";
 
-interface DocumentAnalysis {
+interface DocumentAnalysisResult {
   summary: string;
   classification: string;
   industry: string;
@@ -26,98 +24,85 @@ interface DocumentAnalysis {
   riskLevel: string;
   recommendations: string[];
   documentType: string;
-  complianceStatus?: {
+  complianceStatus: {
     status: 'PASSED' | 'FAILED' | 'PENDING';
     details: string;
     lastChecked: string;
   };
 }
 
-export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
+export async function analyzeDocument(content: string): Promise<DocumentAnalysisResult> {
   try {
-    console.log("Starting document analysis...");
+    console.log("Starting document analysis with multi-agent system...");
 
-    // Use Claude for initial analysis and classification with specific examples
+    // Use Claude for initial analysis and classification
     const claudeResponse = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 1000,
+      max_tokens: 1500,
       messages: [{
         role: "user",
-        content: `Analyze this legal document and provide detailed JSON output. Follow these examples EXACTLY:
-
-Example 1 - SOC Report:
+        content: `Analyze this legal document and provide a structured analysis following this exact format:
 {
-  "documentType": "SOC 3 Report",
-  "industry": "Technology",
-  "classification": "Compliance Report",
-  "confidence": 0.95,
-  "entities": ["Google", "Service Organization"],
-  "keywords": ["controls", "security", "availability", "confidentiality"],
-  "riskLevel": "LOW",
-  "recommendations": ["Annual control assessment recommended", "Update security protocols"],
+  "documentType": "type of document (e.g., Contract, Policy, SOC Report)",
+  "industry": "relevant industry",
+  "classification": "document classification",
+  "confidence": number between 0 and 1,
+  "entities": ["array of entities mentioned"],
+  "keywords": ["key terms and concepts"],
+  "riskLevel": "HIGH/MEDIUM/LOW",
+  "recommendations": ["action items"],
   "complianceStatus": {
-    "status": "PASSED",
-    "details": "All controls operating effectively",
-    "lastChecked": "2025-02-13T00:00:00Z"
+    "status": "PASSED/FAILED/PENDING",
+    "details": "compliance details",
+    "lastChecked": "current timestamp"
   }
 }
 
-Classification Rules:
-1. SOC Documents:
-   - If document mentions "System and Organization Controls (SOC)" or "SOC":
-     * Set documentType to EXACTLY "SOC 3 Report", "SOC 2 Report", or "SOC 1 Report"
-     * Set industry to "Technology" for tech companies
-     * Set complianceStatus.status to "PASSED" if controls are effective
-
-2. Industry Classifications:
-   - Technology: For software, cloud services, IT companies
-   - Financial Services: For banking, investment firms
-   - Healthcare: For medical services, pharma
-
 Document to analyze:
 ${content.substring(0, 8000)}`
-      }],
+      }]
     });
 
-    console.log("Claude analysis completed, parsing response...");
-    const claudeAnalysis = JSON.parse(claudeResponse.content[0].text);
+    // Parse Claude's structured response
+    console.log("Parsing Claude analysis response...");
+    const claudeAnalysis = JSON.parse(claudeResponse.content[0].value);
 
-    // Use GPT-4 for summary focusing on compliance
+    // Use GPT-4 for detailed compliance analysis
     const gptResponse = await openai.chat.completions.create({
       model: GPT_MODEL,
       messages: [
         {
           role: "system",
-          content: "You are a compliance expert specializing in SOC reports. Focus on control effectiveness and compliance status."
+          content: "You are a compliance expert. Analyze this document and identify key compliance requirements, risks, and recommendations."
         },
         {
           role: "user",
-          content: `Analyze this document and provide a clear summary, focusing on compliance status:\n${content.substring(0, 8000)}`
+          content: `Analyze this document for compliance:\n${content.substring(0, 8000)}`
         }
       ],
+      temperature: 0.2,
     });
 
     const summary = gptResponse.choices[0].message.content || "";
-    console.log("Document analysis completed:", {
-      documentType: claudeAnalysis.documentType,
-      industry: claudeAnalysis.industry,
-      complianceStatus: claudeAnalysis.complianceStatus
-    });
 
-    return {
+    // Combine analyses from both models
+    const result: DocumentAnalysisResult = {
       summary,
-      classification: claudeAnalysis.classification,
-      industry: claudeAnalysis.industry,
-      keywords: claudeAnalysis.keywords,
-      confidence: claudeAnalysis.confidence,
-      entities: claudeAnalysis.entities,
-      riskLevel: claudeAnalysis.riskLevel,
-      recommendations: claudeAnalysis.recommendations,
-      documentType: claudeAnalysis.documentType,
-      complianceStatus: claudeAnalysis.complianceStatus
+      ...claudeAnalysis,
+      complianceStatus: {
+        status: claudeAnalysis.complianceStatus.status || 'PENDING',
+        details: claudeAnalysis.complianceStatus.details || summary,
+        lastChecked: new Date().toISOString()
+      }
     };
+
+    console.log("Document analysis completed successfully");
+    return result;
+
   } catch (error) {
     console.error("Document analysis error:", error);
-    throw new Error("Failed to analyze document: " + (error as Error).message);
+
+    // Return a structured error response
+    throw new Error(`Failed to analyze document: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
