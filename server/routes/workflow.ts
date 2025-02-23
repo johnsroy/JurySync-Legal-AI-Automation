@@ -95,19 +95,24 @@ router.post("/upload", (req, res) => {
         throw new Error(processResult.error || 'Failed to process document');
       }
 
-      // Store document in database
+      // Store document in database with correct schema
       const [document] = await db
         .insert(vaultDocuments)
         .values({
-          content: processResult.content,
+          userId: req.user?.id || 1, // Default to 1 if no user
           title: req.file.originalname,
+          content: processResult.content,
           documentType: processResult.metadata?.analysis?.documentType || 'UNKNOWN',
+          aiSummary: processResult.metadata?.analysis?.summary || null,
+          aiClassification: processResult.metadata?.analysis?.documentType || null,
           fileSize: req.file.size,
           mimeType: req.file.mimetype,
           metadata: {
             ...processResult.metadata,
             uploadTimestamp: new Date().toISOString()
-          }
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
         })
         .returning();
 
@@ -139,7 +144,7 @@ router.post("/upload", (req, res) => {
           log('Workflow processing error:', error);
         });
 
-      // Return successful response with parsed text
+      // Return successful response
       res.json({
         success: true,
         documentId: document.id,
@@ -177,9 +182,10 @@ router.get("/status/:documentId", async (req, res) => {
 
     res.json({
       documentId: document.id,
-      status: document.status,
       documentType: document.documentType,
-      metadata: document.metadata
+      metadata: document.metadata,
+      aiSummary: document.aiSummary,
+      aiClassification: document.aiClassification
     });
 
   } catch (error) {
