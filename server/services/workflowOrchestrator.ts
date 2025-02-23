@@ -7,7 +7,7 @@ import { z } from "zod";
 import debug from 'debug';
 import { db } from "../db";
 import { vaultDocuments } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 // Workflow stage types
 type WorkflowStage = 'draft' | 'review' | 'approval' | 'signature' | 'audit';
@@ -87,6 +87,20 @@ const DocumentState = z.object({
 
 type DocumentStateType = z.infer<typeof DocumentState>;
 
+// Batch processing schema
+const BatchState = z.object({
+  batchId: z.string(),
+  totalDocuments: z.number(),
+  completedDocuments: z.number(),
+  failedDocuments: z.number(),
+  startTime: z.date(),
+  endTime: z.date().optional(),
+  status: z.enum(['processing', 'completed', 'failed']),
+  documents: z.array(z.number())
+});
+
+type BatchStateType = z.infer<typeof BatchState>;
+
 // Analysis agents
 const documentTypeAgent = RunnableSequence.from([
   PromptTemplate.fromTemplate(`
@@ -134,6 +148,221 @@ const summaryAgent = RunnableSequence.from([
 class WorkflowOrchestrator {
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY = 1000; // ms
+  private activeBatches: Map<string, BatchStateType> = new Map();
+
+  // Create a new batch processing job
+  async createBatch(documentIds: number[]): Promise<BatchStateType> {
+    const batchId = `batch-${Date.now()}`;
+    const batchState: BatchStateType = {
+      batchId,
+      totalDocuments: documentIds.length,
+      completedDocuments: 0,
+      failedDocuments: 0,
+      startTime: new Date(),
+      status: 'processing',
+      documents: documentIds
+    };
+
+    this.activeBatches.set(batchId, batchState);
+
+    // Process all documents in the batch
+    await Promise.all(
+      documentIds.map(id => this.processDocument(id, batchId))
+    );
+
+    return batchState;
+  }
+
+  // Get batch processing status
+  async getBatchStatus(batchId: string): Promise<BatchStateType | undefined> {
+    return this.activeBatches.get(batchId);
+  }
+
+  // List all active batches
+  async listActiveBatches(): Promise<BatchStateType[]> {
+    return Array.from(this.activeBatches.values());
+  }
+
+  // Process a single document, optionally as part of a batch
+  async processDocument(documentId: number, batchId?: string): Promise<DocumentStateType> {
+    try {
+      // Start LangSmith run tracking
+      const run = await client.createRun({
+        name: "Document Analysis Workflow",
+        run_type: "chain",
+        inputs: { 
+          documentId: documentId.toString(),
+          batchId: batchId || 'single'
+        }
+      });
+
+      try {
+        // Get document from database
+        const [document] = await db
+          .select()
+          .from(vaultDocuments)
+          .where(eq(vaultDocuments.id, documentId));
+
+        if (!document) {
+          throw new Error(`Document not found: ${documentId}`);
+        }
+
+        // Initialize document state
+        let state: DocumentStateType = {
+          id: document.id,
+          content: document.content,
+          analysis: {
+            documentType: '',
+            summary: '',
+            keyPoints: [],
+            entities: [],
+            confidence: 0,
+            status: 'pending'
+          },
+          metadata: {}
+        };
+
+        // Document type analysis
+        log('Running document type analysis');
+        const typeAnalysis = await this.runWithRetry(
+          () => documentTypeAgent.invoke({ content: document.content }),
+          'Document type analysis'
+        );
+        const typeResult = JSON.parse(typeAnalysis);
+
+        state.analysis.documentType = typeResult.documentType;
+        state.analysis.confidence = typeResult.confidence;
+        state.metadata.purpose = typeResult.purpose;
+        state.analysis.status = 'in_progress';
+
+        // Entity extraction
+        log('Running entity extraction');
+        const entityAnalysis = await this.runWithRetry(
+          () => entityExtractionAgent.invoke({ content: document.content }),
+          'Entity extraction'
+        );
+        const entityResult = JSON.parse(entityAnalysis);
+
+        state.analysis.entities = entityResult.entities;
+        state.analysis.keyPoints = entityResult.keyPoints;
+        state.metadata.relationships = entityResult.relationships;
+
+        // Document summary
+        log('Generating document summary');
+        const summaryAnalysis = await this.runWithRetry(
+          () => summaryAgent.invoke({ 
+            content: document.content,
+            documentType: state.analysis.documentType
+          }),
+          'Document summary'
+        );
+        const summaryResult = JSON.parse(summaryAnalysis);
+
+        state.analysis.summary = summaryResult.summary;
+        state.metadata.recommendations = summaryResult.recommendations;
+        state.metadata.risks = summaryResult.risks;
+        state.analysis.status = 'completed';
+
+        // Update run with success
+        await client.updateRun({
+          runId: run.id,
+          outputs: state,
+          endTime: new Date().toISOString()
+        });
+
+        // Update document in database
+        await db.update(vaultDocuments)
+          .set({ 
+            documentType: state.analysis.documentType,
+            metadata: state.metadata,
+            status: 'completed'
+          })
+          .where(eq(vaultDocuments.id, documentId));
+
+        // Update batch status if part of a batch
+        if (batchId) {
+          this.updateBatchProgress(batchId, true);
+        }
+
+        return state;
+
+      } catch (error) {
+        // Update run with error
+        await client.updateRun({
+          runId: run.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          endTime: new Date().toISOString()
+        });
+
+        // Update document status
+        await db.update(vaultDocuments)
+          .set({ status: 'failed' })
+          .where(eq(vaultDocuments.id, documentId));
+
+        // Update batch status if part of a batch
+        if (batchId) {
+          this.updateBatchProgress(batchId, false);
+        }
+
+        throw error;
+      }
+
+    } catch (error) {
+      log('Workflow error:', error);
+      throw error;
+    }
+  }
+
+  // Update batch progress
+  private updateBatchProgress(batchId: string, success: boolean) {
+    const batch = this.activeBatches.get(batchId);
+    if (batch) {
+      if (success) {
+        batch.completedDocuments++;
+      } else {
+        batch.failedDocuments++;
+      }
+
+      // Check if batch is complete
+      if (batch.completedDocuments + batch.failedDocuments === batch.totalDocuments) {
+        batch.endTime = new Date();
+        batch.status = batch.failedDocuments === 0 ? 'completed' : 'failed';
+      }
+
+      this.activeBatches.set(batchId, batch);
+    }
+  }
+
+  // Get diagnostic report for a batch or single document
+  async getDiagnosticReport(documentId: number) {
+    try {
+      // Get runs from LangSmith for this document
+      const runs = await client.listRuns({
+        filter: {
+          inputs: { documentId: documentId.toString() }
+        }
+      });
+
+      const diagnosticReport = {
+        documentId,
+        totalRuns: runs.length,
+        successfulRuns: runs.filter(r => r.status === 'completed').length,
+        failedRuns: runs.filter(r => r.status === 'failed').length,
+        averageRuntime: runs.reduce((acc, run) => acc + (run.endTime - run.startTime), 0) / runs.length,
+        errorTypes: this.aggregateErrorTypes(runs),
+        recommendations: this.generateRecommendations(runs)
+      };
+
+      return {
+        success: true,
+        report: diagnosticReport
+      };
+    } catch (error) {
+      log('Failed to generate diagnostic report:', error);
+      throw new Error('Failed to generate diagnostic report');
+    }
+  }
+
 
   async initiateSignature(contractId: number) {
     try {
@@ -228,148 +457,7 @@ class WorkflowOrchestrator {
   }
 
   async processDocument(documentId: number): Promise<DocumentStateType> {
-    try {
-      // Start LangSmith run tracking
-      const run = await client.createRun({
-        name: "Document Analysis Workflow",
-        run_type: "chain",
-        inputs: { documentId: documentId.toString() }
-      });
-
-      try {
-        // Get document from database
-        const [document] = await db
-          .select()
-          .from(vaultDocuments)
-          .where(eq(vaultDocuments.id, documentId));
-
-        if (!document) {
-          throw new Error(`Document not found: ${documentId}`);
-        }
-
-        // Initialize document state
-        let state: DocumentStateType = {
-          id: document.id,
-          content: document.content,
-          analysis: {
-            documentType: '',
-            summary: '',
-            keyPoints: [],
-            entities: [],
-            confidence: 0,
-            status: 'pending'
-          },
-          metadata: {}
-        };
-
-        // Document type analysis
-        log('Running document type analysis');
-        const typeAnalysis = await this.runWithRetry(
-          () => documentTypeAgent.invoke({ content: document.content }),
-          'Document type analysis'
-        );
-        const typeResult = JSON.parse(typeAnalysis);
-
-        state.analysis.documentType = typeResult.documentType;
-        state.analysis.confidence = typeResult.confidence;
-        state.metadata.purpose = typeResult.purpose;
-        state.analysis.status = 'in_progress';
-
-        // Entity extraction
-        log('Running entity extraction');
-        const entityAnalysis = await this.runWithRetry(
-          () => entityExtractionAgent.invoke({ content: document.content }),
-          'Entity extraction'
-        );
-        const entityResult = JSON.parse(entityAnalysis);
-
-        state.analysis.entities = entityResult.entities;
-        state.analysis.keyPoints = entityResult.keyPoints;
-        state.metadata.relationships = entityResult.relationships;
-
-        // Document summary
-        log('Generating document summary');
-        const summaryAnalysis = await this.runWithRetry(
-          () => summaryAgent.invoke({ 
-            content: document.content,
-            documentType: state.analysis.documentType
-          }),
-          'Document summary'
-        );
-        const summaryResult = JSON.parse(summaryAnalysis);
-
-        state.analysis.summary = summaryResult.summary;
-        state.metadata.recommendations = summaryResult.recommendations;
-        state.metadata.risks = summaryResult.risks;
-        state.analysis.status = 'completed';
-
-        // Update run with success
-        await client.updateRun({
-          runId: run.id,
-          outputs: state,
-          endTime: new Date().toISOString()
-        });
-
-        // Update document in database
-        await db.update(vaultDocuments)
-          .set({ 
-            documentType: state.analysis.documentType,
-            metadata: state.metadata,
-            status: 'completed'
-          })
-          .where(eq(vaultDocuments.id, documentId));
-
-        return state;
-
-      } catch (error) {
-        // Update run with error
-        await client.updateRun({
-          runId: run.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          endTime: new Date().toISOString()
-        });
-
-        // Update document status
-        await db.update(vaultDocuments)
-          .set({ status: 'failed' })
-          .where(eq(vaultDocuments.id, documentId));
-
-        throw error;
-      }
-
-    } catch (error) {
-      log('Workflow error:', error);
-      throw error;
-    }
-  }
-
-  async getDiagnosticReport(documentId: number) {
-    try {
-      // Get runs from LangSmith for this document
-      const runs = await client.listRuns({
-        filter: {
-          inputs: { documentId: documentId.toString() }
-        }
-      });
-
-      const diagnosticReport = {
-        documentId,
-        totalRuns: runs.length,
-        successfulRuns: runs.filter(r => r.status === 'completed').length,
-        failedRuns: runs.filter(r => r.status === 'failed').length,
-        averageRuntime: runs.reduce((acc, run) => acc + (run.endTime - run.startTime), 0) / runs.length,
-        errorTypes: this.aggregateErrorTypes(runs),
-        recommendations: this.generateRecommendations(runs)
-      };
-
-      return {
-        success: true,
-        report: diagnosticReport
-      };
-    } catch (error) {
-      log('Failed to generate diagnostic report:', error);
-      throw new Error('Failed to generate diagnostic report');
-    }
+      return await this.processDocument(documentId); // This line is added to handle the case when processDocument is called without batchId
   }
 
 
