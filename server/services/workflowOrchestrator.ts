@@ -58,7 +58,10 @@ export type Version = z.infer<typeof versionSchema>;
 const log = debug('jurysync:workflow-orchestrator');
 
 // Initialize LangSmith client for tracking and evaluation
-const langSmith = new Client();
+const client = new Client({
+  apiUrl: process.env.LANGCHAIN_ENDPOINT || "https://api.smith.langchain.com",
+  apiKey: process.env.LANGCHAIN_API_KEY,
+});
 
 // Initialize AI model with higher context limits
 const chatModel = new ChatOpenAI({
@@ -227,37 +230,38 @@ class WorkflowOrchestrator {
   async processDocument(documentId: number): Promise<DocumentStateType> {
     try {
       // Start LangSmith run tracking
-      const run = await langSmith.createRun({
+      const run = await client.createRun({
         name: "Document Analysis Workflow",
+        run_type: "chain",
         inputs: { documentId: documentId.toString() }
       });
 
-      // Get document from database
-      const [document] = await db
-        .select()
-        .from(vaultDocuments)
-        .where(eq(vaultDocuments.id, documentId));
-
-      if (!document) {
-        throw new Error(`Document not found: ${documentId}`);
-      }
-
-      // Initialize document state
-      let state: DocumentStateType = {
-        id: document.id,
-        content: document.content,
-        analysis: {
-          documentType: '',
-          summary: '',
-          keyPoints: [],
-          entities: [],
-          confidence: 0,
-          status: 'pending'
-        },
-        metadata: {}
-      };
-
       try {
+        // Get document from database
+        const [document] = await db
+          .select()
+          .from(vaultDocuments)
+          .where(eq(vaultDocuments.id, documentId));
+
+        if (!document) {
+          throw new Error(`Document not found: ${documentId}`);
+        }
+
+        // Initialize document state
+        let state: DocumentStateType = {
+          id: document.id,
+          content: document.content,
+          analysis: {
+            documentType: '',
+            summary: '',
+            keyPoints: [],
+            entities: [],
+            confidence: 0,
+            status: 'pending'
+          },
+          metadata: {}
+        };
+
         // Document type analysis
         log('Running document type analysis');
         const typeAnalysis = await this.runWithRetry(
@@ -299,25 +303,42 @@ class WorkflowOrchestrator {
         state.metadata.risks = summaryResult.risks;
         state.analysis.status = 'completed';
 
-        // Update LangSmith run with success
-        await langSmith.updateRun(run.id, {
+        // Update run with success
+        await client.updateRun({
+          runId: run.id,
           outputs: state,
-          status: 'completed'
+          endTime: new Date().toISOString()
         });
+
+        // Update document in database
+        await db.update(vaultDocuments)
+          .set({ 
+            documentType: state.analysis.documentType,
+            metadata: state.metadata,
+            status: 'completed'
+          })
+          .where(eq(vaultDocuments.id, documentId));
 
         return state;
 
       } catch (error) {
-        state.analysis.status = 'failed';
+        // Update run with error
+        await client.updateRun({
+          runId: run.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          endTime: new Date().toISOString()
+        });
+
+        // Update document status
+        await db.update(vaultDocuments)
+          .set({ status: 'failed' })
+          .where(eq(vaultDocuments.id, documentId));
+
         throw error;
       }
 
     } catch (error) {
       log('Workflow error:', error);
-      await langSmith.updateRun(run.id, {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        status: 'failed'
-      });
       throw error;
     }
   }
@@ -325,7 +346,7 @@ class WorkflowOrchestrator {
   async getDiagnosticReport(documentId: number) {
     try {
       // Get runs from LangSmith for this document
-      const runs = await langSmith.listRuns({
+      const runs = await client.listRuns({
         filter: {
           inputs: { documentId: documentId.toString() }
         }

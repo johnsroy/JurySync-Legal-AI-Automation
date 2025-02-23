@@ -2,10 +2,11 @@ import { Router } from "express";
 import multer from "multer";
 import debug from 'debug';
 import { db } from "../db";
-import { vaultDocuments, documentAnalysis } from "@shared/schema";
+import { vaultDocuments } from "@shared/schema";
 import { processDocument } from "../services/documentProcessor";
 import { workflowOrchestrator } from "../services/workflowOrchestrator";
 import { createVectorEmbedding } from "../services/vectorService";
+import { eq } from 'drizzle-orm'; // Assuming this is the ORM used
 
 const log = debug('jurysync:workflow');
 
@@ -13,7 +14,7 @@ const log = debug('jurysync:workflow');
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 20 * 1024 * 1024 // Increased to 20MB limit
+    fileSize: 20 * 1024 * 1024 // 20MB limit
   }
 }).single('file');
 
@@ -31,8 +32,7 @@ router.post("/upload", (req, res) => {
 
     if (!req.file) {
       return res.status(400).json({
-        error: 'No file uploaded',
-        details: 'Please provide a file'
+        error: 'No file uploaded'
       });
     }
 
@@ -54,50 +54,36 @@ router.post("/upload", (req, res) => {
         throw new Error(processResult.error || 'Failed to process document');
       }
 
-      // Store initial document and create vector embedding
-      const [document] = await db.transaction(async (tx) => {
-        // Store document
-        const [doc] = await tx
-          .insert(vaultDocuments)
-          .values({
-            userId: 1, // Default user ID
-            title: req.file!.originalname,
-            content: processResult.content,
-            documentType: processResult.metadata?.analysis?.documentType || 'UNKNOWN',
-            fileSize: req.file!.size,
-            mimeType: req.file!.mimetype,
-            status: 'processing',
-            metadata: processResult.metadata
-          })
-          .returning();
+      // Store document in database
+      const [document] = await db
+        .insert(vaultDocuments)
+        .values({
+          title: req.file.originalname,
+          content: processResult.content,
+          documentType: 'pending',
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          status: 'processing',
+          metadata: processResult.metadata || {}
+        })
+        .returning();
 
-        // Create vector embedding
-        const vectorEmbedding = await createVectorEmbedding(processResult.content);
-
-        // Initialize analysis record
-        await tx.insert(documentAnalysis).values({
-          documentId: doc.id,
-          documentType: doc.documentType,
-          status: 'pending',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          vectorId: vectorEmbedding.id
+      // Create vector embedding in background
+      createVectorEmbedding(processResult.content)
+        .then(async (vectorEmbedding) => {
+          await db
+            .update(vaultDocuments)
+            .set({ vectorId: vectorEmbedding.id })
+            .where(eq(vaultDocuments.id, document.id));
+        })
+        .catch(error => {
+          log('Vector embedding error:', error);
         });
 
-        return [doc];
-      });
-
-      // Start async workflow processing
+      // Start workflow processing
       workflowOrchestrator.processDocument(document.id)
         .catch(error => {
-          log('Async workflow processing error:', error);
-          // Update document status to failed
-          db.update(vaultDocuments)
-            .set({ status: 'failed' })
-            .where({ id: document.id })
-            .catch(updateError => {
-              log('Failed to update document status:', updateError);
-            });
+          log('Workflow processing error:', error);
         });
 
       // Return initial response
@@ -109,16 +95,15 @@ router.post("/upload", (req, res) => {
       });
 
     } catch (error) {
-      log('Processing error:', error);
+      log('Upload processing error:', error);
       res.status(500).json({
-        error: 'Failed to process document',
+        error: 'Failed to process upload',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });
 });
 
-// Add endpoint to check document processing status
 router.get("/status/:documentId", async (req, res) => {
   try {
     const documentId = parseInt(req.params.documentId);
@@ -126,7 +111,7 @@ router.get("/status/:documentId", async (req, res) => {
     const [document] = await db
       .select()
       .from(vaultDocuments)
-      .where({ id: documentId });
+      .where(eq(vaultDocuments.id, documentId));
 
     if (!document) {
       return res.status(404).json({
@@ -137,6 +122,7 @@ router.get("/status/:documentId", async (req, res) => {
     res.json({
       documentId: document.id,
       status: document.status,
+      documentType: document.documentType,
       metadata: document.metadata
     });
 
@@ -148,7 +134,6 @@ router.get("/status/:documentId", async (req, res) => {
   }
 });
 
-// Add endpoint to get processing diagnostics
 router.get("/diagnostics/:documentId", async (req, res) => {
   try {
     const documentId = parseInt(req.params.documentId);
