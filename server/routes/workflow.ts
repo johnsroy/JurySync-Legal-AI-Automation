@@ -15,9 +15,16 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 20 * 1024 * 1024, // 20MB limit per file
-    files: 10 // Maximum 10 files per batch
+    files: 1 // Single file upload
   },
   fileFilter: (req, file, cb) => {
+    log('Received file:', {
+      fieldname: file.fieldname,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
     // Accept common document formats
     const allowedMimeTypes = [
       'application/pdf',
@@ -29,10 +36,11 @@ const upload = multer({
     if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
+      log('File rejected - unsupported type:', file.mimetype);
       cb(new Error(`Unsupported file type: ${file.mimetype}`));
     }
   }
-}).single('file'); // Changed back to single file upload for initial testing
+}).single('file'); // Match frontend FormData field name
 
 const router = Router();
 
@@ -56,6 +64,7 @@ router.post("/upload", (req, res) => {
     }
 
     if (!req.file) {
+      log('No file received');
       return res.status(400).json({
         error: 'No file uploaded',
         details: 'Please select a file to upload'
@@ -75,6 +84,12 @@ router.post("/upload", (req, res) => {
         req.file.originalname,
         req.file.mimetype
       );
+
+      log('Document processing result:', {
+        success: processResult.success,
+        hasContent: !!processResult.content,
+        error: processResult.error
+      });
 
       if (!processResult.success || !processResult.content) {
         throw new Error(processResult.error || 'Failed to process document');
@@ -97,6 +112,11 @@ router.post("/upload", (req, res) => {
         })
         .returning();
 
+      log('Document stored in database:', {
+        id: document.id,
+        title: document.title
+      });
+
       // Create vector embedding in background
       createVectorEmbedding(processResult.content)
         .then(async (vectorEmbedding) => {
@@ -104,6 +124,11 @@ router.post("/upload", (req, res) => {
             .update(vaultDocuments)
             .set({ vectorId: vectorEmbedding.id })
             .where(eq(vaultDocuments.id, document.id));
+
+          log('Vector embedding created:', {
+            documentId: document.id,
+            vectorId: vectorEmbedding.id
+          });
         })
         .catch(error => {
           log('Vector embedding error:', error);
@@ -115,10 +140,11 @@ router.post("/upload", (req, res) => {
           log('Workflow processing error:', error);
         });
 
-      // Return successful response
+      // Return successful response with parsed text
       res.json({
         success: true,
         documentId: document.id,
+        text: processResult.content,
         status: 'processing',
         message: 'Document uploaded and processing started'
       });
