@@ -3,8 +3,8 @@ import multer from "multer";
 import debug from 'debug';
 import { db } from "../db";
 import { vaultDocuments, documentAnalysis } from "@shared/schema";
-import { analyzeDocument } from "../services/documentAnalysisService";
 import { processDocument } from "../services/documentProcessor";
+import { workflowOrchestrator } from "../services/workflowOrchestrator";
 import { createVectorEmbedding } from "../services/vectorService";
 
 const log = debug('jurysync:workflow');
@@ -13,7 +13,7 @@ const log = debug('jurysync:workflow');
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
+    fileSize: 20 * 1024 * 1024 // Increased to 20MB limit
   }
 }).single('file');
 
@@ -43,7 +43,7 @@ router.post("/upload", (req, res) => {
         size: req.file.size
       });
 
-      // Process document
+      // Initial document processing
       const processResult = await processDocument(
         req.file.buffer,
         req.file.originalname,
@@ -54,54 +54,58 @@ router.post("/upload", (req, res) => {
         throw new Error(processResult.error || 'Failed to process document');
       }
 
-      // Generate vector embedding
-      const vectorEmbedding = await createVectorEmbedding(processResult.content);
-
-      // Analyze document
-      const analysis = await analyzeDocument(processResult.content);
-
-      // Store in database
+      // Store initial document and create vector embedding
       const [document] = await db.transaction(async (tx) => {
+        // Store document
         const [doc] = await tx
           .insert(vaultDocuments)
           .values({
             userId: 1, // Default user ID
             title: req.file!.originalname,
             content: processResult.content,
-            documentType: analysis.documentType || 'OTHER',
+            documentType: processResult.metadata?.analysis?.documentType || 'UNKNOWN',
             fileSize: req.file!.size,
             mimeType: req.file!.mimetype,
-            aiSummary: analysis.summary,
-            aiClassification: analysis.classification,
-            vectorId: vectorEmbedding.id,
-            metadata: {
-              ...processResult.metadata,
-              keywords: analysis.keywords,
-              confidence: analysis.confidence,
-              entities: analysis.entities
-            }
+            status: 'processing',
+            metadata: processResult.metadata
           })
           .returning();
 
+        // Create vector embedding
+        const vectorEmbedding = await createVectorEmbedding(processResult.content);
+
+        // Initialize analysis record
         await tx.insert(documentAnalysis).values({
           documentId: doc.id,
           documentType: doc.documentType,
-          industry: analysis.industry || 'UNKNOWN',
-          complianceStatus: analysis.complianceStatus,
+          status: 'pending',
           createdAt: new Date(),
-          updatedAt: new Date()
+          updatedAt: new Date(),
+          vectorId: vectorEmbedding.id
         });
 
         return [doc];
       });
 
+      // Start async workflow processing
+      workflowOrchestrator.processDocument(document.id)
+        .catch(error => {
+          log('Async workflow processing error:', error);
+          // Update document status to failed
+          db.update(vaultDocuments)
+            .set({ status: 'failed' })
+            .where({ id: document.id })
+            .catch(updateError => {
+              log('Failed to update document status:', updateError);
+            });
+        });
+
+      // Return initial response
       res.json({
         success: true,
         documentId: document.id,
-        analysis: {
-          ...analysis,
-          vectorId: vectorEmbedding.id
-        }
+        status: 'processing',
+        message: 'Document uploaded and processing started'
       });
 
     } catch (error) {
@@ -112,6 +116,50 @@ router.post("/upload", (req, res) => {
       });
     }
   });
+});
+
+// Add endpoint to check document processing status
+router.get("/status/:documentId", async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.documentId);
+
+    const [document] = await db
+      .select()
+      .from(vaultDocuments)
+      .where({ id: documentId });
+
+    if (!document) {
+      return res.status(404).json({
+        error: 'Document not found'
+      });
+    }
+
+    res.json({
+      documentId: document.id,
+      status: document.status,
+      metadata: document.metadata
+    });
+
+  } catch (error) {
+    log('Status check error:', error);
+    res.status(500).json({
+      error: 'Failed to check document status'
+    });
+  }
+});
+
+// Add endpoint to get processing diagnostics
+router.get("/diagnostics/:documentId", async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.documentId);
+    const report = await workflowOrchestrator.getDiagnosticReport(documentId);
+    res.json(report);
+  } catch (error) {
+    log('Diagnostics error:', error);
+    res.status(500).json({
+      error: 'Failed to generate diagnostics'
+    });
+  }
 });
 
 export default router;

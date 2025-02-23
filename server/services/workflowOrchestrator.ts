@@ -1,5 +1,13 @@
-import { db } from "../db";
+import { ChatOpenAI } from "@langchain/openai";
+import { RunnableSequence } from "@langchain/core/runnables";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import { PromptTemplate } from "@langchain/core/prompts";
+import { Client } from "langsmith";
 import { z } from "zod";
+import debug from 'debug';
+import { db } from "../db";
+import { vaultDocuments } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 // Workflow stage types
 type WorkflowStage = 'draft' | 'review' | 'approval' | 'signature' | 'audit';
@@ -10,7 +18,10 @@ enum WorkflowErrorType {
   MISSING_DATA = 'MISSING_DATA',
   VALIDATION_ERROR = 'VALIDATION_ERROR',
   ROUTING_ERROR = 'ROUTING_ERROR',
-  UNKNOWN = 'UNKNOWN'
+  UNKNOWN = 'UNKNOWN',
+  TOKEN_LIMIT = 'TOKEN_LIMIT',
+  API_ERROR = 'API_ERROR',
+  PARSING_ERROR = 'PARSING_ERROR'
 }
 
 interface WorkflowError {
@@ -43,6 +54,79 @@ const versionSchema = z.object({
 });
 
 export type Version = z.infer<typeof versionSchema>;
+
+const log = debug('jurysync:workflow-orchestrator');
+
+// Initialize LangSmith client for tracking and evaluation
+const langSmith = new Client();
+
+// Initialize AI model with higher context limits
+const chatModel = new ChatOpenAI({
+  modelName: "gpt-4-0125-preview",
+  maxTokens: 4096,
+  temperature: 0.2
+});
+
+// Document state schema
+const DocumentState = z.object({
+  id: z.number(),
+  content: z.string(),
+  analysis: z.object({
+    documentType: z.string(),
+    summary: z.string(),
+    keyPoints: z.array(z.string()),
+    entities: z.array(z.string()),
+    confidence: z.number(),
+    status: z.enum(['pending', 'in_progress', 'completed', 'failed'])
+  }),
+  metadata: z.record(z.any())
+});
+
+type DocumentStateType = z.infer<typeof DocumentState>;
+
+// Analysis agents
+const documentTypeAgent = RunnableSequence.from([
+  PromptTemplate.fromTemplate(`
+    Analyze this document and determine its type and purpose.
+    Document content: {content}
+
+    Return a JSON object with:
+    - documentType: The specific type of legal document
+    - confidence: Confidence score (0-1)
+    - purpose: Brief description of document purpose
+  `),
+  chatModel,
+  new StringOutputParser()
+]);
+
+const entityExtractionAgent = RunnableSequence.from([
+  PromptTemplate.fromTemplate(`
+    Extract key entities and information from this document.
+    Document content: {content}
+
+    Return a JSON object with:
+    - entities: Array of important entities (people, organizations, dates)
+    - keyPoints: Array of main points or clauses
+    - relationships: Key relationships between entities
+  `),
+  chatModel,
+  new StringOutputParser()
+]);
+
+const summaryAgent = RunnableSequence.from([
+  PromptTemplate.fromTemplate(`
+    Provide a comprehensive summary of this legal document.
+    Document content: {content}
+    Document type: {documentType}
+
+    Return a JSON object with:
+    - summary: Executive summary of the document
+    - recommendations: Key considerations or actions needed
+    - risks: Potential risks or issues identified
+  `),
+  chatModel,
+  new StringOutputParser()
+]);
 
 class WorkflowOrchestrator {
   private readonly MAX_RETRIES = 3;
@@ -140,19 +224,121 @@ class WorkflowOrchestrator {
     }
   }
 
-  async getDiagnosticReport(contractId: number) {
+  async processDocument(documentId: number): Promise<DocumentStateType> {
     try {
-      const events = await db.query(
-        'SELECT * FROM workflow_events WHERE contract_id = $1 ORDER BY timestamp DESC',
-        [contractId]
-      );
+      // Start LangSmith run tracking
+      const run = await langSmith.createRun({
+        name: "Document Analysis Workflow",
+        inputs: { documentId: documentId.toString() }
+      });
+
+      // Get document from database
+      const [document] = await db
+        .select()
+        .from(vaultDocuments)
+        .where(eq(vaultDocuments.id, documentId));
+
+      if (!document) {
+        throw new Error(`Document not found: ${documentId}`);
+      }
+
+      // Initialize document state
+      let state: DocumentStateType = {
+        id: document.id,
+        content: document.content,
+        analysis: {
+          documentType: '',
+          summary: '',
+          keyPoints: [],
+          entities: [],
+          confidence: 0,
+          status: 'pending'
+        },
+        metadata: {}
+      };
+
+      try {
+        // Document type analysis
+        log('Running document type analysis');
+        const typeAnalysis = await this.runWithRetry(
+          () => documentTypeAgent.invoke({ content: document.content }),
+          'Document type analysis'
+        );
+        const typeResult = JSON.parse(typeAnalysis);
+
+        state.analysis.documentType = typeResult.documentType;
+        state.analysis.confidence = typeResult.confidence;
+        state.metadata.purpose = typeResult.purpose;
+        state.analysis.status = 'in_progress';
+
+        // Entity extraction
+        log('Running entity extraction');
+        const entityAnalysis = await this.runWithRetry(
+          () => entityExtractionAgent.invoke({ content: document.content }),
+          'Entity extraction'
+        );
+        const entityResult = JSON.parse(entityAnalysis);
+
+        state.analysis.entities = entityResult.entities;
+        state.analysis.keyPoints = entityResult.keyPoints;
+        state.metadata.relationships = entityResult.relationships;
+
+        // Document summary
+        log('Generating document summary');
+        const summaryAnalysis = await this.runWithRetry(
+          () => summaryAgent.invoke({ 
+            content: document.content,
+            documentType: state.analysis.documentType
+          }),
+          'Document summary'
+        );
+        const summaryResult = JSON.parse(summaryAnalysis);
+
+        state.analysis.summary = summaryResult.summary;
+        state.metadata.recommendations = summaryResult.recommendations;
+        state.metadata.risks = summaryResult.risks;
+        state.analysis.status = 'completed';
+
+        // Update LangSmith run with success
+        await langSmith.updateRun(run.id, {
+          outputs: state,
+          status: 'completed'
+        });
+
+        return state;
+
+      } catch (error) {
+        state.analysis.status = 'failed';
+        throw error;
+      }
+
+    } catch (error) {
+      log('Workflow error:', error);
+      await langSmith.updateRun(run.id, {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        status: 'failed'
+      });
+      throw error;
+    }
+  }
+
+  async getDiagnosticReport(documentId: number) {
+    try {
+      // Get runs from LangSmith for this document
+      const runs = await langSmith.listRuns({
+        filter: {
+          inputs: { documentId: documentId.toString() }
+        }
+      });
 
       const diagnosticReport = {
-        contractId,
-        totalEvents: events.rowCount,
-        errors: events.rows.filter(e => e.event_type.endsWith('_error')),
-        stages: this.aggregateStageMetrics(events.rows),
-        recommendations: this.generateRecommendations(events.rows)
+        documentId,
+        totalRuns: runs.length,
+        successfulRuns: runs.filter(r => r.status === 'completed').length,
+        failedRuns: runs.filter(r => r.status === 'failed').length,
+        averageRuntime: runs.reduce((acc, run) => acc + (run.endTime - run.startTime), 0) / runs.length,
+        errorTypes: this.aggregateErrorTypes(runs),
+        recommendations: this.generateRecommendations(runs)
       };
 
       return {
@@ -160,10 +346,11 @@ class WorkflowOrchestrator {
         report: diagnosticReport
       };
     } catch (error) {
-      console.error('Failed to generate diagnostic report:', error);
+      log('Failed to generate diagnostic report:', error);
       throw new Error('Failed to generate diagnostic report');
     }
   }
+
 
   private async createVersion(contractId: number, {
     status,
@@ -235,6 +422,31 @@ class WorkflowOrchestrator {
           retryCount: 0
         };
       }
+      if (error.message.includes('token limit exceeded')){
+        return {
+          type: WorkflowErrorType.TOKEN_LIMIT,
+          message: `Token limit exceeded in ${stage} stage: ${error.message}`,
+          timestamp,
+          retryCount: 0
+        };
+      }
+      if (error.message.includes('API error')){
+        return {
+          type: WorkflowErrorType.API_ERROR,
+          message: `API error in ${stage} stage: ${error.message}`,
+          timestamp,
+          retryCount: 0
+        };
+      }
+      if (error.message.includes('parsing error')){
+        return {
+          type: WorkflowErrorType.PARSING_ERROR,
+          message: `Parsing error in ${stage} stage: ${error.message}`,
+          timestamp,
+          retryCount: 0
+        };
+      }
+
     }
 
     return {
@@ -263,51 +475,40 @@ class WorkflowOrchestrator {
     }
   }
 
-  private aggregateStageMetrics(events: any[]) {
-    const stages = new Map<string, {
-      totalTime: number,
-      errorCount: number,
-      retryCount: number
-    }>();
+  private aggregateErrorTypes(runs: any[]) {
+    const errorTypes = new Map<string, number>();
 
-    events.forEach(event => {
-      const stage = event.event_type.split('_')[0];
-      const current = stages.get(stage) || { totalTime: 0, errorCount: 0, retryCount: 0 };
-
-      if (event.event_type.endsWith('_error')) {
-        current.errorCount++;
-      }
-      if (event.details.retryCount) {
-        current.retryCount += event.details.retryCount;
-      }
-
-      stages.set(stage, current);
+    runs.filter(r => r.status === 'failed').forEach(run => {
+      const errorType = run.error?.type || 'UNKNOWN';
+      errorTypes.set(errorType, (errorTypes.get(errorType) || 0) + 1);
     });
 
-    return Object.fromEntries(stages);
+    return Object.fromEntries(errorTypes);
   }
 
-  private generateRecommendations(events: any[]) {
+  private generateRecommendations(runs: any[]) {
     const recommendations: string[] = [];
-    const errorCounts = new Map<WorkflowErrorType, number>();
+    const errorCounts = this.aggregateErrorTypes(runs);
 
-    events
-      .filter(e => e.event_type.endsWith('_error'))
-      .forEach(error => {
-        const count = errorCounts.get(error.details.type) || 0;
-        errorCounts.set(error.details.type, count + 1);
-      });
-
-    errorCounts.forEach((count, type) => {
+    Object.entries(errorCounts).forEach(([type, count]) => {
       if (count > 3) {
         switch (type) {
-          case WorkflowErrorType.API_TIMEOUT:
+          case 'TOKEN_LIMIT':
+            recommendations.push('Consider breaking down large documents into smaller chunks');
+            break;
+          case 'API_ERROR':
+            recommendations.push('Review API rate limits and implement better throttling');
+            break;
+          case 'PARSING_ERROR':
+            recommendations.push('Improve document preprocessing and cleaning steps');
+            break;
+          case 'API_TIMEOUT':
             recommendations.push('Consider increasing API timeout limits or implementing circuit breakers');
             break;
-          case WorkflowErrorType.VALIDATION_ERROR:
+          case 'VALIDATION_ERROR':
             recommendations.push('Review input validation rules and data preprocessing steps');
             break;
-          case WorkflowErrorType.ROUTING_ERROR:
+          case 'ROUTING_ERROR':
             recommendations.push('Check workflow routing configuration and service availability');
             break;
         }
@@ -315,6 +516,23 @@ class WorkflowOrchestrator {
     });
 
     return recommendations;
+  }
+
+  private runWithRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    retryCount = 0
+  ): Promise<T> {
+    try {
+      return operation();
+    } catch (error) {
+      if (retryCount < this.MAX_RETRIES) {
+        log(`Retrying ${operationName} (attempt ${retryCount + 1})`);
+        setTimeout(() => {}, this.RETRY_DELAY);
+        return this.runWithRetry(operation, operationName, retryCount + 1);
+      }
+      throw error;
+    }
   }
 }
 

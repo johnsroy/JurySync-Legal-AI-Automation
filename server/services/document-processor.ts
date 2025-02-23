@@ -1,9 +1,20 @@
 import { PDFDocument } from 'pdf-lib';
 import mammoth from 'mammoth';
-import debug from 'debug';
 import pdfParse from 'pdf-parse';
+import { ChatOpenAI } from "@langchain/openai";
+import { RunnableSequence } from "@langchain/core/runnables";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import { PromptTemplate } from "@langchain/core/prompts";
+import debug from 'debug';
 
 const log = debug('jurysync:document-processor');
+
+// Initialize LangChain chat model with higher token limits
+const chatModel = new ChatOpenAI({
+  modelName: "gpt-4-0125-preview",
+  maxTokens: 4096,
+  temperature: 0.3
+});
 
 interface ProcessingResult {
   success: boolean;
@@ -13,9 +24,40 @@ interface ProcessingResult {
     fileType?: string;
     processingTime?: number;
     method?: string;
+    analysis?: DocumentAnalysis;
   };
   error?: string;
 }
+
+interface DocumentAnalysis {
+  documentType: string;
+  summary: string;
+  keyPoints: string[];
+  entities: string[];
+  confidence: number;
+}
+
+// Create analysis chain
+const analysisPrompt = PromptTemplate.fromTemplate(`
+Analyze the following document content and provide structured insights.
+Focus on identifying key information, document type, and important entities.
+
+Document Content: {content}
+
+Provide a detailed analysis including:
+1. Document type and purpose
+2. Key points and findings
+3. Important entities mentioned
+4. Level of confidence in the analysis (0-1)
+
+Format the response as a structured analysis.
+`);
+
+const analysisChain = RunnableSequence.from([
+  analysisPrompt,
+  chatModel,
+  new StringOutputParser(),
+]);
 
 export async function processDocument(
   buffer: Buffer,
@@ -33,6 +75,9 @@ export async function processDocument(
       throw new Error(`Content extraction failed for ${filename}`);
     }
 
+    // Analyze content using LangChain
+    const analysis = await analyzeDocument(result.content);
+
     return {
       success: true,
       content: result.content,
@@ -40,6 +85,7 @@ export async function processDocument(
         ...result.metadata,
         processingTime: Date.now() - startTime,
         fileType: mimeType,
+        analysis
       }
     };
   } catch (error: any) {
@@ -52,6 +98,28 @@ export async function processDocument(
       success: false,
       error: error instanceof Error ? error.message : 'Document processing failed'
     };
+  }
+}
+
+async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
+  try {
+    const analysisResult = await analysisChain.invoke({
+      content: content.substring(0, 8000) // Ensure we don't exceed token limits
+    });
+
+    // Parse the analysis result
+    const analysis = JSON.parse(analysisResult);
+
+    return {
+      documentType: analysis.documentType || 'UNKNOWN',
+      summary: analysis.summary || '',
+      keyPoints: analysis.keyPoints || [],
+      entities: analysis.entities || [],
+      confidence: analysis.confidence || 0
+    };
+  } catch (error) {
+    log('Document analysis error:', error);
+    throw error;
   }
 }
 
