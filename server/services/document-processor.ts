@@ -11,7 +11,7 @@ const log = debug('jurysync:document-processor');
 
 // Initialize LangChain chat model with higher token limits
 const chatModel = new ChatOpenAI({
-  modelName: "gpt-4-0125-preview",
+  modelName: "gpt-4o", // Latest model as of May 13, 2024
   maxTokens: 4096,
   temperature: 0.3
 });
@@ -50,7 +50,14 @@ Provide a detailed analysis including:
 3. Important entities mentioned
 4. Level of confidence in the analysis (0-1)
 
-Format the response as a structured analysis.
+Format the response as JSON with the following structure:
+{
+  "documentType": string,
+  "summary": string,
+  "keyPoints": string[],
+  "entities": string[],
+  "confidence": number
+}
 `);
 
 const analysisChain = RunnableSequence.from([
@@ -91,7 +98,9 @@ export async function processDocument(
   } catch (error: any) {
     log('ERROR in document processing: %o', {
       error: error instanceof Error ? error.message : error,
-      stack: error instanceof Error ? error.stack : undefined
+      stack: error instanceof Error ? error.stack : undefined,
+      filename,
+      mimeType
     });
 
     return {
@@ -103,9 +112,13 @@ export async function processDocument(
 
 async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
   try {
+    log('Starting document analysis with content length: %d', content.length);
+
     const analysisResult = await analysisChain.invoke({
       content: content.substring(0, 8000) // Ensure we don't exceed token limits
     });
+
+    log('Received analysis result');
 
     // Parse the analysis result
     const analysis = JSON.parse(analysisResult);
@@ -119,7 +132,7 @@ async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
     };
   } catch (error) {
     log('Document analysis error:', error);
-    throw error;
+    throw new Error(`Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -159,7 +172,7 @@ async function extractPDFContent(buffer: Buffer): Promise<{ content: string; met
     // Use pdf-parse for text extraction
     const data = await pdfParse(buffer);
 
-    log('Successfully extracted text from PDF');
+    log('Successfully extracted text from PDF, pages: %d', data.numpages);
 
     return {
       content: data.text.trim() || 'PDF content extraction limited. Please try OCR for better results.',

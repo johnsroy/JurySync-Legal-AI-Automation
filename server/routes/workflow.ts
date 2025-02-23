@@ -3,7 +3,7 @@ import multer from "multer";
 import debug from 'debug';
 import { db } from "../db";
 import { vaultDocuments } from "@shared/schema";
-import { processDocument } from "../services/documentProcessor";
+import { processDocument } from "../services/document-processor";
 import { workflowOrchestrator } from "../services/workflowOrchestrator";
 import { createVectorEmbedding } from "../services/vectorService";
 import { eq } from 'drizzle-orm';
@@ -99,12 +99,11 @@ router.post("/upload", (req, res) => {
       const [document] = await db
         .insert(vaultDocuments)
         .values({
-          title: req.file.originalname,
           content: processResult.content,
-          documentType: processResult.metadata?.documentType || 'pending',
+          title: req.file.originalname,
+          documentType: processResult.metadata?.analysis?.documentType || 'UNKNOWN',
           fileSize: req.file.size,
           mimeType: req.file.mimetype,
-          status: 'processing',
           metadata: {
             ...processResult.metadata,
             uploadTimestamp: new Date().toISOString()
@@ -149,7 +148,7 @@ router.post("/upload", (req, res) => {
         message: 'Document uploaded and processing started'
       });
 
-    } catch (error) {
+    } catch (error: any) {
       log('Upload processing error:', error);
       res.status(500).json({
         error: 'Failed to process upload',
