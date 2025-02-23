@@ -10,19 +10,43 @@ import { eq } from 'drizzle-orm';
 
 const log = debug('jurysync:workflow');
 
-// Configure multer for multiple files
+// Configure multer with file filtering and better error handling
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 20 * 1024 * 1024, // 20MB limit per file
     files: 10 // Maximum 10 files per batch
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept common document formats
+    const allowedMimeTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+
+    if (allowedMimeTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported file type: ${file.mimetype}`));
+    }
   }
-}).array('files', 10);
+}).single('file'); // Changed back to single file upload for initial testing
 
 const router = Router();
 
 router.post("/upload", (req, res) => {
   upload(req, res, async (err) => {
+    if (err instanceof multer.MulterError) {
+      log('Multer error:', err);
+      return res.status(400).json({
+        error: 'File upload error',
+        details: err.message,
+        code: err.code
+      });
+    }
+
     if (err) {
       log('Upload error:', err);
       return res.status(400).json({
@@ -31,160 +55,86 @@ router.post("/upload", (req, res) => {
       });
     }
 
-    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+    if (!req.file) {
       return res.status(400).json({
-        error: 'No files uploaded'
+        error: 'No file uploaded',
+        details: 'Please select a file to upload'
       });
     }
 
     try {
-      log('Processing batch upload:', {
-        fileCount: req.files.length,
-        files: req.files.map(f => ({
-          filename: f.originalname,
-          mimetype: f.mimetype,
-          size: f.size
-        }))
+      log('Processing file:', {
+        filename: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
       });
 
-      // Process all files in parallel
-      const processPromises = req.files.map(async (file) => {
-        try {
-          // Initial document processing
-          const processResult = await processDocument(
-            file.buffer,
-            file.originalname,
-            file.mimetype
-          );
+      // Initial document processing
+      const processResult = await processDocument(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype
+      );
 
-          if (!processResult.success || !processResult.content) {
-            throw new Error(processResult.error || 'Failed to process document');
+      if (!processResult.success || !processResult.content) {
+        throw new Error(processResult.error || 'Failed to process document');
+      }
+
+      // Store document in database
+      const [document] = await db
+        .insert(vaultDocuments)
+        .values({
+          title: req.file.originalname,
+          content: processResult.content,
+          documentType: processResult.metadata?.documentType || 'pending',
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          status: 'processing',
+          metadata: {
+            ...processResult.metadata,
+            uploadTimestamp: new Date().toISOString()
           }
+        })
+        .returning();
 
-          // Store document in database
-          const [document] = await db
-            .insert(vaultDocuments)
-            .values({
-              title: file.originalname,
-              content: processResult.content,
-              documentType: 'pending',
-              fileSize: file.size,
-              mimeType: file.mimetype,
-              status: 'processing',
-              metadata: {
-                ...processResult.metadata,
-                batchUpload: true,
-                uploadTimestamp: new Date().toISOString()
-              }
-            })
-            .returning();
+      // Create vector embedding in background
+      createVectorEmbedding(processResult.content)
+        .then(async (vectorEmbedding) => {
+          await db
+            .update(vaultDocuments)
+            .set({ vectorId: vectorEmbedding.id })
+            .where(eq(vaultDocuments.id, document.id));
+        })
+        .catch(error => {
+          log('Vector embedding error:', error);
+        });
 
-          // Create vector embedding in background
-          createVectorEmbedding(processResult.content)
-            .then(async (vectorEmbedding) => {
-              await db
-                .update(vaultDocuments)
-                .set({ vectorId: vectorEmbedding.id })
-                .where(eq(vaultDocuments.id, document.id));
-            })
-            .catch(error => {
-              log('Vector embedding error:', error);
-            });
+      // Start workflow processing
+      workflowOrchestrator.processDocument(document.id)
+        .catch(error => {
+          log('Workflow processing error:', error);
+        });
 
-          // Start workflow processing
-          workflowOrchestrator.processDocument(document.id)
-            .catch(error => {
-              log('Workflow processing error:', error);
-            });
-
-          return {
-            success: true,
-            documentId: document.id,
-            filename: file.originalname
-          };
-        } catch (error) {
-          return {
-            success: false,
-            filename: file.originalname,
-            error: error instanceof Error ? error.message : 'Processing failed'
-          };
-        }
-      });
-
-      // Wait for all files to be processed
-      const results = await Promise.all(processPromises);
-
-      // Group results by success/failure
-      const successful = results.filter(r => r.success);
-      const failed = results.filter(r => !r.success);
-
+      // Return successful response
       res.json({
         success: true,
-        message: 'Batch upload processed',
-        totalFiles: req.files.length,
-        successfulUploads: successful.length,
-        failedUploads: failed.length,
-        documents: successful.map(s => ({
-          documentId: s.documentId,
-          filename: s.filename,
-          status: 'processing'
-        })),
-        failures: failed.map(f => ({
-          filename: f.filename,
-          error: f.error
-        }))
+        documentId: document.id,
+        status: 'processing',
+        message: 'Document uploaded and processing started'
       });
 
     } catch (error) {
-      log('Batch upload error:', error);
+      log('Upload processing error:', error);
       res.status(500).json({
-        error: 'Failed to process batch upload',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: 'Failed to process upload',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : undefined
       });
     }
   });
 });
 
-router.get("/batch-status", async (req, res) => {
-  try {
-    const documentIds = req.query.ids;
-
-    if (!documentIds || !Array.isArray(documentIds)) {
-      return res.status(400).json({
-        error: 'Invalid document IDs provided'
-      });
-    }
-
-    const documents = await db
-      .select()
-      .from(vaultDocuments)
-      .where(
-        eq(vaultDocuments.id, documentIds.map(id => parseInt(id as string)))
-      );
-
-    const statusSummary = {
-      total: documents.length,
-      processing: documents.filter(d => d.status === 'processing').length,
-      completed: documents.filter(d => d.status === 'completed').length,
-      failed: documents.filter(d => d.status === 'failed').length,
-      documents: documents.map(d => ({
-        documentId: d.id,
-        status: d.status,
-        documentType: d.documentType,
-        metadata: d.metadata
-      }))
-    };
-
-    res.json(statusSummary);
-
-  } catch (error) {
-    log('Batch status check error:', error);
-    res.status(500).json({
-      error: 'Failed to check batch status'
-    });
-  }
-});
-
+// Keep existing routes
 router.get("/status/:documentId", async (req, res) => {
   try {
     const documentId = parseInt(req.params.documentId);
