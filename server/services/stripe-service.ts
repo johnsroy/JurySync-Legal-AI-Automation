@@ -3,6 +3,7 @@ import { db } from '../db';
 import { users } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import debug from 'debug';
+import { PRICING_PLANS } from '@shared/schema/pricing';
 
 const log = debug('jurysync:stripe-service');
 
@@ -15,64 +16,50 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 });
 
 export const stripeService = {
-  // Lazy-loaded product and price IDs
-  _productIds: null as Record<string, string> | null,
-  _priceIds: null as Record<string, string> | null,
+  // Maintain backwards compatibility with existing price IDs
+  _productIds: {} as Record<string, string>,
+  _priceIds: {} as Record<string, string>,
 
-  async getProductIds() {
-    if (!this._productIds) {
-      await this.initializeProducts();
-    }
-    return this._productIds;
-  },
-
-  async getPriceIds() {
-    if (!this._priceIds) {
-      await this.initializeProducts();
-    }
-    return this._priceIds;
-  },
-
-  async initializeProducts() {
-    if (this._productIds && this._priceIds) {
-      return; // Already initialized
-    }
-
-    log('Initializing Stripe products and prices...');
-    this._productIds = {};
-    this._priceIds = {};
-
+  async ensureInitialized() {
     try {
       // List existing products and prices
       const products = await stripe.products.list({ active: true });
       const prices = await stripe.prices.list({ active: true });
 
+      // Store existing mappings
       products.data.forEach(product => {
         if (product.metadata.planId) {
-          this._productIds![product.metadata.planId] = product.id;
+          this._productIds[product.metadata.planId] = product.id;
         }
       });
 
       prices.data.forEach(price => {
-        if (price.product && typeof price.product === 'string' && price.metadata.planId) {
-          this._priceIds![price.metadata.planId] = price.id;
+        if (price.metadata.planId) {
+          this._priceIds[price.metadata.planId] = price.id;
         }
       });
 
-      log('Stripe products and prices initialized:', {
-        productCount: Object.keys(this._productIds).length,
-        priceCount: Object.keys(this._priceIds).length
+      // Update PRICING_PLANS with actual Stripe price IDs
+      PRICING_PLANS.forEach(plan => {
+        if (this._priceIds[plan.id]) {
+          plan.priceId = this._priceIds[plan.id];
+        }
+      });
+
+      log('Stripe service initialized with:', {
+        products: Object.keys(this._productIds).length,
+        prices: Object.keys(this._priceIds).length
       });
 
     } catch (error) {
-      log('Error initializing Stripe products:', error);
-      throw error;
+      log('Warning: Stripe initialization error:', error);
+      // Don't throw - allow fallback to on-demand initialization
     }
   },
 
-  async createCheckoutSession(userId: number, priceId: string) {
+  async createCheckoutSession(userId: number, planId: string) {
     try {
-      log(`Creating checkout session for user ${userId} and price ${priceId}`);
+      log(`Creating checkout session for user ${userId} and plan ${planId}`);
 
       // Get user
       const [user] = await db
@@ -84,6 +71,27 @@ export const stripeService = {
         return {
           success: false,
           error: 'User not found'
+        };
+      }
+
+      // Find the plan
+      const plan = PRICING_PLANS.find(p => p.id === planId);
+      if (!plan) {
+        return {
+          success: false,
+          error: 'Invalid plan selected'
+        };
+      }
+
+      // Ensure price ID exists
+      if (!plan.priceId) {
+        await this.ensureInitialized();
+      }
+
+      if (!plan.priceId) {
+        return {
+          success: false,
+          error: 'Price not initialized yet. Please try again in a few moments.'
         };
       }
 
@@ -114,7 +122,7 @@ export const stripeService = {
         mode: 'subscription',
         line_items: [
           {
-            price: priceId,
+            price: plan.priceId,
             quantity: 1,
           },
         ],
@@ -122,9 +130,6 @@ export const stripeService = {
         cancel_url: `${process.env.CLIENT_URL}/subscription?canceled=true`,
         allow_promotion_codes: true,
         billing_address_collection: 'required',
-        metadata: {
-          userId: userId.toString()
-        }
       });
 
       return {
@@ -183,7 +188,7 @@ export const stripeService = {
     }
   },
 
-  private async handleSuccessfulCheckout(session: Stripe.Checkout.Session) {
+  async handleSuccessfulCheckout(session: Stripe.Checkout.Session) {
     const userId = session.metadata?.userId;
     if (!userId) return;
 
@@ -196,7 +201,7 @@ export const stripeService = {
       .where(eq(users.id, parseInt(userId)));
   },
 
-  private async handleSubscriptionCanceled(subscription: Stripe.Subscription) {
+  async handleSubscriptionCanceled(subscription: Stripe.Subscription) {
     const customerId = subscription.customer as string;
 
     await db
