@@ -6,6 +6,7 @@ import { documentProcessor } from "./documentProcessor";
 import { db } from "../db";
 import { legalDocuments } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { pdfService } from "./pdf-service";
 
 const HTML_TAG_REGEX = /<[^>]*>|<!DOCTYPE.*?>/i;
 const DOCTYPE_REGEX = /<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi;
@@ -181,6 +182,24 @@ class TaskManager {
 
   getTaskHistory(taskId: string) {
     return this.taskHistory.get(taskId) || [];
+  }
+}
+
+async function initializeServices() {
+  try {
+    // Lazy initialize PDF service only when needed
+    await pdfService.initialize().catch((error) => {
+      log("PDF service initialization warning (non-critical)", "debug", {
+        error: error.message,
+      });
+    });
+
+    return true;
+  } catch (error: any) {
+    log("Service initialization warning", "debug", {
+      error: error.message,
+    });
+    return false;
   }
 }
 
@@ -438,6 +457,44 @@ export class OrchestratorService {
     };
   }
 
+  private async processDocument(task: any, document: Buffer, fileType: string) {
+    try {
+      // Initialize services if needed
+      await initializeServices();
+
+      let processedContent: string;
+
+      if (fileType.includes("pdf")) {
+        try {
+          const pdfContent = await pdfService.extractText(document);
+          processedContent = pdfContent;
+        } catch (error) {
+          log("PDF processing fallback to standard processing", "debug", {
+            error: error.message,
+          });
+          processedContent = await documentProcessor
+            .processDocument(document, "document.pdf", fileType)
+            .then((result) => result.content);
+        }
+      } else {
+        const result = await documentProcessor.processDocument(
+          document,
+          "document.txt",
+          fileType,
+        );
+        processedContent = result.content;
+      }
+
+      return processedContent;
+    } catch (error: any) {
+      log("Document processing error", "error", {
+        taskId: task.id,
+        error: error.message,
+      });
+      throw new Error(`Document processing failed: ${error.message}`);
+    }
+  }
+
   private async cleanAndValidateDocument(
     text: string,
     fileType: string = "text/plain",
@@ -451,22 +508,13 @@ export class OrchestratorService {
       fileType,
     });
 
-    const processResult = await documentProcessor.processDocument(
-      Buffer.from(text),
-      "document.txt",
-      fileType,
-    );
-
-    if (!processResult.success || !processResult.content) {
-      throw new Error("Document processing failed");
+    try {
+      const document = Buffer.from(text);
+      return await this.processDocument({ id: "temp" }, document, fileType);
+    } catch (error: any) {
+      log("Document validation error", "error", { error: error.message });
+      throw new Error("Document validation failed");
     }
-
-    log("Document processing completed", "debug", {
-      finalLength: processResult.content.length,
-      metadata: processResult.metadata,
-    });
-
-    return processResult.content;
   }
 
   async distributeTask(input: {
