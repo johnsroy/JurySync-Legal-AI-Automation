@@ -4,185 +4,218 @@ import debug from 'debug';
 import { db } from "../db";
 import { vaultDocuments } from "@shared/schema";
 import { processDocument } from "../services/document-processor";
-import { workflowOrchestrator } from "../services/workflowOrchestrator";
 import { createVectorEmbedding } from "../services/vectorService";
 import { eq } from 'drizzle-orm';
 
 const log = debug('jurysync:workflow');
 
-// Configure multer with file filtering and better error handling
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 20 * 1024 * 1024, // 20MB limit per file
-    files: 1 // Single file upload
-  },
-  fileFilter: (req, file, cb) => {
-    log('Received file:', {
-      fieldname: file.fieldname,
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size
-    });
-
-    // Accept common document formats
-    const allowedMimeTypes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain'
-    ];
-
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      log('File rejected - unsupported type:', file.mimetype);
-      cb(new Error(`Unsupported file type: ${file.mimetype}`));
-    }
+    fileSize: 20 * 1024 * 1024, // 20MB limit
+    files: 1
   }
-}).single('file'); // Match frontend FormData field name
+}).single('file');
 
 const router = Router();
 
-router.post("/upload", (req, res) => {
+// Health check endpoint
+router.get("/health", (req, res) => {
+  try {
+    log('Health check requested');
+    res.json({ 
+      status: 'ok',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    log('Health check failed:', error);
+    res.status(500).json({ 
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Health check failed'
+    });
+  }
+});
+
+// Test route for basic file upload
+router.post("/test-upload", (req, res) => {
   upload(req, res, async (err) => {
-    if (err instanceof multer.MulterError) {
-      log('Multer error:', err);
-      return res.status(400).json({
-        error: 'File upload error',
-        details: err.message,
-        code: err.code
-      });
-    }
-
-    if (err) {
-      log('Upload error:', err);
-      return res.status(400).json({
-        error: 'File upload error',
-        details: err.message
-      });
-    }
-
-    if (!req.file) {
-      log('No file received');
-      return res.status(400).json({
-        error: 'No file uploaded',
-        details: 'Please select a file to upload'
-      });
-    }
-
     try {
-      log('Processing file:', {
+      if (err) {
+        log('Upload error:', err);
+        return res.status(400).json({
+          success: false,
+          error: err.message || 'File upload failed'
+        });
+      }
+
+      if (!req.file) {
+        log('No file received');
+        return res.status(400).json({
+          success: false,
+          error: 'No file uploaded'
+        });
+      }
+
+      // Log detailed file information
+      log('File received:', {
+        fieldname: req.file.fieldname,
+        originalname: req.file.originalname,
+        encoding: req.file.encoding,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        buffer_length: req.file.buffer.length
+      });
+
+      // Basic content extraction
+      const content = req.file.buffer.toString('utf-8');
+
+      // Log content details
+      log('Content extracted:', {
+        length: content.length,
+        preview: content.substring(0, 100)
+      });
+
+      return res.json({
+        success: true,
         filename: req.file.originalname,
         mimetype: req.file.mimetype,
-        size: req.file.size
+        size: req.file.size,
+        content_length: content.length,
+        content_preview: content.substring(0, 100)
       });
-
-      // Initial document processing
-      const processResult = await processDocument(
-        req.file.buffer,
-        req.file.originalname,
-        req.file.mimetype
-      );
-
-      log('Document processing result:', {
-        success: processResult.success,
-        hasContent: !!processResult.content,
-        error: processResult.error
-      });
-
-      if (!processResult.success || !processResult.content) {
-        return res.status(400).json({
-          error: processResult.error || 'Failed to process document',
-          details: 'Document processing failed'
-        });
-      }
-
-      // Store document in database with correct schema
-      try {
-        const [document] = await db
-          .insert(vaultDocuments)
-          .values({
-            userId: req.user?.id || 1, // Default to 1 if no user
-            title: req.file.originalname,
-            content: processResult.content,
-            documentType: processResult.metadata?.analysis?.documentType || 'UNKNOWN',
-            aiSummary: processResult.metadata?.analysis?.summary || null,
-            aiClassification: processResult.metadata?.analysis?.documentType || null,
-            fileSize: req.file.size,
-            mimeType: req.file.mimetype,
-            metadata: {
-              ...processResult.metadata,
-              uploadTimestamp: new Date().toISOString()
-            },
-            createdAt: new Date(),
-            updatedAt: new Date()
-          })
-          .returning();
-
-        log('Document stored in database:', {
-          id: document.id,
-          title: document.title
-        });
-
-        // Start background processing
-        Promise.all([
-          // Vector embedding creation
-          createVectorEmbedding(processResult.content)
-            .then(async (vectorEmbedding) => {
-              await db
-                .update(vaultDocuments)
-                .set({ vectorId: vectorEmbedding.id })
-                .where(eq(vaultDocuments.id, document.id));
-
-              log('Vector embedding created:', {
-                documentId: document.id,
-                vectorId: vectorEmbedding.id
-              });
-            })
-            .catch(error => {
-              log('Vector embedding error:', error);
-            }),
-
-          // Workflow processing
-          workflowOrchestrator.processDocument(document.id)
-            .catch(error => {
-              log('Workflow processing error:', error);
-            })
-        ]).catch(error => {
-          log('Background processing error:', error);
-        });
-
-        // Return successful response
-        return res.json({
-          success: true,
-          documentId: document.id,
-          text: processResult.content,
-          status: 'processing',
-          message: 'Document uploaded and processing started'
-        });
-
-      } catch (dbError: any) {
-        log('Database error:', dbError);
-        return res.status(500).json({
-          error: 'Failed to store document',
-          message: dbError instanceof Error ? dbError.message : 'Unknown database error',
-          details: dbError instanceof Error ? dbError.stack : undefined
-        });
-      }
 
     } catch (error: any) {
-      log('Upload processing error:', error);
+      log('Test upload error:', error);
       return res.status(500).json({
-        error: 'Failed to process upload',
-        message: error instanceof Error ? error.message : 'Unknown error',
-        details: error instanceof Error ? error.stack : undefined
+        success: false,
+        error: error instanceof Error ? error.message : 'Upload processing failed',
+        stack: error instanceof Error ? error.stack : undefined
       });
     }
   });
 });
 
-// Keep existing routes
+// Main upload route with full processing
+router.post("/upload", (req, res) => {
+  upload(req, res, async (err) => {
+    try {
+      if (err) {
+        log('Upload error:', err);
+        return res.status(400).json({
+          success: false,
+          error: err.message || 'File upload failed'
+        });
+      }
+
+      if (!req.file) {
+        log('No file received');
+        return res.status(400).json({
+          success: false,
+          error: 'No file uploaded'
+        });
+      }
+
+      // Log detailed file information
+      log('File received:', {
+        fieldname: req.file.fieldname,
+        originalname: req.file.originalname,
+        encoding: req.file.encoding,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        buffer_length: req.file.buffer.length
+      });
+
+      // Basic content check first
+      let content = '';
+      try {
+        content = req.file.buffer.toString('utf-8');
+      } catch (error) {
+        log('Content extraction error:', error);
+        return res.status(400).json({
+          success: false,
+          error: 'Failed to extract file content'
+        });
+      }
+
+      // Store document in database
+      const [document] = await db
+        .insert(vaultDocuments)
+        .values({
+          userId: req.user?.id || 1,
+          title: req.file.originalname,
+          content: content,
+          documentType: 'PENDING',
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          metadata: {
+            uploadTimestamp: new Date().toISOString()
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        .returning();
+
+      log('Document stored:', { id: document.id });
+
+      // Process document in background
+      setTimeout(async () => {
+        try {
+          const processResult = await processDocument(
+            req.file!.buffer,
+            req.file!.originalname,
+            req.file!.mimetype
+          );
+
+          if (processResult.success) {
+            await db
+              .update(vaultDocuments)
+              .set({
+                content: processResult.content,
+                documentType: 'PROCESSED',
+                metadata: {
+                  ...document.metadata,
+                  processed: true,
+                  processingTime: processResult.metadata?.processingTime
+                }
+              })
+              .where(eq(vaultDocuments.id, document.id));
+
+            // Create vector embedding
+            createVectorEmbedding(processResult.content)
+              .then(async (embedding) => {
+                await db
+                  .update(vaultDocuments)
+                  .set({ vectorId: embedding.id })
+                  .where(eq(vaultDocuments.id, document.id));
+                log('Vector embedding created for document:', document.id);
+              })
+              .catch(error => log('Vector embedding error:', error));
+          }
+        } catch (error) {
+          log('Background processing error:', error);
+        }
+      }, 0);
+
+      // Return immediate success response
+      return res.json({
+        success: true,
+        documentId: document.id,
+        text: content.substring(0, 1000), // Send preview only
+        status: 'processing'
+      });
+
+    } catch (error: any) {
+      log('Upload processing error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Upload processing failed',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+    }
+  });
+});
+
+// Status check route
 router.get("/status/:documentId", async (req, res) => {
   try {
     const documentId = parseInt(req.params.documentId);
@@ -210,19 +243,6 @@ router.get("/status/:documentId", async (req, res) => {
     log('Status check error:', error);
     res.status(500).json({
       error: 'Failed to check document status'
-    });
-  }
-});
-
-router.get("/diagnostics/:documentId", async (req, res) => {
-  try {
-    const documentId = parseInt(req.params.documentId);
-    const report = await workflowOrchestrator.getDiagnosticReport(documentId);
-    res.json(report);
-  } catch (error) {
-    log('Diagnostics error:', error);
-    res.status(500).json({
-      error: 'Failed to generate diagnostics'
     });
   }
 });

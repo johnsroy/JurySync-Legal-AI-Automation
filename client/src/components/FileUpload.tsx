@@ -30,7 +30,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
 
     console.log('Starting file upload:', {
       name: file.name,
-      type: file.mimetype,
+      type: file.type,
       size: file.size
     });
 
@@ -38,19 +38,13 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
     formData.append("file", file);
 
     try {
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => Math.min(prev + 10, 90));
-      }, 500);
-
-      console.log('Sending request to /api/workflow/upload');
-      const response = await fetch("/api/workflow/upload", {
+      // Use test endpoint first
+      const response = await fetch("/api/workflow/test-upload", {
         method: "POST",
         body: formData,
       });
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
+      setUploadProgress(50);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -59,26 +53,24 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       }
 
       const result = await response.json();
-      console.log('Upload response:', result);
+      console.log('Test upload response:', result);
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to process file');
       }
 
-      if (!result.text) {
-        throw new Error('No text content received from server');
-      }
+      setUploadProgress(100);
 
       onFileProcessed({
-        text: result.text,
-        documentId: result.documentId,
+        text: result.content_preview,
+        documentId: '0', // Temporary ID for test endpoint
         fileName: file.name
       });
 
       // Show success toast
       toast({
         title: "Upload Successful",
-        description: `${file.name} has been uploaded and is being processed.`,
+        description: `${file.name} has been uploaded successfully. Content length: ${result.content_length} characters`,
         duration: 5000,
       });
 
@@ -119,9 +111,10 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
+      'text/plain': ['.txt'],
       'application/pdf': ['.pdf'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'text/plain': ['.txt']
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
     },
     multiple,
     disabled: isProcessing
@@ -150,7 +143,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
                 : "Drag and drop your documents here, or click to select"}
             </p>
             <p className="text-xs text-gray-400">
-              Supports PDF, DOCX, and TXT files
+              Try uploading a text file (.txt) first
             </p>
           </div>
         </div>
