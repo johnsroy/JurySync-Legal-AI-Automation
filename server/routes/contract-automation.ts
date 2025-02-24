@@ -12,7 +12,6 @@ import { documentProcessor } from '../services/documentProcessor';
 
 const router = Router();
 const openai = new OpenAI();
-const documentProcessor = new DocumentProcessor();
 
 // Configure multer
 const upload = multer({
@@ -109,7 +108,7 @@ router.get('/templates', async (req, res) => {
     // Filter by search if provided
     if (search && typeof search === 'string') {
       const searchLower = search.toLowerCase();
-      templates = templates.filter(template => 
+      templates = templates.filter(template =>
         template.name.toLowerCase().includes(searchLower) ||
         template.description.toLowerCase().includes(searchLower)
       );

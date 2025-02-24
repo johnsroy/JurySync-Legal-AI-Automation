@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import pdf from "pdf-parse";
+import pdf from "pdf-parse/lib/pdf-parse";  // Import directly from lib to avoid test file loading
 import { createWorker } from "tesseract.js";
 import debug from "debug";
 import { Readable } from "stream";
@@ -53,20 +53,20 @@ export class PDFService {
       return {
         text,
         metadata: {
-          info: data.info,
-          pageCount: data.numpages,
+          info: data.info || {},
+          pageCount: data.numpages || 0,
           isScanned,
           version: data.version,
         },
       };
-    } catch (error) {
-      log("PDF parsing error:", error);
+    } catch (error: any) {
+      log("PDF parsing error:", error.message);
       throw new Error(`Failed to parse PDF document: ${error.message}`);
     }
   }
 
-  private async isScannedDocument(data: pdf.PDFData): Promise<boolean> {
-    const textDensity = data.text.length / data.numpages;
+  private async isScannedDocument(data: any): Promise<boolean> {
+    const textDensity = data.text.length / (data.numpages || 1);
     return textDensity < 100;
   }
 
@@ -81,13 +81,13 @@ export class PDFService {
         text: data.text,
         confidence: data.confidence,
       };
-    } catch (error) {
-      log("OCR processing error:", error);
+    } catch (error: any) {
+      log("OCR processing error:", error.message);
       throw new Error("Failed to process document with OCR");
     }
   }
 
-  async generatePDF(content: string, options: any = {}): Promise<PDFDocument> {
+  async generatePDF(content: string, options: any = {}): Promise<typeof PDFDocument> {
     const doc = new PDFDocument(options);
     doc.fontSize(12).text(content);
     return doc;
