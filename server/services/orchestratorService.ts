@@ -12,13 +12,62 @@ const HTML_TAG_REGEX = /<[^>]*>|<!DOCTYPE.*?>/i;
 const DOCTYPE_REGEX = /<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi;
 const INVALID_CHARACTERS_REGEX = /[\u0000-\u0008\u000B-\u000C\u000E-\u001F]/g;
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error("Missing ANTHROPIC_API_KEY environment variable");
-}
+// Move initialization logic into a lazy-loaded container
+class ServiceContainer {
+  private static instance: ServiceContainer;
+  private initialized: boolean = false;
+  private initPromise: Promise<void> | null = null;
+  private anthropicClient: Anthropic | null = null;
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+  private constructor() {}
+
+  static getInstance(): ServiceContainer {
+    if (!ServiceContainer.instance) {
+      ServiceContainer.instance = new ServiceContainer();
+    }
+    return ServiceContainer.instance;
+  }
+
+  async getAnthropicClient(): Promise<Anthropic> {
+    if (!this.anthropicClient) {
+      if (!process.env.ANTHROPIC_API_KEY) {
+        throw new Error("Missing ANTHROPIC_API_KEY environment variable");
+      }
+      this.anthropicClient = new Anthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      });
+    }
+    return this.anthropicClient;
+  }
+
+  async initialize() {
+    if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = (async () => {
+      // Defer all heavy initialization
+      setTimeout(async () => {
+        try {
+          await pdfService.initialize();
+          await complianceAuditService.initialize();
+          await legalResearchService.initialize();
+          await continuousLearningService.initialize();
+          this.initialized = true;
+        } catch (error) {
+          log(
+            "Background service initialization error (non-critical)",
+            "debug",
+            {
+              error: error instanceof Error ? error.message : "Unknown error",
+            },
+          );
+        }
+      }, 100); // Defer initialization
+    })();
+
+    return this.initPromise;
+  }
+}
 
 // Enhanced logging function
 function log(
@@ -185,30 +234,14 @@ class TaskManager {
   }
 }
 
-async function initializeServices() {
-  try {
-    // Lazy initialize PDF service only when needed
-    await pdfService.initialize().catch((error) => {
-      log("PDF service initialization warning (non-critical)", "debug", {
-        error: error.message,
-      });
-    });
-
-    return true;
-  } catch (error: any) {
-    log("Service initialization warning", "debug", {
-      error: error.message,
-    });
-    return false;
-  }
-}
-
 export class OrchestratorService {
   private static instance: OrchestratorService;
   private taskManager: TaskManager;
+  private services: ServiceContainer;
 
   private constructor() {
     this.taskManager = TaskManager.getInstance();
+    this.services = ServiceContainer.getInstance();
   }
 
   static getInstance(): OrchestratorService {
@@ -223,34 +256,27 @@ export class OrchestratorService {
     data: any;
   }) {
     const taskId = `task_${Date.now()}`;
-    log("Creating new task", "info", {
-      taskId,
-      type: input.type,
-      hasData: !!input.data,
-    });
+    const task = this.taskManager.createTask(taskId, input.type, input.data);
 
-    try {
-      const task = this.taskManager.createTask(taskId, input.type, input.data);
+    // Start background initialization
+    this.services.initialize().catch(() => {});
 
-      // Start processing in background
+    // Start processing in background
+    setTimeout(() => {
       this.processTask(task).catch((error) => {
         log("Task processing error", "error", {
           taskId,
           error: error.message,
         });
-
         this.taskManager.updateTask(taskId, {
           status: "error",
           error: error.message,
           progress: 0,
         });
       });
+    }, 0);
 
-      return task;
-    } catch (error: any) {
-      log("Task creation error", "error", { error: error.message });
-      throw new Error(`Failed to create task: ${error.message}`);
-    }
+    return task;
   }
 
   private async processTask(task: any) {
@@ -609,6 +635,7 @@ export class OrchestratorService {
       );
 
       // Use Claude for comprehensive classification
+      const anthropic = await this.services.getAnthropicClient();
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 1000,
