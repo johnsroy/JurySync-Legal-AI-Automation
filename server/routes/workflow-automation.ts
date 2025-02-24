@@ -3,7 +3,7 @@ import { AIOrchestrator } from "../services/ai-orchestrator";
 import multer from "multer";
 import { z } from "zod";
 import { pdfService } from "../services/pdf-service";
-import { DocumentProcessor } from "../services/document-processor";
+import { documentProcessor } from "../services/documentProcessor";
 import { createHash } from "crypto";
 import debug from "debug";
 import { db } from "../db";

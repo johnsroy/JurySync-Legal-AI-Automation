@@ -1,37 +1,37 @@
 import { Router } from "express";
 import multer from "multer";
-import debug from 'debug';
+import debug from "debug";
 import { db } from "../db";
 import { vaultDocuments } from "@shared/schema";
-import { processDocument } from "../services/document-processor";
+import { documentProcessor } from "../services/documentProcessor";
 import { createVectorEmbedding } from "../services/vectorService";
-import { eq } from 'drizzle-orm';
+import { eq } from "drizzle-orm";
 
-const log = debug('jurysync:workflow');
+const log = debug("jurysync:workflow");
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 20 * 1024 * 1024, // 20MB limit
-    files: 1
-  }
-}).single('file');
+    files: 1,
+  },
+}).single("file");
 
 const router = Router();
 
 // Health check endpoint
 router.get("/health", (req, res) => {
   try {
-    log('Health check requested');
-    res.json({ 
-      status: 'ok',
-      timestamp: new Date().toISOString()
+    log("Health check requested");
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    log('Health check failed:', error);
-    res.status(500).json({ 
-      status: 'error',
-      error: error instanceof Error ? error.message : 'Health check failed'
+    log("Health check failed:", error);
+    res.status(500).json({
+      status: "error",
+      error: error instanceof Error ? error.message : "Health check failed",
     });
   }
 });
@@ -41,38 +41,38 @@ router.post("/test-upload", (req, res) => {
   upload(req, res, async (err) => {
     try {
       if (err) {
-        log('Upload error:', err);
+        log("Upload error:", err);
         return res.status(400).json({
           success: false,
-          error: err.message || 'File upload failed'
+          error: err.message || "File upload failed",
         });
       }
 
       if (!req.file) {
-        log('No file received');
+        log("No file received");
         return res.status(400).json({
           success: false,
-          error: 'No file uploaded'
+          error: "No file uploaded",
         });
       }
 
       // Log detailed file information
-      log('File received:', {
+      log("File received:", {
         fieldname: req.file.fieldname,
         originalname: req.file.originalname,
         encoding: req.file.encoding,
         mimetype: req.file.mimetype,
         size: req.file.size,
-        buffer_length: req.file.buffer.length
+        buffer_length: req.file.buffer.length,
       });
 
       // Basic content extraction
-      const content = req.file.buffer.toString('utf-8');
+      const content = req.file.buffer.toString("utf-8");
 
       // Log content details
-      log('Content extracted:', {
+      log("Content extracted:", {
         length: content.length,
-        preview: content.substring(0, 100)
+        preview: content.substring(0, 100),
       });
 
       return res.json({
@@ -81,15 +81,15 @@ router.post("/test-upload", (req, res) => {
         mimetype: req.file.mimetype,
         size: req.file.size,
         content_length: content.length,
-        content_preview: content.substring(0, 100)
+        content_preview: content.substring(0, 100),
       });
-
     } catch (error: any) {
-      log('Test upload error:', error);
+      log("Test upload error:", error);
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : 'Upload processing failed',
-        stack: error instanceof Error ? error.stack : undefined
+        error:
+          error instanceof Error ? error.message : "Upload processing failed",
+        stack: error instanceof Error ? error.stack : undefined,
       });
     }
   });
@@ -100,40 +100,40 @@ router.post("/upload", (req, res) => {
   upload(req, res, async (err) => {
     try {
       if (err) {
-        log('Upload error:', err);
+        log("Upload error:", err);
         return res.status(400).json({
           success: false,
-          error: err.message || 'File upload failed'
+          error: err.message || "File upload failed",
         });
       }
 
       if (!req.file) {
-        log('No file received');
+        log("No file received");
         return res.status(400).json({
           success: false,
-          error: 'No file uploaded'
+          error: "No file uploaded",
         });
       }
 
       // Log detailed file information
-      log('File received:', {
+      log("File received:", {
         fieldname: req.file.fieldname,
         originalname: req.file.originalname,
         encoding: req.file.encoding,
         mimetype: req.file.mimetype,
         size: req.file.size,
-        buffer_length: req.file.buffer.length
+        buffer_length: req.file.buffer.length,
       });
 
       // Basic content check first
-      let content = '';
+      let content = "";
       try {
-        content = req.file.buffer.toString('utf-8');
+        content = req.file.buffer.toString("utf-8");
       } catch (error) {
-        log('Content extraction error:', error);
+        log("Content extraction error:", error);
         return res.status(400).json({
           success: false,
-          error: 'Failed to extract file content'
+          error: "Failed to extract file content",
         });
       }
 
@@ -144,26 +144,26 @@ router.post("/upload", (req, res) => {
           userId: req.user?.id || 1,
           title: req.file.originalname,
           content: content,
-          documentType: 'PENDING',
+          documentType: "PENDING",
           fileSize: req.file.size,
           mimeType: req.file.mimetype,
           metadata: {
-            uploadTimestamp: new Date().toISOString()
+            uploadTimestamp: new Date().toISOString(),
           },
           createdAt: new Date(),
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .returning();
 
-      log('Document stored:', { id: document.id });
+      log("Document stored:", { id: document.id });
 
       // Process document in background
       setTimeout(async () => {
         try {
-          const processResult = await processDocument(
+          const processResult = await documentProcessor.processDocument(
             req.file!.buffer,
             req.file!.originalname,
-            req.file!.mimetype
+            req.file!.mimetype,
           );
 
           if (processResult.success) {
@@ -171,12 +171,13 @@ router.post("/upload", (req, res) => {
               .update(vaultDocuments)
               .set({
                 content: processResult.content,
-                documentType: 'PROCESSED',
+                documentType: "PROCESSED",
                 metadata: {
                   ...document.metadata,
                   processed: true,
-                  processingTime: processResult.metadata?.processingTime
-                }
+                  processingTime: processResult.metadata?.processingTime,
+                  processingMethod: processResult.metadata?.method,
+                },
               })
               .where(eq(vaultDocuments.id, document.id));
 
@@ -187,12 +188,36 @@ router.post("/upload", (req, res) => {
                   .update(vaultDocuments)
                   .set({ vectorId: embedding.id })
                   .where(eq(vaultDocuments.id, document.id));
-                log('Vector embedding created for document:', document.id);
+                log("Vector embedding created for document:", document.id);
               })
-              .catch(error => log('Vector embedding error:', error));
+              .catch((error) => log("Vector embedding error:", error));
+          } else {
+            log("Document processing failed:", processResult.error);
+            await db
+              .update(vaultDocuments)
+              .set({
+                documentType: "PROCESSING_FAILED",
+                metadata: {
+                  ...document.metadata,
+                  processed: false,
+                  error: processResult.error,
+                },
+              })
+              .where(eq(vaultDocuments.id, document.id));
           }
         } catch (error) {
-          log('Background processing error:', error);
+          log("Background processing error:", error);
+          await db
+            .update(vaultDocuments)
+            .set({
+              documentType: "PROCESSING_FAILED",
+              metadata: {
+                ...document.metadata,
+                processed: false,
+                error: error instanceof Error ? error.message : "Unknown error",
+              },
+            })
+            .where(eq(vaultDocuments.id, document.id));
         }
       }, 0);
 
@@ -201,15 +226,15 @@ router.post("/upload", (req, res) => {
         success: true,
         documentId: document.id,
         text: content.substring(0, 1000), // Send preview only
-        status: 'processing'
+        status: "processing",
       });
-
     } catch (error: any) {
-      log('Upload processing error:', error);
+      log("Upload processing error:", error);
       return res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : 'Upload processing failed',
-        stack: error instanceof Error ? error.stack : undefined
+        error:
+          error instanceof Error ? error.message : "Upload processing failed",
+        stack: error instanceof Error ? error.stack : undefined,
       });
     }
   });
@@ -227,7 +252,7 @@ router.get("/status/:documentId", async (req, res) => {
 
     if (!document) {
       return res.status(404).json({
-        error: 'Document not found'
+        error: "Document not found",
       });
     }
 
@@ -236,13 +261,12 @@ router.get("/status/:documentId", async (req, res) => {
       documentType: document.documentType,
       metadata: document.metadata,
       aiSummary: document.aiSummary,
-      aiClassification: document.aiClassification
+      aiClassification: document.aiClassification,
     });
-
   } catch (error) {
-    log('Status check error:', error);
+    log("Status check error:", error);
     res.status(500).json({
-      error: 'Failed to check document status'
+      error: "Failed to check document status",
     });
   }
 });

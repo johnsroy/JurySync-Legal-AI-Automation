@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
 import { documents } from "@shared/schema";
-import { DocumentProcessor } from "../services/document-processor";
+import { documentProcessor } from "../services/documentProcessor";
 import OpenAI from "openai";
 import { eq } from "drizzle-orm";
 import { pdfService } from "../services/pdf-service";
@@ -61,9 +61,11 @@ router.post(
     });
 
     try {
-      const result = await DocumentProcessor.processDocument(
+      // Use documentProcessor here
+      const result = await documentProcessor.processDocument(
         req.file.buffer,
         req.file.originalname,
+        req.file.mimetype,
       );
 
       if (!result.success || !result.content) {

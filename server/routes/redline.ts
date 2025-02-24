@@ -2,7 +2,8 @@ import { Router } from "express";
 import * as diff from "diff";
 import PDFDocument from "pdfkit";
 import multer from "multer";
-import { analyzePDFContent } from "../services/fileAnalyzer";
+import { documentProcessor } from "../services/documentProcessor";
+import { pdfService } from "../services/pdf-service";
 
 const router = Router();
 const upload = multer({
@@ -52,10 +53,14 @@ router.post("/upload", upload.single("file"), async (req, res) => {
         console.error("PDF parsing error:", error);
         return res.status(400).json({ error: "Failed to parse PDF file" });
       }
-    } else if (fileType.endsWith(".docx")) {
+    } else if (fileType.endsWith(".docx") || fileType.endsWith(".doc")) {
       try {
-        // Parse Word document
-        text = await analyzePDFContent(req.file.buffer, -1);
+        const result = await documentProcessor.processDocument(
+          req.file.buffer,
+          req.file.originalname,
+          req.file.mimetype
+        );
+        text = result.content;
       } catch (error) {
         console.error("DOCX parsing error:", error);
         return res.status(400).json({ error: "Failed to parse Word document" });
@@ -193,7 +198,9 @@ router.post("/export", async (req, res) => {
         .fontSize(12)
         .fillColor(change.type === "insertion" ? "green" : "red")
         .text(
-          `${change.type === "insertion" ? "Added" : "Removed"}: "${change.content}" at ${new Date(change.timestamp).toLocaleString()}`,
+          `${change.type === "insertion" ? "Added" : "Removed"}: "${
+            change.content
+          }" at ${new Date(change.timestamp).toLocaleString()}`,
         )
         .fillColor("black");
     });

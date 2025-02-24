@@ -1,17 +1,18 @@
-import { Anthropic } from '@anthropic-ai/sdk';
-import { complianceAuditService } from './complianceAuditService';
-import { legalResearchService } from './legalResearchService';
-import { continuousLearningService } from './continuousLearningService';
-import { db } from '../db';
-import { legalDocuments } from '@shared/schema';
-import { eq } from 'drizzle-orm';
+import { Anthropic } from "@anthropic-ai/sdk";
+import { complianceAuditService } from "./complianceAuditService";
+import { legalResearchService } from "./legalResearchService";
+import { continuousLearningService } from "./continuousLearningService";
+import { documentProcessor } from "./documentProcessor";
+import { db } from "../db";
+import { legalDocuments } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 const HTML_TAG_REGEX = /<[^>]*>|<!DOCTYPE.*?>/i;
 const DOCTYPE_REGEX = /<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi;
 const INVALID_CHARACTERS_REGEX = /[\u0000-\u0008\u000B-\u000C\u000E-\u001F]/g;
 
 if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error('Missing ANTHROPIC_API_KEY environment variable');
+  throw new Error("Missing ANTHROPIC_API_KEY environment variable");
 }
 
 const anthropic = new Anthropic({
@@ -19,15 +20,34 @@ const anthropic = new Anthropic({
 });
 
 // Enhanced logging function
-function log(message: string, type: 'info' | 'error' | 'debug' = 'info', context?: any) {
+function log(
+  message: string,
+  type: "info" | "error" | "debug" = "info",
+  context?: any,
+) {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] [Orchestrator] [${type.toUpperCase()}] ${message}`, context ? JSON.stringify(context, null, 2) : '');
+  console.log(
+    `[${timestamp}] [Orchestrator] [${type.toUpperCase()}] ${message}`,
+    context ? JSON.stringify(context, null, 2) : "",
+  );
 }
 
 const COMPLIANCE_KEYWORDS = [
-  'regulation', 'compliance', 'requirements', 'policy', 'guidelines',
-  'standards', 'rules', 'procedures', 'audit', 'assessment',
-  'control', 'risk', 'regulatory', 'framework', 'governance'
+  "regulation",
+  "compliance",
+  "requirements",
+  "policy",
+  "guidelines",
+  "standards",
+  "rules",
+  "procedures",
+  "audit",
+  "assessment",
+  "control",
+  "risk",
+  "regulatory",
+  "framework",
+  "governance",
 ];
 
 class TaskManager {
@@ -55,20 +75,22 @@ class TaskManager {
       id: taskId,
       type,
       data,
-      status: 'pending',
+      status: "pending",
       progress: 0,
       currentStep: 0,
       currentStepDetails: {
-        name: 'Initialization',
-        description: 'Setting up task and validating inputs'
+        name: "Initialization",
+        description: "Setting up task and validating inputs",
       },
-      events: [{
-        timestamp,
-        status: 'created',
-        details: 'Task created and pending analysis'
-      }],
+      events: [
+        {
+          timestamp,
+          status: "created",
+          details: "Task created and pending analysis",
+        },
+      ],
       createdAt: timestamp,
-      updatedAt: timestamp
+      updatedAt: timestamp,
     };
     this.tasks.set(taskId, task);
     this.taskHistory.set(taskId, []);
@@ -78,19 +100,19 @@ class TaskManager {
 
   updateTask(taskId: string, updates: Partial<any>) {
     const task = this.tasks.get(taskId);
-    if (!task) throw new Error('Task not found');
+    if (!task) throw new Error("Task not found");
 
     const updatedTask = {
       ...task,
       ...updates,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
 
     const history = this.taskHistory.get(taskId) || [];
     history.push({
       timestamp: Date.now(),
       changes: updates,
-      previousState: { ...task }
+      previousState: { ...task },
     });
 
     this.tasks.set(taskId, updatedTask);
@@ -101,9 +123,9 @@ class TaskManager {
   setTaskResult(taskId: string, result: any) {
     this.taskResults.set(taskId, result);
     this.updateTask(taskId, {
-      status: 'completed',
+      status: "completed",
       completedAt: new Date().toISOString(),
-      progress: 100
+      progress: 100,
     });
   }
 
@@ -112,38 +134,38 @@ class TaskManager {
     const task = this.tasks.get(taskId);
     if (!task) {
       return {
-        status: 'error',
-        error: 'Task not found',
-        details: 'The requested task ID does not exist'
+        status: "error",
+        error: "Task not found",
+        details: "The requested task ID does not exist",
       };
     }
 
-    if (task.status === 'error') {
+    if (task.status === "error") {
       return {
-        status: 'error',
+        status: "error",
         error: task.error,
-        details: task.errorDetails || 'An error occurred during processing'
+        details: task.errorDetails || "An error occurred during processing",
       };
     }
 
-    if (task.status === 'processing') {
+    if (task.status === "processing") {
       return {
-        status: 'processing',
+        status: "processing",
         progress: task.progress,
         currentStep: task.currentStep,
         currentStepDetails: task.currentStepDetails,
-        message: 'Document analysis in progress'
+        message: "Document analysis in progress",
       };
     }
 
     return {
-      status: result ? 'completed' : task.status,
+      status: result ? "completed" : task.status,
       data: result,
       progress: task.progress,
       currentStep: task.currentStep,
       currentStepDetails: task.currentStepDetails,
       error: task.error,
-      completedAt: task.completedAt
+      completedAt: task.completedAt,
     };
   }
 
@@ -152,8 +174,9 @@ class TaskManager {
   }
 
   getAllTasks() {
-    return Array.from(this.tasks.values())
-      .sort((a, b) => b.createdAt - a.createdAt);
+    return Array.from(this.tasks.values()).sort(
+      (a, b) => b.createdAt - a.createdAt,
+    );
   }
 
   getTaskHistory(taskId: string) {
@@ -177,36 +200,36 @@ export class OrchestratorService {
   }
 
   async createTask(input: {
-    type: 'contract' | 'compliance' | 'research',
-    data: any
+    type: "contract" | "compliance" | "research";
+    data: any;
   }) {
     const taskId = `task_${Date.now()}`;
-    log('Creating new task', 'info', {
+    log("Creating new task", "info", {
       taskId,
       type: input.type,
-      hasData: !!input.data
+      hasData: !!input.data,
     });
 
     try {
       const task = this.taskManager.createTask(taskId, input.type, input.data);
 
       // Start processing in background
-      this.processTask(task).catch(error => {
-        log('Task processing error', 'error', {
+      this.processTask(task).catch((error) => {
+        log("Task processing error", "error", {
           taskId,
-          error: error.message
+          error: error.message,
         });
 
         this.taskManager.updateTask(taskId, {
-          status: 'error',
+          status: "error",
           error: error.message,
-          progress: 0
+          progress: 0,
         });
       });
 
       return task;
     } catch (error: any) {
-      log('Task creation error', 'error', { error: error.message });
+      log("Task creation error", "error", { error: error.message });
       throw new Error(`Failed to create task: ${error.message}`);
     }
   }
@@ -215,34 +238,33 @@ export class OrchestratorService {
     try {
       // Update task to processing state
       this.taskManager.updateTask(task.id, {
-        status: 'processing',
+        status: "processing",
         progress: 10,
         currentStep: 0,
         currentStepDetails: {
-          name: 'Document Analysis',
-          description: 'Analyzing document content and structure'
-        }
+          name: "Document Analysis",
+          description: "Analyzing document content and structure",
+        },
       });
 
       // Process based on task type
       switch (task.type) {
-        case 'contract':
+        case "contract":
           await this.processContractDocument(task);
           break;
-        case 'compliance':
+        case "compliance":
           await this.processComplianceDocument(task);
           break;
-        case 'research':
+        case "research":
           await this.processResearchDocument(task);
           break;
         default:
           throw new Error(`Unsupported task type: ${task.type}`);
       }
-
     } catch (error: any) {
-      log('Document processing error', 'error', {
+      log("Document processing error", "error", {
         taskId: task.id,
-        error: error.message
+        error: error.message,
       });
       throw error;
     }
@@ -250,10 +272,26 @@ export class OrchestratorService {
 
   private async processContractDocument(task: any) {
     const steps = [
-      { name: 'Draft Generation', description: 'Generating initial document draft', progress: 25 },
-      { name: 'Compliance Check', description: 'Verifying compliance requirements', progress: 50 },
-      { name: 'Legal Research', description: 'Conducting legal research and analysis', progress: 75 },
-      { name: 'Final Review', description: 'Performing final document review', progress: 90 }
+      {
+        name: "Draft Generation",
+        description: "Generating initial document draft",
+        progress: 25,
+      },
+      {
+        name: "Compliance Check",
+        description: "Verifying compliance requirements",
+        progress: 50,
+      },
+      {
+        name: "Legal Research",
+        description: "Conducting legal research and analysis",
+        progress: 75,
+      },
+      {
+        name: "Final Review",
+        description: "Performing final document review",
+        progress: 90,
+      },
     ];
 
     for (let i = 0; i < steps.length; i++) {
@@ -261,23 +299,23 @@ export class OrchestratorService {
       this.taskManager.updateTask(task.id, {
         currentStep: i + 1,
         currentStepDetails: step,
-        progress: step.progress
+        progress: step.progress,
       });
 
       // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     const documentData = {
       content: task.data.document,
-      title: task.data.filename || 'Untitled Document',
-      documentType: 'contract',
-      jurisdiction: 'Unknown',
-      status: 'active',
+      title: task.data.filename || "Untitled Document",
+      documentType: "contract",
+      jurisdiction: "Unknown",
+      status: "active",
       metadata: { processedAt: new Date() },
       citations: [],
       vectorId: null,
-      date: new Date()
+      date: new Date(),
     };
 
     // Store document in database
@@ -288,13 +326,13 @@ export class OrchestratorService {
 
     // Set final result
     this.taskManager.setTaskResult(task.id, {
-      status: 'completed',
+      status: "completed",
       documentId: document.id,
       analysis: {
-        type: 'contract',
+        type: "contract",
         completedSteps: steps.length,
-        timestamp: new Date().toISOString()
-      }
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 
@@ -309,7 +347,21 @@ export class OrchestratorService {
   }
 
   async getTask(taskId: string) {
-    return this.taskManager.getTask(taskId);
+    const memoryTask = this.taskManager.getTask(taskId);
+    if (!memoryTask) {
+      // Try to find in database
+      const dbTask = await this.getTaskFromDatabase(taskId);
+      if (dbTask) {
+        return {
+          ...dbTask,
+          status: dbTask.status,
+          type: dbTask.documentType,
+          data: dbTask.metadata,
+        };
+      }
+      return null;
+    }
+    return memoryTask;
   }
 
   async getAllTasks() {
@@ -319,32 +371,32 @@ export class OrchestratorService {
   async retryTask(taskId: string) {
     const task = this.taskManager.getTask(taskId);
     if (!task) {
-      throw new Error('Task not found');
+      throw new Error("Task not found");
     }
 
     // Reset task status and start processing again
     this.taskManager.updateTask(taskId, {
-      status: 'pending',
+      status: "pending",
       progress: 0,
       error: undefined,
       currentStep: 0,
       currentStepDetails: {
-        name: 'Initialization',
-        description: 'Restarting task processing'
-      }
+        name: "Initialization",
+        description: "Restarting task processing",
+      },
     });
 
     // Start processing in background
-    this.processTask(task).catch(error => {
-      log('Task retry error', 'error', {
+    this.processTask(task).catch((error) => {
+      log("Task retry error", "error", {
         taskId,
-        error: error.message
+        error: error.message,
       });
 
       this.taskManager.updateTask(taskId, {
-        status: 'error',
+        status: "error",
         error: error.message,
-        progress: 0
+        progress: 0,
       });
     });
 
@@ -354,7 +406,7 @@ export class OrchestratorService {
   async generateReport(taskId: string): Promise<Buffer> {
     const task = this.taskManager.getTask(taskId);
     if (!task) {
-      throw new Error('Task not found');
+      throw new Error("Task not found");
     }
 
     // For now, return a simple Buffer with task details
@@ -364,13 +416,13 @@ export class OrchestratorService {
   }
 
   async getTaskResult(taskId: string) {
-    log('Fetching task results', 'info', { taskId });
+    log("Fetching task results", "info", { taskId });
     const result = this.taskManager.getTaskResult(taskId);
 
-    log('Task result status', 'debug', {
+    log("Task result status", "debug", {
       taskId,
       status: result.status,
-      resultKeys: result.data ? Object.keys(result.data) : null
+      resultKeys: result.data ? Object.keys(result.data) : null,
     });
 
     return result;
@@ -378,74 +430,76 @@ export class OrchestratorService {
 
   async monitorTask(taskId: string) {
     const task = this.taskManager.getTask(taskId);
-    if (!task) throw new Error('Task not found');
+    if (!task) throw new Error("Task not found");
 
     return {
       ...task,
-      history: this.taskManager.getTaskHistory(taskId)
+      history: this.taskManager.getTaskHistory(taskId),
     };
   }
 
-  private async cleanAndValidateDocument(text: string): Promise<string> {
-    if (!text || typeof text !== 'string') {
-      throw new Error('Invalid document text');
+  private async cleanAndValidateDocument(
+    text: string,
+    fileType: string = "text/plain",
+  ): Promise<string> {
+    if (!text) {
+      throw new Error("Invalid document text");
     }
 
-    log('Starting document cleaning', 'debug', {
-      originalLength: text.length,
-      hasDOCTYPE: DOCTYPE_REGEX.test(text)
+    log("Starting document processing", "debug", {
+      textLength: text.length,
+      fileType,
     });
 
-    // Remove DOCTYPE and HTML
-    let cleaned = text
-      .replace(DOCTYPE_REGEX, '')
-      .replace(/<\?xml\s+[^>]*\?>/gi, '')
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&[a-z]+;/gi, ' ');
+    const processResult = await documentProcessor.processDocument(
+      Buffer.from(text),
+      "document.txt",
+      fileType,
+    );
 
-    // Normalize whitespace
-    cleaned = cleaned
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (cleaned.length === 0) {
-      throw new Error('Document text cannot be empty after cleaning');
+    if (!processResult.success || !processResult.content) {
+      throw new Error("Document processing failed");
     }
 
-    log('Document cleaning completed', 'debug', {
-      finalLength: cleaned.length,
-      hasDOCTYPEAfterCleaning: DOCTYPE_REGEX.test(cleaned)
+    log("Document processing completed", "debug", {
+      finalLength: processResult.content.length,
+      metadata: processResult.metadata,
     });
 
-    return cleaned;
+    return processResult.content;
   }
 
   async distributeTask(input: {
-    type?: 'contract' | 'compliance' | 'research',
-    data: any
+    type?: "contract" | "compliance" | "research";
+    data: any;
   }) {
     const taskId = `task_${Date.now()}`;
 
-    log('Received document processing request', 'info', {
+    log("Received document processing request", "info", {
       taskId,
       inputType: input.type,
-      hasData: !!input.data
+      hasData: !!input.data,
     });
 
     try {
       if (!input?.data) {
-        throw new Error('Request data is required');
+        throw new Error("Request data is required");
       }
 
       // Clean and validate document text
-      const cleanedText = await this.cleanAndValidateDocument(input.data.documentText);
+      const cleanedText = await this.cleanAndValidateDocument(
+        input.data.documentText,
+      );
 
       // Create initial task
-      const task = this.taskManager.createTask(taskId, input.type || 'unknown', {
-        ...input.data,
-        documentText: cleanedText
-      });
+      const task = this.taskManager.createTask(
+        taskId,
+        input.type || "unknown",
+        {
+          ...input.data,
+          documentText: cleanedText,
+        },
+      );
 
       // Classify document if type not provided
       const classification = await this.classifyDocument(cleanedText);
@@ -455,8 +509,8 @@ export class OrchestratorService {
         type: classification.type,
         metadata: {
           classification,
-          crossModuleRelevance: classification.crossModuleRelevance
-        }
+          crossModuleRelevance: classification.crossModuleRelevance,
+        },
       });
 
       // Process document based on classification
@@ -464,56 +518,56 @@ export class OrchestratorService {
 
       return {
         taskId,
-        status: 'processing',
+        status: "processing",
         type: classification.type,
         metadata: {
           createdAt: new Date().toISOString(),
-          classification
-        }
+          classification,
+        },
       };
-
     } catch (error: any) {
-      log('Task distribution error', 'error', {
+      log("Task distribution error", "error", {
         taskId,
-        error: error.message
+        error: error.message,
       });
 
       throw {
-        error: 'Failed to process document',
+        error: "Failed to process document",
         details: error.message,
-        code: 'PROCESSING_ERROR',
-        requestId: taskId
+        code: "PROCESSING_ERROR",
+        requestId: taskId,
       };
     }
   }
 
   private async classifyDocument(text: string): Promise<{
-    type: 'contract' | 'compliance' | 'research' | 'mixed',
-    subtypes: string[],
-    confidence: number,
-    keywords: string[],
+    type: "contract" | "compliance" | "research" | "mixed";
+    subtypes: string[];
+    confidence: number;
+    keywords: string[];
     crossModuleRelevance: {
-      compliance: boolean,
-      contract: boolean,
-      research: boolean
-    }
+      compliance: boolean;
+      contract: boolean;
+      research: boolean;
+    };
   }> {
     try {
-      log('Starting enhanced document classification', 'info');
+      log("Starting enhanced document classification", "info");
 
       // Advanced keyword-based pre-classification
       const textLower = text.toLowerCase();
-      const matchedKeywords = COMPLIANCE_KEYWORDS.filter(keyword =>
-        textLower.includes(keyword.toLowerCase())
+      const matchedKeywords = COMPLIANCE_KEYWORDS.filter((keyword) =>
+        textLower.includes(keyword.toLowerCase()),
       );
 
       // Use Claude for comprehensive classification
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-20241022",
         max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: `Analyze this legal document comprehensively and classify it. Consider multiple aspects and possible cross-module relevance.
+        messages: [
+          {
+            role: "user",
+            content: `Analyze this legal document comprehensively and classify it. Consider multiple aspects and possible cross-module relevance.
 
 First 1000 chars: ${text.substring(0, 1000)}
 
@@ -529,62 +583,72 @@ Provide response as JSON:
     "research": boolean
   },
   "keywords": ["key legal terms found"]
-}`
-        }]
+}`,
+          },
+        ],
       });
 
       const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response format from Anthropic API');
+      if (content.type !== "text") {
+        throw new Error("Unexpected response format from Anthropic API");
       }
 
       const result = JSON.parse(content.text);
       const keywords = [...new Set([...result.keywords, ...matchedKeywords])];
 
-      log('Enhanced document classification completed', 'info', {
+      log("Enhanced document classification completed", "info", {
         classification: result,
-        keywordMatches: matchedKeywords
+        keywordMatches: matchedKeywords,
       });
 
       return {
         ...result,
-        keywords
+        keywords,
       };
-
     } catch (error: any) {
-      log('Document classification failed', 'error', { error });
+      log("Document classification failed", "error", { error });
       throw new Error(`Classification failed: ${error.message}`);
     }
   }
 
-  private async processClassifiedDocument(taskId: string, documentText: string, classification: any) {
+  private async processClassifiedDocument(
+    taskId: string,
+    documentText: string,
+    classification: any,
+  ) {
     const task = this.taskManager.getTask(taskId);
-    if (!task) throw new Error('Task not found');
+    if (!task) throw new Error("Task not found");
 
     try {
       const results: any = {};
 
       // Process for each relevant module based on classification
       if (classification.crossModuleRelevance.compliance) {
-        results.compliance = await complianceAuditService.analyzeDocument(documentText, taskId);
+        results.compliance = await complianceAuditService.analyzeDocument(
+          documentText,
+          taskId,
+        );
       }
 
       if (classification.crossModuleRelevance.research) {
-        results.research = await legalResearchService.analyzeDocument(task.data.documentId);
+        results.research = await legalResearchService.analyzeDocument(
+          task.data.documentId,
+        );
       }
 
       // Get latest continuous learning updates
-      const learningContext = await continuousLearningService.getLatestUpdates();
+      const learningContext =
+        await continuousLearningService.getLatestUpdates();
 
       // Store document in database
       const [document] = await db
         .insert(legalDocuments)
         .values({
-          title: task.data.title || 'Untitled Document',
+          title: task.data.title || "Untitled Document",
           content: documentText,
           documentType: classification.type,
-          jurisdiction: 'Unknown',
-          status: 'ACTIVE',
+          jurisdiction: "Unknown",
+          status: "ACTIVE",
           date: new Date(),
           citations: [],
           metadata: {
@@ -592,13 +656,13 @@ Provide response as JSON:
             processingDetails: {
               taskId,
               completedAt: new Date().toISOString(),
-              modules: Object.keys(results)
+              modules: Object.keys(results),
             },
             continuousLearning: {
               contextUpdated: learningContext.lastUpdated,
-              updates: learningContext.recentUpdates
-            }
-          }
+              updates: learningContext.recentUpdates,
+            },
+          },
         })
         .returning();
 
@@ -609,24 +673,40 @@ Provide response as JSON:
         continuousLearning: {
           contextUpdated: learningContext.lastUpdated,
           modelUpdates: learningContext.modelUpdates,
-          recentUpdates: learningContext.recentUpdates
-        }
+          recentUpdates: learningContext.recentUpdates,
+        },
       });
 
-      log('Document processing completed', 'info', {
+      log("Document processing completed", "info", {
         taskId,
         documentId: document.id,
         processedModules: Object.keys(results),
-        learningContextUpdated: learningContext.lastUpdated
+        learningContextUpdated: learningContext.lastUpdated,
       });
-
     } catch (error: any) {
-      log('Error processing document', 'error', {
+      log("Error processing document", "error", {
         taskId,
-        error: error.message
+        error: error.message,
       });
       throw error;
     }
+  }
+
+  async getTaskFromDatabase(taskId: string) {
+    const [task] = await db
+      .select()
+      .from(legalDocuments)
+      .where(eq(legalDocuments.id, taskId));
+    return task;
+  }
+
+  async updateTaskStatus(taskId: string, status: string) {
+    const [updated] = await db
+      .update(legalDocuments)
+      .set({ status })
+      .where(eq(legalDocuments.id, taskId))
+      .returning();
+    return updated;
   }
 }
 
