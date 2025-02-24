@@ -21,6 +21,7 @@ export const planSchema = z.object({
 
 export type Plan = z.infer<typeof planSchema>;
 
+// We'll update the priceId fields with actual values after Stripe initialization
 export const PRICING_PLANS: Plan[] = [
   {
     id: "student-monthly",
@@ -29,7 +30,7 @@ export const PRICING_PLANS: Plan[] = [
     price: 24,
     interval: "month",
     tier: PlanTier.STUDENT,
-    priceId: "price_student_monthly", // We'll update this with actual Stripe price IDs
+    priceId: "", // Will be populated by stripe-service.ts
     features: [
       "Basic document analysis",
       "Limited API access",
@@ -44,7 +45,7 @@ export const PRICING_PLANS: Plan[] = [
     price: 240,
     interval: "year",
     tier: PlanTier.STUDENT,
-    priceId: "price_student_yearly",
+    priceId: "", // Will be populated by stripe-service.ts
     features: [
       "Basic document analysis",
       "Limited API access",
@@ -60,7 +61,7 @@ export const PRICING_PLANS: Plan[] = [
     price: 194,
     interval: "month",
     tier: PlanTier.PROFESSIONAL,
-    priceId: "price_professional_monthly",
+    priceId: "", // Will be populated by stripe-service.ts
     features: [
       "Advanced document analysis",
       "Unlimited API access",
@@ -76,7 +77,7 @@ export const PRICING_PLANS: Plan[] = [
     price: 1940,
     interval: "year",
     tier: PlanTier.PROFESSIONAL,
-    priceId: "price_professional_yearly",
+    priceId: "", // Will be populated by stripe-service.ts
     features: [
       "Advanced document analysis",
       "Unlimited API access",
@@ -93,7 +94,7 @@ export const PRICING_PLANS: Plan[] = [
     price: 0,
     interval: "month",
     tier: PlanTier.ENTERPRISE,
-    priceId: "price_enterprise",
+    priceId: "", // Enterprise pricing is custom
     features: [
       "Custom document analysis",
       "Dedicated API access",

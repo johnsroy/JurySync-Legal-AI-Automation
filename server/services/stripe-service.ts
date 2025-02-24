@@ -9,7 +9,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
+  apiVersion: '2025-01-27.acacia', // Update to latest API version
 });
 
 class StripeService {
@@ -62,6 +62,12 @@ class StripeService {
         }
 
         this.priceIds[plan.id] = price.id;
+
+        // Update the PRICING_PLANS array with the actual Stripe price ID
+        const planIndex = PRICING_PLANS.findIndex(p => p.id === plan.id);
+        if (planIndex !== -1) {
+          PRICING_PLANS[planIndex].priceId = price.id;
+        }
       }
 
       console.log('Stripe products and prices initialized:', {
@@ -98,7 +104,7 @@ class StripeService {
         };
       }
 
-      const priceId = this.priceIds[planId];
+      const priceId = plan.priceId || this.priceIds[planId];
       if (!priceId) {
         return {
           success: false,
