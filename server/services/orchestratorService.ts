@@ -12,60 +12,85 @@ const HTML_TAG_REGEX = /<[^>]*>|<!DOCTYPE.*?>/i;
 const DOCTYPE_REGEX = /<!DOCTYPE\s+[^>]*>|<!doctype\s+[^>]*>/gi;
 const INVALID_CHARACTERS_REGEX = /[\u0000-\u0008\u000B-\u000C\u000E-\u001F]/g;
 
-// Move initialization logic into a lazy-loaded container
-class ServiceContainer {
-  private static instance: ServiceContainer;
-  private initialized: boolean = false;
-  private initPromise: Promise<void> | null = null;
-  private anthropicClient: Anthropic | null = null;
-
-  private constructor() {}
-
-  static getInstance(): ServiceContainer {
-    if (!ServiceContainer.instance) {
-      ServiceContainer.instance = new ServiceContainer();
+class ServiceInitializer {
+  private static instance: ServiceInitializer;
+  private initializationQueue: Map<
+    string,
+    {
+      initialized: boolean;
+      initializing: boolean;
+      promise: Promise<void> | null;
     }
-    return ServiceContainer.instance;
+  > = new Map();
+  private services: Map<string, any> = new Map();
+
+  private constructor() {
+    // Initialize map with service states
+    ["pdf", "compliance", "research", "learning", "processor"].forEach(
+      (service) => {
+        this.initializationQueue.set(service, {
+          initialized: false,
+          initializing: false,
+          promise: null,
+        });
+      },
+    );
   }
 
-  async getAnthropicClient(): Promise<Anthropic> {
-    if (!this.anthropicClient) {
-      if (!process.env.ANTHROPIC_API_KEY) {
-        throw new Error("Missing ANTHROPIC_API_KEY environment variable");
-      }
-      this.anthropicClient = new Anthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY,
+  static getInstance(): ServiceInitializer {
+    if (!ServiceInitializer.instance) {
+      ServiceInitializer.instance = new ServiceInitializer();
+    }
+    return ServiceInitializer.instance;
+  }
+
+  async initializeService(
+    serviceName: string,
+    initFn: () => Promise<any>,
+  ): Promise<void> {
+    const serviceState = this.initializationQueue.get(serviceName);
+    if (!serviceState) return;
+
+    if (serviceState.initialized) return;
+    if (serviceState.initializing) {
+      return serviceState.promise;
+    }
+
+    serviceState.initializing = true;
+    serviceState.promise = initFn()
+      .then((service) => {
+        this.services.set(serviceName, service);
+        serviceState.initialized = true;
+      })
+      .catch((error) => {
+        console.error(
+          `[ServiceInitializer] Failed to initialize ${serviceName}:`,
+          error,
+        );
+        // Don't throw - allow graceful degradation
+      })
+      .finally(() => {
+        serviceState.initializing = false;
       });
-    }
-    return this.anthropicClient;
+
+    return serviceState.promise;
   }
 
-  async initialize() {
-    if (this.initialized) return;
-    if (this.initPromise) return this.initPromise;
+  async getService(serviceName: string): Promise<any> {
+    const service = this.services.get(serviceName);
+    if (service) return service;
 
-    this.initPromise = (async () => {
-      // Defer all heavy initialization
-      setTimeout(async () => {
-        try {
-          await pdfService.initialize();
-          await complianceAuditService.initialize();
-          await legalResearchService.initialize();
-          await continuousLearningService.initialize();
-          this.initialized = true;
-        } catch (error) {
-          log(
-            "Background service initialization error (non-critical)",
-            "debug",
-            {
-              error: error instanceof Error ? error.message : "Unknown error",
-            },
-          );
-        }
-      }, 100); // Defer initialization
-    })();
+    // Wait for initialization if in progress
+    const serviceState = this.initializationQueue.get(serviceName);
+    if (serviceState?.initializing && serviceState.promise) {
+      await serviceState.promise;
+    }
 
-    return this.initPromise;
+    return this.services.get(serviceName);
+  }
+
+  isInitialized(serviceName: string): boolean {
+    return this.initializationQueue.get(serviceName)?.initialized ?? false;
   }
 }
 
@@ -287,12 +312,23 @@ export class OrchestratorService {
         progress: 10,
         currentStep: 0,
         currentStepDetails: {
-          name: "Document Analysis",
-          description: "Analyzing document content and structure",
+          name: "Service Initialization",
+          description: "Preparing required services",
         },
       });
 
-      // Process based on task type
+      // Determine required services based on task type
+      const requiredServices = this.getRequiredServices(task.type);
+
+      // Wait only for required services
+      for (const service of requiredServices) {
+        const isAvailable = await this.services.ensureServiceAvailable(service);
+        if (!isAvailable) {
+          throw new Error(`Required service ${service} is not available`);
+        }
+      }
+
+      // Continue with existing processing logic based on task type
       switch (task.type) {
         case "contract":
           await this.processContractDocument(task);
@@ -307,12 +343,36 @@ export class OrchestratorService {
           throw new Error(`Unsupported task type: ${task.type}`);
       }
     } catch (error: any) {
-      log("Document processing error", "error", {
-        taskId: task.id,
-        error: error.message,
-      });
+      this.handleTaskError(task, error);
       throw error;
     }
+  }
+
+  private getRequiredServices(taskType: string): string[] {
+    const baseServices = ["processor"];
+
+    switch (taskType) {
+      case "contract":
+        return [...baseServices, "pdf"];
+      case "compliance":
+        return [...baseServices, "pdf", "compliance"];
+      case "research":
+        return [...baseServices, "research"];
+      default:
+        return baseServices;
+    }
+  }
+
+  private handleTaskError(task: any, error: any) {
+    log("Document processing error", "error", {
+      taskId: task.id,
+      error: error.message,
+    });
+    this.taskManager.updateTask(task.id, {
+      status: "error",
+      error: error.message,
+      progress: 0,
+    });
   }
 
   private async processContractDocument(task: any) {
