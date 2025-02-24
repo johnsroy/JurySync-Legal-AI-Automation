@@ -1,76 +1,36 @@
-import { PDFDocument } from 'pdf-lib';
-import mammoth from 'mammoth';
-import pdfParse from 'pdf-parse';
-import debug from 'debug';
+import mammoth from "mammoth";
+import { Readable } from "stream";
+import debug from "debug";
 
-const log = debug('jurysync:document-processor');
+const log = debug("app:document-processor");
 
-interface ProcessingResult {
-  success: boolean;
-  content?: string;
-  metadata?: {
-    fileType?: string;
-    processingTime?: number;
-    method?: string;
-  };
-  error?: string;
-}
+export class DocumentProcessor {
+  async extractText(buffer: Buffer, mimeType: string): Promise<string> {
+    try {
+      switch (mimeType) {
+        case "application/msword":
+        case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+          return await this.processWord(buffer);
 
-export async function processDocument(
-  buffer: Buffer,
-  filename: string,
-  mimeType: string
-): Promise<ProcessingResult> {
-  const startTime = Date.now();
+        case "text/plain":
+          return buffer.toString("utf-8");
 
-  log('Starting document processing:', {
-    filename,
-    mimeType,
-    size: buffer.length
-  });
-
-  try {
-    // For initial testing, just handle text files
-    if (mimeType === 'text/plain') {
-      const content = buffer.toString('utf-8');
-
-      if (!content || content.trim().length === 0) {
-        throw new Error('Extracted content is empty');
+        default:
+          throw new Error(`Unsupported file type: ${mimeType}`);
       }
-
-      log('Text file processed successfully:', {
-        contentLength: content.length
-      });
-
-      return {
-        success: true,
-        content: content.trim(),
-        metadata: {
-          fileType: mimeType,
-          processingTime: Date.now() - startTime,
-          method: 'text'
-        }
-      };
+    } catch (error) {
+      log("Text extraction error:", error);
+      throw new Error("Failed to extract text from document");
     }
+  }
 
-    // For now, return error for other file types
-    throw new Error(`File type ${mimeType} processing not implemented yet`);
-
-  } catch (error) {
-    log('Document processing failed:', {
-      error: error instanceof Error ? error.message : error,
-      stack: error instanceof Error ? error.stack : undefined,
-      filename,
-      mimeType
-    });
-
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Document processing failed',
-      metadata: {
-        processingTime: Date.now() - startTime,
-        fileType: mimeType
-      }
-    };
+  private async processWord(buffer: Buffer): Promise<string> {
+    try {
+      const result = await mammoth.extractRawText({ buffer });
+      return result.value;
+    } catch (error) {
+      log("Word document processing error:", error);
+      throw new Error("Failed to process Word document");
+    }
   }
 }
