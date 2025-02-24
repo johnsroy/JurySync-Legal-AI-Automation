@@ -92,70 +92,88 @@ router.post("/upload", (req, res) => {
       });
 
       if (!processResult.success || !processResult.content) {
-        throw new Error(processResult.error || 'Failed to process document');
+        return res.status(400).json({
+          error: processResult.error || 'Failed to process document',
+          details: 'Document processing failed'
+        });
       }
 
       // Store document in database with correct schema
-      const [document] = await db
-        .insert(vaultDocuments)
-        .values({
-          userId: req.user?.id || 1, // Default to 1 if no user
-          title: req.file.originalname,
-          content: processResult.content,
-          documentType: processResult.metadata?.analysis?.documentType || 'UNKNOWN',
-          aiSummary: processResult.metadata?.analysis?.summary || null,
-          aiClassification: processResult.metadata?.analysis?.documentType || null,
-          fileSize: req.file.size,
-          mimeType: req.file.mimetype,
-          metadata: {
-            ...processResult.metadata,
-            uploadTimestamp: new Date().toISOString()
-          },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        })
-        .returning();
+      try {
+        const [document] = await db
+          .insert(vaultDocuments)
+          .values({
+            userId: req.user?.id || 1, // Default to 1 if no user
+            title: req.file.originalname,
+            content: processResult.content,
+            documentType: processResult.metadata?.analysis?.documentType || 'UNKNOWN',
+            aiSummary: processResult.metadata?.analysis?.summary || null,
+            aiClassification: processResult.metadata?.analysis?.documentType || null,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            metadata: {
+              ...processResult.metadata,
+              uploadTimestamp: new Date().toISOString()
+            },
+            createdAt: new Date(),
+            updatedAt: new Date()
+          })
+          .returning();
 
-      log('Document stored in database:', {
-        id: document.id,
-        title: document.title
-      });
-
-      // Create vector embedding in background
-      createVectorEmbedding(processResult.content)
-        .then(async (vectorEmbedding) => {
-          await db
-            .update(vaultDocuments)
-            .set({ vectorId: vectorEmbedding.id })
-            .where(eq(vaultDocuments.id, document.id));
-
-          log('Vector embedding created:', {
-            documentId: document.id,
-            vectorId: vectorEmbedding.id
-          });
-        })
-        .catch(error => {
-          log('Vector embedding error:', error);
+        log('Document stored in database:', {
+          id: document.id,
+          title: document.title
         });
 
-      // Start workflow processing
-      workflowOrchestrator.processDocument(document.id)
-        .catch(error => {
-          log('Workflow processing error:', error);
+        // Start background processing
+        Promise.all([
+          // Vector embedding creation
+          createVectorEmbedding(processResult.content)
+            .then(async (vectorEmbedding) => {
+              await db
+                .update(vaultDocuments)
+                .set({ vectorId: vectorEmbedding.id })
+                .where(eq(vaultDocuments.id, document.id));
+
+              log('Vector embedding created:', {
+                documentId: document.id,
+                vectorId: vectorEmbedding.id
+              });
+            })
+            .catch(error => {
+              log('Vector embedding error:', error);
+            }),
+
+          // Workflow processing
+          workflowOrchestrator.processDocument(document.id)
+            .catch(error => {
+              log('Workflow processing error:', error);
+            })
+        ]).catch(error => {
+          log('Background processing error:', error);
         });
 
-      // Return successful response
-      res.json({
-        success: true,
-        documentId: document.id,
-        text: processResult.content,
-        status: 'processing',
-        message: 'Document uploaded and processing started'
-      });
+        // Return successful response
+        return res.json({
+          success: true,
+          documentId: document.id,
+          text: processResult.content,
+          status: 'processing',
+          message: 'Document uploaded and processing started'
+        });
+
+      } catch (dbError: any) {
+        log('Database error:', dbError);
+        return res.status(500).json({
+          error: 'Failed to store document',
+          message: dbError instanceof Error ? dbError.message : 'Unknown database error',
+          details: dbError instanceof Error ? dbError.stack : undefined
+        });
+      }
 
     } catch (error: any) {
       log('Upload processing error:', error);
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to process upload',
         message: error instanceof Error ? error.message : 'Unknown error',
         details: error instanceof Error ? error.stack : undefined
