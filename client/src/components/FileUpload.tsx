@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FileText, AlertTriangle, Loader2, UploadCloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 interface FileUploadProps {
   onFileProcessed: (result: { text: string; documentId: string; fileName: string }) => void;
@@ -18,10 +19,9 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
-  const MAX_RETRIES = 3;
+  const { toast } = useToast();
 
-  const processFile = async (file: File, attempt: number = 0): Promise<void> => {
+  const processFile = async (file: File): Promise<void> => {
     if (isProcessing) return;
 
     setIsProcessing(true);
@@ -29,7 +29,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
     setUploadProgress(0);
 
     const formData = new FormData();
-    formData.append("file", file); // Match backend's multer configuration
+    formData.append("file", file);
 
     try {
       console.log('Uploading file:', {
@@ -69,36 +69,37 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
         fileName: file.name
       });
 
-      // Reset states on success
-      setRetryCount(0);
+      // Show success toast
+      toast({
+        title: "Upload Successful",
+        description: `${file.name} has been uploaded and is being processed.`,
+        duration: 5000,
+      });
+
       setError(null);
       setIsProcessing(false);
+
     } catch (err) {
       console.error('File processing error:', err);
       const errorMessage = err instanceof Error ? err.message : "Failed to process file";
 
-      // Implement retry logic for specific errors
-      if (attempt < MAX_RETRIES && (
-        errorMessage.includes('Failed to process') || 
-        errorMessage.includes('Invalid response')
-      )) {
-        setRetryCount(attempt + 1);
-        setError(`Upload attempt ${attempt + 1} failed. Retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Exponential backoff
-        setIsProcessing(false);
-        return processFile(file, attempt + 1);
-      }
-
-      setError(`${errorMessage} (After ${attempt + 1} attempts)`);
+      setError(errorMessage);
       onError(errorMessage);
       setIsProcessing(false);
+
+      // Show error toast
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: errorMessage,
+        duration: 5000,
+      });
     }
   };
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!acceptedFiles.length) return;
 
-    // Update the uploaded files list if callback provided
     if (setUploadedFiles) {
       setUploadedFiles(prev => [...(prev || []), ...acceptedFiles]);
     }
@@ -155,9 +156,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm font-medium">
-                  Processing document... {retryCount > 0 ? `(Attempt ${retryCount}/${MAX_RETRIES})` : ''}
-                </span>
+                <span className="text-sm font-medium">Processing document...</span>
               </div>
               <span className="text-sm text-gray-500">{uploadProgress}%</span>
             </div>
