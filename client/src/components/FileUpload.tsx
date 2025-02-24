@@ -38,8 +38,8 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
     formData.append("file", file);
 
     try {
-      // Use test endpoint first
-      const response = await fetch("/api/workflow/test-upload", {
+      // Use full endpoint path
+      const response = await fetch("/api/workflow/upload", {
         method: "POST",
         body: formData,
       });
@@ -53,7 +53,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       }
 
       const result = await response.json();
-      console.log('Test upload response:', result);
+      console.log('Upload response:', result);
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to process file');
@@ -62,15 +62,15 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       setUploadProgress(100);
 
       onFileProcessed({
-        text: result.content_preview,
-        documentId: '0', // Temporary ID for test endpoint
+        text: result.text,
+        documentId: result.documentId,
         fileName: file.name
       });
 
       // Show success toast
       toast({
         title: "Upload Successful",
-        description: `${file.name} has been uploaded successfully. Content length: ${result.content_length} characters`,
+        description: `${file.name} has been uploaded successfully.`,
         duration: 5000,
       });
 
@@ -143,7 +143,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
                 : "Drag and drop your documents here, or click to select"}
             </p>
             <p className="text-xs text-gray-400">
-              Try uploading a text file (.txt) first
+              Supports PDF, DOCX, DOC, and TXT files
             </p>
           </div>
         </div>

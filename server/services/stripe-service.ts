@@ -16,7 +16,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 });
 
 export const stripeService = {
-  // Maintain backwards compatibility with existing price IDs
+  // Maintain backwards compatibility
   _productIds: {} as Record<string, string>,
   _priceIds: {} as Record<string, string>,
 
