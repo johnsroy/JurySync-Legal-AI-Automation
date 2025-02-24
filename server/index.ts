@@ -19,11 +19,17 @@ import { errorHandler } from './middlewares/errorHandler';
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import paymentsRouter from './routes/payments';
+import debug from 'debug';
 
+const log = debug('jurysync:server');
 dotenv.config();
 
 // Create Express application
 const app = express();
+
+// Log startup time
+const startTime = Date.now();
+log('Starting server initialization...');
 
 // Configure API specific middleware
 app.use(cors({
@@ -119,9 +125,11 @@ const PORT = process.env.PORT || 5000;
 // Start server and initialize services
 (async () => {
   try {
+    log('Core initialization completed in %dms', Date.now() - startTime);
+
     // Start the server first
     server.listen(Number(PORT), '0.0.0.0', () => {
-      console.log(`Server running at http://0.0.0.0:${PORT}`);
+      log(`Server running at http://0.0.0.0:${PORT} (startup time: ${Date.now() - startTime}ms)`);
     }).on('error', (error: any) => {
       if (error.code === 'EADDRINUSE') {
         console.error(`Port ${PORT} is already in use`);
@@ -131,34 +139,41 @@ const PORT = process.env.PORT || 5000;
       process.exit(1);
     });
 
-    // Then attempt to seed data asynchronously
-    try {
-      console.log('Setting up database and seeding data...');
-
-      // Seed legal database
-      const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
-      await seedLegalDatabase(numberOfDocuments);
-      console.log('Legal database seeded successfully');
-
-      // Try seeding contract templates, but don't let failure stop the server
+    // Initialize background tasks after server is running
+    setTimeout(async () => {
       try {
-        await seedContractTemplates();
-        console.log('Contract templates seeded successfully');
-      } catch (templateError) {
-        console.error('Warning: Failed to seed contract templates:', templateError);
-        // Continue running the server even if template seeding fails
-      }
+        log('Starting background initialization...');
 
-      // Start continuous learning service
-      try {
-        await continuousLearningService.startContinuousLearning();
-        console.log('Continuous learning service started successfully');
+        // Seed legal database
+        try {
+          const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
+          await seedLegalDatabase(numberOfDocuments);
+          log('Legal database seeded successfully');
+        } catch (seedError) {
+          log('Warning: Legal database seeding failed:', seedError);
+        }
+
+        // Seed contract templates
+        try {
+          await seedContractTemplates();
+          log('Contract templates seeded successfully');
+        } catch (templateError) {
+          log('Warning: Contract template seeding failed:', templateError);
+        }
+
+        // Start continuous learning service
+        try {
+          await continuousLearningService.startContinuousLearning();
+          log('Continuous learning service started successfully');
+        } catch (learningError) {
+          log('Warning: Failed to start continuous learning service:', learningError);
+        }
+
+        log('Background initialization completed (took %dms)', Date.now() - startTime);
       } catch (error) {
-        console.error('Warning: Failed to start continuous learning service:', error);
+        log('Warning: Background initialization failed:', error);
       }
-    } catch (error) {
-      console.error('Warning: Data seeding failed but server will continue running:', error);
-    }
+    }, 2000); // Run background tasks after 2 seconds
 
   } catch (error) {
     console.error('Critical error starting server:', error);
