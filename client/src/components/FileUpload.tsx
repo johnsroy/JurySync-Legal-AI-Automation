@@ -28,21 +28,22 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
     setError(null);
     setUploadProgress(0);
 
+    console.log('Starting file upload:', {
+      name: file.name,
+      type: file.mimetype,
+      size: file.size
+    });
+
     const formData = new FormData();
     formData.append("file", file);
 
     try {
-      console.log('Uploading file:', {
-        name: file.name,
-        type: file.type,
-        size: file.size
-      });
-
       // Simulate upload progress
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => Math.min(prev + 10, 90));
       }, 500);
 
+      console.log('Sending request to /api/workflow/upload');
       const response = await fetch("/api/workflow/upload", {
         method: "POST",
         body: formData,
@@ -52,19 +53,24 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
       setUploadProgress(100);
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || response.statusText || 'Failed to process file');
+        const errorData = await response.json();
+        console.error('Upload failed:', errorData);
+        throw new Error(errorData.error || errorData.message || response.statusText || 'Failed to process file');
       }
 
       const result = await response.json();
       console.log('Upload response:', result);
 
-      if (!result || !result.success) {
+      if (!result.success) {
         throw new Error(result.error || 'Failed to process file');
       }
 
+      if (!result.text) {
+        throw new Error('No text content received from server');
+      }
+
       onFileProcessed({
-        text: result.text || '',
+        text: result.text,
         documentId: result.documentId,
         fileName: file.name
       });
@@ -108,7 +114,7 @@ export function FileUpload({ onFileProcessed, onError, multiple = false, setUplo
     for (const file of acceptedFiles) {
       await processFile(file);
     }
-  }, [setUploadedFiles, onFileProcessed, onError]);
+  }, [setUploadedFiles]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

@@ -9,7 +9,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2025-01-27.acacia', // Update to latest API version
+  apiVersion: '2025-01-27.acacia',
 });
 
 class StripeService {
@@ -22,51 +22,65 @@ class StripeService {
 
   private async initializeProducts() {
     try {
+      console.log('Starting Stripe products initialization...');
+
       // Create products and prices for each plan
       for (const plan of PRICING_PLANS) {
         if (plan.tier === 'enterprise') continue; // Skip enterprise as it's custom priced
 
-        // Create or get product
-        const productName = `JurySync ${plan.name}`;
-        let product = (await stripe.products.list({ active: true }))
-          .data.find(p => p.name === productName);
+        try {
+          // Create or get product
+          const productName = `JurySync ${plan.name}`;
+          console.log(`Setting up product: ${productName}`);
 
-        if (!product) {
-          product = await stripe.products.create({
-            name: productName,
-            description: plan.description,
-          });
-        }
+          let product = (await stripe.products.list({ active: true }))
+            .data.find(p => p.name === productName);
 
-        this.productIds[plan.id] = product.id;
+          if (!product) {
+            console.log(`Creating new product: ${productName}`);
+            product = await stripe.products.create({
+              name: productName,
+              description: plan.description,
+            });
+          }
 
-        // Create or get price
-        let price = (await stripe.prices.list({ 
-          product: product.id,
-          active: true,
-          type: 'recurring',
-        })).data.find(p => 
-          p.recurring?.interval === plan.interval && 
-          p.unit_amount === plan.price * 100
-        );
+          this.productIds[plan.id] = product.id;
+          console.log(`Product ID for ${plan.id}: ${product.id}`);
 
-        if (!price) {
-          price = await stripe.prices.create({
+          // Create or get price
+          console.log(`Setting up price for ${plan.id} - ${plan.interval} at ${plan.price}`);
+          let price = (await stripe.prices.list({ 
             product: product.id,
-            currency: 'usd',
-            unit_amount: plan.price * 100,
-            recurring: {
-              interval: plan.interval,
-            },
-          });
-        }
+            active: true,
+            type: 'recurring',
+          })).data.find(p => 
+            p.recurring?.interval === plan.interval && 
+            p.unit_amount === plan.price * 100
+          );
 
-        this.priceIds[plan.id] = price.id;
+          if (!price) {
+            console.log(`Creating new price for ${plan.id}`);
+            price = await stripe.prices.create({
+              product: product.id,
+              currency: 'usd',
+              unit_amount: plan.price * 100,
+              recurring: {
+                interval: plan.interval,
+              },
+            });
+          }
 
-        // Update the PRICING_PLANS array with the actual Stripe price ID
-        const planIndex = PRICING_PLANS.findIndex(p => p.id === plan.id);
-        if (planIndex !== -1) {
-          PRICING_PLANS[planIndex].priceId = price.id;
+          this.priceIds[plan.id] = price.id;
+          console.log(`Price ID for ${plan.id}: ${price.id}`);
+
+          // Update the PRICING_PLANS array with the actual Stripe price ID
+          const planIndex = PRICING_PLANS.findIndex(p => p.id === plan.id);
+          if (planIndex !== -1) {
+            PRICING_PLANS[planIndex].priceId = price.id;
+            console.log(`Updated PRICING_PLANS[${planIndex}].priceId = ${price.id}`);
+          }
+        } catch (planError) {
+          console.error(`Error setting up plan ${plan.id}:`, planError);
         }
       }
 
@@ -82,6 +96,8 @@ class StripeService {
 
   async createCheckoutSession(userId: number, planId: string) {
     try {
+      console.log(`Creating checkout session for user ${userId} and plan ${planId}`);
+
       // Get user
       const [user] = await db
         .select()
@@ -98,19 +114,25 @@ class StripeService {
       // Find the plan in PRICING_PLANS
       const plan = PRICING_PLANS.find(p => p.id === planId);
       if (!plan) {
+        console.error(`Plan not found: ${planId}`);
         return {
           success: false,
           error: 'Invalid plan selected'
         };
       }
 
+      console.log('Found plan:', plan);
+
       const priceId = plan.priceId || this.priceIds[planId];
       if (!priceId) {
+        console.error(`No price ID found for plan ${planId}`);
         return {
           success: false,
           error: 'Price not initialized yet. Please try again in a few moments.'
         };
       }
+
+      console.log(`Using price ID: ${priceId}`);
 
       // Create or get Stripe customer
       let customerId = user.stripeCustomerId;
@@ -150,6 +172,8 @@ class StripeService {
         allow_promotion_codes: true,
         billing_address_collection: 'required',
       });
+
+      console.log('Created checkout session:', session.id);
 
       return {
         success: true,
