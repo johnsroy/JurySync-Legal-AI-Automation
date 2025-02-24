@@ -1,40 +1,104 @@
-import PDFDocument from 'pdfkit';
+import PDFDocument from "pdfkit";
+import pdf from "pdf-parse";
+import { createWorker } from "tesseract.js";
+import debug from "debug";
+import { Readable } from "stream";
 
-interface PDFMetadata {
-  title?: string;
-  author?: string;
-  subject?: string;
-  keywords?: string[];
+const log = debug("app:pdf-service");
+
+export interface PDFParseResult {
+  text: string;
+  metadata: {
+    info: any;
+    pageCount: number;
+    isScanned: boolean;
+    version?: string;
+  };
 }
 
-export async function generatePDF(content: string, metadata: PDFMetadata = {}): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument();
-      const chunks: Buffer[] = [];
+export interface OCRResult {
+  text: string;
+  confidence: number;
+}
 
-      // Handle document metadata
-      if (metadata.title) doc.info.Title = metadata.title;
-      if (metadata.author) doc.info.Author = metadata.author;
-      if (metadata.subject) doc.info.Subject = metadata.subject;
-      if (metadata.keywords) doc.info.Keywords = metadata.keywords.join(', ');
+export class PDFService {
+  private static instance: PDFService;
+  private ocrWorker: Tesseract.Worker | null = null;
 
-      // Collect chunks
-      doc.on('data', chunk => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', err => reject(err));
+  private constructor() {}
 
-      // Add content
-      doc.fontSize(12)
-         .text(content, {
-           align: 'left',
-           lineGap: 5
-         });
-
-      // Finalize the PDF
-      doc.end();
-    } catch (error) {
-      reject(error);
+  static getInstance(): PDFService {
+    if (!PDFService.instance) {
+      PDFService.instance = new PDFService();
     }
-  });
+    return PDFService.instance;
+  }
+
+  async parseDocument(
+    buffer: Buffer,
+    documentId?: number,
+  ): Promise<PDFParseResult> {
+    try {
+      const data = await pdf(buffer);
+      const isScanned = await this.isScannedDocument(data);
+
+      let text = data.text;
+
+      // If document is scanned and has little to no text, use OCR
+      if (isScanned && text.trim().length < 100) {
+        const ocrResult = await this.processWithOCR(buffer);
+        text = ocrResult.text;
+      }
+
+      return {
+        text,
+        metadata: {
+          info: data.info,
+          pageCount: data.numpages,
+          isScanned,
+          version: data.version,
+        },
+      };
+    } catch (error) {
+      log("PDF parsing error:", error);
+      throw new Error(`Failed to parse PDF document: ${error.message}`);
+    }
+  }
+
+  private async isScannedDocument(data: pdf.PDFData): Promise<boolean> {
+    const textDensity = data.text.length / data.numpages;
+    return textDensity < 100;
+  }
+
+  async processWithOCR(buffer: Buffer): Promise<OCRResult> {
+    try {
+      if (!this.ocrWorker) {
+        this.ocrWorker = await createWorker("eng");
+      }
+
+      const { data } = await this.ocrWorker.recognize(buffer);
+      return {
+        text: data.text,
+        confidence: data.confidence,
+      };
+    } catch (error) {
+      log("OCR processing error:", error);
+      throw new Error("Failed to process document with OCR");
+    }
+  }
+
+  async generatePDF(content: string, options: any = {}): Promise<PDFDocument> {
+    const doc = new PDFDocument(options);
+    doc.fontSize(12).text(content);
+    return doc;
+  }
+
+  async cleanup(): Promise<void> {
+    if (this.ocrWorker) {
+      await this.ocrWorker.terminate();
+      this.ocrWorker = null;
+    }
+  }
 }
+
+export const pdfService = PDFService.getInstance();

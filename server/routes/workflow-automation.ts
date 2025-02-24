@@ -2,7 +2,7 @@ import { Router } from "express";
 import { AIOrchestrator } from "../services/ai-orchestrator";
 import multer from "multer";
 import { z } from "zod";
-import { PDFParser } from "../services/pdf-parser";
+import { pdfService } from "../services/pdf-service";
 import { DocumentProcessor } from "../services/document-processor";
 import { createHash } from "crypto";
 import debug from "debug";
@@ -41,7 +41,6 @@ const upload = multer({
 }).single("document");
 
 const aiOrchestrator = new AIOrchestrator();
-const pdfParser = new PDFParser();
 const documentProcessor = new DocumentProcessor();
 
 // Helper function to generate document hash
@@ -101,29 +100,19 @@ router.post("/process", async (req, res) => {
     // Process different file types
     if (req.file.mimetype === "application/pdf") {
       try {
-        const parseResult = await pdfParser.parse(req.file.buffer);
+        const parseResult = await pdfService.parseDocument(req.file.buffer);
         content = parseResult.text;
-        metadata = {
-          ...parseResult.metadata,
-          pageCount: parseResult.pageCount,
-          isScanned: parseResult.isScanned,
-        };
+        metadata = parseResult.metadata;
 
-        // Handle scanned PDFs
-        if (parseResult.isScanned) {
-          log("Processing scanned PDF with OCR");
-          const ocrResult = await pdfParser.processWithOCR(req.file.buffer);
-          content = ocrResult.text;
-          metadata.ocrConfidence = ocrResult.confidence;
+        if (parseResult.metadata.isScanned) {
+          log("Document was processed with OCR");
         }
       } catch (error) {
         log("PDF parsing error:", error);
-        throw new Error(
-          "Failed to parse PDF document. Please ensure the file is not corrupted.",
-        );
+        throw new Error("Failed to parse PDF document");
       }
     } else {
-      // Handle other document types
+      // Handle other document types using DocumentProcessor
       content = await documentProcessor.extractText(
         req.file.buffer,
         req.file.mimetype,

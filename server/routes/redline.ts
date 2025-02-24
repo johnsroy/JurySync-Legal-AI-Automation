@@ -5,11 +5,11 @@ import multer from "multer";
 import { analyzePDFContent } from "../services/fileAnalyzer";
 
 const router = Router();
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  }
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
 });
 
 interface DiffSegment {
@@ -28,43 +28,48 @@ interface RedlineResponse {
 }
 
 interface TextChange {
-  type: 'insertion' | 'deletion';
+  type: "insertion" | "deletion";
   content: string;
   timestamp: Date;
   position: number;
 }
 
 // POST /api/redline/upload - File upload endpoint
-router.post("/upload", upload.single('file'), async (req, res) => {
+router.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    let text = '';
+    let text = "";
     const fileType = req.file.originalname.toLowerCase();
 
-    if (fileType.endsWith('.pdf')) {
+    if (fileType.endsWith(".pdf")) {
       try {
-        // Use the fileAnalyzer service to parse PDF
-        text = await analyzePDFContent(req.file.buffer, -1); // -1 indicates no document ID
+        const result = await pdfService.parseDocument(req.file.buffer);
+        text = result.text;
       } catch (error) {
-        console.error('PDF parsing error:', error);
+        console.error("PDF parsing error:", error);
         return res.status(400).json({ error: "Failed to parse PDF file" });
       }
-    } else if (fileType.endsWith('.docx')) {
+    } else if (fileType.endsWith(".docx")) {
       try {
         // Parse Word document
         text = await analyzePDFContent(req.file.buffer, -1);
       } catch (error) {
-        console.error('DOCX parsing error:', error);
+        console.error("DOCX parsing error:", error);
         return res.status(400).json({ error: "Failed to parse Word document" });
       }
-    } else if (fileType.endsWith('.txt')) {
+    } else if (fileType.endsWith(".txt")) {
       // Plain text
-      text = req.file.buffer.toString('utf-8');
+      text = req.file.buffer.toString("utf-8");
     } else {
-      return res.status(400).json({ error: "Unsupported file type. Please upload PDF, DOCX, or TXT files only." });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Unsupported file type. Please upload PDF, DOCX, or TXT files only.",
+        });
     }
 
     return res.json({ text });
@@ -90,16 +95,16 @@ router.post("/", async (req, res) => {
     const segments = changes.map((change) => ({
       value: change.value,
       added: change.added,
-      removed: change.removed
+      removed: change.removed,
     }));
 
     const response: RedlineResponse = {
       segments,
       summary: {
-        additions: changes.filter(c => c.added).length,
-        deletions: changes.filter(c => c.removed).length,
-        unchanged: changes.filter(c => !c.added && !c.removed).length
-      }
+        additions: changes.filter((c) => c.added).length,
+        deletions: changes.filter((c) => c.removed).length,
+        unchanged: changes.filter((c) => !c.added && !c.removed).length,
+      },
     };
 
     return res.json(response);
@@ -118,8 +123,11 @@ router.post("/export", async (req, res) => {
     const doc = new PDFDocument();
 
     // Set response headers
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=document-with-changes.pdf');
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=document-with-changes.pdf",
+    );
 
     // Pipe the PDF document to the response
     doc.pipe(res);
@@ -127,7 +135,7 @@ router.post("/export", async (req, res) => {
     // Add a title
     doc
       .fontSize(20)
-      .text('Document with Tracked Changes', { align: 'center' })
+      .text("Document with Tracked Changes", { align: "center" })
       .moveDown(2);
 
     // Add the main content with changes highlighted
@@ -142,27 +150,27 @@ router.post("/export", async (req, res) => {
       if (change.position > currentPosition) {
         doc.text(content.slice(currentPosition, change.position), {
           continued: true,
-          align: 'left'
+          align: "left",
         });
       }
 
       // Add the changed text with appropriate styling
-      if (change.type === 'insertion') {
+      if (change.type === "insertion") {
         doc
-          .fillColor('green')
+          .fillColor("green")
           .text(change.content, {
             continued: true,
-            underline: true
+            underline: true,
           })
-          .fillColor('black');
+          .fillColor("black");
       } else {
         doc
-          .fillColor('red')
+          .fillColor("red")
           .text(change.content, {
             continued: true,
-            strike: true
+            strike: true,
           })
-          .fillColor('black');
+          .fillColor("black");
       }
 
       currentPosition = change.position + change.content.length;
@@ -177,22 +185,21 @@ router.post("/export", async (req, res) => {
     doc
       .moveDown(2)
       .fontSize(16)
-      .text('Change History', { underline: true })
+      .text("Change History", { underline: true })
       .moveDown();
 
     changes.forEach((change: TextChange) => {
       doc
         .fontSize(12)
-        .fillColor(change.type === 'insertion' ? 'green' : 'red')
+        .fillColor(change.type === "insertion" ? "green" : "red")
         .text(
-          `${change.type === 'insertion' ? 'Added' : 'Removed'}: "${change.content}" at ${new Date(change.timestamp).toLocaleString()}`
+          `${change.type === "insertion" ? "Added" : "Removed"}: "${change.content}" at ${new Date(change.timestamp).toLocaleString()}`,
         )
-        .fillColor('black');
+        .fillColor("black");
     });
 
     // Finalize the PDF
     doc.end();
-
   } catch (error) {
     console.error("PDF export error:", error);
     res.status(500).json({ error: "Failed to generate PDF" });
