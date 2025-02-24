@@ -1,11 +1,20 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useDropzone } from "react-dropzone";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, type TaskData as OriginalTaskData } from "@/lib/queryClient";
+import {
+  apiRequest,
+  type TaskData as OriginalTaskData,
+} from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -27,7 +36,7 @@ import {
   AlertTriangle,
   ChevronDown,
   FileDown,
-  Gavel
+  Gavel,
 } from "lucide-react";
 import {
   Collapsible,
@@ -35,8 +44,25 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+} from "recharts";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 // Modified TaskData interface to include documentAnalysis
 interface TaskData extends OriginalTaskData {
@@ -54,17 +80,16 @@ interface DocumentAnalysis {
   documentType: string;
   industry: string;
   complianceStatus: {
-    status: 'PASSED' | 'FAILED' | 'PENDING';
+    status: "PASSED" | "FAILED" | "PENDING";
     details: string;
     lastChecked: string;
   };
 }
-
-
 export default function WorkflowAutomation() {
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([]);
-  const [analysisResults, setAnalysisResults] = useState<DocumentAnalysis | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [processingResults, setProcessingResults] =
+    useState<ProcessingResults | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -79,68 +104,49 @@ export default function WorkflowAutomation() {
 
   // Workflow stages definition
   const workflowStages = [
-    { id: 'draft', name: 'Draft Generation', icon: FileText },
-    { id: 'compliance', name: 'Compliance Check', icon: Scale },
-    { id: 'research', name: 'Legal Research', icon: BookCheck },
-    { id: 'approval', name: 'Approval Process', icon: BadgeCheck },
-    { id: 'audit', name: 'Final Audit', icon: History }
+    { id: "draft", name: "Draft Generation", icon: FileText },
+    { id: "compliance", name: "Compliance Check", icon: Scale },
+    { id: "research", name: "Legal Research", icon: BookCheck },
+    { id: "approval", name: "Approval Process", icon: BadgeCheck },
+    { id: "audit", name: "Final Audit", icon: History },
   ];
 
   // Document upload handler
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
 
+    setIsProcessing(true);
     const formData = new FormData();
-    formData.append('file', acceptedFiles[0]);
+    formData.append("document", acceptedFiles[0]);
 
     try {
-      // Start analysis immediately
-      console.log("Starting document analysis...");
-      const analysisResponse = await fetch('/api/orchestrator/analyze', {
-        method: 'POST',
+      const response = await fetch("/api/workflow-automation/process", {
+        method: "POST",
         body: formData,
       });
 
-      if (!analysisResponse.ok) {
-        throw new Error('Analysis request failed');
+      if (!response.ok) {
+        throw new Error("Processing failed");
       }
 
-      const analysisData = await analysisResponse.json();
-      console.log("Analysis results:", analysisData);
+      const result = await response.json();
 
-      if (analysisData.analysis) {
-        setAnalysisResults(analysisData.analysis);
-      }
-
-      // Start workflow process
-      const response = await fetch('/api/orchestrator/documents', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-      if (data.taskId) {
-        setActiveTaskId(data.taskId);
-        toast({
-          title: "Processing Started",
-          description: "Your document is being analyzed",
-          duration: 5000
+      if (result.success) {
+        setProcessingResults({
+          documentAnalysis: result.result.documentAnalysis,
+          complianceChecks: result.result.complianceChecks,
+          enhancedDraft: result.result.enhancedDraft,
+          approvalStatus: result.result.approvalStatus,
+          auditReport: result.result.auditReport,
         });
+      } else {
+        throw new Error(result.error || "Processing failed");
       }
     } catch (error) {
-      console.error('Upload/Analysis failed:', error);
-      const errorLog: ErrorLog = {
-        timestamp: new Date().toISOString(),
-        stage: 'upload',
-        message: 'Document upload failed',
-        details: error instanceof Error ? error.message : String(error)
-      };
-      setErrorLogs(prev => [errorLog, ...prev]);
-      toast({
-        title: "Upload Failed",
-        description: "There was an error uploading your document",
-        variant: "destructive"
-      });
+      console.error("Document processing error:", error);
+      setError(error instanceof Error ? error.message : "Processing failed");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -148,7 +154,7 @@ export default function WorkflowAutomation() {
 
   // Task progress query
   const { data: taskData } = useQuery<TaskData>({
-    queryKey: ['/api/orchestrator/tasks', activeTaskId],
+    queryKey: ["/api/orchestrator/tasks", activeTaskId],
     enabled: !!activeTaskId,
     refetchInterval: 2000,
   });
@@ -157,20 +163,26 @@ export default function WorkflowAutomation() {
   const retryMutation = useMutation({
     mutationFn: async (stageId?: string) => {
       if (!activeTaskId) return;
-      await apiRequest('POST', `/api/orchestrator/tasks/${activeTaskId}/retry`, { stageId });
+      await apiRequest(
+        "POST",
+        `/api/orchestrator/tasks/${activeTaskId}/retry`,
+        { stageId },
+      );
       await queryClient.invalidateQueries({
-        queryKey: ['/api/orchestrator/tasks', activeTaskId]
+        queryKey: ["/api/orchestrator/tasks", activeTaskId],
       });
-    }
+    },
   });
 
   // Download handlers
   const handleDownloadPDF = async () => {
     try {
-      const response = await fetch(`/api/orchestrator/tasks/${activeTaskId}/report?format=pdf`);
+      const response = await fetch(
+        `/api/orchestrator/tasks/${activeTaskId}/report?format=pdf`,
+      );
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `workflow-report-${activeTaskId}.pdf`;
       document.body.appendChild(a);
@@ -178,21 +190,23 @@ export default function WorkflowAutomation() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error) {
-      console.error('PDF download failed:', error);
+      console.error("PDF download failed:", error);
       toast({
         title: "Download Failed",
         description: "Failed to download PDF report",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
 
   const handleDownloadCSV = async () => {
     try {
-      const response = await fetch(`/api/orchestrator/tasks/${activeTaskId}/report?format=csv`);
+      const response = await fetch(
+        `/api/orchestrator/tasks/${activeTaskId}/report?format=csv`,
+      );
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `workflow-metrics-${activeTaskId}.csv`;
       document.body.appendChild(a);
@@ -200,11 +214,11 @@ export default function WorkflowAutomation() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error) {
-      console.error('CSV download failed:', error);
+      console.error("CSV download failed:", error);
       toast({
         title: "Download Failed",
         description: "Failed to download CSV report",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -220,20 +234,23 @@ export default function WorkflowAutomation() {
 
   // Sample metrics data
   const metricsData = [
-    { name: 'Tasks Automated', value: 80, label: '80% of routine tasks automated' },
-    { name: 'Processing Speed', value: 70, label: '70% faster processing' },
-    { name: 'Cost Savings', value: 40, label: '40% labor cost savings' },
-    { name: 'Error Reduction', value: 60, label: '60% error reduction' }
+    {
+      name: "Tasks Automated",
+      value: 80,
+      label: "80% of routine tasks automated",
+    },
+    { name: "Processing Speed", value: 70, label: "70% faster processing" },
+    { name: "Cost Savings", value: 40, label: "40% labor cost savings" },
+    { name: "Error Reduction", value: 60, label: "60% error reduction" },
   ];
 
   // Sample timeline data
   const timelineData = [
-    { name: 'Week 1', tasks: 45, time: 120 },
-    { name: 'Week 2', tasks: 52, time: 110 },
-    { name: 'Week 3', tasks: 48, time: 90 },
-    { name: 'Week 4', tasks: 60, time: 85 }
+    { name: "Week 1", tasks: 45, time: 120 },
+    { name: "Week 2", tasks: 52, time: 110 },
+    { name: "Week 3", tasks: 48, time: 90 },
+    { name: "Week 4", tasks: 60, time: 85 },
   ];
-
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white">
@@ -256,18 +273,24 @@ export default function WorkflowAutomation() {
         <Card className="mb-8 bg-gray-800/50 border-gray-700">
           <CardHeader>
             <CardTitle className="text-2xl">Document Upload</CardTitle>
-            <CardDescription>Upload your legal documents for automated processing</CardDescription>
+            <CardDescription>
+              Upload your legal documents for automated processing
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div
               {...getRootProps()}
               className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-300
-                ${isDragActive ? 'border-emerald-400 bg-emerald-400/10 scale-102' : 'border-gray-600 hover:border-emerald-400/50'}`}
+                ${isDragActive ? "border-emerald-400 bg-emerald-400/10 scale-102" : "border-gray-600 hover:border-emerald-400/50"}`}
             >
               <input {...getInputProps()} />
-              <Upload className={`h-16 w-16 mx-auto mb-6 ${isDragActive ? 'text-emerald-400' : 'text-gray-400'} transition-transform duration-300 ${isDragActive ? 'scale-110' : ''}`} />
+              <Upload
+                className={`h-16 w-16 mx-auto mb-6 ${isDragActive ? "text-emerald-400" : "text-gray-400"} transition-transform duration-300 ${isDragActive ? "scale-110" : ""}`}
+              />
               <h3 className="text-xl font-semibold mb-3">
-                {isDragActive ? 'Drop your documents here' : 'Upload Legal Documents'}
+                {isDragActive
+                  ? "Drop your documents here"
+                  : "Upload Legal Documents"}
               </h3>
               <p className="text-gray-400 mb-4">
                 Drag & drop your documents here or click to select files
@@ -289,7 +312,9 @@ export default function WorkflowAutomation() {
                 <FileCheck className="h-6 w-6 text-emerald-400" />
                 <CardTitle>Document Analysis Results</CardTitle>
               </div>
-              <CardDescription>Automated analysis of your uploaded documents</CardDescription>
+              <CardDescription>
+                Automated analysis of your uploaded documents
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -317,12 +342,15 @@ export default function WorkflowAutomation() {
                       {analysisResults.industry}
                     </TableCell>
                     <TableCell>
-                      <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
-                        analysisResults.complianceStatus.status === 'PASSED'
-                          ? 'bg-emerald-500/20 text-emerald-400'
-                          : 'bg-red-500/20 text-red-400'
-                      }`}>
-                        {analysisResults.complianceStatus.status === 'PASSED' ? (
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 w-fit ${
+                          analysisResults.complianceStatus.status === "PASSED"
+                            ? "bg-emerald-500/20 text-emerald-400"
+                            : "bg-red-500/20 text-red-400"
+                        }`}
+                      >
+                        {analysisResults.complianceStatus.status ===
+                        "PASSED" ? (
                           <>
                             <CheckCircle2 className="h-3 w-3" />
                             Compliant
@@ -360,7 +388,9 @@ export default function WorkflowAutomation() {
                 <Scale className="h-6 w-6 text-emerald-400" />
                 <CardTitle>Workflow Progress</CardTitle>
               </div>
-              <CardDescription>Real-time status of your document processing</CardDescription>
+              <CardDescription>
+                Real-time status of your document processing
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {/* Stage Timeline */}
@@ -372,16 +402,24 @@ export default function WorkflowAutomation() {
                     const Icon = stage.icon;
                     const isCompleted = index < currentStage;
                     const isCurrent = index === currentStage;
-                    const isError = taskData.status === 'failed' && isCurrent;
+                    const isError = taskData.status === "failed" && isCurrent;
 
                     return (
-                      <div key={stage.id} className="flex flex-col items-center">
+                      <div
+                        key={stage.id}
+                        className="flex flex-col items-center"
+                      >
                         <div
                           className={`w-12 h-12 rounded-full flex items-center justify-center relative z-10 transition-all duration-300
-                          ${isCompleted ? 'bg-emerald-500 scale-105' :
-                              isError ? 'bg-red-500 scale-105' :
-                                isCurrent ? 'bg-blue-500/20 border-2 border-blue-400 scale-110' :
-                                  'bg-gray-700'}`}
+                          ${
+                            isCompleted
+                              ? "bg-emerald-500 scale-105"
+                              : isError
+                                ? "bg-red-500 scale-105"
+                                : isCurrent
+                                  ? "bg-blue-500/20 border-2 border-blue-400 scale-110"
+                                  : "bg-gray-700"
+                          }`}
                         >
                           {isCompleted ? (
                             <CheckCircle2 className="h-6 w-6 text-white" />
@@ -394,12 +432,17 @@ export default function WorkflowAutomation() {
                           )}
                         </div>
                         <div className="mt-4 text-sm font-medium text-center">
-                          <span className={`transition-colors ${
-                            isCompleted ? 'text-emerald-400' :
-                              isError ? 'text-red-400' :
-                                isCurrent ? 'text-blue-400' :
-                                  'text-gray-400'
-                          }`}>
+                          <span
+                            className={`transition-colors ${
+                              isCompleted
+                                ? "text-emerald-400"
+                                : isError
+                                  ? "text-red-400"
+                                  : isCurrent
+                                    ? "text-blue-400"
+                                    : "text-gray-400"
+                            }`}
+                          >
                             {stage.name}
                           </span>
                           {isError && (
@@ -424,11 +467,18 @@ export default function WorkflowAutomation() {
               {/* Progress Status */}
               <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-2">
-                  {taskData.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-emerald-400" />}
-                  {taskData.status === 'processing' && <Clock className="h-5 w-5 text-blue-400 animate-spin" />}
-                  {taskData.status === 'failed' && <AlertCircle className="h-5 w-5 text-red-400" />}
+                  {taskData.status === "completed" && (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                  )}
+                  {taskData.status === "processing" && (
+                    <Clock className="h-5 w-5 text-blue-400 animate-spin" />
+                  )}
+                  {taskData.status === "failed" && (
+                    <AlertCircle className="h-5 w-5 text-red-400" />
+                  )}
                   <span className="text-xl font-semibold">
-                    {taskData.currentStepDetails?.description || 'Processing your document...'}
+                    {taskData.currentStepDetails?.description ||
+                      "Processing your document..."}
                   </span>
                 </div>
                 <Progress value={taskData.progress} className="w-1/3 h-2" />
@@ -441,7 +491,9 @@ export default function WorkflowAutomation() {
                     <CardContent className="p-6">
                       <div className="flex items-center justify-between mb-4">
                         <ChartBar className="h-5 w-5 text-emerald-400" />
-                        <span className="text-2xl font-bold">{metric.value}%</span>
+                        <span className="text-2xl font-bold">
+                          {metric.value}%
+                        </span>
                       </div>
                       <p className="text-sm text-gray-400">{metric.label}</p>
                     </CardContent>
@@ -462,10 +514,10 @@ export default function WorkflowAutomation() {
                       <YAxis stroke="#9CA3AF" />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: '#1F2937',
-                          border: 'none',
-                          borderRadius: '0.5rem',
-                          color: '#F9FAFB'
+                          backgroundColor: "#1F2937",
+                          border: "none",
+                          borderRadius: "0.5rem",
+                          color: "#F9FAFB",
                         }}
                       />
                       <Line
@@ -473,14 +525,14 @@ export default function WorkflowAutomation() {
                         dataKey="tasks"
                         stroke="#10B981"
                         strokeWidth={2}
-                        dot={{ fill: '#10B981' }}
+                        dot={{ fill: "#10B981" }}
                       />
                       <Line
                         type="monotone"
                         dataKey="time"
                         stroke="#3B82F6"
                         strokeWidth={2}
-                        dot={{ fill: '#3B82F6' }}
+                        dot={{ fill: "#3B82F6" }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -493,7 +545,9 @@ export default function WorkflowAutomation() {
                   <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-red-500/10 rounded-lg border border-red-500/20 transition-colors hover:bg-red-500/20">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="h-5 w-5 text-red-400" />
-                      <span className="font-medium text-red-400">Error Log</span>
+                      <span className="font-medium text-red-400">
+                        Error Log
+                      </span>
                     </div>
                     <ChevronDown className="h-4 w-4 text-red-400" />
                   </CollapsibleTrigger>
@@ -501,16 +555,23 @@ export default function WorkflowAutomation() {
                     <ScrollArea className="h-[200px] mt-4">
                       <div className="space-y-4">
                         {errorLogs.map((log, index) => (
-                          <div key={index} className="p-4 bg-red-500/5 rounded border border-red-500/10">
+                          <div
+                            key={index}
+                            className="p-4 bg-red-500/5 rounded border border-red-500/10"
+                          >
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-red-400 font-medium">{log.stage}</span>
+                              <span className="text-red-400 font-medium">
+                                {log.stage}
+                              </span>
                               <span className="text-sm text-gray-500">
                                 {new Date(log.timestamp).toLocaleString()}
                               </span>
                             </div>
                             <p className="text-gray-300">{log.message}</p>
                             {log.details && (
-                              <p className="mt-2 text-sm text-gray-400">{log.details}</p>
+                              <p className="mt-2 text-sm text-gray-400">
+                                {log.details}
+                              </p>
                             )}
                           </div>
                         ))}

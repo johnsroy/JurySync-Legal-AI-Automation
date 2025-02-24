@@ -1,55 +1,66 @@
-import { Router } from 'express';
-import { AIOrchestrator } from '../services/ai-orchestrator';
-import multer from 'multer';
-import { z } from 'zod';
+import { Router } from "express";
+import { AIOrchestrator } from "../services/ai-orchestrator";
+import multer from "multer";
+import { z } from "zod";
 
 const router = Router();
-const upload = multer();
-const aiOrchestrator = new AIOrchestrator();
-
-// Schema for document upload
-const documentSchema = z.object({
-  content: z.string().min(1),
-  type: z.enum(['upload', 'paste'])
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid file type: ${file.mimetype}`));
+    }
+  },
 });
 
-router.post('/process', upload.single('document'), async (req, res) => {
+const aiOrchestrator = new AIOrchestrator();
+
+// Document processing endpoint
+router.post("/process", upload.single("document"), async (req, res) => {
   try {
     let content: string;
-    let type: 'upload' | 'paste';
+    let type: "upload" | "paste";
 
-    // Handle file upload
     if (req.file) {
       content = req.file.buffer.toString();
-      type = 'upload';
+      type = "upload";
     } else {
-      // Handle pasted content
-      const validation = documentSchema.safeParse(req.body);
+      const validation = z
+        .object({
+          content: z.string().min(1),
+          type: z.enum(["upload", "paste"]),
+        })
+        .safeParse(req.body);
+
       if (!validation.success) {
         return res.status(400).json({
           success: false,
-          error: 'Invalid document data'
+          error: "Invalid document data",
         });
       }
       content = validation.data.content;
       type = validation.data.type;
     }
 
-    // Process with AI orchestrator
+    // Process document through all stages
     const result = await aiOrchestrator.processDocument(content, type);
-    
-    if (!result.success) {
-      return res.status(400).json(result);
-    }
-
     return res.json(result);
   } catch (error) {
-    console.error('Workflow automation error:', error);
+    console.error("Workflow automation error:", error);
     return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Workflow automation failed'
+      error: error instanceof Error ? error.message : "Processing failed",
     });
   }
 });
 
-export default router; 
+export default router;
