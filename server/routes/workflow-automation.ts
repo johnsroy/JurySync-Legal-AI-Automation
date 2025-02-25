@@ -33,13 +33,13 @@ const upload = multer({
   },
 }).single("document");
 
-// Initialize AI Orchestrator
-let aiOrchestrator: AIOrchestrator | null = null;
+// Initialize AI Orchestrator singleton
+const aiOrchestrator = new AIOrchestrator();
 
 // Document processing endpoint
 router.post("/process", async (req, res) => {
   try {
-    // Step 1: File Upload
+    // Step 1: Handle file upload
     await new Promise<void>((resolve, reject) => {
       upload(req, res, (err) => {
         if (err) {
@@ -59,44 +59,37 @@ router.post("/process", async (req, res) => {
       });
     }
 
-    // Step 2: Initialize AI Orchestrator if needed
-    if (!aiOrchestrator) {
-      try {
-        log("Initializing AI Orchestrator");
-        aiOrchestrator = new AIOrchestrator();
-      } catch (error) {
-        log("AI Orchestrator initialization failed:", error);
-        return res.status(500).json({
-          success: false,
-          error: "Failed to initialize AI service",
-        });
-      }
-    }
+    log("File received:", {
+      filename: req.file.originalname,
+      size: req.file.size,
+      type: req.file.mimetype
+    });
 
-    // Step 3: Create initial document record
+    // Step 2: Create initial document record
     let document;
     try {
       const [doc] = await db.insert(documents)
         .values({
+          userId: (req.user as any)?.id || 1,
           title: req.file.originalname,
           content: req.file.buffer.toString('utf-8'),
-          userId: (req.user as any)?.id || 1,
-          documentType: "CONTRACT",
+          agentType: "CONTRACT_AUTOMATION",
           processingStatus: "PROCESSING",
+          analysis: {}, // Empty initial analysis
           createdAt: new Date(),
         })
         .returning();
       document = doc;
-      log("Document created:", { id: document.id });
+      log("Document record created:", { id: document.id });
     } catch (error) {
       log("Database error:", error);
       return res.status(500).json({
         success: false,
-        error: "Failed to create document record",
+        error: "Failed to create document record"
       });
     }
 
-    // Step 4: Process document
+    // Step 3: Process document through AI orchestrator
     try {
       const result = await aiOrchestrator.processDocument(
         req.file.buffer.toString('utf-8'),
@@ -104,10 +97,10 @@ router.post("/process", async (req, res) => {
       );
 
       if (!result?.success) {
-        throw new Error("AI processing failed");
+        throw new Error(result?.error || "AI processing failed");
       }
 
-      // Update document with results
+      // Update document with processing results
       await db.update(documents)
         .set({
           processingStatus: "COMPLETED",
@@ -122,26 +115,26 @@ router.post("/process", async (req, res) => {
       });
 
     } catch (error) {
-      log("Processing error:", error);
+      log("AI processing error:", error);
 
-      // Update document status
+      // Update document with error status
       await db.update(documents)
         .set({
           processingStatus: "FAILED",
-          errorMessage: error instanceof Error ? error.message : "Processing failed",
+          errorMessage: error instanceof Error ? error.message : "Processing failed"
         })
         .where(eq(documents.id, document.id));
 
       return res.status(500).json({
         success: false,
-        error: "Failed to process document",
+        error: "Failed to process document"
       });
     }
   } catch (error) {
     log("Unexpected error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to process document",
+      error: "Failed to process document"
     });
   }
 });
@@ -150,7 +143,6 @@ router.post("/process", async (req, res) => {
 router.get("/status/:documentId", async (req, res) => {
   try {
     const documentId = parseInt(req.params.documentId);
-
     const document = await db.query.documents.findFirst({
       where: (documents, { eq }) => eq(documents.id, documentId),
     });
@@ -172,7 +164,7 @@ router.get("/status/:documentId", async (req, res) => {
     log("Status check error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to check document status",
+      error: "Failed to check document status"
     });
   }
 });
