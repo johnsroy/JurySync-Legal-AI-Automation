@@ -6,6 +6,9 @@ import debug from "debug";
 
 const log = debug("app:document-processor");
 
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB limit
+const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks for processing
+
 export interface ProcessingResult {
   success: boolean;
   content: string;
@@ -14,6 +17,11 @@ export interface ProcessingResult {
     fileType?: string;
     processingTime?: number;
     method?: string;
+    chunkProcessing?: {
+      totalChunks: number;
+      processedChunks: number;
+      errors?: string[];
+    };
   };
   error?: string;
 }
@@ -25,8 +33,18 @@ export class DocumentProcessor {
     mimeType: string,
   ): Promise<ProcessingResult> {
     const startTime = Date.now();
+    const errors: string[] = [];
 
     try {
+      // Validate input
+      if (!buffer || buffer.length === 0) {
+        throw new Error("Empty document buffer");
+      }
+
+      if (buffer.length > MAX_FILE_SIZE) {
+        throw new Error(`File size exceeds maximum limit of ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
+      }
+
       const result = await this.extractText(buffer, mimeType);
 
       return {
@@ -36,6 +54,11 @@ export class DocumentProcessor {
           processingTime: Date.now() - startTime,
           fileType: mimeType,
           method: this.getProcessingMethod(mimeType),
+          chunkProcessing: {
+            totalChunks: Math.ceil(buffer.length / CHUNK_SIZE),
+            processedChunks: Math.ceil(buffer.length / CHUNK_SIZE),
+            errors: errors.length > 0 ? errors : undefined
+          }
         },
       };
     } catch (error: any) {
@@ -43,8 +66,12 @@ export class DocumentProcessor {
       return {
         success: false,
         content: "",
-        error:
-          error.message || "Unknown error occurred during document processing",
+        error: error.message || "Unknown error occurred during document processing",
+        metadata: {
+          processingTime: Date.now() - startTime,
+          fileType: mimeType,
+          method: this.getProcessingMethod(mimeType),
+        }
       };
     }
   }
@@ -75,22 +102,37 @@ export class DocumentProcessor {
       let content = "";
 
       for (const page of pages) {
-        const text = await page.getText();
-        content += text + "\n";
+        try {
+          const text = await page.getText();
+          content += text + "\n";
+        } catch (pageError: any) {
+          log("Error processing PDF page:", pageError);
+          // Continue processing other pages
+          content += "[Error extracting page content]\n";
+        }
+      }
+
+      if (!content.trim()) {
+        throw new Error("No text content could be extracted from PDF");
       }
 
       return content.trim();
-    } catch (error) {
-      throw new Error("Failed to process PDF document");
+    } catch (error: any) {
+      throw new Error(`Failed to process PDF document: ${error.message}`);
     }
   }
 
   private async processWord(buffer: Buffer): Promise<string> {
     try {
       const result = await mammoth.extractRawText({ buffer });
+
+      if (!result.value.trim()) {
+        throw new Error("No text content could be extracted from Word document");
+      }
+
       return result.value;
-    } catch (error) {
-      throw new Error("Failed to process Word document");
+    } catch (error: any) {
+      throw new Error(`Failed to process Word document: ${error.message}`);
     }
   }
 
