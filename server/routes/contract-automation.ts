@@ -12,7 +12,6 @@ import { documentProcessor } from '../services/documentProcessor';
 
 const router = Router();
 const openai = new OpenAI();
-const documentProcessor = new DocumentProcessor();
 
 // Configure multer
 const upload = multer({
@@ -80,7 +79,9 @@ router.post('/process', upload.single('file'), async (req, res) => {
         mimeType: req.file.mimetype,
         metadata: metadata,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        userId: (req.user as any)?.id || 1, // Type cast to avoid TypeScript error
+        status: 'pending'
       })
       .returning();
 
@@ -109,7 +110,7 @@ router.get('/templates', async (req, res) => {
     // Filter by search if provided
     if (search && typeof search === 'string') {
       const searchLower = search.toLowerCase();
-      templates = templates.filter(template => 
+      templates = templates.filter(template =>
         template.name.toLowerCase().includes(searchLower) ||
         template.description.toLowerCase().includes(searchLower)
       );
@@ -142,91 +143,7 @@ router.get('/templates', async (req, res) => {
   }
 });
 
-// Update the suggestions endpoint
-router.get('/suggestions', async (req, res) => {
-  try {
-    const { q: selectedText, content } = req.query;
-    if (!selectedText || typeof selectedText !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Selected text is required'
-      });
-    }
-
-    const suggestions = await generateSmartSuggestions(selectedText, content as string);
-
-    return res.json({
-      success: true,
-      suggestions
-    });
-  } catch (error) {
-    console.error('Failed to get suggestions:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to get suggestions'
-    });
-  }
-});
-
-// Download endpoint with improved handling
-router.post('/export', async (req, res) => {
-  const { content, format } = req.body;
-
-  if (!content) {
-    return res.status(400).json({
-      success: false,
-      error: 'Content is required'
-    });
-  }
-
-  if (format === 'pdf') {
-    try {
-      const pdfDoc = await pdfService.generatePDF(content, {
-        title: 'Contract Document',
-        author: 'Contract Automation System',
-        subject: 'Generated Contract',
-        keywords: ['contract', 'legal', 'document']
-      });
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename=contract.pdf');
-      pdfDoc.pipe(res);
-      pdfDoc.end();
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      res.status(500).json({ error: 'Failed to generate PDF' });
-    }
-  } else if (format === 'docx') {
-    const doc = new docx.Document({
-      sections: [{
-        properties: {},
-        children: [
-          new docx.Paragraph({
-            children: [
-              new docx.TextRun({
-                text: content,
-                font: "Times New Roman",
-                size: 24 // 12pt
-              })
-            ]
-          })
-        ]
-      }]
-    });
-
-    const buffer = await docx.Packer.toBuffer(doc);
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', 'attachment; filename=contract.docx');
-    return res.send(buffer);
-  }
-
-  return res.status(400).json({
-    success: false,
-    error: 'Invalid format specified'
-  });
-});
-
-// Template upload endpoint
+// Update template creation endpoint
 router.post('/templates/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -249,8 +166,9 @@ router.post('/templates/upload', upload.single('file'), async (req, res) => {
     const [template] = await db.insert(contractTemplates)
       .values({
         name: req.file.originalname,
-        content: content,
+        description: 'Template uploaded via API',
         category: req.body.category || 'General',
+        content: content,
         metadata: metadata,
         createdAt: new Date(),
         updatedAt: new Date()

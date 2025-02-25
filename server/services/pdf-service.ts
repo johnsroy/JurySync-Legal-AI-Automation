@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import pdf from "pdf-parse";
+import pdf from "pdf-parse/lib/pdf-parse";  
 import { createWorker } from "tesseract.js";
 import debug from "debug";
 import { Readable } from "stream";

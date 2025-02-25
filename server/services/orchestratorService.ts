@@ -1,3 +1,4 @@
+import { ServiceContainer } from "./ServiceContainer";
 import { Anthropic } from "@anthropic-ai/sdk";
 import { complianceAuditService } from "./complianceAuditService";
 import { legalResearchService } from "./legalResearchService";
@@ -846,3 +847,7 @@ Provide response as JSON:
 }
 
 export const orchestratorService = OrchestratorService.getInstance();
+
+async function initializeServices() {
+    await orchestratorService.services.initialize();
+}
