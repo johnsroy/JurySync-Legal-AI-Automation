@@ -920,3 +920,49 @@ export const insertVaultDocumentSchema = createInsertSchema(vaultDocuments)
 
 export type VaultDocument = typeof vaultDocuments.$inferSelect;
 export type InsertVaultDocument = z.infer<typeof insertVaultDocumentSchema>;
+
+// Add workflow events table for tracking document processing stages
+export const workflowEvents = pgTable("workflow_events", {
+  id: serial("id").primaryKey(),
+  contractId: integer("contract_id").notNull(),
+  eventType: text("event_type").notNull(),
+  details: jsonb("details").notNull(),
+  timestamp: timestamp("timestamp").defaultNow(),
+});
+
+// Add contract versions table for version control
+export const contractVersions = pgTable("contract_versions", {
+  id: serial("id").primaryKey(),
+  contractId: integer("contract_id").notNull(),
+  version: integer("version").notNull(),
+  content: text("content"),
+  status: text("status").notNull(),
+  author: text("author").notNull(),
+  changes: text("changes").notNull(),
+  timestamp: timestamp("timestamp").defaultNow(),
+});
+
+// Add relations
+export const workflowEventsRelations = relations(workflowEvents, ({ one }) => ({
+  contract: one(vaultDocuments, {
+    fields: [workflowEvents.contractId],
+    references: [vaultDocuments.id],
+  }),
+}));
+
+export const contractVersionsRelations = relations(contractVersions, ({ one }) => ({
+  contract: one(vaultDocuments, {
+    fields: [contractVersions.contractId],
+    references: [vaultDocuments.id],
+  }),
+}));
+
+// Add insert schemas for the new tables
+export const insertWorkflowEventSchema = createInsertSchema(workflowEvents);
+export const insertContractVersionSchema = createInsertSchema(contractVersions);
+
+// Export types for the new tables
+export type WorkflowEvent = typeof workflowEvents.$inferSelect;
+export type InsertWorkflowEvent = z.infer<typeof insertWorkflowEventSchema>;
+export type ContractVersion = typeof contractVersions.$inferSelect;
+export type InsertContractVersion = z.infer<typeof insertContractVersionSchema>;

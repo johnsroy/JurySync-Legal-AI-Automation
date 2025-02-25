@@ -6,15 +6,33 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, FileText, Download, Eye, BookOpen, ClipboardCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
+interface LegalAnalysis {
+  summary: string;
+  analysis: {
+    legalPrinciples: string[];
+    keyPrecedents: Array<{
+      case: string;
+      relevance: string;
+      impact: string;
+    }>;
+    recommendations: string[];
+  };
+  citations: Array<{
+    source: string;
+    reference: string;
+    context: string;
+  }>;
+}
+
 interface AnalysisResult {
   documentType: string;
   documentDescription: string;
   industry: string;
   industryDescription: string;
-  status: 'COMPLIANT' | 'NON_COMPLIANT';
+  status: 'COMPLIANT' | 'NON_COMPLIANT' | 'SUCCESS'; //Added 'success' variant
   statusDescription: string;
   content?: string;
-  aiAnalysis?: any;
+  legalAnalysis?: LegalAnalysis;
 }
 
 export default function DocumentWorkflow() {
@@ -235,14 +253,14 @@ export default function DocumentWorkflow() {
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Executive Summary</h4>
                       <Card className="p-4 bg-card/50">
-                        <p className="text-foreground">{analysisResult?.legalAnalysis?.summary}</p>
+                        <p className="text-foreground">{analysisResult.legalAnalysis?.summary}</p>
                       </Card>
                     </div>
 
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Key Legal Principles</h4>
                       <div className="grid gap-3">
-                        {analysisResult?.legalAnalysis?.analysis?.legalPrinciples?.map((principle, index) => (
+                        {analysisResult.legalAnalysis?.analysis.legalPrinciples.map((principle: string, index: number) => (
                           <Card key={index} className="p-4 bg-card/50">
                             <div className="flex items-start gap-3">
                               <span className="text-primary font-semibold">{index + 1}.</span>
@@ -256,7 +274,7 @@ export default function DocumentWorkflow() {
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Key Legal Precedents</h4>
                       <div className="grid gap-4">
-                        {analysisResult?.legalAnalysis?.analysis?.keyPrecedents?.map((precedent, index) => (
+                        {analysisResult.legalAnalysis?.analysis.keyPrecedents.map((precedent: { case: string; relevance: string; impact: string }, index: number) => (
                           <Card key={index} className="p-4 bg-card/50">
                             <div className="space-y-3">
                               <h5 className="font-semibold text-primary">{precedent.case}</h5>
@@ -279,7 +297,7 @@ export default function DocumentWorkflow() {
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Citations and References</h4>
                       <div className="grid gap-4">
-                        {analysisResult?.legalAnalysis?.citations?.map((citation, index) => (
+                        {analysisResult.legalAnalysis?.citations.map((citation: { source: string; reference: string; context: string }, index: number) => (
                           <Card key={index} className="p-4 bg-card/50">
                             <div className="space-y-2">
                               <h5 className="font-semibold text-primary">{citation.source}</h5>
@@ -294,7 +312,7 @@ export default function DocumentWorkflow() {
                     <div className="space-y-4">
                       <h4 className="text-lg font-medium">Recommendations</h4>
                       <div className="grid gap-3">
-                        {analysisResult?.legalAnalysis?.analysis?.recommendations?.map((recommendation, index) => (
+                        {analysisResult.legalAnalysis?.analysis.recommendations.map((recommendation: string, index: number) => (
                           <Card key={index} className="p-4 bg-card/50">
                             <div className="flex items-start gap-3">
                               <FileText className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />

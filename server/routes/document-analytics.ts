@@ -6,8 +6,7 @@ import { z } from 'zod';
 import { DocumentAnalyticsService } from '../services/documentAnalytics';
 
 const router = Router();
-const documentAnalyticsServiceInstance = new DocumentAnalyticsService(); // Instance creation
-
+const documentAnalyticsServiceInstance = new DocumentAnalyticsService();
 
 // Validation schema for workflow results
 const workflowResultSchema = z.array(z.object({
@@ -20,14 +19,14 @@ const workflowResultSchema = z.array(z.object({
 router.post('/process', async (req, res) => {
   try {
     const { workflowResults } = req.body;
-    
+
     // Validate input
     const validatedResults = workflowResultSchema.parse(workflowResults);
-    
+
     // Process the workflow results
-    const metadata = await documentAnalyticsServiceInstance.processWorkflowResults(validatedResults);
-    
-    res.json(metadata);
+    const analysis = await documentAnalyticsServiceInstance.processWorkflowResults(validatedResults);
+
+    res.json(analysis);
   } catch (error) {
     console.error('Document analytics processing error:', error);
     res.status(500).json({
