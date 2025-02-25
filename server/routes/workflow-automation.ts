@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { AIOrchestrator } from "../services/ai-orchestrator";
 import multer from "multer";
 import debug from "debug";
@@ -10,7 +10,7 @@ import { documentProcessor } from "../services/documentProcessor";
 const log = debug("app:workflow-automation");
 const router = Router();
 
-// Configure multer for file uploads
+// Configure multer for file uploads with increased timeout
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -59,8 +59,9 @@ router.post("/test-ai", async (req, res) => {
   }
 });
 
-// Document processing endpoint
-router.post("/process", async (req, res) => {
+// Document upload endpoint - Step 1: Upload and initial processing
+router.post("/upload", async (req, res) => {
+  const startTime = Date.now();
   let uploadedDocument;
 
   try {
@@ -87,7 +88,8 @@ router.post("/process", async (req, res) => {
     log("File received:", {
       filename: req.file.originalname,
       size: req.file.size,
-      type: req.file.mimetype
+      type: req.file.mimetype,
+      receiveTime: Date.now() - startTime
     });
 
     // Step 2: Process document content
@@ -101,7 +103,8 @@ router.post("/process", async (req, res) => {
     if (!processResult.success || !processResult.content) {
       log("Document processing failed:", {
         error: processResult.error,
-        metadata: processResult.metadata
+        metadata: processResult.metadata,
+        processingTime: Date.now() - startTime
       });
       return res.status(400).json({
         success: false,
@@ -111,98 +114,133 @@ router.post("/process", async (req, res) => {
 
     log("Document processed successfully:", {
       contentLength: processResult.content.length,
-      metadata: processResult.metadata
+      metadata: processResult.metadata,
+      processingTime: Date.now() - startTime
     });
-
-    // Verify content is not empty
-    if (!processResult.content.trim()) {
-      log("Empty content after processing");
-      return res.status(400).json({
-        success: false,
-        error: "No content could be extracted from the document"
-      });
-    }
 
     // Step 3: Create initial document record
     const insertData = {
       title: req.file.originalname,
       content: processResult.content,
-      userId: (req.user as any)?.id || 1, // Fallback to system user if not authenticated
+      userId: (req.user as any)?.id || 1,
       metadata: {
         ...processResult.metadata,
         originalFilename: req.file.originalname,
         mimeType: req.file.mimetype,
         fileSize: req.file.size,
-        uploadedAt: new Date().toISOString()
+        uploadedAt: new Date().toISOString(),
+        processingTime: Date.now() - startTime
       }
     };
 
     try {
-      // Validate insert data
       const validatedData = insertDocumentSchema.parse(insertData);
-
       const [document] = await db.insert(documents)
         .values(validatedData)
         .returning();
 
       uploadedDocument = document;
-      log("Document record created:", { id: document.id });
-
-      // Step 4: Process document through AI orchestrator
-      log("Starting AI processing...");
-      const result = await aiOrchestrator.processDocument(processResult.content, "upload");
-
-      if (!result.success) {
-        log("AI processing failed:", result.error);
-        throw new Error(result.error || "AI processing failed");
-      }
-
-      log("AI processing completed:", {
-        documentId: document.id,
-        resultTypes: Object.keys(result.result!)
+      log("Document record created:", { 
+        id: document.id,
+        totalTime: Date.now() - startTime 
       });
-
-      // Update document with processing results
-      await db.update(documents)
-        .set({
-          status: "COMPLETED",
-          analysis: result.result,
-          updatedAt: new Date()
-        })
-        .where(eq(documents.id, document.id));
 
       return res.json({
         success: true,
         documentId: document.id,
-        result: result.result,
+        status: "PENDING",
+        processingTime: Date.now() - startTime
       });
 
     } catch (error) {
-      log("Database/AI processing error:", error);
+      log("Database error:", error);
       throw error;
     }
 
   } catch (error) {
-    log("Processing error:", error);
+    log("Upload process error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Upload failed",
+      processingTime: Date.now() - startTime
+    });
+  }
+});
 
-    // Update document status if it was created
-    if (uploadedDocument?.id) {
-      try {
-        await db.update(documents)
-          .set({
-            status: "FAILED",
-            errorMessage: error instanceof Error ? error.message : "Processing failed",
-            updatedAt: new Date()
-          })
-          .where(eq(documents.id, uploadedDocument.id));
-      } catch (updateError) {
-        log("Failed to update document status:", updateError);
-      }
+// Document processing endpoint - Step 2: AI Processing
+router.post("/process/:documentId", async (req, res) => {
+  const startTime = Date.now();
+  const { documentId } = req.params;
+
+  try {
+    // Fetch the document
+    const [document] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, parseInt(documentId)));
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: "Document not found"
+      });
+    }
+
+    log("Starting AI processing for document:", {
+      documentId,
+      contentLength: document.content.length
+    });
+
+    // Process through AI orchestrator
+    const result = await aiOrchestrator.processDocument(document.content, "upload");
+
+    if (!result.success) {
+      throw new Error(result.error || "AI processing failed");
+    }
+
+    log("AI processing completed:", {
+      documentId,
+      resultTypes: Object.keys(result.result!),
+      processingTime: Date.now() - startTime
+    });
+
+    // Update document with processing results
+    await db.update(documents)
+      .set({
+        status: "COMPLETED",
+        analysis: result.result,
+        updatedAt: new Date()
+      })
+      .where(eq(documents.id, parseInt(documentId)));
+
+    return res.json({
+      success: true,
+      documentId: document.id,
+      status: "COMPLETED",
+      result: result.result,
+      processingTime: Date.now() - startTime
+    });
+
+  } catch (error) {
+    log("AI processing error:", error);
+
+    // Update document status to failed
+    try {
+      await db.update(documents)
+        .set({
+          status: "FAILED",
+          errorMessage: error instanceof Error ? error.message : "Processing failed",
+          updatedAt: new Date()
+        })
+        .where(eq(documents.id, parseInt(documentId)));
+    } catch (updateError) {
+      log("Failed to update document status:", updateError);
     }
 
     return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : "Document processing failed"
+      error: error instanceof Error ? error.message : "AI processing failed",
+      processingTime: Date.now() - startTime
     });
   }
 });
