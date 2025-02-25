@@ -883,14 +883,17 @@ export const legalResearchReports = pgTable('legal_research_reports', {
   timestamp: timestamp('timestamp').notNull().defaultNow(),
 });
 
+// Only updating the legalAnalyses table definition
 export const legalAnalyses = pgTable('legal_analyses', {
   id: serial('id').primaryKey(),
-  userId: integer('user_idnotNull()),
+  userId: integer('user_id').notNull(),
   documentContent: text('document_content').notNull(),
   analysis: jsonb('analysis').notNull(),
   timestamp: timestamp('timestamp').notNull().defaultNow(),
-});
+});export type LegalAnalysis = typeof legalAnalyses.$inferSelect;
+export type InsertLegalAnalysis = typeof legalAnalyses.$inferInsert;
 
+// Add after the existing tables
 export const vaultDocuments = pgTable("vault_documents", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
