@@ -91,6 +91,7 @@ router.post("/process", async (req, res) => {
     });
 
     // Step 2: Process document content
+    log("Starting document content processing...");
     const processResult = await documentProcessor.processDocument(
       req.file.buffer,
       req.file.originalname,
@@ -98,7 +99,10 @@ router.post("/process", async (req, res) => {
     );
 
     if (!processResult.success || !processResult.content) {
-      log("Document processing failed:", processResult.error);
+      log("Document processing failed:", {
+        error: processResult.error,
+        metadata: processResult.metadata
+      });
       return res.status(400).json({
         success: false,
         error: processResult.error || "Failed to process document content"
@@ -109,6 +113,15 @@ router.post("/process", async (req, res) => {
       contentLength: processResult.content.length,
       metadata: processResult.metadata
     });
+
+    // Verify content is not empty
+    if (!processResult.content.trim()) {
+      log("Empty content after processing");
+      return res.status(400).json({
+        success: false,
+        error: "No content could be extracted from the document"
+      });
+    }
 
     // Step 3: Create initial document record
     const insertData = {
@@ -124,44 +137,50 @@ router.post("/process", async (req, res) => {
       }
     };
 
-    // Validate insert data
-    const validatedData = insertDocumentSchema.parse(insertData);
+    try {
+      // Validate insert data
+      const validatedData = insertDocumentSchema.parse(insertData);
 
-    const [document] = await db.insert(documents)
-      .values(validatedData)
-      .returning();
+      const [document] = await db.insert(documents)
+        .values(validatedData)
+        .returning();
 
-    uploadedDocument = document;
-    log("Document record created:", { id: document.id });
+      uploadedDocument = document;
+      log("Document record created:", { id: document.id });
 
-    // Step 4: Process document through AI orchestrator
-    log("Starting AI processing...");
-    const result = await aiOrchestrator.processDocument(processResult.content, "upload");
+      // Step 4: Process document through AI orchestrator
+      log("Starting AI processing...");
+      const result = await aiOrchestrator.processDocument(processResult.content, "upload");
 
-    if (!result.success) {
-      log("AI processing failed:", result.error);
-      throw new Error(result.error || "AI processing failed");
+      if (!result.success) {
+        log("AI processing failed:", result.error);
+        throw new Error(result.error || "AI processing failed");
+      }
+
+      log("AI processing completed:", {
+        documentId: document.id,
+        resultTypes: Object.keys(result.result!)
+      });
+
+      // Update document with processing results
+      await db.update(documents)
+        .set({
+          status: "COMPLETED",
+          analysis: result.result,
+          updatedAt: new Date()
+        })
+        .where(eq(documents.id, document.id));
+
+      return res.json({
+        success: true,
+        documentId: document.id,
+        result: result.result,
+      });
+
+    } catch (error) {
+      log("Database/AI processing error:", error);
+      throw error;
     }
-
-    log("AI processing completed:", {
-      documentId: document.id,
-      resultTypes: Object.keys(result.result!)
-    });
-
-    // Update document with processing results
-    await db.update(documents)
-      .set({
-        status: "COMPLETED",
-        analysis: result.result,
-        updatedAt: new Date()
-      })
-      .where(eq(documents.id, document.id));
-
-    return res.json({
-      success: true,
-      documentId: document.id,
-      result: result.result,
-    });
 
   } catch (error) {
     log("Processing error:", error);

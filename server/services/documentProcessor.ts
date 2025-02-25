@@ -1,6 +1,5 @@
 import mammoth from "mammoth";
 import { Buffer } from "buffer";
-import { PDFDocument } from "pdf-lib";
 import debug from "debug";
 import { pdfService } from "./pdf-service";
 
@@ -34,11 +33,18 @@ export class DocumentProcessor {
         throw new Error('No text content could be extracted from document');
       }
 
+      const processingTime = Date.now() - startTime;
+      log('Document processed successfully:', {
+        filename,
+        contentLength: content.length,
+        processingTime
+      });
+
       return {
         success: true,
         content,
         metadata: {
-          processingTime: Date.now() - startTime,
+          processingTime,
           fileType: mimeType,
           method: this.getProcessingMethod(mimeType),
         },
@@ -55,47 +61,77 @@ export class DocumentProcessor {
 
   async extractText(buffer: Buffer, mimeType: string): Promise<string> {
     try {
+      log('Extracting text from document:', { mimeType });
+      let content: string;
+
       switch (mimeType) {
         case "application/pdf":
-          return await this.processPDF(buffer);
+          content = await this.processPDF(buffer);
+          break;
         case "application/msword":
         case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-          return await this.processWord(buffer);
+          content = await this.processWord(buffer);
+          break;
         case "text/plain":
-          return buffer.toString("utf-8");
+          content = buffer.toString("utf-8");
+          break;
         default:
           throw new Error(`Unsupported file type: ${mimeType}`);
       }
+
+      if (!content || content.trim().length === 0) {
+        throw new Error(`No text content could be extracted from ${mimeType} document`);
+      }
+
+      log('Text extraction successful:', {
+        mimeType,
+        contentLength: content.length
+      });
+
+      return content;
     } catch (error) {
       log("Text extraction error:", error);
-      throw new Error("Failed to extract text from document");
+      throw new Error(`Failed to extract text from document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   private async processPDF(buffer: Buffer): Promise<string> {
     try {
-      // Use the PDF service instead of pdf-lib directly
+      log('Processing PDF document...');
       const result = await pdfService.parseDocument(buffer);
+
       if (!result.text || result.text.trim().length === 0) {
         throw new Error('No text content extracted from PDF');
       }
+
+      log('PDF processing successful:', {
+        contentLength: result.text.length
+      });
+
       return result.text;
     } catch (error) {
       log('PDF processing error:', error);
-      throw new Error("Failed to process PDF document");
+      throw new Error(`Failed to process PDF document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   private async processWord(buffer: Buffer): Promise<string> {
     try {
+      log('Processing Word document...');
       const result = await mammoth.extractRawText({ buffer });
+
       if (!result.value || result.value.trim().length === 0) {
         throw new Error('No text content extracted from Word document');
       }
+
+      log('Word document processing successful:', {
+        contentLength: result.value.length
+      });
+
       return result.value;
     } catch (error) {
       log('Word document processing error:', error);
-      throw new Error("Failed to process Word document");
+      throw new Error(`Failed to process Word document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
