@@ -19,52 +19,82 @@ interface ProcessingResult {
     };
     auditReport: any;
   };
+  error?: string;
 }
 
 export class AIOrchestrator {
   private openai: OpenAI;
   private initialized: boolean = false;
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_DELAY = 1000; // 1 second
+  private readonly INIT_TIMEOUT = 10000; // 10 seconds
 
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
-
-  async initialize() {
-    if (this.initialized) return;
-
-    // Check API key
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OpenAI API key not configured");
     }
 
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      timeout: this.INIT_TIMEOUT,
+    });
+  }
+
+  private async ensureInitialized() {
+    if (this.initialized) return;
+
     try {
-      // Test API connection
-      await this.openai.models.list();
+      log("Initializing AI Orchestrator...");
+      const models = await Promise.race([
+        this.openai.models.list(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("OpenAI API connection timeout")), this.INIT_TIMEOUT)
+        )
+      ]);
+
+      const hasRequiredModel = models.data.some(m => m.id === "gpt-4-1106-preview");
+      if (!hasRequiredModel) {
+        throw new Error("Required model 'gpt-4-1106-preview' is not available");
+      }
+
       this.initialized = true;
       log("AI Orchestrator initialized successfully");
     } catch (error) {
       log("Failed to initialize AI Orchestrator:", error);
-      throw error;
+      throw new Error(`AI initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   async processDocument(content: string, type: "upload" | "paste"): Promise<ProcessingResult> {
-    const startTime = new Date();
-    const workflowId = crypto.randomUUID();
-
     try {
-      await this.initialize();
+      await this.ensureInitialized();
+
+      if (!content || content.trim().length === 0) {
+        throw new Error("Document content cannot be empty");
+      }
+
+      log("Starting document processing");
 
       // Stage 1: Document Analysis
+      log("Starting document analysis...");
       const documentAnalysis = await this.analyzeDocument(content);
+      log("Document analysis completed", {
+        analysisKeys: Object.keys(documentAnalysis)
+      });
 
       // Stage 2: Compliance Check
+      log("Starting compliance check...");
       const complianceChecks = await this.checkCompliance(content);
+      log("Compliance check completed", {
+        checkKeys: Object.keys(complianceChecks)
+      });
 
       // Stage 3: Generate Enhanced Draft
-      const enhancedDraft = await this.generateDraft(content, documentAnalysis);
+      log("Starting draft generation...");
+      const enhancedDraft = await this.generateDraftWithRetry(content, documentAnalysis);
+      log("Draft generation completed", {
+        draftKeys: Object.keys(enhancedDraft)
+      });
 
       // Stage 4: Approval Process
       const approvalStatus = {
@@ -75,31 +105,12 @@ export class AIOrchestrator {
       };
 
       // Stage 5: Audit Report
+      log("Generating audit report...");
       const auditReport = await this.generateAuditReport({
         documentAnalysis,
         complianceChecks,
         enhancedDraft,
         approvalStatus
-      });
-
-      // Record metrics
-      await metricsCollector.recordWorkflowMetric({
-        userId: 1, // Default system user
-        workflowId,
-        workflowType: "document_processing",
-        status: "completed",
-        startTime,
-        completionTime: new Date(),
-        successful: true,
-        metadata: {
-          stepsCompleted: [
-            "analysis",
-            "compliance",
-            "draft",
-            "approval",
-            "audit"
-          ]
-        }
       });
 
       return {
@@ -115,99 +126,145 @@ export class AIOrchestrator {
 
     } catch (error) {
       log("Document processing error:", error);
-
-      // Record failure metrics
-      await metricsCollector.recordWorkflowMetric({
-        userId: 1, // Default system user
-        workflowId,
-        workflowType: "document_processing",
-        status: "failed",
-        startTime,
-        completionTime: new Date(),
-        successful: false,
-        errorMessage: error instanceof Error ? error.message : "Unknown error"
-      });
-
+      const errorMessage = error instanceof Error ? error.message : "Unknown error during processing";
+      log("Error details:", errorMessage);
       return {
         success: false,
-        result: undefined
+        error: errorMessage
       };
     }
   }
 
   private async analyzeDocument(content: string) {
-    const completion = await this.openai.chat.completions.create({
-      model: "gpt-4-1106-preview",
-      messages: [
-        {
-          role: "system",
-          content: "You are a legal document analyzer. Analyze the provided document and extract key information."
-        },
-        {
-          role: "user",
-          content: content
-        }
-      ],
-      temperature: 0.3
-    });
+    try {
+      log("Calling OpenAI API for document analysis...");
+      const response = await this.openai.chat.completions.create({
+        model: "gpt-4-1106-preview",
+        messages: [
+          {
+            role: "system",
+            content: "You are a legal document analyzer. Analyze the provided document and extract key information in JSON format. Include sections for document type, key clauses, parties involved, and potential risks."
+          },
+          {
+            role: "user",
+            content
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3
+      });
 
-    return JSON.parse(completion.choices[0].message.content || "{}");
+      if (!response.choices[0].message.content) {
+        throw new Error("Empty response from OpenAI API");
+      }
+
+      const result = JSON.parse(response.choices[0].message.content);
+      log("Document analysis completed successfully");
+      return result;
+    } catch (error) {
+      log("Document analysis failed:", error);
+      throw new Error(`Document analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async checkCompliance(content: string) {
-    const completion = await this.openai.chat.completions.create({
-      model: "gpt-4-1106-preview",
-      messages: [
-        {
-          role: "system",
-          content: "You are a legal compliance checker. Review the document for compliance issues."
-        },
-        {
-          role: "user",
-          content: content
-        }
-      ],
-      temperature: 0.2
-    });
+    try {
+      log("Calling OpenAI API for compliance check...");
+      const response = await this.openai.chat.completions.create({
+        model: "gpt-4-1106-preview",
+        messages: [
+          {
+            role: "system",
+            content: "You are a legal compliance checker. Review the document for compliance issues and return results in JSON format. Include sections for compliance status, identified issues, risk levels, and recommended actions."
+          },
+          {
+            role: "user",
+            content
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2
+      });
 
-    return JSON.parse(completion.choices[0].message.content || "{}");
+      if (!response.choices[0].message.content) {
+        throw new Error("Empty response from OpenAI API");
+      }
+
+      const result = JSON.parse(response.choices[0].message.content);
+      log("Compliance check completed successfully");
+      return result;
+    } catch (error) {
+      log("Compliance check failed:", error);
+      throw new Error(`Compliance check failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
-  private async generateDraft(content: string, analysis: any) {
-    const completion = await this.openai.chat.completions.create({
-      model: "gpt-4-1106-preview",
-      messages: [
-        {
-          role: "system",
-          content: "You are a legal document drafter. Generate an enhanced version of the document."
-        },
-        {
-          role: "user",
-          content: `Original content: ${content}\nAnalysis: ${JSON.stringify(analysis)}`
-        }
-      ],
-      temperature: 0.4
-    });
+  private async generateDraftWithRetry(content: string, analysis: any, retries = this.MAX_RETRIES): Promise<any> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        log(`Attempting draft generation (attempt ${attempt} of ${retries})...`);
+        const response = await this.openai.chat.completions.create({
+          model: "gpt-4-1106-preview",
+          messages: [
+            {
+              role: "system",
+              content: "You are a legal document drafter. Generate an enhanced version of the document in JSON format. Include the original structure while improving clarity, addressing identified issues, and incorporating best practices."
+            },
+            {
+              role: "user",
+              content: `Original content: ${content}\nAnalysis: ${JSON.stringify(analysis)}`
+            }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.4
+        });
 
-    return JSON.parse(completion.choices[0].message.content || "{}");
+        if (!response.choices[0].message.content) {
+          throw new Error("Empty response from OpenAI API");
+        }
+
+        const result = JSON.parse(response.choices[0].message.content);
+        log("Draft generation completed successfully");
+        return result;
+      } catch (error) {
+        log(`Draft generation attempt ${attempt} failed:`, error);
+        if (attempt === retries) {
+          throw new Error(`Draft generation failed after ${retries} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY * attempt));
+      }
+    }
   }
 
   private async generateAuditReport(data: any) {
-    const completion = await this.openai.chat.completions.create({
-      model: "gpt-4-1106-preview",
-      messages: [
-        {
-          role: "system",
-          content: "You are a legal document auditor. Generate an audit report for the document processing."
-        },
-        {
-          role: "user",
-          content: JSON.stringify(data)
-        }
-      ],
-      temperature: 0.2
-    });
+    try {
+      log("Calling OpenAI API for audit report generation...");
+      const response = await this.openai.chat.completions.create({
+        model: "gpt-4-1106-preview",
+        messages: [
+          {
+            role: "system",
+            content: "You are a legal document auditor. Generate an audit report in JSON format. Include sections for process summary, key changes made, risk assessment, and recommendations."
+          },
+          {
+            "role": "user",
+            "content": JSON.stringify(data)
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2
+      });
 
-    return JSON.parse(completion.choices[0].message.content || "{}");
+      if (!response.choices[0].message.content) {
+        throw new Error("Empty response from OpenAI API");
+      }
+
+      const result = JSON.parse(response.choices[0].message.content);
+      log("Audit report generation completed successfully");
+      return result;
+    } catch (error) {
+      log("Audit report generation failed:", error);
+      throw new Error(`Audit report generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }

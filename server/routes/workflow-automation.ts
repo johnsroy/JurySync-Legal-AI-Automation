@@ -3,7 +3,7 @@ import { AIOrchestrator } from "../services/ai-orchestrator";
 import multer from "multer";
 import debug from "debug";
 import { db } from "../db";
-import { documents } from "@shared/schema";
+import { documents, insertDocumentSchema } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { documentProcessor } from "../services/documentProcessor";
 
@@ -15,7 +15,6 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
-    files: 1,
   },
   fileFilter: (_req, file, cb) => {
     const allowedTypes = [
@@ -36,8 +35,34 @@ const upload = multer({
 // Initialize AI Orchestrator
 const aiOrchestrator = new AIOrchestrator();
 
+// Test endpoint for AI service
+router.post("/test-ai", async (req, res) => {
+  try {
+    const sampleText = "This is a test document for the legal workflow system.";
+    log("Testing AI service with sample text");
+
+    const result = await aiOrchestrator.processDocument(sampleText, "paste");
+    if (!result.success) {
+      throw new Error(result.error || "AI test failed");
+    }
+
+    return res.json({
+      success: true,
+      result: result.result
+    });
+  } catch (error) {
+    log("AI test failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "AI test failed"
+    });
+  }
+});
+
 // Document processing endpoint
 router.post("/process", async (req, res) => {
+  let uploadedDocument;
+
   try {
     // Step 1: Handle file upload
     await new Promise<void>((resolve, reject) => {
@@ -86,34 +111,49 @@ router.post("/process", async (req, res) => {
     });
 
     // Step 3: Create initial document record
+    const insertData = {
+      title: req.file.originalname,
+      content: processResult.content,
+      userId: (req.user as any)?.id || 1, // Fallback to system user if not authenticated
+      metadata: {
+        ...processResult.metadata,
+        originalFilename: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+        uploadedAt: new Date().toISOString()
+      }
+    };
+
+    // Validate insert data
+    const validatedData = insertDocumentSchema.parse(insertData);
+
     const [document] = await db.insert(documents)
-      .values({
-        title: req.file.originalname,
-        content: processResult.content,
-        status: "PENDING",
-        metadata: processResult.metadata || {}
-      })
+      .values(validatedData)
       .returning();
 
+    uploadedDocument = document;
     log("Document record created:", { id: document.id });
 
     // Step 4: Process document through AI orchestrator
+    log("Starting AI processing...");
     const result = await aiOrchestrator.processDocument(processResult.content, "upload");
 
     if (!result.success) {
-      throw new Error("AI processing failed");
+      log("AI processing failed:", result.error);
+      throw new Error(result.error || "AI processing failed");
     }
 
     log("AI processing completed:", {
       documentId: document.id,
-      resultKeys: Object.keys(result.result!)
+      resultTypes: Object.keys(result.result!)
     });
 
     // Update document with processing results
     await db.update(documents)
       .set({
         status: "COMPLETED",
-        analysis: result.result
+        analysis: result.result,
+        updatedAt: new Date()
       })
       .where(eq(documents.id, document.id));
 
@@ -126,14 +166,19 @@ router.post("/process", async (req, res) => {
   } catch (error) {
     log("Processing error:", error);
 
-    // If we have a document ID, update its status
-    if (req.body.documentId) {
-      await db.update(documents)
-        .set({
-          status: "FAILED",
-          errorMessage: error instanceof Error ? error.message : "Processing failed"
-        })
-        .where(eq(documents.id, req.body.documentId));
+    // Update document status if it was created
+    if (uploadedDocument?.id) {
+      try {
+        await db.update(documents)
+          .set({
+            status: "FAILED",
+            errorMessage: error instanceof Error ? error.message : "Processing failed",
+            updatedAt: new Date()
+          })
+          .where(eq(documents.id, uploadedDocument.id));
+      } catch (updateError) {
+        log("Failed to update document status:", updateError);
+      }
     }
 
     return res.status(500).json({

@@ -463,31 +463,37 @@ export const documentAnalysisSchema = z.object({
 
 export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
 
+// Update the documents table schema
 export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
   title: text("title").notNull(),
   content: text("content").notNull(),
-  analysis: jsonb("analysis").notNull(),
-  agentType: text("agent_type").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  processingStatus: text("processing_status").default("PENDING"),
+  status: text("status").default("PENDING"),
+  analysis: jsonb("analysis").default({}),
+  agentType: text("agent_type").default("CONTRACT_AUTOMATION"),
   errorMessage: text("error_message"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
 });
 
-// Export types
-export type Document = typeof documents.$inferSelect;
-
+// Update the insert schema
 export const insertDocumentSchema = createInsertSchema(documents)
   .pick({
     title: true,
-    agentType: true,
+    content: true,
+    userId: true,
+    metadata: true
   })
   .extend({
     title: z.string().min(1, "Title is required"),
-    agentType: AgentType,
+    content: z.string().min(1, "Content is required"),
+    userId: z.number(),
+    metadata: z.object({}).passthrough().optional()
   });
 
+export type Document = typeof documents.$inferSelect;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 
 // Document version control schema
@@ -879,7 +885,7 @@ export const legalResearchReports = pgTable('legal_research_reports', {
 
 export const legalAnalyses = pgTable('legal_analyses', {
   id: serial('id').primaryKey(),
-  userId: integer('user_id').notNull(),
+  userId: integer('user_idnotNull()),
   documentContent: text('document_content').notNull(),
   analysis: jsonb('analysis').notNull(),
   timestamp: timestamp('timestamp').notNull().defaultNow(),
