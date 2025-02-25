@@ -33,7 +33,7 @@ const upload = multer({
   },
 }).single("document");
 
-// Initialize AI Orchestrator singleton
+// Initialize AI Orchestrator
 const aiOrchestrator = new AIOrchestrator();
 
 // Document processing endpoint
@@ -91,69 +91,54 @@ router.post("/process", async (req, res) => {
         title: req.file.originalname,
         content: processResult.content,
         status: "PENDING",
-        metadata: {
-          ...processResult.metadata,
-          originalFilename: req.file.originalname,
-          mimeType: req.file.mimetype,
-          fileSize: req.file.size,
-          uploadedAt: new Date().toISOString()
-        }
+        metadata: processResult.metadata || {}
       })
       .returning();
 
     log("Document record created:", { id: document.id });
 
     // Step 4: Process document through AI orchestrator
-    try {
-      const result = await aiOrchestrator.processDocument(
-        processResult.content,
-        "upload"
-      );
+    const result = await aiOrchestrator.processDocument(processResult.content, "upload");
 
-      if (!result?.success) {
-        throw new Error(result?.error || "AI processing failed");
-      }
+    if (!result.success) {
+      throw new Error("AI processing failed");
+    }
 
-      log("AI processing completed:", {
-        documentId: document.id,
-        resultKeys: Object.keys(result.result)
-      });
+    log("AI processing completed:", {
+      documentId: document.id,
+      resultKeys: Object.keys(result.result!)
+    });
 
-      // Update document with processing results
-      await db.update(documents)
-        .set({
-          status: "COMPLETED",
-          analysis: result.result
-        })
-        .where(eq(documents.id, document.id));
+    // Update document with processing results
+    await db.update(documents)
+      .set({
+        status: "COMPLETED",
+        analysis: result.result
+      })
+      .where(eq(documents.id, document.id));
 
-      return res.json({
-        success: true,
-        documentId: document.id,
-        result: result.result,
-      });
+    return res.json({
+      success: true,
+      documentId: document.id,
+      result: result.result,
+    });
 
-    } catch (error) {
-      log("AI processing error:", error);
+  } catch (error) {
+    log("Processing error:", error);
 
-      // Update document with error status
+    // If we have a document ID, update its status
+    if (req.body.documentId) {
       await db.update(documents)
         .set({
           status: "FAILED",
           errorMessage: error instanceof Error ? error.message : "Processing failed"
         })
-        .where(eq(documents.id, document.id));
-
-      return res.status(500).json({
-        success: false,
-        error: "Failed to process document"
-      });
+        .where(eq(documents.id, req.body.documentId));
     }
-  } catch (error) {
-    log("Unexpected error:", error);
+
     return res.status(500).json({
       success: false,
-      error: "Failed to process document"
+      error: error instanceof Error ? error.message : "Document processing failed"
     });
   }
 });

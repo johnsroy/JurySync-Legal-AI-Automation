@@ -1,121 +1,213 @@
 import { OpenAI } from "openai";
-import { DocumentProcessor } from "./document-processor";
-import { ComplianceChecker } from "./compliance-checker";
-import { DraftGenerator } from "./draft-generator";
-import { AuditAgent } from "./audit-agent";
+import { z } from "zod";
+import debug from "debug";
 import { metricsCollector } from "./metricsCollector";
+
+const log = debug("app:ai-orchestrator");
+
+interface ProcessingResult {
+  success: boolean;
+  result?: {
+    documentAnalysis: any;
+    complianceChecks: any;
+    enhancedDraft: any;
+    approvalStatus: {
+      success: boolean;
+      status: string;
+      approvers: string[];
+      timestamp: string;
+    };
+    auditReport: any;
+  };
+}
 
 export class AIOrchestrator {
   private openai: OpenAI;
-  private documentProcessor: DocumentProcessor;
-  private complianceChecker: ComplianceChecker;
-  private draftGenerator: DraftGenerator;
-  private auditAgent: AuditAgent;
+  private initialized: boolean = false;
 
   constructor() {
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
-
-    this.documentProcessor = new DocumentProcessor(this.openai);
-    this.complianceChecker = new ComplianceChecker(this.openai);
-    this.draftGenerator = new DraftGenerator(this.openai);
-    this.auditAgent = new AuditAgent(this.openai);
   }
 
-  async processDocument(content: string, type: "upload" | "paste") {
+  async initialize() {
+    if (this.initialized) return;
+
+    // Check API key
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OpenAI API key not configured");
+    }
+
+    try {
+      // Test API connection
+      await this.openai.models.list();
+      this.initialized = true;
+      log("AI Orchestrator initialized successfully");
+    } catch (error) {
+      log("Failed to initialize AI Orchestrator:", error);
+      throw error;
+    }
+  }
+
+  async processDocument(content: string, type: "upload" | "paste"): Promise<ProcessingResult> {
     const startTime = new Date();
     const workflowId = crypto.randomUUID();
 
     try {
-      // Stage 1: Document Analysis & Draft Generation
-      const processedDoc = await this.documentProcessor.process(content, type);
-      if (!processedDoc.success) {
-        throw new Error(processedDoc.error);
-      }
+      await this.initialize();
+
+      // Stage 1: Document Analysis
+      const documentAnalysis = await this.analyzeDocument(content);
 
       // Stage 2: Compliance Check
-      const complianceResult = await this.complianceChecker.check(
-        processedDoc.content,
-      );
-      if (!complianceResult.success) {
-        throw new Error(complianceResult.error);
-      }
+      const complianceChecks = await this.checkCompliance(content);
 
       // Stage 3: Generate Enhanced Draft
-      const draft = await this.draftGenerator.generate(
-        processedDoc.content,
-        complianceResult.requirements,
-      );
-      if (!draft.success) {
-        throw new Error(draft.error);
-      }
+      const enhancedDraft = await this.generateDraft(content, documentAnalysis);
 
       // Stage 4: Approval Process
-      const approvalResult = await this.processApproval(draft.content);
-      if (!approvalResult.success) {
-        throw new Error(approvalResult.error);
-      }
+      const approvalStatus = {
+        success: true,
+        status: "approved",
+        approvers: ["system"],
+        timestamp: new Date().toISOString()
+      };
 
-      // Stage 5: Final Audit
-      const auditResult = await this.auditAgent.audit({
-        originalContent: processedDoc.content,
-        finalDraft: draft.content,
-        complianceChecks: complianceResult,
-        approvalDetails: approvalResult,
+      // Stage 5: Audit Report
+      const auditReport = await this.generateAuditReport({
+        documentAnalysis,
+        complianceChecks,
+        enhancedDraft,
+        approvalStatus
       });
 
       // Record metrics
       await metricsCollector.recordWorkflowMetric({
+        userId: 1, // Default system user
         workflowId,
         workflowType: "document_processing",
+        status: "completed",
         startTime,
         completionTime: new Date(),
         successful: true,
         metadata: {
-          documentType: type,
           stepsCompleted: [
             "analysis",
             "compliance",
             "draft",
             "approval",
-            "audit",
-          ],
-        },
+            "audit"
+          ]
+        }
       });
 
       return {
         success: true,
         result: {
-          documentAnalysis: processedDoc.analysis,
-          complianceChecks: complianceResult.requirements,
-          enhancedDraft: draft.content,
-          approvalStatus: approvalResult,
-          auditReport: auditResult,
-        },
+          documentAnalysis,
+          complianceChecks,
+          enhancedDraft,
+          approvalStatus,
+          auditReport
+        }
       };
+
     } catch (error) {
+      log("Document processing error:", error);
+
       // Record failure metrics
       await metricsCollector.recordWorkflowMetric({
+        userId: 1, // Default system user
         workflowId,
         workflowType: "document_processing",
+        status: "failed",
         startTime,
         completionTime: new Date(),
         successful: false,
-        errorMessage: error instanceof Error ? error.message : "Unknown error",
+        errorMessage: error instanceof Error ? error.message : "Unknown error"
       });
 
-      throw error;
+      return {
+        success: false,
+        result: undefined
+      };
     }
   }
 
-  private async processApproval(content: string) {
-    // Implement approval workflow logic here
-    return {
-      success: true,
-      status: "approved",
-      approvers: ["system"],
-      timestamp: new Date().toISOString(),
-    };
+  private async analyzeDocument(content: string) {
+    const completion = await this.openai.chat.completions.create({
+      model: "gpt-4-1106-preview",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal document analyzer. Analyze the provided document and extract key information."
+        },
+        {
+          role: "user",
+          content: content
+        }
+      ],
+      temperature: 0.3
+    });
+
+    return JSON.parse(completion.choices[0].message.content || "{}");
+  }
+
+  private async checkCompliance(content: string) {
+    const completion = await this.openai.chat.completions.create({
+      model: "gpt-4-1106-preview",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal compliance checker. Review the document for compliance issues."
+        },
+        {
+          role: "user",
+          content: content
+        }
+      ],
+      temperature: 0.2
+    });
+
+    return JSON.parse(completion.choices[0].message.content || "{}");
+  }
+
+  private async generateDraft(content: string, analysis: any) {
+    const completion = await this.openai.chat.completions.create({
+      model: "gpt-4-1106-preview",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal document drafter. Generate an enhanced version of the document."
+        },
+        {
+          role: "user",
+          content: `Original content: ${content}\nAnalysis: ${JSON.stringify(analysis)}`
+        }
+      ],
+      temperature: 0.4
+    });
+
+    return JSON.parse(completion.choices[0].message.content || "{}");
+  }
+
+  private async generateAuditReport(data: any) {
+    const completion = await this.openai.chat.completions.create({
+      model: "gpt-4-1106-preview",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal document auditor. Generate an audit report for the document processing."
+        },
+        {
+          role: "user",
+          content: JSON.stringify(data)
+        }
+      ],
+      temperature: 0.2
+    });
+
+    return JSON.parse(completion.choices[0].message.content || "{}");
   }
 }
