@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 const log = debug("app:workflow-automation");
 const router = Router();
 
-// Configure multer with memory storage and file type validation
+// Configure multer
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -32,26 +32,37 @@ const upload = multer({
   },
 }).single("document");
 
-// Initialize AI Orchestrator with error handling
-let aiOrchestrator: AIOrchestrator;
+// Debug: Log AI Orchestrator initialization
+let aiOrchestrator: AIOrchestrator | null = null;
 try {
+  log("Initializing AI Orchestrator...");
   aiOrchestrator = new AIOrchestrator();
   log("AI Orchestrator initialized successfully");
 } catch (error) {
-  log("Error initializing AI Orchestrator:", error);
-  aiOrchestrator = new AIOrchestrator(); // Retry initialization
+  log("Failed to initialize AI Orchestrator:", error);
 }
 
 // Document processing endpoint
 router.post("/process", async (req, res) => {
   try {
-    // Handle file upload with detailed error logging
+    // Debug: Verify AI Orchestrator
+    if (!aiOrchestrator) {
+      log("AI Orchestrator not available, reinitializing...");
+      try {
+        aiOrchestrator = new AIOrchestrator();
+      } catch (initError) {
+        log("Failed to reinitialize AI Orchestrator:", initError);
+        return res.status(500).json({
+          success: false,
+          error: "AI service unavailable",
+        });
+      }
+    }
+
+    // Handle file upload
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
-        if (err instanceof multer.MulterError) {
-          log("Multer error:", err);
-          reject(new Error(`File upload error: ${err.message}`));
-        } else if (err) {
+        if (err) {
           log("Upload error:", err);
           reject(err);
         } else {
@@ -74,54 +85,52 @@ router.post("/process", async (req, res) => {
       size: req.file.size,
     });
 
-    // Store initial document record
+    // Debug: Extract and verify content
+    const content = req.file.buffer.toString('utf-8');
+    log("Content extracted, length:", content.length);
+
+    // Store document with minimal fields first
     let document;
     try {
-      log("Storing initial document record");
-      const [doc] = await db.insert(documents).values({
-        title: req.file.originalname,
-        content: req.file.buffer.toString('utf-8'),
-        userId: (req.user as any)?.id || 1,
-        documentType: "CONTRACT",
-        processingStatus: "PROCESSING",
-        createdAt: new Date(),
-      }).returning();
+      const [doc] = await db.insert(documents)
+        .values({
+          title: req.file.originalname,
+          content: content,
+          userId: (req.user as any)?.id || 1,
+          documentType: "CONTRACT",
+          processingStatus: "PROCESSING",
+          createdAt: new Date(),
+        })
+        .returning();
       document = doc;
-      log("Document stored successfully", { documentId: document.id });
+      log("Document stored:", document.id);
     } catch (dbError) {
       log("Database error:", dbError);
       return res.status(500).json({
         success: false,
-        error: "Failed to store document in database"
+        error: "Database error",
       });
     }
 
-    // Process document through AI orchestrator with detailed error handling
+    // Process with AI
     try {
-      if (!aiOrchestrator) {
-        throw new Error("AI Orchestrator not initialized");
-      }
-
       log("Starting AI processing for document:", document.id);
-      const result = await aiOrchestrator.processDocument(
-        req.file.buffer.toString('utf-8'),
-        "upload"
-      );
+      const result = await aiOrchestrator.processDocument(content, "upload");
 
-      if (!result || !result.success) {
-        throw new Error(result?.error || "AI processing failed without error details");
-      }
-
-      log("AI processing completed successfully", {
-        documentId: document.id,
-        resultKeys: Object.keys(result.result || {})
+      log("AI processing result:", {
+        success: result?.success,
+        hasResult: !!result?.result,
       });
 
-      // Update document with processing results
+      if (!result?.success) {
+        throw new Error("AI processing failed");
+      }
+
+      // Update document with results
       await db.update(documents)
         .set({
-          analysis: result.result,
           processingStatus: "COMPLETED",
+          analysis: result.result,
         })
         .where(eq(documents.id, document.id));
 
@@ -130,29 +139,28 @@ router.post("/process", async (req, res) => {
         documentId: document.id,
         result: result.result,
       });
+
     } catch (aiError) {
       log("AI processing error:", aiError);
 
-      // Update document with error status
+      // Update document status
       await db.update(documents)
         .set({
           processingStatus: "FAILED",
-          errorMessage: aiError instanceof Error ? aiError.message : "Processing failed"
+          errorMessage: aiError instanceof Error ? aiError.message : "AI processing failed",
         })
         .where(eq(documents.id, document.id));
 
       return res.status(500).json({
         success: false,
         error: "Failed to process document",
-        details: aiError instanceof Error ? aiError.message : undefined
       });
     }
   } catch (error) {
-    log("Unexpected error in document processing:", error);
+    log("Unexpected error:", error);
     return res.status(500).json({
       success: false,
       error: "Failed to process document",
-      details: error instanceof Error ? error.message : undefined
     });
   }
 });
