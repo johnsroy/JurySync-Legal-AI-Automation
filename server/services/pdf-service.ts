@@ -1,13 +1,10 @@
 import PDFDocument from "pdfkit";
-import pdf from "pdf-parse/lib/pdf-parse";  // Import directly from lib to avoid test file loading
+import pdf from "pdf-parse";
 import { createWorker } from "tesseract.js";
 import debug from "debug";
 import { Readable } from "stream";
 
 const log = debug("app:pdf-service");
-
-const MAX_PAGE_SIZE = 100 * 1024 * 1024; // 100MB per page limit
-const MAX_OCR_ATTEMPTS = 3;
 
 export interface PDFParseResult {
   text: string;
@@ -16,12 +13,6 @@ export interface PDFParseResult {
     pageCount: number;
     isScanned: boolean;
     version?: string;
-    processingDetails?: {
-      timePerPage?: number[];
-      totalTime?: number;
-      ocrRequired?: boolean;
-      errors?: string[];
-    };
   };
 }
 
@@ -33,7 +24,6 @@ export interface OCRResult {
 export class PDFService {
   private static instance: PDFService;
   private ocrWorker: Tesseract.Worker | null = null;
-  private processingErrors: string[] = [];
 
   private constructor() {}
 
@@ -48,121 +38,56 @@ export class PDFService {
     buffer: Buffer,
     documentId?: number,
   ): Promise<PDFParseResult> {
-    const startTime = Date.now();
-    this.processingErrors = [];
-
     try {
-      // Basic validation
-      if (!buffer || buffer.length === 0) {
-        throw new Error("Invalid PDF buffer");
-      }
-
-      if (buffer.length > MAX_PAGE_SIZE) {
-        log("Large file detected, size:", buffer.length);
-      }
-
-      const data = await pdf(buffer, {
-        max: MAX_PAGE_SIZE,
-        pagerender: this.customPageRenderer.bind(this)
-      });
-
+      const data = await pdf(buffer);
       const isScanned = await this.isScannedDocument(data);
+
       let text = data.text;
-      const timePerPage: number[] = [];
 
       // If document is scanned and has little to no text, use OCR
       if (isScanned && text.trim().length < 100) {
-        log("Scanned document detected, attempting OCR");
-        try {
-          const ocrResult = await this.processWithOCR(buffer);
-          text = ocrResult.text;
-        } catch (ocrError: any) {
-          this.processingErrors.push(`OCR processing failed: ${ocrError.message}`);
-          // Fall back to any text we could extract
-          if (!text) {
-            text = ""; // Ensure we always return a string
-          }
-        }
+        const ocrResult = await this.processWithOCR(buffer);
+        text = ocrResult.text;
       }
 
       return {
         text,
         metadata: {
-          info: data.info || {},
-          pageCount: data.numpages || 0,
+          info: data.info,
+          pageCount: data.numpages,
           isScanned,
           version: data.version,
-          processingDetails: {
-            timePerPage,
-            totalTime: Date.now() - startTime,
-            ocrRequired: isScanned,
-            errors: this.processingErrors
-          }
         },
       };
-    } catch (error: any) {
-      log("PDF parsing error:", error.message);
+    } catch (error) {
+      log("PDF parsing error:", error);
       throw new Error(`Failed to parse PDF document: ${error.message}`);
     }
   }
 
-  private async customPageRenderer(pageData: any): Promise<string> {
-    try {
-      const startTime = Date.now();
-      const text = await pageData.getTextContent();
-      const endTime = Date.now();
-      const processingTime = endTime - startTime;
-
-      log(`Page processed in ${processingTime}ms`);
-
-      return text;
-    } catch (error: any) {
-      this.processingErrors.push(`Page rendering failed: ${error.message}`);
-      return "";
-    }
-  }
-
-  private async isScannedDocument(data: any): Promise<boolean> {
-    try {
-      const textDensity = data.text.length / (data.numpages || 1);
-      return textDensity < 100;
-    } catch (error: any) {
-      this.processingErrors.push(`Scanned document detection failed: ${error.message}`);
-      return false;
-    }
+  private async isScannedDocument(data: pdf.PDFData): Promise<boolean> {
+    const textDensity = data.text.length / data.numpages;
+    return textDensity < 100;
   }
 
   async processWithOCR(buffer: Buffer): Promise<OCRResult> {
-    let attempts = 0;
-
-    while (attempts < MAX_OCR_ATTEMPTS) {
-      try {
-        if (!this.ocrWorker) {
-          this.ocrWorker = await createWorker("eng");
-        }
-
-        const { data } = await this.ocrWorker.recognize(buffer);
-        return {
-          text: data.text,
-          confidence: data.confidence,
-        };
-      } catch (error: any) {
-        attempts++;
-        log(`OCR attempt ${attempts} failed:`, error.message);
-
-        if (attempts === MAX_OCR_ATTEMPTS) {
-          throw new Error("Failed to process document with OCR after maximum attempts");
-        }
-
-        // Wait before retrying
-        await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      if (!this.ocrWorker) {
+        this.ocrWorker = await createWorker("eng");
       }
-    }
 
-    throw new Error("OCR processing failed");
+      const { data } = await this.ocrWorker.recognize(buffer);
+      return {
+        text: data.text,
+        confidence: data.confidence,
+      };
+    } catch (error) {
+      log("OCR processing error:", error);
+      throw new Error("Failed to process document with OCR");
+    }
   }
 
-  async generatePDF(content: string, options: any = {}): Promise<typeof PDFDocument> {
+  async generatePDF(content: string, options: any = {}): Promise<PDFDocument> {
     const doc = new PDFDocument(options);
     doc.fontSize(12).text(content);
     return doc;

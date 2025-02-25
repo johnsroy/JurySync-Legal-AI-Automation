@@ -9,11 +9,10 @@ import { pdfService } from '../services/pdf-service';
 import * as docx from 'docx';
 import multer from 'multer';
 import { documentProcessor } from '../services/documentProcessor';
-import { orchestratorService } from '../services/orchestrator-service'; // Import orchestrator service
-
 
 const router = Router();
 const openai = new OpenAI();
+const documentProcessor = new DocumentProcessor();
 
 // Configure multer
 const upload = multer({
@@ -38,7 +37,7 @@ const upload = multer({
 });
 
 // Document processing endpoint
-router.post('/workflow/upload', upload.single('file'), async (req, res) => {
+router.post('/process', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -58,31 +57,19 @@ router.post('/workflow/upload', upload.single('file'), async (req, res) => {
         metadata = {
           ...parseResult.metadata,
           pageCount: parseResult.metadata.pageCount,
-          isScanned: parseResult.metadata.isScanned,
-          processingDetails: parseResult.metadata.processingDetails
+          isScanned: parseResult.metadata.isScanned
         };
-
-        // Additional validation for PDF content
-        if (!content || content.trim().length === 0) {
-          throw new Error('No text content could be extracted from PDF');
-        }
       } catch (error) {
         console.error('PDF parsing error:', error);
         throw new Error('Failed to parse PDF document');
       }
     } else {
       // Handle other document types
-      try {
-        const result = await documentProcessor.processDocument(req.file.buffer, req.file.originalname, req.file.mimetype);
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to process document');
-        }
-        content = result.content;
-        metadata = result.metadata || {};
-      } catch (error) {
-        console.error('Document processing error:', error);
-        throw new Error('Failed to process document');
-      }
+      content = await documentProcessor.extractText(req.file.buffer, req.file.mimetype);
+    }
+
+    if (!content || content.trim().length === 0) {
+      throw new Error('No text content could be extracted from the document');
     }
 
     // Store the processed document
@@ -91,12 +78,7 @@ router.post('/workflow/upload', upload.single('file'), async (req, res) => {
         name: req.file.originalname,
         content: content,
         mimeType: req.file.mimetype,
-        metadata: {
-          ...metadata,
-          uploadedAt: new Date().toISOString(),
-          fileSize: req.file.size,
-          processingStatus: 'completed'
-        },
+        metadata: metadata,
         createdAt: new Date(),
         updatedAt: new Date()
       })
@@ -106,11 +88,7 @@ router.post('/workflow/upload', upload.single('file'), async (req, res) => {
       success: true,
       documentId: document.id,
       content: content.substring(0, 1000), // Send preview only
-      metadata: {
-        ...metadata,
-        processingStatus: 'completed',
-        nextSteps: ['analysis', 'classification', 'compliance']
-      }
+      metadata
     });
 
   } catch (error) {
@@ -118,36 +96,6 @@ router.post('/workflow/upload', upload.single('file'), async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to process document'
-    });
-  }
-});
-
-// Add new analysis endpoint
-router.post('/workflow/analyze', async (req, res) => {
-  try {
-    const { documentId } = req.body;
-    if (!documentId) {
-      return res.status(400).json({ error: 'Document ID is required' });
-    }
-
-    // Start the document analysis process
-    const task = await orchestratorService.createTask({
-      type: 'compliance',
-      data: { documentId }
-    });
-
-    return res.json({
-      success: true,
-      taskId: task.id,
-      status: 'processing',
-      message: 'Document analysis started'
-    });
-
-  } catch (error) {
-    console.error('Analysis error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to start analysis'
     });
   }
 });
@@ -161,7 +109,7 @@ router.get('/templates', async (req, res) => {
     // Filter by search if provided
     if (search && typeof search === 'string') {
       const searchLower = search.toLowerCase();
-      templates = templates.filter(template =>
+      templates = templates.filter(template => 
         template.name.toLowerCase().includes(searchLower) ||
         template.description.toLowerCase().includes(searchLower)
       );

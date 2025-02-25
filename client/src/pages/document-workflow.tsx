@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Progress } from "@/components/ui/progress";
 import { Loader2, FileText, Download, Eye, BookOpen, ClipboardCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -21,23 +20,21 @@ interface AnalysisResult {
 export default function DocumentWorkflow() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const { toast } = useToast();
 
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (file.size > 100 * 1024 * 1024) {
+      if (file.size > 10 * 1024 * 1024) {
         toast({
           title: "File too large",
-          description: "Maximum file size is 100MB",
+          description: "Maximum file size is 10MB",
           variant: "destructive"
         });
         return;
       }
       setSelectedFile(file);
-      setUploadProgress(0);
     }
   }, [toast]);
 
@@ -45,7 +42,6 @@ export default function DocumentWorkflow() {
     if (!selectedFile) return;
 
     setIsProcessing(true);
-    setUploadProgress(0);
     const formData = new FormData();
     formData.append('file', selectedFile);
 
@@ -56,52 +52,21 @@ export default function DocumentWorkflow() {
         size: selectedFile.size
       });
 
-      const xhr = new XMLHttpRequest();
-      const promise = new Promise((resolve, reject) => {
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded * 100) / event.total);
-            setUploadProgress(progress);
-          }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(JSON.parse(xhr.responseText));
-          } else {
-            reject(new Error(`Upload failed: ${xhr.statusText}`));
-          }
-        });
-
-        xhr.addEventListener('error', () => reject(new Error('Upload failed')));
-      });
-
-      xhr.open('POST', '/api/workflow/upload');
-      xhr.send(formData);
-
-      const result = await promise;
-      console.log('Upload response:', result);
-
-      toast({
-        title: "Upload Successful",
-        description: "Document uploaded successfully. Starting analysis...",
-      });
-
-      const analysisResponse = await fetch('/api/workflow/analyze', {
+      const response = await fetch('/api/workflow/upload', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ documentId: result.documentId })
+        body: formData,
       });
 
-      if (!analysisResponse.ok) {
-        throw new Error('Analysis failed');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.message || 'Upload failed');
       }
 
-      const analysisResult = await analysisResponse.json();
+      const result = await response.json();
+      console.log('Upload response:', result);
+
       setAnalysisResult({
-        ...analysisResult.analysis,
+        ...result.analysis,
         content: result.text
       });
 
@@ -184,36 +149,16 @@ export default function DocumentWorkflow() {
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="flex items-center gap-4">
               <input
                 type="file"
                 onChange={handleFileUpload}
                 accept=".pdf,.docx,.doc,.txt"
-                className="flex-1 p-2 border rounded-md w-full"
+                className="flex-1 p-2 border rounded-md"
               />
-
-              {selectedFile && (
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>{selectedFile.name}</span>
-                    <span>{Math.round(selectedFile.size / 1024)} KB</span>
-                  </div>
-
-                  {(isProcessing || uploadProgress > 0) && (
-                    <div className="space-y-2">
-                      <Progress value={uploadProgress} className="w-full" />
-                      <p className="text-sm text-muted-foreground text-center">
-                        {uploadProgress}% {isProcessing ? "Processing..." : "Uploaded"}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
               <Button
                 onClick={processDocument}
                 disabled={!selectedFile || isProcessing}
-                className="w-full"
               >
                 {isProcessing ? (
                   <>

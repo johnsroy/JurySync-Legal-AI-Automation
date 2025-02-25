@@ -9,7 +9,7 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 50 * 1024 * 1024, // Increased to 50MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB limit
   },
 });
 
@@ -44,59 +44,43 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 
     let text = "";
     const fileType = req.file.originalname.toLowerCase();
-    const startTime = Date.now();
 
-    try {
-      if (fileType.endsWith(".pdf")) {
+    if (fileType.endsWith(".pdf")) {
+      try {
         const result = await pdfService.parseDocument(req.file.buffer);
         text = result.text;
-
-        // Validate extracted text
-        if (!text || text.trim().length === 0) {
-          throw new Error("No text could be extracted from PDF");
-        }
-
-        console.log(`PDF processing completed in ${Date.now() - startTime}ms`);
-      } else if (fileType.endsWith(".docx") || fileType.endsWith(".doc")) {
+      } catch (error) {
+        console.error("PDF parsing error:", error);
+        return res.status(400).json({ error: "Failed to parse PDF file" });
+      }
+    } else if (fileType.endsWith(".docx") || fileType.endsWith(".doc")) {
+      try {
         const result = await documentProcessor.processDocument(
           req.file.buffer,
           req.file.originalname,
           req.file.mimetype
         );
         text = result.content;
-      } else if (fileType.endsWith(".txt")) {
-        text = req.file.buffer.toString("utf-8");
-      } else {
-        return res.status(400).json({
-          error: "Unsupported file type. Please upload PDF, DOCX, or TXT files only.",
+      } catch (error) {
+        console.error("DOCX parsing error:", error);
+        return res.status(400).json({ error: "Failed to parse Word document" });
+      }
+    } else if (fileType.endsWith(".txt")) {
+      // Plain text
+      text = req.file.buffer.toString("utf-8");
+    } else {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Unsupported file type. Please upload PDF, DOCX, or TXT files only.",
         });
-      }
-
-      // Validate final text content
-      if (!text || text.trim().length === 0) {
-        throw new Error("No text content could be extracted from the document");
-      }
-
-      return res.json({ 
-        text,
-        processingTime: Date.now() - startTime,
-        fileSize: req.file.size,
-        fileType: req.file.mimetype
-      });
-    } catch (processingError: any) {
-      console.error("Document processing error:", processingError);
-      return res.status(422).json({
-        error: "Failed to process document",
-        details: processingError.message,
-        fileType: req.file.mimetype
-      });
     }
-  } catch (error: any) {
+
+    return res.json({ text });
+  } catch (error) {
     console.error("File upload error:", error);
-    return res.status(500).json({
-      error: "Failed to handle file upload",
-      details: error.message
-    });
+    return res.status(500).json({ error: "Failed to process file" });
   }
 });
 

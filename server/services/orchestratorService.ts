@@ -259,63 +259,6 @@ class TaskManager {
   }
 }
 
-class ServiceContainer {
-  private static instance: ServiceContainer;
-  private anthropicClient: Anthropic | null = null;
-
-  private constructor() {}
-
-  static getInstance(): ServiceContainer {
-    if (!ServiceContainer.instance) {
-      ServiceContainer.instance = new ServiceContainer();
-    }
-    return ServiceContainer.instance;
-  }
-
-  async initialize(): Promise<void> {
-    // Initialize services as needed
-    await this.initializeAnthropic();
-  }
-
-  private async initializeAnthropic(): Promise<void> {
-    if (!this.anthropicClient) {
-      this.anthropicClient = new Anthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY || '',
-      });
-    }
-  }
-
-  async getAnthropicClient(): Promise<Anthropic> {
-    if (!this.anthropicClient) {
-      await this.initializeAnthropic();
-    }
-    if (!this.anthropicClient) {
-      throw new Error('Failed to initialize Anthropic client');
-    }
-    return this.anthropicClient;
-  }
-
-  async ensureServiceAvailable(serviceName: string): Promise<boolean> {
-    try {
-      switch (serviceName) {
-        case 'processor':
-          return true; // Document processor is always available
-        case 'pdf':
-          return true; // PDF service is built-in
-        case 'compliance':
-          return true; // Compliance service is built-in
-        case 'research':
-          return true; // Research service is built-in
-        default:
-          return false;
-      }
-    } catch (error) {
-      console.error(`Service check failed for ${serviceName}:`, error);
-      return false;
-    }
-  }
-}
-
 export class OrchestratorService {
   private static instance: OrchestratorService;
   private taskManager: TaskManager;
@@ -903,22 +846,3 @@ Provide response as JSON:
 }
 
 export const orchestratorService = OrchestratorService.getInstance();
-
-async function initializeServices() {
-  const initializer = ServiceInitializer.getInstance();
-  await Promise.all([
-    initializer.initializeService("pdf", () => Promise.resolve(pdfService)),
-    initializer.initializeService("compliance", () =>
-      Promise.resolve(complianceAuditService),
-    ),
-    initializer.initializeService("research", () =>
-      Promise.resolve(legalResearchService),
-    ),
-    initializer.initializeService("learning", () =>
-      Promise.resolve(continuousLearningService),
-    ),
-    initializer.initializeService("processor", () =>
-      Promise.resolve(documentProcessor),
-    ),
-  ]);
-}

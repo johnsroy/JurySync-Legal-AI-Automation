@@ -818,26 +818,9 @@ export const documentAnalysis = pgTable("document_analysis", {
   documentType: text("document_type").notNull(),
   industry: text("industry").notNull(),
   complianceStatus: jsonb("compliance_status").notNull().$type<{
-    status: 'COMPLIANT' | 'NON_COMPLIANT';
+    status: 'PASSED' | 'FAILED' | 'PENDING';
     details: string;
     lastChecked: string;
-  }>(),
-  aiAnalysis: jsonb("ai_analysis").$type<{
-    summary: string;
-    analysis: {
-      legalPrinciples?: string[];
-      keyPrecedents?: Array<{
-        case: string;
-        relevance: string;
-        impact: string;
-      }>;
-      recommendations?: string[];
-    };
-    citations?: Array<{
-      source: string;
-      reference: string;
-      context: string;
-    }>;
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
@@ -846,33 +829,13 @@ export const documentAnalysis = pgTable("document_analysis", {
 export type DocumentAnalysisRecord = typeof documentAnalysis.$inferSelect;
 export type InsertDocumentAnalysis = typeof documentAnalysis.$inferInsert;
 
-// Export interface for the UI
-export interface AnalysisResult {
-  documentType: string;
-  documentDescription: string;
-  industry: string;
-  industryDescription: string;
-  status: 'COMPLIANT' | 'NON_COMPLIANT';
-  statusDescription: string;
-  content?: string;
-  aiAnalysis?: {
-    summary: string;
-    analysis: {
-      legalPrinciples?: string[];
-      keyPrecedents?: Array<{
-        case: string;
-        relevance: string;
-        impact: string;
-      }>;
-      recommendations?: string[];
-    };
-    citations?: Array<{
-      source: string;
-      reference: string;
-      context: string;
-    }>;
-  };
-}
+// Add relations
+export const documentAnalysisRelations = relations(documentAnalysis, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentAnalysis.documentId],
+    references: [documents.id],
+  }),
+}));
 
 // Remove duplicate table definitions and ensure only one instance of vaultDocumentAnalysis exists
 export const vaultDocumentAnalysis = pgTable("vault_documentanalysis", {
