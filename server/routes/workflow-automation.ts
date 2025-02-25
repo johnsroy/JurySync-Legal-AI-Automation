@@ -41,8 +41,10 @@ router.post("/process", async (req, res) => {
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
         if (err instanceof multer.MulterError) {
+          log("Multer error:", err);
           reject(new Error(`File upload error: ${err.message}`));
         } else if (err) {
+          log("Upload error:", err);
           reject(err);
         } else {
           resolve(true);
@@ -51,6 +53,7 @@ router.post("/process", async (req, res) => {
     });
 
     if (!req.file) {
+      log("No file uploaded");
       return res.status(400).json({
         success: false,
         error: "No file uploaded",
@@ -64,27 +67,60 @@ router.post("/process", async (req, res) => {
     });
 
     // Extract text content based on file type
-    let content = req.file.buffer.toString('utf-8');
+    let content;
+    try {
+      log("Extracting content from file");
+      content = req.file.buffer.toString('utf-8');
+
+      if (!content || content.trim().length === 0) {
+        throw new Error("No content could be extracted from file");
+      }
+
+      log("Content extracted successfully", {
+        contentLength: content.length,
+        preview: content.substring(0, 100) + "..."
+      });
+    } catch (error) {
+      log("Content extraction error:", error);
+      return res.status(400).json({
+        success: false,
+        error: "Failed to extract content from file"
+      });
+    }
 
     // Store initial document record
-    const [document] = await db.insert(documents).values({
-      title: req.file.originalname,
-      content: content,
-      userId: (req.user as any)?.id || 1,
-      agentType: "workflow_automation",
-      processingStatus: "processing",
-      createdAt: new Date(),
-    }).returning();
+    let document;
+    try {
+      log("Storing initial document record");
+      const [doc] = await db.insert(documents).values({
+        name: req.file.originalname,
+        content: content,
+        userId: (req.user as any)?.id || 1,
+        mimeType: req.file.mimetype,
+        status: "processing",
+        createdAt: new Date(),
+      }).returning();
+      document = doc;
+      log("Document stored successfully", { documentId: document.id });
+    } catch (error) {
+      log("Database error:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to store document"
+      });
+    }
 
     // Process document through AI orchestrator
     try {
+      log("Starting AI processing");
       const result = await aiOrchestrator.processDocument(content, "upload");
+      log("AI processing completed successfully", { result });
 
       // Update document with processing results
       await db.update(documents)
         .set({
           analysis: result.result,
-          processingStatus: "completed",
+          status: "completed",
         })
         .where(eq(documents.id, document.id));
 
@@ -94,18 +130,24 @@ router.post("/process", async (req, res) => {
         result: result.result,
       });
     } catch (error) {
+      log("AI processing error:", error);
+
       // Update document with error status
       await db.update(documents)
         .set({
-          processingStatus: "failed",
-          errorMessage: error instanceof Error ? error.message : "Processing failed",
+          status: "failed",
+          error: error instanceof Error ? error.message : "Processing failed",
         })
         .where(eq(documents.id, document.id));
 
-      throw error;
+      return res.status(500).json({
+        success: false,
+        error: "Failed to process document",
+        details: error instanceof Error ? error.message : undefined
+      });
     }
   } catch (error) {
-    log("Processing error:", error);
+    log("Unexpected error:", error);
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : "Failed to process document",
@@ -129,9 +171,9 @@ router.get("/status/:documentId", async (req, res) => {
 
     return res.json({
       success: true,
-      status: document.processingStatus,
+      status: document.status,
       analysis: document.analysis,
-      errorMessage: document.errorMessage,
+      error: document.error,
     });
   } catch (error) {
     log("Status check error:", error);
