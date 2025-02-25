@@ -90,17 +90,14 @@ router.post("/process", async (req, res) => {
       .values({
         title: req.file.originalname,
         content: processResult.content,
-        status: "processing",
+        status: "PENDING",
         metadata: {
           ...processResult.metadata,
           originalFilename: req.file.originalname,
           mimeType: req.file.mimetype,
           fileSize: req.file.size,
           uploadedAt: new Date().toISOString()
-        },
-        processingStatus: "PROCESSING",
-        createdAt: new Date(),
-        updatedAt: new Date()
+        }
       })
       .returning();
 
@@ -125,9 +122,8 @@ router.post("/process", async (req, res) => {
       // Update document with processing results
       await db.update(documents)
         .set({
-          processingStatus: "COMPLETED",
-          analysis: result.result,
-          updatedAt: new Date()
+          status: "COMPLETED",
+          analysis: result.result
         })
         .where(eq(documents.id, document.id));
 
@@ -143,9 +139,8 @@ router.post("/process", async (req, res) => {
       // Update document with error status
       await db.update(documents)
         .set({
-          processingStatus: "FAILED",
-          errorMessage: error instanceof Error ? error.message : "Processing failed",
-          updatedAt: new Date()
+          status: "FAILED",
+          errorMessage: error instanceof Error ? error.message : "Processing failed"
         })
         .where(eq(documents.id, document.id));
 
@@ -182,7 +177,7 @@ router.get("/status/:documentId", async (req, res) => {
 
     return res.json({
       success: true,
-      status: document.processingStatus,
+      status: document.status,
       analysis: document.analysis,
       error: document.errorMessage,
     });
