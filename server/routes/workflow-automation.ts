@@ -1,19 +1,15 @@
 import { Router } from "express";
 import { AIOrchestrator } from "../services/ai-orchestrator";
 import multer from "multer";
-import { z } from "zod";
-import { pdfService } from "../services/pdf-service";
-import { documentProcessor } from "../services/documentProcessor";
-import { createHash } from "crypto";
 import debug from "debug";
 import { db } from "../db";
 import { documents } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 const log = debug("app:workflow-automation");
-
 const router = Router();
 
-// Configure multer with more detailed error handling
+// Configure multer with memory storage and file type validation
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -31,27 +27,17 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(
-        new Error(
-          `Invalid file type: ${file.mimetype}. Allowed types: PDF, DOC, DOCX, TXT`,
-        ),
-      );
+      cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types: PDF, DOC, DOCX, TXT`));
     }
   },
 }).single("document");
 
 const aiOrchestrator = new AIOrchestrator();
-const documentProcessor = new DocumentProcessor();
 
-// Helper function to generate document hash
-const generateDocumentHash = (buffer: Buffer): string => {
-  return createHash("sha256").update(buffer).digest("hex");
-};
-
-// Document processing endpoint with enhanced error handling and processing
+// Document processing endpoint
 router.post("/process", async (req, res) => {
   try {
-    // Wrap multer upload in a promise
+    // Handle file upload
     await new Promise((resolve, reject) => {
       upload(req, res, (err) => {
         if (err instanceof multer.MulterError) {
@@ -77,80 +63,52 @@ router.post("/process", async (req, res) => {
       size: req.file.size,
     });
 
-    // Generate document hash for deduplication
-    const documentHash = generateDocumentHash(req.file.buffer);
+    // Extract text content based on file type
+    let content = req.file.buffer.toString('utf-8');
 
-    // Check for existing processed document
-    const existingDoc = await db.query.documents.findFirst({
-      where: (documents, { eq }) => eq(documents.hash, documentHash),
-    });
+    // Store initial document record
+    const [document] = await db.insert(documents).values({
+      title: req.file.originalname,
+      content: content,
+      userId: (req.user as any)?.id || 1,
+      agentType: "workflow_automation",
+      processingStatus: "processing",
+      createdAt: new Date(),
+    }).returning();
 
-    if (existingDoc) {
-      log("Found existing processed document");
+    // Process document through AI orchestrator
+    try {
+      const result = await aiOrchestrator.processDocument(content, "upload");
+
+      // Update document with processing results
+      await db.update(documents)
+        .set({
+          analysis: result.result,
+          processingStatus: "completed",
+        })
+        .where(eq(documents.id, document.id));
+
       return res.json({
         success: true,
-        result: existingDoc.processedContent,
-        cached: true,
+        documentId: document.id,
+        result: result.result,
       });
+    } catch (error) {
+      // Update document with error status
+      await db.update(documents)
+        .set({
+          processingStatus: "failed",
+          errorMessage: error instanceof Error ? error.message : "Processing failed",
+        })
+        .where(eq(documents.id, document.id));
+
+      throw error;
     }
-
-    let content: string;
-    let metadata: Record<string, any> = {};
-
-    // Process different file types
-    if (req.file.mimetype === "application/pdf") {
-      try {
-        const parseResult = await pdfService.parseDocument(req.file.buffer);
-        content = parseResult.text;
-        metadata = parseResult.metadata;
-
-        if (parseResult.metadata.isScanned) {
-          log("Document was processed with OCR");
-        }
-      } catch (error) {
-        log("PDF parsing error:", error);
-        throw new Error("Failed to parse PDF document");
-      }
-    } else {
-      // Handle other document types using DocumentProcessor
-      content = await documentProcessor.extractText(
-        req.file.buffer,
-        req.file.mimetype,
-      );
-    }
-
-    if (!content || content.trim().length === 0) {
-      throw new Error("No text content could be extracted from the document");
-    }
-
-    // Process document through orchestrator
-    const result = await aiOrchestrator.processDocument(content, "upload", {
-      fileName: req.file.originalname,
-      fileType: req.file.mimetype,
-      metadata,
-    });
-
-    // Store processed document
-    await db.insert(documents).values({
-      hash: documentHash,
-      originalName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      processedContent: result,
-      metadata: metadata,
-    });
-
-    return res.json({
-      success: true,
-      result,
-      metadata,
-    });
   } catch (error) {
     log("Processing error:", error);
     return res.status(500).json({
       success: false,
-      error:
-        error instanceof Error ? error.message : "Failed to process document",
-      details: process.env.NODE_ENV === "development" ? error : undefined,
+      error: error instanceof Error ? error.message : "Failed to process document",
     });
   }
 });
@@ -159,7 +117,7 @@ router.post("/process", async (req, res) => {
 router.get("/status/:documentId", async (req, res) => {
   try {
     const document = await db.query.documents.findFirst({
-      where: (documents, { eq }) => eq(documents.id, req.params.documentId),
+      where: (documents, { eq }) => eq(documents.id, parseInt(req.params.documentId)),
     });
 
     if (!document) {
@@ -171,9 +129,9 @@ router.get("/status/:documentId", async (req, res) => {
 
     return res.json({
       success: true,
-      status: document.status,
-      progress: document.progress,
-      result: document.processedContent,
+      status: document.processingStatus,
+      analysis: document.analysis,
+      errorMessage: document.errorMessage,
     });
   } catch (error) {
     log("Status check error:", error);
