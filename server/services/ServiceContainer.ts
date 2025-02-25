@@ -1,4 +1,4 @@
-import { AnthropicClient } from "../anthropic";
+import { Anthropic } from "@anthropic-ai/sdk";
 import { pdfService } from "./pdf-service";
 import { complianceAuditService } from "./complianceAuditService";
 import { legalResearchService } from "./legalResearchService";
@@ -6,7 +6,7 @@ import { documentProcessor } from "./documentProcessor";
 
 export class ServiceContainer {
   private static instance: ServiceContainer;
-  private anthropicClient: AnthropicClient | null = null;
+  private anthropicClient: Anthropic | null = null;
   private services: Map<string, any> = new Map();
   private initializationPromise: Promise<void> | null = null;
 
@@ -46,9 +46,9 @@ export class ServiceContainer {
     }
   }
 
-  async getAnthropicClient(): Promise<AnthropicClient> {
+  async getAnthropicClient(): Promise<Anthropic> {
     if (!this.anthropicClient) {
-      this.anthropicClient = new AnthropicClient();
+      this.anthropicClient = new Anthropic();
     }
     return this.anthropicClient;
   }
