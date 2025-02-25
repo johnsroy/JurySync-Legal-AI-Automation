@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 const log = debug("app:workflow-automation");
 const router = Router();
 
-// Configure multer
+// Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -27,75 +27,59 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
+      cb(null, false);
       cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types: PDF, DOC, DOCX, TXT`));
     }
   },
 }).single("document");
 
-// Debug: Log AI Orchestrator initialization
+// Initialize AI Orchestrator
 let aiOrchestrator: AIOrchestrator | null = null;
-try {
-  log("Initializing AI Orchestrator...");
-  aiOrchestrator = new AIOrchestrator();
-  log("AI Orchestrator initialized successfully");
-} catch (error) {
-  log("Failed to initialize AI Orchestrator:", error);
-}
 
 // Document processing endpoint
 router.post("/process", async (req, res) => {
   try {
-    // Debug: Verify AI Orchestrator
-    if (!aiOrchestrator) {
-      log("AI Orchestrator not available, reinitializing...");
-      try {
-        aiOrchestrator = new AIOrchestrator();
-      } catch (initError) {
-        log("Failed to reinitialize AI Orchestrator:", initError);
-        return res.status(500).json({
-          success: false,
-          error: "AI service unavailable",
-        });
-      }
-    }
-
-    // Handle file upload
-    await new Promise((resolve, reject) => {
+    // Step 1: File Upload
+    await new Promise<void>((resolve, reject) => {
       upload(req, res, (err) => {
         if (err) {
           log("Upload error:", err);
           reject(err);
         } else {
-          resolve(true);
+          resolve();
         }
       });
     });
 
     if (!req.file) {
-      log("No file uploaded");
+      log("No file received");
       return res.status(400).json({
         success: false,
         error: "No file uploaded",
       });
     }
 
-    log("File received:", {
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-    });
+    // Step 2: Initialize AI Orchestrator if needed
+    if (!aiOrchestrator) {
+      try {
+        log("Initializing AI Orchestrator");
+        aiOrchestrator = new AIOrchestrator();
+      } catch (error) {
+        log("AI Orchestrator initialization failed:", error);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to initialize AI service",
+        });
+      }
+    }
 
-    // Debug: Extract and verify content
-    const content = req.file.buffer.toString('utf-8');
-    log("Content extracted, length:", content.length);
-
-    // Store document with minimal fields first
+    // Step 3: Create initial document record
     let document;
     try {
       const [doc] = await db.insert(documents)
         .values({
           title: req.file.originalname,
-          content: content,
+          content: req.file.buffer.toString('utf-8'),
           userId: (req.user as any)?.id || 1,
           documentType: "CONTRACT",
           processingStatus: "PROCESSING",
@@ -103,24 +87,21 @@ router.post("/process", async (req, res) => {
         })
         .returning();
       document = doc;
-      log("Document stored:", document.id);
-    } catch (dbError) {
-      log("Database error:", dbError);
+      log("Document created:", { id: document.id });
+    } catch (error) {
+      log("Database error:", error);
       return res.status(500).json({
         success: false,
-        error: "Database error",
+        error: "Failed to create document record",
       });
     }
 
-    // Process with AI
+    // Step 4: Process document
     try {
-      log("Starting AI processing for document:", document.id);
-      const result = await aiOrchestrator.processDocument(content, "upload");
-
-      log("AI processing result:", {
-        success: result?.success,
-        hasResult: !!result?.result,
-      });
+      const result = await aiOrchestrator.processDocument(
+        req.file.buffer.toString('utf-8'),
+        "upload"
+      );
 
       if (!result?.success) {
         throw new Error("AI processing failed");
@@ -140,14 +121,14 @@ router.post("/process", async (req, res) => {
         result: result.result,
       });
 
-    } catch (aiError) {
-      log("AI processing error:", aiError);
+    } catch (error) {
+      log("Processing error:", error);
 
       // Update document status
       await db.update(documents)
         .set({
           processingStatus: "FAILED",
-          errorMessage: aiError instanceof Error ? aiError.message : "AI processing failed",
+          errorMessage: error instanceof Error ? error.message : "Processing failed",
         })
         .where(eq(documents.id, document.id));
 
