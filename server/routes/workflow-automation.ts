@@ -5,6 +5,7 @@ import debug from "debug";
 import { db } from "../db";
 import { documents } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { documentProcessor } from "../services/documentProcessor";
 
 const log = debug("app:workflow-automation");
 const router = Router();
@@ -27,7 +28,6 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(null, false);
       cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types: PDF, DOC, DOCX, TXT`));
     }
   },
@@ -65,34 +65,51 @@ router.post("/process", async (req, res) => {
       type: req.file.mimetype
     });
 
-    // Step 2: Create initial document record
-    let document;
-    try {
-      const [doc] = await db.insert(documents)
-        .values({
-          userId: (req.user as any)?.id || 1,
-          title: req.file.originalname,
-          content: req.file.buffer.toString('utf-8'),
-          agentType: "CONTRACT_AUTOMATION",
-          processingStatus: "PROCESSING",
-          analysis: {}, // Empty initial analysis
-          createdAt: new Date(),
-        })
-        .returning();
-      document = doc;
-      log("Document record created:", { id: document.id });
-    } catch (error) {
-      log("Database error:", error);
-      return res.status(500).json({
+    // Step 2: Process document content
+    const processResult = await documentProcessor.processDocument(
+      req.file.buffer,
+      req.file.originalname,
+      req.file.mimetype
+    );
+
+    if (!processResult.success || !processResult.content) {
+      log("Document processing failed:", processResult.error);
+      return res.status(400).json({
         success: false,
-        error: "Failed to create document record"
+        error: processResult.error || "Failed to process document content"
       });
     }
 
-    // Step 3: Process document through AI orchestrator
+    log("Document processed successfully:", {
+      contentLength: processResult.content.length,
+      metadata: processResult.metadata
+    });
+
+    // Step 3: Create initial document record
+    const [document] = await db.insert(documents)
+      .values({
+        title: req.file.originalname,
+        content: processResult.content,
+        status: "processing",
+        metadata: {
+          ...processResult.metadata,
+          originalFilename: req.file.originalname,
+          mimeType: req.file.mimetype,
+          fileSize: req.file.size,
+          uploadedAt: new Date().toISOString()
+        },
+        processingStatus: "PROCESSING",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+      .returning();
+
+    log("Document record created:", { id: document.id });
+
+    // Step 4: Process document through AI orchestrator
     try {
       const result = await aiOrchestrator.processDocument(
-        req.file.buffer.toString('utf-8'),
+        processResult.content,
         "upload"
       );
 
@@ -100,11 +117,17 @@ router.post("/process", async (req, res) => {
         throw new Error(result?.error || "AI processing failed");
       }
 
+      log("AI processing completed:", {
+        documentId: document.id,
+        resultKeys: Object.keys(result.result)
+      });
+
       // Update document with processing results
       await db.update(documents)
         .set({
           processingStatus: "COMPLETED",
           analysis: result.result,
+          updatedAt: new Date()
         })
         .where(eq(documents.id, document.id));
 
@@ -121,7 +144,8 @@ router.post("/process", async (req, res) => {
       await db.update(documents)
         .set({
           processingStatus: "FAILED",
-          errorMessage: error instanceof Error ? error.message : "Processing failed"
+          errorMessage: error instanceof Error ? error.message : "Processing failed",
+          updatedAt: new Date()
         })
         .where(eq(documents.id, document.id));
 
@@ -143,9 +167,11 @@ router.post("/process", async (req, res) => {
 router.get("/status/:documentId", async (req, res) => {
   try {
     const documentId = parseInt(req.params.documentId);
-    const document = await db.query.documents.findFirst({
-      where: (documents, { eq }) => eq(documents.id, documentId),
-    });
+
+    const [document] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, documentId));
 
     if (!document) {
       return res.status(404).json({

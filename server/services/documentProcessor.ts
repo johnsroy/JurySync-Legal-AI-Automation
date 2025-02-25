@@ -1,8 +1,8 @@
 import mammoth from "mammoth";
 import { Buffer } from "buffer";
-import PDFNet from "@pdftron/pdfnet-node";
 import { PDFDocument } from "pdf-lib";
 import debug from "debug";
+import { pdfService } from "./pdf-service";
 
 const log = debug("app:document-processor");
 
@@ -27,11 +27,16 @@ export class DocumentProcessor {
     const startTime = Date.now();
 
     try {
-      const result = await this.extractText(buffer, mimeType);
+      log('Processing document:', { filename, mimeType });
+      const content = await this.extractText(buffer, mimeType);
+
+      if (!content || content.trim().length === 0) {
+        throw new Error('No text content could be extracted from document');
+      }
 
       return {
         success: true,
-        content: result,
+        content,
         metadata: {
           processingTime: Date.now() - startTime,
           fileType: mimeType,
@@ -43,8 +48,7 @@ export class DocumentProcessor {
       return {
         success: false,
         content: "",
-        error:
-          error.message || "Unknown error occurred during document processing",
+        error: error.message || "Unknown error occurred during document processing",
       };
     }
   }
@@ -70,17 +74,14 @@ export class DocumentProcessor {
 
   private async processPDF(buffer: Buffer): Promise<string> {
     try {
-      const pdfDoc = await PDFDocument.load(buffer);
-      const pages = pdfDoc.getPages();
-      let content = "";
-
-      for (const page of pages) {
-        const text = await page.getText();
-        content += text + "\n";
+      // Use the PDF service instead of pdf-lib directly
+      const result = await pdfService.parseDocument(buffer);
+      if (!result.text || result.text.trim().length === 0) {
+        throw new Error('No text content extracted from PDF');
       }
-
-      return content.trim();
+      return result.text;
     } catch (error) {
+      log('PDF processing error:', error);
       throw new Error("Failed to process PDF document");
     }
   }
@@ -88,8 +89,12 @@ export class DocumentProcessor {
   private async processWord(buffer: Buffer): Promise<string> {
     try {
       const result = await mammoth.extractRawText({ buffer });
+      if (!result.value || result.value.trim().length === 0) {
+        throw new Error('No text content extracted from Word document');
+      }
       return result.value;
     } catch (error) {
+      log('Word document processing error:', error);
       throw new Error("Failed to process Word document");
     }
   }
@@ -97,7 +102,7 @@ export class DocumentProcessor {
   private getProcessingMethod(mimeType: string): string {
     switch (mimeType) {
       case "application/pdf":
-        return "pdf-lib";
+        return "pdf-service";
       case "application/msword":
       case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         return "mammoth";
