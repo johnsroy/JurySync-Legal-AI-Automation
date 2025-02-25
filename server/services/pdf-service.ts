@@ -6,8 +6,9 @@ import { Readable } from "stream";
 
 const log = debug("app:pdf-service");
 
-const MAX_PAGE_SIZE = 100 * 1024 * 1024; // 100MB per page limit
+const MAX_PAGE_SIZE = 500 * 1024 * 1024; // Increased to 500MB per page limit
 const MAX_OCR_ATTEMPTS = 3;
+const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks for processing
 
 export interface PDFParseResult {
   text: string;
@@ -21,6 +22,8 @@ export interface PDFParseResult {
       totalTime?: number;
       ocrRequired?: boolean;
       errors?: string[];
+      chunks?: number;
+      chunkSizes?: number[];
     };
   };
 }
@@ -50,6 +53,7 @@ export class PDFService {
   ): Promise<PDFParseResult> {
     const startTime = Date.now();
     this.processingErrors = [];
+    const chunkSizes: number[] = [];
 
     try {
       // Basic validation
@@ -57,18 +61,45 @@ export class PDFService {
         throw new Error("Invalid PDF buffer");
       }
 
-      if (buffer.length > MAX_PAGE_SIZE) {
-        log("Large file detected, size:", buffer.length);
+      log(`Processing PDF of size: ${buffer.length} bytes`);
+
+      // Process large files in chunks if needed
+      const chunks = Math.ceil(buffer.length / CHUNK_SIZE);
+      let text = "";
+      let info = {};
+      let pageCount = 0;
+      let version = "";
+
+      if (chunks > 1) {
+        log(`Processing large PDF in ${chunks} chunks`);
+        for (let i = 0; i < chunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, buffer.length);
+          const chunk = buffer.slice(start, end);
+          chunkSizes.push(chunk.length);
+
+          const chunkResult = await pdf(chunk, {
+            max: MAX_PAGE_SIZE,
+            pagerender: this.customPageRenderer.bind(this),
+          });
+
+          text += chunkResult.text + " ";
+          info = { ...info, ...chunkResult.info };
+          pageCount += chunkResult.numpages || 0;
+          version = chunkResult.version || version;
+        }
+      } else {
+        const data = await pdf(buffer, {
+          max: MAX_PAGE_SIZE,
+          pagerender: this.customPageRenderer.bind(this),
+        });
+        text = data.text;
+        info = data.info || {};
+        pageCount = data.numpages || 0;
+        version = data.version;
       }
 
-      const data = await pdf(buffer, {
-        max: MAX_PAGE_SIZE,
-        pagerender: this.customPageRenderer.bind(this)
-      });
-
-      const isScanned = await this.isScannedDocument(data);
-      let text = data.text;
-      const timePerPage: number[] = [];
+      const isScanned = await this.isScannedDocument(text, pageCount);
 
       // If document is scanned and has little to no text, use OCR
       if (isScanned && text.trim().length < 100) {
@@ -85,18 +116,25 @@ export class PDFService {
         }
       }
 
+      // Validate final text content
+      if (!text || text.trim().length === 0) {
+        throw new Error("No text content could be extracted from the PDF");
+      }
+
       return {
-        text,
+        text: text.trim(),
         metadata: {
-          info: data.info || {},
-          pageCount: data.numpages || 0,
+          info,
+          pageCount,
           isScanned,
-          version: data.version,
+          version,
           processingDetails: {
-            timePerPage,
+            timePerPage: [],
             totalTime: Date.now() - startTime,
             ocrRequired: isScanned,
-            errors: this.processingErrors
+            errors: this.processingErrors,
+            chunks: chunks,
+            chunkSizes: chunkSizes
           }
         },
       };
@@ -122,9 +160,9 @@ export class PDFService {
     }
   }
 
-  private async isScannedDocument(data: any): Promise<boolean> {
+  private async isScannedDocument(text: string, pageCount: number): Promise<boolean> {
     try {
-      const textDensity = data.text.length / (data.numpages || 1);
+      const textDensity = text.length / (pageCount || 1);
       return textDensity < 100;
     } catch (error: any) {
       this.processingErrors.push(`Scanned document detection failed: ${error.message}`);
