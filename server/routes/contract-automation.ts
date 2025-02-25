@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { documents, documentAnalysis } from '@shared/schema';
+import { contractTemplates, documents } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import { anthropic } from '../anthropic';
 import OpenAI from 'openai';
@@ -9,16 +9,17 @@ import { pdfService } from '../services/pdf-service';
 import * as docx from 'docx';
 import multer from 'multer';
 import { documentProcessor } from '../services/documentProcessor';
-import { orchestratorService } from '../services/orchestrator-service';
+import { orchestratorService } from '../services/orchestrator-service'; // Import orchestrator service
+
 
 const router = Router();
 const openai = new OpenAI();
 
-// Configure multer with increased limits
+// Configure multer
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 500 * 1024 * 1024, // Increased to 500MB limit
+    fileSize: 50 * 1024 * 1024, // 50MB limit
   },
   fileFilter: (_req, file, cb) => {
     const allowedTypes = [
@@ -36,11 +37,8 @@ const upload = multer({
   }
 });
 
-// Document processing endpoint with enhanced error handling
+// Document processing endpoint
 router.post('/workflow/upload', upload.single('file'), async (req, res) => {
-  const startTime = Date.now();
-  let processingSteps: string[] = [];
-
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -49,83 +47,60 @@ router.post('/workflow/upload', upload.single('file'), async (req, res) => {
       });
     }
 
-    processingSteps.push('File received');
     let content: string;
     let metadata: Record<string, any> = {};
 
     // Process different file types
     if (req.file.mimetype === 'application/pdf') {
       try {
-        processingSteps.push('Starting PDF processing');
         const parseResult = await pdfService.parseDocument(req.file.buffer);
         content = parseResult.text;
         metadata = {
           ...parseResult.metadata,
           pageCount: parseResult.metadata.pageCount,
           isScanned: parseResult.metadata.isScanned,
-          processingDetails: parseResult.metadata.processingDetails,
-          processingSteps
+          processingDetails: parseResult.metadata.processingDetails
         };
 
         // Additional validation for PDF content
         if (!content || content.trim().length === 0) {
           throw new Error('No text content could be extracted from PDF');
         }
-        processingSteps.push('PDF processing completed');
-      } catch (error: any) {
+      } catch (error) {
         console.error('PDF parsing error:', error);
-        throw new Error(`Failed to parse PDF document: ${error.message}`);
+        throw new Error('Failed to parse PDF document');
       }
     } else {
       // Handle other document types
       try {
-        processingSteps.push('Starting document processing');
-        const result = await documentProcessor.processDocument(
-          req.file.buffer, 
-          req.file.originalname,
-          req.file.mimetype
-        );
-
+        const result = await documentProcessor.processDocument(req.file.buffer, req.file.originalname, req.file.mimetype);
         if (!result.success) {
           throw new Error(result.error || 'Failed to process document');
         }
-
         content = result.content;
-        metadata = {
-          ...result.metadata,
-          processingSteps
-        };
-
-        processingSteps.push('Document processing completed');
-      } catch (error: any) {
+        metadata = result.metadata || {};
+      } catch (error) {
         console.error('Document processing error:', error);
-        throw new Error(`Failed to process document: ${error.message}`);
+        throw new Error('Failed to process document');
       }
     }
 
-    processingSteps.push('Storing document');
     // Store the processed document
     const [document] = await db.insert(documents)
       .values({
-        title: req.file.originalname,
+        name: req.file.originalname,
         content: content,
-        userId: 1, // Replace with actual user ID from session
-        analysis: {},
-        agentType: 'CONTRACT_AUTOMATION',
+        mimeType: req.file.mimetype,
         metadata: {
           ...metadata,
           uploadedAt: new Date().toISOString(),
           fileSize: req.file.size,
-          processingTime: Date.now() - startTime,
-          processingSteps,
           processingStatus: 'completed'
         },
         createdAt: new Date(),
-        processingStatus: 'COMPLETED'
+        updatedAt: new Date()
       })
       .returning();
-
-    processingSteps.push('Document stored successfully');
 
     return res.json({
       success: true,
@@ -133,25 +108,21 @@ router.post('/workflow/upload', upload.single('file'), async (req, res) => {
       content: content.substring(0, 1000), // Send preview only
       metadata: {
         ...metadata,
-        processingTime: Date.now() - startTime,
-        processingSteps,
         processingStatus: 'completed',
         nextSteps: ['analysis', 'classification', 'compliance']
       }
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Document processing error:', error);
     return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to process document',
-      processingSteps,
-      processingTime: Date.now() - startTime
+      error: error instanceof Error ? error.message : 'Failed to process document'
     });
   }
 });
 
-// Analysis endpoint with progress tracking
+// Add new analysis endpoint
 router.post('/workflow/analyze', async (req, res) => {
   try {
     const { documentId } = req.body;
@@ -169,11 +140,10 @@ router.post('/workflow/analyze', async (req, res) => {
       success: true,
       taskId: task.id,
       status: 'processing',
-      message: 'Document analysis started',
-      estimatedTime: '30-60 seconds'
+      message: 'Document analysis started'
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Analysis error:', error);
     return res.status(500).json({
       success: false,
