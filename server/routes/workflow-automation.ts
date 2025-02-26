@@ -99,50 +99,63 @@ router.post("/upload", async (req, res) => {
       req.file.mimetype
     );
 
-    if (!processResult.success || !processResult.content) {
-      throw new Error(processResult.error || "Failed to process document content");
+    if (!processResult.success) {
+      log("Document processing failed:", processResult.error);
+      return res.status(400).json({
+        success: false,
+        error: processResult.error || "Failed to process document content"
+      });
     }
 
-    log("Document content processed successfully", {
-      contentLength: processResult.content.length,
+    // Even if content extraction failed, we can still proceed with a placeholder
+    const content = processResult.content || `[Content extraction failed for ${req.file.originalname}]`;
+    
+    log("Document content processed:", {
+      contentLength: content.length,
+      metadata: processResult.metadata,
       processingTime: Date.now() - startTime
     });
 
     // Step 3: Create document record in database
-    const [document] = await db
-      .insert(documents)
-      .values({
-        title: req.file.originalname,
-        content: processResult.content,
+    try {
+      const [document] = await db
+        .insert(documents)
+        .values({
+          title: req.file.originalname,
+          content: content,
+          status: "PENDING",
+          userId: req.user?.id || 1, // Default to user 1 if not authenticated
+          fileType: req.file.mimetype,
+          fileSize: req.file.size,
+          metadata: {
+            originalName: req.file.originalname,
+            mimeType: req.file.mimetype,
+            size: req.file.size,
+            uploadTime: new Date().toISOString(),
+            ...processResult.metadata
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        .returning();
+
+      log("Document record created:", {
+        documentId: document.id,
+        dbInsertTime: Date.now() - startTime
+      });
+
+      return res.json({
+        success: true,
+        documentId: document.id,
         status: "PENDING",
-        userId: req.user?.id || 1, // Default to user 1 if not authenticated
-        fileType: req.file.mimetype,
-        fileSize: req.file.size,
-        metadata: {
-          originalName: req.file.originalname,
-          mimeType: req.file.mimetype,
-          size: req.file.size,
-          uploadTime: new Date().toISOString(),
-          ...processResult.metadata
-        },
-        createdAt: new Date(),
-        updatedAt: new Date()
-      })
-      .returning();
-
-    log("Document record created:", {
-      documentId: document.id,
-      dbInsertTime: Date.now() - startTime
-    });
-
-    return res.json({
-      success: true,
-      documentId: document.id,
-      status: "PENDING",
-      message: "Document uploaded successfully and queued for processing",
-      preview: processResult.content.substring(0, 500) + (processResult.content.length > 500 ? "..." : ""),
-      processingTime: Date.now() - startTime
-    });
+        message: "Document uploaded successfully and queued for processing",
+        preview: content.substring(0, 500) + (content.length > 500 ? "..." : ""),
+        processingTime: Date.now() - startTime
+      });
+    } catch (dbError) {
+      log("Database error:", dbError);
+      throw new Error(`Failed to save document to database: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`);
+    }
 
   } catch (error) {
     log("Document upload error:", error);

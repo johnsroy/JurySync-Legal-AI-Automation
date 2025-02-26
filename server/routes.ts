@@ -17,7 +17,6 @@ import redlineRouter from "./routes/redline";
 import paymentsRouter from "./routes/payments";
 import cors from 'cors';
 import { json } from 'express';
-import { setupVite, serveStatic } from "./vite";
 
 export function registerRoutes(app: Express): Server {
   // Essential middleware first
@@ -49,20 +48,20 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Mount important routers first
-  app.use("/api/payments", paymentsRouter); // Mount payments router early
+  app.use("/api/payments", paymentsRouter);
   app.use("/api", documentsRouter);
+  app.use("/api/metrics", metricsRouter); // Ensure metrics router is properly mounted
 
   // Mount other API routes
   app.use("/api/legal-research", legalResearchRouter);
   app.use("/api/redline", redlineRouter);
   app.use("/api/vault", vaultRouter);
   app.use("/api/compliance", complianceRouter);
-  app.use("/api/metrics", metricsRouter);
   app.use("/api", reportsRouter);
   app.use("/api/monitoring", predictiveMonitoringRouter);
   app.use("/api/orchestrator", orchestratorRouter);
   app.use("/api/contract-analysis", contractAnalysisRouter);
-  app.use("/api/contract-automation", contractAutomationRouter); // Added this line
+  app.use("/api/contract-automation", contractAutomationRouter);
 
   // Add catch-all handler for unmatched API routes
   app.use('/api/*', (req, res) => {
