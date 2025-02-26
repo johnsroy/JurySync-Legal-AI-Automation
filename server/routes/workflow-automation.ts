@@ -62,8 +62,7 @@ router.post("/test-ai", async (req, res) => {
 // Document upload endpoint - Step 1: Upload and initial processing
 router.post("/upload", async (req, res) => {
   const startTime = Date.now();
-  let uploadedDocument;
-
+  
   try {
     // Step 1: Handle file upload
     await new Promise<void>((resolve, reject) => {
@@ -101,67 +100,55 @@ router.post("/upload", async (req, res) => {
     );
 
     if (!processResult.success || !processResult.content) {
-      log("Document processing failed:", {
-        error: processResult.error,
-        metadata: processResult.metadata,
-        processingTime: Date.now() - startTime
-      });
-      return res.status(400).json({
-        success: false,
-        error: processResult.error || "Failed to process document content"
-      });
+      throw new Error(processResult.error || "Failed to process document content");
     }
 
-    log("Document processed successfully:", {
+    log("Document content processed successfully", {
       contentLength: processResult.content.length,
-      metadata: processResult.metadata,
       processingTime: Date.now() - startTime
     });
 
-    // Step 3: Create initial document record
-    const insertData = {
-      title: req.file.originalname,
-      content: processResult.content,
-      userId: (req.user as any)?.id || 1,
-      metadata: {
-        ...processResult.metadata,
-        originalFilename: req.file.originalname,
-        mimeType: req.file.mimetype,
-        fileSize: req.file.size,
-        uploadedAt: new Date().toISOString(),
-        processingTime: Date.now() - startTime
-      }
-    };
-
-    try {
-      const validatedData = insertDocumentSchema.parse(insertData);
-      const [document] = await db.insert(documents)
-        .values(validatedData)
-        .returning();
-
-      uploadedDocument = document;
-      log("Document record created:", { 
-        id: document.id,
-        totalTime: Date.now() - startTime 
-      });
-
-      return res.json({
-        success: true,
-        documentId: document.id,
+    // Step 3: Create document record in database
+    const [document] = await db
+      .insert(documents)
+      .values({
+        title: req.file.originalname,
+        content: processResult.content,
         status: "PENDING",
-        processingTime: Date.now() - startTime
-      });
+        userId: req.user?.id || 1, // Default to user 1 if not authenticated
+        fileType: req.file.mimetype,
+        fileSize: req.file.size,
+        metadata: {
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          size: req.file.size,
+          uploadTime: new Date().toISOString(),
+          ...processResult.metadata
+        },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+      .returning();
 
-    } catch (error) {
-      log("Database error:", error);
-      throw error;
-    }
+    log("Document record created:", {
+      documentId: document.id,
+      dbInsertTime: Date.now() - startTime
+    });
+
+    return res.json({
+      success: true,
+      documentId: document.id,
+      status: "PENDING",
+      message: "Document uploaded successfully and queued for processing",
+      preview: processResult.content.substring(0, 500) + (processResult.content.length > 500 ? "..." : ""),
+      processingTime: Date.now() - startTime
+    });
 
   } catch (error) {
-    log("Upload process error:", error);
+    log("Document upload error:", error);
     return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : "Upload failed",
+      error: error instanceof Error ? error.message : "Failed to upload document",
       processingTime: Date.now() - startTime
     });
   }

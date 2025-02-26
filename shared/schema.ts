@@ -889,8 +889,10 @@ export const legalAnalyses = pgTable('legal_analyses', {
   userId: integer('user_id').notNull(),
   documentContent: text('document_content').notNull(),
   analysis: jsonb('analysis').notNull(),
-  timestamp: timestamp('timestamp').notNull().defaultNow(),
-});export type LegalAnalysis = typeof legalAnalyses.$inferSelect;
+  timestamp: timestamp('timestamp').notNull().defaultNow()
+});
+
+export type LegalAnalysis = typeof legalAnalyses.$inferSelect;
 export type InsertLegalAnalysis = typeof legalAnalyses.$inferInsert;
 
 // Add after the existing tables

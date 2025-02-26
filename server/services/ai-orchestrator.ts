@@ -28,6 +28,7 @@ export class AIOrchestrator {
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY = 1000; // 1 second
   private readonly INIT_TIMEOUT = 10000; // 10 seconds
+  private gptModel: string = "";
 
   constructor() {
     if (!process.env.OPENAI_API_KEY) {
@@ -52,11 +53,24 @@ export class AIOrchestrator {
         )
       ]);
 
-      const hasRequiredModel = models.data.some(m => m.id === "gpt-4-1106-preview");
-      if (!hasRequiredModel) {
-        throw new Error("Required model 'gpt-4-1106-preview' is not available");
+      // Check for any GPT-4 model variant
+      const hasGpt4Model = models.data.some(m => 
+        m.id.includes("gpt-4") || 
+        m.id.includes("gpt-4o") || 
+        m.id.includes("gpt-4-turbo")
+      );
+      
+      if (!hasGpt4Model) {
+        throw new Error("No GPT-4 model variant is available");
       }
 
+      // Determine best available model
+      this.gptModel = models.data.find(m => m.id === "gpt-4-1106-preview")?.id || 
+                     models.data.find(m => m.id === "gpt-4o")?.id ||
+                     models.data.find(m => m.id.includes("gpt-4"))?.id ||
+                     "gpt-3.5-turbo";
+      
+      log(`Using model: ${this.gptModel}`);
       this.initialized = true;
       log("AI Orchestrator initialized successfully");
     } catch (error) {
@@ -139,7 +153,7 @@ export class AIOrchestrator {
     try {
       log("Calling OpenAI API for document analysis...");
       const response = await this.openai.chat.completions.create({
-        model: "gpt-4-1106-preview",
+        model: this.gptModel,
         messages: [
           {
             role: "system",
@@ -171,7 +185,7 @@ export class AIOrchestrator {
     try {
       log("Calling OpenAI API for compliance check...");
       const response = await this.openai.chat.completions.create({
-        model: "gpt-4-1106-preview",
+        model: this.gptModel,
         messages: [
           {
             role: "system",
@@ -203,8 +217,18 @@ export class AIOrchestrator {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         log(`Attempting draft generation (attempt ${attempt} of ${retries})...`);
+        
+        // Truncate content if too large
+        const MAX_CONTENT_LENGTH = 12000;
+        let truncatedContent = content;
+        if (content.length > MAX_CONTENT_LENGTH) {
+          truncatedContent = content.substring(0, MAX_CONTENT_LENGTH) + 
+            `\n\n[Content truncated. Original length: ${content.length} characters]`;
+          log(`Content truncated from ${content.length} to ${truncatedContent.length} characters`);
+        }
+        
         const response = await this.openai.chat.completions.create({
-          model: "gpt-4-1106-preview",
+          model: this.gptModel,
           messages: [
             {
               role: "system",
@@ -212,7 +236,7 @@ export class AIOrchestrator {
             },
             {
               role: "user",
-              content: `Original content: ${content}\nAnalysis: ${JSON.stringify(analysis)}`
+              content: `Original content: ${truncatedContent}\nAnalysis: ${JSON.stringify(analysis)}`
             }
           ],
           response_format: { type: "json_object" },
@@ -240,7 +264,7 @@ export class AIOrchestrator {
     try {
       log("Calling OpenAI API for audit report generation...");
       const response = await this.openai.chat.completions.create({
-        model: "gpt-4-1106-preview",
+        model: this.gptModel,
         messages: [
           {
             role: "system",
