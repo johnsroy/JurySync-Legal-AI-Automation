@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import pdf from "pdf-parse/lib/pdf-parse";  
+import pdf from "pdf-parse";  
 import { createWorker } from "tesseract.js";
 import debug from "debug";
 import { Readable } from "stream";
@@ -39,6 +39,9 @@ export class PDFService {
     documentId?: number,
   ): Promise<PDFParseResult> {
     try {
+      log('Parsing PDF document...');
+      const startTime = Date.now();
+
       const data = await pdf(buffer);
       const isScanned = await this.isScannedDocument(data);
 
@@ -46,34 +49,53 @@ export class PDFService {
 
       // If document is scanned and has little to no text, use OCR
       if (isScanned && text.trim().length < 100) {
+        log('Document appears to be scanned, attempting OCR...');
         const ocrResult = await this.processWithOCR(buffer);
         text = ocrResult.text;
       }
 
+      const processingTime = Date.now() - startTime;
+      log('PDF parsing completed', {
+        documentId,
+        textLength: text.length,
+        isScanned,
+        processingTime,
+      });
+
       return {
         text,
         metadata: {
-          info: data.info,
-          pageCount: data.numpages,
+          info: data.info || {},
+          pageCount: data.numpages || 1,
           isScanned,
           version: data.version,
         },
       };
     } catch (error) {
       log("PDF parsing error:", error);
-      throw new Error(`Failed to parse PDF document: ${error.message}`);
+      if (error instanceof Error) {
+        throw new Error(`Failed to parse PDF document: ${error.message}`);
+      }
+      throw new Error('Failed to parse PDF document: Unknown error');
     }
   }
 
-  private async isScannedDocument(data: pdf.PDFData): Promise<boolean> {
-    const textDensity = data.text.length / data.numpages;
-    return textDensity < 100;
+  private async isScannedDocument(data: any): Promise<boolean> {
+    try {
+      const textDensity = data.text ? data.text.length / (data.numpages || 1) : 0;
+      return textDensity < 100;
+    } catch (error) {
+      log('Error checking if document is scanned:', error);
+      return false;
+    }
   }
 
   async processWithOCR(buffer: Buffer): Promise<OCRResult> {
     try {
       if (!this.ocrWorker) {
-        this.ocrWorker = await createWorker("eng");
+        this.ocrWorker = await createWorker({
+          logger: m => log('Tesseract:', m)
+        });
       }
 
       const { data } = await this.ocrWorker.recognize(buffer);
@@ -87,10 +109,22 @@ export class PDFService {
     }
   }
 
-  async generatePDF(content: string, options: any = {}): Promise<PDFDocument> {
-    const doc = new PDFDocument(options);
-    doc.fontSize(12).text(content);
-    return doc;
+  async generatePDF(content: string, options: any = {}): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      try {
+        const doc = new PDFDocument(options);
+        const chunks: Buffer[] = [];
+
+        doc.on('data', chunk => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', err => reject(err));
+
+        doc.fontSize(12).text(content);
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   async cleanup(): Promise<void> {
