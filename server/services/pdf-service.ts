@@ -1,10 +1,21 @@
 import PDFDocument from "pdfkit";
-import pdf from "pdf-parse";  // Import directly from pdf-parse
 import { createWorker } from "tesseract.js";
 import debug from "debug";
 import { analyzeDocument } from "./anthropic";
 
 const log = debug("app:pdf-service");
+
+// Safely import pdf-parse to avoid test file loading
+let pdfParse: any;
+try {
+  // Dynamically import to avoid test file loading during initialization
+  pdfParse = require('pdf-parse/lib/pdf-parse.js');
+} catch (error) {
+  log('Warning: PDF parse module initialization error:', error);
+  pdfParse = async (buffer: Buffer) => {
+    throw new Error('PDF parsing module not available');
+  };
+}
 
 export interface PDFParseResult {
   text: string;
@@ -26,7 +37,9 @@ export class PDFService {
   private static instance: PDFService;
   private ocrWorker: Tesseract.Worker | null = null;
 
-  private constructor() {}
+  private constructor() {
+    log('Initializing PDF Service...');
+  }
 
   static getInstance(): PDFService {
     if (!PDFService.instance) {
@@ -35,46 +48,48 @@ export class PDFService {
     return PDFService.instance;
   }
 
-  async parseDocument(
-    buffer: Buffer,
-    documentId?: number,
-  ): Promise<PDFParseResult> {
+  async parseDocument(buffer: Buffer): Promise<PDFParseResult> {
     try {
-      log('Parsing PDF document...', { documentId });
+      log('Starting PDF parsing...');
       const startTime = Date.now();
 
-      // Configure pdf-parse options with correct types
-      const data = await pdf(buffer, {
-        max: 0, // No page limit
-      });
+      if (!buffer || buffer.length === 0) {
+        throw new Error('Invalid PDF buffer provided');
+      }
 
+      // Safely parse PDF with error handling
+      let data;
+      try {
+        data = await pdfParse(buffer);
+      } catch (parseError) {
+        log('PDF parsing error:', parseError);
+        throw new Error('Failed to parse PDF document');
+      }
+
+      let text = data?.text || '';
       const isScanned = await this.isScannedDocument(data);
 
-      let text = data.text;
-
-      // If document is scanned and has little to no text, use OCR
+      // Attempt OCR if needed
       if (isScanned && text.trim().length < 100) {
-        log('Document appears to be scanned, attempting OCR...', { documentId });
+        log('Document appears to be scanned, attempting OCR...');
         const ocrResult = await this.processWithOCR(buffer);
         text = ocrResult.text;
       }
 
-      // Analyze document content using Anthropic
-      let analysis;
-      try {
-        analysis = await analyzeDocument(text);
-        log('Document analysis completed', {
-          documentId,
-          classification: analysis.classification,
-          confidence: analysis.confidence
-        });
-      } catch (analysisError) {
-        log('Document analysis failed', { documentId, error: analysisError });
+      // Analyze content if available
+      let analysis = null;
+      if (text.trim().length > 0) {
+        try {
+          analysis = await analyzeDocument(text);
+          log('Document analysis completed successfully');
+        } catch (analysisError) {
+          log('Content analysis failed:', analysisError);
+          // Continue without analysis
+        }
       }
 
       const processingTime = Date.now() - startTime;
-      log('PDF parsing completed', {
-        documentId,
+      log('PDF processing completed', {
         textLength: text.length,
         isScanned,
         processingTime,
@@ -84,29 +99,27 @@ export class PDFService {
       return {
         text,
         metadata: {
-          info: data.info || {},
-          pageCount: data.numpages || 1,
+          info: data?.info || {},
+          pageCount: data?.numpages || 1,
           isScanned,
-          version: data.version,
+          version: data?.version,
           analysis
         },
       };
     } catch (error) {
-      log("PDF parsing error:", error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to parse PDF document: ${error.message}`);
-      }
-      throw new Error('Failed to parse PDF document: Unknown error');
+      log('PDF parsing error:', error);
+      throw new Error(`PDF parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   private async isScannedDocument(data: any): Promise<boolean> {
     try {
-      const textDensity = data.text ? data.text.length / (data.numpages || 1) : 0;
+      if (!data || !data.text) return true;
+      const textDensity = data.text.length / (data.numpages || 1);
       return textDensity < 100;
     } catch (error) {
-      log('Error checking if document is scanned:', error);
-      return false;
+      log('Error checking document type:', error);
+      return true; // Assume scanned if we can't determine
     }
   }
 
@@ -124,8 +137,8 @@ export class PDFService {
         confidence: data.confidence,
       };
     } catch (error) {
-      log("OCR processing error:", error);
-      throw new Error("Failed to process document with OCR");
+      log('OCR processing error:', error);
+      throw new Error('OCR processing failed');
     }
   }
 

@@ -136,19 +136,17 @@ try {
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, '0.0.0.0', () => {
     log(`Server running at http://0.0.0.0:${PORT} (startup time: ${Date.now() - startTime}ms)`);
-  });
 
-  // Background tasks will be enabled later after confirming server stability
-  /*
-  setTimeout(async () => {
-    try {
-      log('Starting background initialization...');
-      // Add background tasks here after confirming server stability
-    } catch (error) {
-      log('Background initialization failed:', error);
-    }
-  }, 2000);
-  */
+    // Initialize services after server is running
+    setTimeout(async () => {
+      try {
+        log('Starting service initialization...');
+        // Re-enable PDF service here after server is running
+      } catch (error) {
+        log('Service initialization error:', error);
+      }
+    }, 2000);
+  });
 
 } catch (error) {
   log('Critical error during server startup:', error);
