@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-// the newest Anthropic model is "claude-3-5-sonnet-20241022" which was released October 22, 2024. do not change this unless explicitly requested by the user
+// the newest Anthropic model is "claude-3-7-sonnet-20250219" which was released February 24, 2025
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -12,17 +12,21 @@ export interface BiasAnalysis {
   confidence: number;
 }
 
-export interface JurorProfile {
-  demographicInsights: string[];
-  potentialBiases: string[];
-  recommendedQuestions: string[];
-  riskFactors: string[];
+export interface DocumentAnalysis {
+  summary: string;
+  classification: string;
+  keywords: string[];
+  entities: string[];
+  recommendations: string[];
+  confidence: number;
+  riskLevel: string;
+  industry?: string;
 }
 
 export async function analyzeBias(content: string): Promise<BiasAnalysis> {
   try {
     const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-3-7-sonnet-20250219",
       max_tokens: 1024,
       messages: [{
         role: "user",
@@ -36,7 +40,7 @@ export async function analyzeBias(content: string): Promise<BiasAnalysis> {
       }],
     });
 
-    const result = JSON.parse(response.content[0].value);
+    const result = JSON.parse(response.content[0].text);
     return result;
   } catch (error: any) {
     console.error("Bias analysis error:", error);
@@ -44,10 +48,46 @@ export async function analyzeBias(content: string): Promise<BiasAnalysis> {
   }
 }
 
+export async function analyzeDocument(content: string): Promise<DocumentAnalysis> {
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-3-7-sonnet-20250219",
+      max_tokens: 2048,
+      messages: [{
+        role: "user",
+        content: `Analyze this document and provide a detailed analysis in JSON format with the following fields:
+        - summary (string, concise overview)
+        - classification (string, document type)
+        - keywords (array of key terms)
+        - entities (array of identified entities)
+        - recommendations (array of action items)
+        - confidence (number between 0-1)
+        - riskLevel (string: 'LOW', 'MEDIUM', or 'HIGH')
+        - industry (string, optional)
+
+        Document content: ${content}`
+      }],
+    });
+
+    const result = JSON.parse(response.content[0].text);
+    return result;
+  } catch (error: any) {
+    console.error("Document analysis error:", error);
+    throw new Error(`Failed to analyze document: ${error.message}`);
+  }
+}
+
+export interface JurorProfile {
+  demographicInsights: string[];
+  potentialBiases: string[];
+  recommendedQuestions: string[];
+  riskFactors: string[];
+}
+
 export async function generateJurorProfile(questionnaire: string): Promise<JurorProfile> {
   try {
     const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-3-7-sonnet-20250219",
       max_tokens: 1024,
       messages: [{
         role: "user",
@@ -61,7 +101,7 @@ export async function generateJurorProfile(questionnaire: string): Promise<Juror
       }],
     });
 
-    const result = JSON.parse(response.content[0].value);
+    const result = JSON.parse(response.content[0].text);
     return result;
   } catch (error: any) {
     console.error("Profile generation error:", error);

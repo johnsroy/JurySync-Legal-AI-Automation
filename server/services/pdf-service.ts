@@ -1,8 +1,8 @@
 import PDFDocument from "pdfkit";
-import pdf from "pdf-parse";  
+import pdf from "pdf-parse/lib/pdf-parse.js";  // Use direct import to avoid test file loading
 import { createWorker } from "tesseract.js";
 import debug from "debug";
-import { Readable } from "stream";
+import { analyzeDocument } from "./anthropic";
 
 const log = debug("app:pdf-service");
 
@@ -13,6 +13,7 @@ export interface PDFParseResult {
     pageCount: number;
     isScanned: boolean;
     version?: string;
+    analysis?: any;
   };
 }
 
@@ -39,7 +40,7 @@ export class PDFService {
     documentId?: number,
   ): Promise<PDFParseResult> {
     try {
-      log('Parsing PDF document...');
+      log('Parsing PDF document...', { documentId });
       const startTime = Date.now();
 
       const data = await pdf(buffer);
@@ -49,9 +50,22 @@ export class PDFService {
 
       // If document is scanned and has little to no text, use OCR
       if (isScanned && text.trim().length < 100) {
-        log('Document appears to be scanned, attempting OCR...');
+        log('Document appears to be scanned, attempting OCR...', { documentId });
         const ocrResult = await this.processWithOCR(buffer);
         text = ocrResult.text;
+      }
+
+      // Analyze document content using Anthropic
+      let analysis;
+      try {
+        analysis = await analyzeDocument(text);
+        log('Document analysis completed', {
+          documentId,
+          classification: analysis.classification,
+          confidence: analysis.confidence
+        });
+      } catch (analysisError) {
+        log('Document analysis failed', { documentId, error: analysisError });
       }
 
       const processingTime = Date.now() - startTime;
@@ -60,6 +74,7 @@ export class PDFService {
         textLength: text.length,
         isScanned,
         processingTime,
+        hasAnalysis: !!analysis
       });
 
       return {
@@ -69,6 +84,7 @@ export class PDFService {
           pageCount: data.numpages || 1,
           isScanned,
           version: data.version,
+          analysis
         },
       };
     } catch (error) {

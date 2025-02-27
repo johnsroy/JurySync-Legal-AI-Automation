@@ -7,8 +7,25 @@ import connectPg from "connect-pg-simple";
 import { db } from "./db";
 import cors from 'cors';
 import debug from 'debug';
+import dotenv from 'dotenv';
+import { users } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import passport from 'passport';
+import { errorHandler } from './middlewares/errorHandler';
 
-const log = debug('jurysync:server');
+// Configure global error handlers first
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Give time for logs to flush
+  setTimeout(() => process.exit(1), 1000);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+const log = debug('app:server');
+dotenv.config();
 
 // Create Express application
 const app = express();
@@ -49,16 +66,16 @@ try {
 
   app.use(session({
     store: sessionStore,
-    secret: process.env.SESSION_SECRET || 'development-secret-do-not-use-in-prod',
+    secret: process.env.SESSION_SECRET || 'development-secret',
     resave: false,
     saveUninitialized: false,
     cookie: {
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-      sameSite: 'lax'
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
-    name: 'jurysync.sid'
   }));
+
+  // Initialize passport
   app.use(passport.initialize());
   app.use(passport.session());
 
@@ -97,6 +114,9 @@ try {
   // Register all routes
   const server = registerRoutes(app);
 
+  // API error handling middleware
+  app.use(errorHandler);
+
   // Setup Vite for development or serve static files for production
   if (process.env.NODE_ENV !== "production") {
     setupVite(app, server);
@@ -110,6 +130,18 @@ try {
     log(`Server running at http://0.0.0.0:${PORT} (startup time: ${Date.now() - startTime}ms)`);
   });
 
+  // Background tasks will be enabled later after confirming server stability
+  /*
+  setTimeout(async () => {
+    try {
+      log('Starting background initialization...');
+      // Add background tasks here after confirming server stability
+    } catch (error) {
+      log('Background initialization failed:', error);
+    }
+  }, 2000);
+  */
+
 } catch (error) {
   log('Critical error during server startup:', error);
   if (error instanceof Error) {
@@ -122,68 +154,11 @@ try {
   process.exit(1);
 }
 
-// Initialize services and start server
-
-// Start server and initialize services
-(async () => {
-  try {
-    log('Core initialization completed in %dms', Date.now() - startTime);
-
-    // Initialize background tasks after server is running
-    setTimeout(async () => {
-      try {
-        log('Starting background initialization...');
-
-        // Seed legal database
-        try {
-          const numberOfDocuments = parseInt(process.env.SEED_DOCUMENTS_COUNT || '500', 10);
-          await seedLegalDatabase(numberOfDocuments);
-          log('Legal database seeded successfully');
-        } catch (seedError) {
-          log('Warning: Legal database seeding failed:', seedError);
-        }
-
-        // Seed contract templates
-        try {
-          await seedContractTemplates();
-          log('Contract templates seeded successfully');
-        } catch (templateError) {
-          log('Warning: Contract template seeding failed:', templateError);
-        }
-
-        // Start continuous learning service
-        try {
-          await continuousLearningService.startContinuousLearning();
-          log('Continuous learning service started successfully');
-        } catch (learningError) {
-          log('Warning: Failed to start continuous learning service:', learningError);
-        }
-
-        log('Background initialization completed (took %dms)', Date.now() - startTime);
-      } catch (error) {
-        log('Warning: Background initialization failed:', error);
-      }
-    }, 2000); // Run background tasks after 2 seconds
-
-  } catch (error) {
-    console.error('Critical error starting server:', error);
-    process.exit(1);
-  }
-})();
-
-import passport from 'passport';
-import dotenv from 'dotenv';
 import { seedContractTemplates } from './services/seedContractTemplates';
 import contractAutomationRouter from './routes/contract-automation';
-import { errorHandler } from './middlewares/errorHandler';
-import { users } from "@shared/schema";
-import { eq } from "drizzle-orm";
 import paymentsRouter from './routes/payments';
 import { seedLegalDatabase } from './services/seedData';
 import { continuousLearningService } from './services/continuousLearningService';
 import documentAnalyticsRouter from './routes/document-analytics';
 import redlineRouter from "./routes/redline";
 import { handleStripeWebhook } from "./webhooks/stripe";
-
-
-dotenv.config();
