@@ -12,6 +12,14 @@ import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import passport from 'passport';
 import { errorHandler } from './middlewares/errorHandler';
+import { seedContractTemplates } from './services/seedContractTemplates';
+import contractAutomationRouter from './routes/contract-automation';
+import paymentsRouter from './routes/payments';
+import { seedLegalDatabase } from './services/seedData';
+import { continuousLearningService } from './services/continuousLearningService';
+import documentAnalyticsRouter from './routes/document-analytics';
+import redlineRouter from "./routes/redline";
+import { handleStripeWebhook } from "./webhooks/stripe";
 
 // Configure global error handlers first
 process.on('uncaughtException', (error) => {
@@ -153,12 +161,3 @@ try {
   }
   process.exit(1);
 }
-
-import { seedContractTemplates } from './services/seedContractTemplates';
-import contractAutomationRouter from './routes/contract-automation';
-import paymentsRouter from './routes/payments';
-import { seedLegalDatabase } from './services/seedData';
-import { continuousLearningService } from './services/continuousLearningService';
-import documentAnalyticsRouter from './routes/document-analytics';
-import redlineRouter from "./routes/redline";
-import { handleStripeWebhook } from "./webhooks/stripe";

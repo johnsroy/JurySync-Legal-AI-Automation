@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import pdf from "pdf-parse/lib/pdf-parse.js";  // Use direct import to avoid test file loading
+import pdf from "pdf-parse";  // Import directly from pdf-parse
 import { createWorker } from "tesseract.js";
 import debug from "debug";
 import { analyzeDocument } from "./anthropic";
@@ -43,7 +43,11 @@ export class PDFService {
       log('Parsing PDF document...', { documentId });
       const startTime = Date.now();
 
-      const data = await pdf(buffer);
+      // Configure pdf-parse options with correct types
+      const data = await pdf(buffer, {
+        max: 0, // No page limit
+      });
+
       const isScanned = await this.isScannedDocument(data);
 
       let text = data.text;
