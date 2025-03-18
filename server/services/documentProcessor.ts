@@ -5,7 +5,7 @@ import * as path from "path";
 import * as os from "os";
 import { v4 as uuidv4 } from "uuid";
 import mammoth from "mammoth";
-import pdfParse from "pdf-parse";
+import { pdfProcessor } from "./pdfProcessor";
 
 const log = debug("app:document-processor");
 
@@ -38,21 +38,26 @@ class DocumentProcessor {
 
       // Process based on file type
       if (mimetype === "application/pdf") {
-        log("Processing PDF document");
+        log("Processing PDF document with new PDF processor");
         try {
-          // Call our simplified PDF handler
-          const result = await this.extractPDFText(buffer);
-          content = result.text;
+          // Use our new PDF processor
+          const result = await pdfProcessor.processBuffer(buffer);
+          
+          if (!result.success) {
+            throw new Error(result.error || "PDF processing failed");
+          }
+          
+          content = result.text || "";
           metadata = { 
-            pageCount: result.pageCount,
-            source: "pdf-extraction-replit-mode" 
+            pageCount: result.pageCount || 1,
+            source: "pdf-basic-extraction" 
           };
+          
           log(`PDF processed successfully: ${content.length} characters`);
         } catch (pdfError) {
           log("PDF extraction failed, using placeholder:", pdfError);
-          // Use placeholder content instead of trying to parse buffer
-          content = "[PDF content placeholder - extraction disabled in Replit]";
-          metadata = { source: "pdf-fallback-replit-mode" };
+          content = "[PDF content placeholder - extraction failed but document was received]";
+          metadata = { source: "pdf-fallback-extraction" };
         }
       } 
       else if (mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || 
@@ -63,7 +68,7 @@ class DocumentProcessor {
           content = result.value;
           metadata = { source: "docx-extraction" };
           log(`Word document processed successfully: ${content.length} characters`);
-        } catch (docxError: unknown) {
+        } catch (docxError) {
           log("DOCX extraction failed:", docxError);
           throw new Error(`Failed to extract text from Word document: ${docxError instanceof Error ? docxError.message : 'Unknown error'}`);
         }
@@ -97,51 +102,6 @@ class DocumentProcessor {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error during document processing"
-      };
-    }
-  }
-
-  private async extractPDFText(buffer: Buffer): Promise<{ text: string; pageCount: number }> {
-    try {
-      // TEMPORARY FIX: Skip actual PDF parsing on Replit
-      log("Replit environment detected - using simplified PDF handling");
-      
-      // Create a simple text representation instead of parsing
-      return {
-        text: "[PDF content placeholder - parsing disabled in Replit environment]",
-        pageCount: 1
-      };
-      
-      // Original code commented out to prevent startup errors
-      /*
-      log(`Attempting to parse PDF, buffer size: ${buffer.length} bytes`);
-      
-      const data = await pdfParse(buffer, {
-        max: 0,
-        pagerender: function(pageData) {
-          return pageData.getTextContent();
-        }
-      });
-      
-      if (!data || !data.text) {
-        log("PDF parse returned empty data");
-        return {
-          text: "[PDF content extraction incomplete]",
-          pageCount: data?.numpages || 0
-        };
-      }
-      
-      log(`PDF parsed successfully: ${data.numpages} pages`);
-      return {
-        text: data.text,
-        pageCount: data.numpages || 0
-      };
-      */
-    } catch (error) {
-      log("PDF parsing error details:", error);
-      return {
-        text: "[PDF parsing disabled in Replit environment]",
-        pageCount: 0
       };
     }
   }

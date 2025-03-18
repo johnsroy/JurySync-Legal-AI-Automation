@@ -99,43 +99,7 @@ router.post("/upload", async (req, res) => {
       receiveTime: Date.now() - startTime
     });
 
-    // Special handling for PDFs in Replit environment
-    if (req.file.mimetype === "application/pdf") {
-      log("PDF file detected in Replit environment - using simplified processing");
-      
-      // Create a placeholder document for PDFs
-      const [document] = await db
-        .insert(documents)
-        .values({
-          title: req.file.originalname,
-          content: `[PDF placeholder for ${req.file.originalname} - content extraction disabled in Replit]`,
-          status: "PENDING",
-          userId: req.user?.id || 1,
-          fileType: req.file.mimetype,
-          fileSize: req.file.size,
-          metadata: {
-            originalName: req.file.originalname,
-            mimeType: req.file.mimetype,
-            size: req.file.size,
-            uploadTime: new Date().toISOString(),
-            source: "replit-pdf-placeholder"
-          },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        })
-        .returning();
-
-      return res.json({
-        success: true,
-        documentId: document.id,
-        status: "PENDING",
-        message: "PDF document uploaded with simplified processing",
-        processingTime: Date.now() - startTime
-      });
-    }
-
-    // Normal processing for non-PDF files
-    // Step 2: Process document content
+    // Step 2: Process document content - now works for all file types
     log("Starting document content processing...");
     const processResult = await documentProcessor.processDocument(
       req.file.buffer,

@@ -20,6 +20,7 @@ import { continuousLearningService } from './services/continuousLearningService'
 import documentAnalyticsRouter from './routes/document-analytics';
 import redlineRouter from "./routes/redline";
 import { handleStripeWebhook } from "./webhooks/stripe";
+import authRouter from "./routes/auth";
 
 // Configure global error handlers first
 process.on('uncaughtException', (error) => {
@@ -121,6 +122,9 @@ try {
 
   // Register all routes
   const server = registerRoutes(app);
+
+  // Add auth routes
+  app.use("/api/auth", authRouter);
 
   // API error handling middleware
   app.use(errorHandler);
