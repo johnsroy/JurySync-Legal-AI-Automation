@@ -11,7 +11,7 @@ import dotenv from 'dotenv';
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import passport from 'passport';
-import { errorHandler } from './middlewares/errorHandler';
+import { errorHandler } from './middleware/errorHandler';
 import { seedContractTemplates } from './services/seedContractTemplates';
 import contractAutomationRouter from './routes/contract-automation';
 import paymentsRouter from './routes/payments';

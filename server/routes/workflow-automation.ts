@@ -64,12 +64,20 @@ router.post("/upload", async (req, res) => {
   const startTime = Date.now();
   
   try {
-    // Step 1: Handle file upload
+    // Step 1: Handle file upload with better error messages
     await new Promise<void>((resolve, reject) => {
       upload(req, res, (err) => {
         if (err) {
-          log("Upload error:", err);
-          reject(err);
+          if (err.code === 'LIMIT_FILE_SIZE') {
+            log("File too large:", err);
+            reject(new Error("File size exceeds the 50MB limit"));
+          } else if (err.message && err.message.includes('Invalid file type')) {
+            log("Invalid file type:", err);
+            reject(err);
+          } else {
+            log("Upload error:", err);
+            reject(new Error("File upload failed. Please try again."));
+          }
         } else {
           resolve();
         }
@@ -273,6 +281,28 @@ router.get("/status/:documentId", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Failed to check document status"
+    });
+  }
+});
+
+// Add a new route for DB health check
+router.get("/health", async (req, res) => {
+  try {
+    // Try to query the database to verify connection
+    const result = await db.select({ count: db.fn.count() }).from(documents);
+    
+    return res.json({
+      success: true,
+      database: "connected",
+      documentsCount: result[0].count,
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    log("Database health check failed:", error);
+    return res.status(500).json({
+      success: false,
+      database: "error",
+      error: "Database connection issue"
     });
   }
 });

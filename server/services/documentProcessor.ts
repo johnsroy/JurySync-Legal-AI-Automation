@@ -102,14 +102,38 @@ class DocumentProcessor {
 
   private async extractPDFText(buffer: Buffer): Promise<{ text: string; pageCount: number }> {
     try {
-      const data = await pdfParse(buffer);
+      // Log the buffer size to help with debugging
+      log(`Attempting to parse PDF, buffer size: ${buffer.length} bytes`);
+      
+      const data = await pdfParse(buffer, {
+        // Add options to improve parsing success
+        max: 0, // No page limit
+        pagerender: function(pageData) {
+          return pageData.getTextContent();
+        }
+      });
+      
+      // Check if we got valid data
+      if (!data || !data.text) {
+        log("PDF parse returned empty data");
+        return {
+          text: "[PDF content extraction incomplete]",
+          pageCount: data?.numpages || 0
+        };
+      }
+      
+      log(`PDF parsed successfully: ${data.numpages} pages`);
       return {
-        text: data.text || "",
+        text: data.text,
         pageCount: data.numpages || 0
       };
     } catch (error) {
-      log("PDF parsing error:", error);
-      throw error;
+      log("PDF parsing error details:", error);
+      // More graceful error handling - return empty result instead of throwing
+      return {
+        text: "[PDF parsing failed - content could not be extracted]",
+        pageCount: 0
+      };
     }
   }
 }
