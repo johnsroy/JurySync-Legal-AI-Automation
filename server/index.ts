@@ -125,6 +125,15 @@ try {
 
   // Add auth routes
   app.use("/api/auth", authRouter);
+  app.post("/api/register", (req, res) => {
+    // Simply proxy the request to the auth router
+    authRouter(req, res, null);
+  });
+
+  app.post("/api/login", (req, res) => {
+    // Simply proxy the request to the auth router
+    authRouter(req, res, null);
+  });
 
   // API error handling middleware
   app.use(errorHandler);

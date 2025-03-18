@@ -151,4 +151,12 @@ router.post("/login", async (req, res) => {
   }
 });
 
+// Add aliases at the router level
+const aliasRouter = Router();
+aliasRouter.post("/register", (req, res) => router.handle(req, res));
+aliasRouter.post("/login", (req, res) => router.handle(req, res));
+
+export { aliasRouter };
+
+// Export the router as default
 export default router; 
