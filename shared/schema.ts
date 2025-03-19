@@ -33,6 +33,18 @@ export const users = pgTable("users", {
   uploadCount: integer("upload_count").default(0),
   stripeCustomerId: text("stripe_customer_id"),
   stripePriceId: text("stripe_price_id"),
+  trialUsesRemaining: integer("trial_uses_remaining").default(1).notNull(),
+  trialFeatures: jsonb("trial_features").$type<{
+    documentProcessing: boolean;
+    contractAutomation: boolean;
+    complianceAuditing: boolean;
+    legalResearch: boolean;
+  }>().default({
+    documentProcessing: false,
+    contractAutomation: false,
+    complianceAuditing: false,
+    legalResearch: false
+  }),
 });
 
 // Validation schema for user registration

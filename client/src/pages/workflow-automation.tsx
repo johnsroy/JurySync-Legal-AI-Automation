@@ -25,6 +25,8 @@ import { generateDraftAnalysis } from "@/services/anthropic-service";
 import { LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useFeatures } from "@/hooks/use-features";
+import { Redirect } from "wouter";
 
 // Add legal-themed loading messages
 const legalLoadingMessages = [
@@ -237,6 +239,9 @@ export function WorkflowAutomation() {
   }>>([]);
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState(legalLoadingMessages[0]);
+  const { useFeature, isUsingFeature } = useFeatures();
+  const [featureAvailable, setFeatureAvailable] = useState<boolean | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
 
   // Effect to update document analysis based on workflow completion
@@ -266,6 +271,17 @@ export function WorkflowAutomation() {
       return () => clearInterval(interval);
     }
   }, [currentStage, workflowProgress]);
+
+  useEffect(() => {
+    const checkFeature = async () => {
+      setIsLoading(true);
+      const available = await useFeature("documentProcessing");
+      setFeatureAvailable(available);
+      setIsLoading(false);
+    };
+    
+    checkFeature();
+  }, []);
 
   const handleTextSelect = useCallback(() => {
     const selection = window.getSelection();
@@ -623,6 +639,13 @@ export function WorkflowAutomation() {
     hover: { x: 10, opacity: 0.8, transition: { duration: 0.3 } }
   };
 
+  if (isLoading) {
+    return <div>Checking feature availability...</div>;
+  }
+
+  if (featureAvailable === false) {
+    return <Redirect to="/pricing" />;
+  }
 
   return (
     <div className="flex">

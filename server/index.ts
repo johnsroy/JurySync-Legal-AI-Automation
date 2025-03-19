@@ -23,6 +23,7 @@ import { handleStripeWebhook } from "./webhooks/stripe";
 import authRouter from "./routes/auth";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import featureRouter from "./routes/features";
 
 // Configure global error handlers first
 process.on("uncaughtException", (error) => {
@@ -143,7 +144,7 @@ try {
         });
       }
       
-      // Insert user with only the fields that exist in the schema
+      // Insert user with trial settings
       const [newUser] = await db.insert(users)
         .values({
           username,
@@ -153,6 +154,13 @@ try {
           lastName: lastName || "",
           role: role || "CLIENT",
           subscriptionStatus: "TRIAL",
+          trialUsesRemaining: 1,
+          trialFeatures: {
+            documentProcessing: false,
+            contractAutomation: false,
+            complianceAuditing: false,
+            legalResearch: false
+          },
           createdAt: new Date(),
           updatedAt: new Date()
         })
@@ -190,6 +198,9 @@ try {
 
   // Add auth routes
   app.use("/api/auth", authRouter);
+
+  // Add feature routes
+  app.use("/api/features", featureRouter);
 
   // THEN register all other routes
   const server = registerRoutes(app);
