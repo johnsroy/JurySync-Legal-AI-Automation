@@ -14,11 +14,14 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center space-x-8">
             <Link href="/products" className="text-gray-700 hover:text-green-600">Products</Link>
-            <Link href="/customers" className="text-gray-700 hover:text-green-600">Customers</Link>
             <Link href="/pricing" className="text-gray-700 hover:text-green-600">Pricing</Link>
-            <Link href="/company" className="text-gray-700 hover:text-green-600">Company</Link>
             <Link href="/login">
               <Button variant="ghost" className="text-gray-700 hover:text-green-600">Login</Button>
+            </Link>
+            <Link href="/register">
+              <Button className="bg-green-600 hover:bg-green-700 text-white">
+                Start Free Trial
+              </Button>
             </Link>
           </div>
         </div>

@@ -9,6 +9,7 @@ import LandingPage from "@/pages/landing-page";
 import LoginPage from "@/pages/login-page";
 import RegisterPage from "@/pages/register-page";
 import PricingPage from "@/pages/pricing-page";
+import ProductsPage from "@/pages/products-page";
 import SubscriptionPage from "@/pages/subscription-page";
 import Dashboard from "@/pages/dashboard";
 import ComplianceAuditing from "@/pages/compliance-auditing";
@@ -34,7 +35,10 @@ const Router: FC = () => {
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
       <Route path="/pricing" component={PricingPage} />
+      <Route path="/products" component={ProductsPage} />
       <Route path="/subscription" component={SubscriptionPage} />
+      <Route path="/subscription/success" component={SubscriptionSuccess} />
+      <Route path="/subscription/cancel" component={SubscriptionCancel} />
 
       {/* Protected routes with Layout */}
       <Route path="/dashboard">
@@ -103,14 +107,8 @@ const Router: FC = () => {
         </Layout>
       </Route>
 
-      <Route path="/subscription/success" component={SubscriptionSuccess} />
-      <Route path="/subscription/cancel" component={SubscriptionCancel} />
-
-      <Route>
-        <Layout>
-          <NotFound />
-        </Layout>
-      </Route>
+      {/* Catch all route */}
+      <Route component={NotFound} />
     </Switch>
   );
 }

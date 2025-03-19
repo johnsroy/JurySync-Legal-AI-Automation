@@ -41,24 +41,18 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: InsertUser) => {
     try {
-      // Register user
+      // Register user - add any form data conversions if needed
       await registerMutation.mutateAsync(data);
 
-      // Start free trial
-      const response = await fetch('/api/subscription/trial', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to start trial');
-      }
-
+      // Show success notification
       toast({
         title: "Welcome to JurySync!",
         description: "Your free trial has started.",
       });
+      
+      // Registration will automatically redirect to dashboard via the hook
     } catch (error) {
+      // Show error notification
       toast({
         title: "Registration Error",
         description: error instanceof Error ? error.message : "Registration failed",
