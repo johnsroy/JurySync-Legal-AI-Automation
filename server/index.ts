@@ -135,8 +135,78 @@ try {
   // Add feature routes
   app.use("/api/features", featureRouter);
 
+  // Direct registration endpoint
+  app.post("/api/register", async (req, res) => {
+    console.log("Registration request received at /api/register");
+    try {
+      const { username, email, password, firstName, lastName, role = "CLIENT" } = req.body;
+      
+      // Input validation
+      if (!username || !email || !password) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields"
+        });
+      }
+      
+      // Check if user already exists
+      const existingUser = await db.select().from(users).where(eq(users.email, email));
+      if (existingUser.length > 0) {
+        return res.status(409).json({
+          success: false,
+          error: "User with this email already exists"
+        });
+      }
+      
+      // Insert user
+      const [newUser] = await db.insert(users)
+        .values({
+          username,
+          email,
+          password,
+          firstName: firstName || "",
+          lastName: lastName || "",
+          role: role || "CLIENT",
+          subscriptionStatus: "TRIAL",
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        .returning();
+      
+      // Generate JWT token
+      const token = jwt.sign(
+        { userId: newUser.id, email: newUser.email },
+        process.env.JWT_SECRET || "fallback-secret-key",
+        { expiresIn: "24h" }
+      );
+      
+      // Return success with token
+      return res.status(201).json({
+        success: true,
+        message: "User registered successfully",
+        token,
+        user: newUser
+      });
+      
+    } catch (error) {
+      console.error("Registration error:", error);
+      return res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Registration failed. Please try again."
+      });
+    }
+  });
+
   // Register all other routes
   const server = registerRoutes(app);
+
+  // Add a simpler fallback route for registration 
+  // This is a backup in case the first one gets overridden somehow
+  app.post("/register", (req, res) => {
+    console.log("Fallback registration endpoint reached");
+    // Forward to main handler
+    app.handle(req, res);
+  });
 
   // API error handling middleware
   app.use(errorHandler);
