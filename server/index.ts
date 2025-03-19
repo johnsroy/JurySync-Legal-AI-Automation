@@ -109,7 +109,6 @@ try {
   passport.deserializeUser(async (id: number, done) => {
     try {
       const [user] = await db.select().from(users).where(eq(users.id, id));
-
       if (!user) {
         return done(null, false);
       }
@@ -130,79 +129,13 @@ try {
   // Setup authentication
   setupAuth(app);
 
-  // Direct route for register without going through /api/auth
-  app.post("/api/register", async (req, res) => {
-    console.log("Registration request received:", req.body);
-    try {
-      const { username, email, password, firstName, lastName, role = "CLIENT" } = req.body;
-      
-      // Input validation
-      if (!username || !email || !password) {
-        return res.status(400).json({
-          success: false,
-          error: "Missing required fields"
-        });
-      }
-      
-      // Insert user with trial settings
-      const [newUser] = await db.insert(users)
-        .values({
-          username,
-          email,
-          password,
-          firstName: firstName || "",
-          lastName: lastName || "",
-          role: role || "CLIENT",
-          subscriptionStatus: "TRIAL",
-          trialUsesRemaining: 1,
-          trialFeatures: {
-            documentProcessing: false,
-            contractAutomation: false,
-            complianceAuditing: false,
-            legalResearch: false
-          },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        })
-        .returning();
-      
-      // Generate JWT token
-      const token = jwt.sign(
-        { userId: newUser.id, email: newUser.email },
-        process.env.JWT_SECRET || "fallback-secret-key",
-        { expiresIn: "24h" }
-      );
-      
-      // Return success with token
-      return res.status(201).json({
-        success: true,
-        message: "User registered successfully",
-        token,
-        user: newUser
-      });
-      
-    } catch (error) {
-      console.error("Registration error:", error);
-      return res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : "Registration failed. Please try again."
-      });
-    }
-  });
-
-  app.post("/api/login", (req, res) => {
-    // Forward to auth router login endpoint
-    req.url = "/login";
-    authRouter(req, res, () => {});
-  });
-
   // Add auth routes
   app.use("/api/auth", authRouter);
 
   // Add feature routes
   app.use("/api/features", featureRouter);
 
-  // THEN register all other routes
+  // Register all other routes
   const server = registerRoutes(app);
 
   // API error handling middleware
@@ -225,10 +158,10 @@ try {
     // Initialize services after server is running
     setTimeout(async () => {
       try {
-        log("Starting service initialization...");
-        // Re-enable PDF service here after server is running
+        log("Starting background service initialization...");
+        // Background tasks are deferred and will not block server startup
       } catch (error) {
-        log("Service initialization error:", error);
+        log("Background service initialization error:", error);
       }
     }, 2000);
   });
