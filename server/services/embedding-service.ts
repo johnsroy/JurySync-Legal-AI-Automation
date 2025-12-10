@@ -41,23 +41,34 @@ initializeChroma().catch(console.error);
  * @returns A numerical embedding vector (1536 dimensions for text-embedding-3-small)
  */
 export async function createEmbedding(text: string): Promise<number[]> {
+  if (!text || text.trim().length === 0) {
+    throw new Error("Text cannot be empty");
+  }
+
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY environment variable is not set");
   }
 
   try {
     // Truncate text if too long (max ~8000 tokens for embedding model)
-    const truncatedText = text.substring(0, 30000);
+    const MAX_CHARS = 30000;
+    const truncatedText = text.length > MAX_CHARS
+      ? text.substring(0, MAX_CHARS)
+      : text;
 
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: truncatedText,
     });
 
+    if (!response.data || response.data.length === 0) {
+      throw new Error("No embedding returned from OpenAI");
+    }
+
     return response.data[0].embedding;
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error creating embedding:", error);
-    throw new Error(`Failed to create embedding: ${error.message}`);
+    throw new Error(`Failed to create embedding: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -154,23 +165,34 @@ export function cosineSimilarity(a: number[], b: number[]): number {
  * @returns Array of embedding vectors
  */
 export async function createBatchEmbeddings(texts: string[]): Promise<number[][]> {
+  if (!texts || texts.length === 0) {
+    return [];
+  }
+
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY environment variable is not set");
   }
 
   try {
-    // Truncate each text
-    const truncatedTexts = texts.map(text => text.substring(0, 30000));
+    // Filter out empty texts and truncate long ones
+    const MAX_CHARS = 30000;
+    const processedTexts = texts
+      .filter(text => text && text.trim().length > 0)
+      .map(text => text.length > MAX_CHARS ? text.substring(0, MAX_CHARS) : text);
+
+    if (processedTexts.length === 0) {
+      return [];
+    }
 
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
-      input: truncatedTexts,
+      input: processedTexts,
     });
 
     return response.data.map(item => item.embedding);
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error creating batch embeddings:", error);
-    throw new Error(`Failed to create batch embeddings: ${error.message}`);
+    throw new Error(`Failed to create batch embeddings: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 

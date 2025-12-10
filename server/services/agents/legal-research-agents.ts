@@ -1,9 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { db } from "../../db";
-import { legalDocuments, citationNetwork } from "@shared/schema/legal-research";
-import { createEmbedding, searchSimilarDocuments } from "../embedding-service";
-import { eq, inArray, sql, or, ilike, and } from "drizzle-orm";
+import { legalDocuments, citationNetwork, type LegalDocument, type CitationNetwork } from "@shared/schema/legal-research";
+import { createEmbedding, cosineSimilarity, searchSimilarDocuments } from "../embedding-service";
+import { eq, and, or, ilike, inArray, sql } from "drizzle-orm";
 
 // Initialize AI model - Gemini for query analysis and insight generation
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -52,6 +52,14 @@ export type QueryAnalysis = z.infer<typeof QueryAnalysisSchema>;
 export type CitationAnalysisResult = z.infer<typeof CitationAnalysisSchema>;
 export type InsightsResult = z.infer<typeof InsightsSchema>;
 
+// Search filters interface
+interface SearchFilters {
+  jurisdiction?: string;
+  documentType?: string;
+  dateRange?: { start?: Date; end?: Date };
+  court?: string;
+}
+
 // Agent System Orchestrator
 export class LegalResearchAgentSystem {
   private queryAnalyzer: QueryAnalysisAgent;
@@ -66,12 +74,7 @@ export class LegalResearchAgentSystem {
     this.insightGenerator = new InsightGenerationAgent();
   }
 
-  async processQuery(query: string, filters: {
-    jurisdiction?: string;
-    documentType?: string;
-    dateRange?: { start?: Date; end?: Date };
-    court?: string;
-  } = {}) {
+  async processQuery(query: string, filters: SearchFilters = {}) {
     try {
       // 1. Analyze query to understand intent and extract key terms
       console.log("Step 1: Analyzing query...");
@@ -103,9 +106,9 @@ export class LegalResearchAgentSystem {
           processingTimestamp: new Date().toISOString()
         }
       };
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error in legal research agent system:", error);
-      throw new Error(`Legal research processing failed: ${error.message}`);
+      throw new Error(`Legal research processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }
@@ -152,7 +155,7 @@ class QueryAnalysisAgent {
 
       const parsed = JSON.parse(jsonMatch[0]);
       return QueryAnalysisSchema.parse(parsed);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Query analysis error:", error);
       return this.fallbackAnalysis(query);
     }
@@ -180,12 +183,7 @@ class QueryAnalysisAgent {
 
 // Document Retrieval Agent - Retrieves relevant legal documents
 class DocumentRetrievalAgent {
-  async retrieve(queryAnalysis: QueryAnalysis, filters: {
-    jurisdiction?: string;
-    documentType?: string;
-    dateRange?: { start?: Date; end?: Date };
-    court?: string;
-  }): Promise<any[]> {
+  async retrieve(queryAnalysis: QueryAnalysis, filters: SearchFilters): Promise<LegalDocument[]> {
     try {
       // First, try vector similarity search
       let vectorResults: string[] = [];
@@ -236,7 +234,7 @@ class DocumentRetrievalAgent {
       }
 
       // Execute the database query
-      let documents;
+      let documents: LegalDocument[];
       if (conditions.length > 0) {
         documents = await db
           .select()
@@ -259,11 +257,34 @@ class DocumentRetrievalAgent {
         documents = [...vectorDocs, ...otherDocs];
       }
 
+      // If we have documents and embedding capability, also rank by relevance
+      if (documents.length > 0 && queryAnalysis.query) {
+        try {
+          const queryEmbedding = await createEmbedding(queryAnalysis.query);
+
+          // Calculate similarity scores for documents with embeddings
+          const documentsWithScores = documents.map(doc => {
+            let score = 0;
+            if (doc.vectorEmbedding && Array.isArray(doc.vectorEmbedding)) {
+              score = cosineSimilarity(queryEmbedding, doc.vectorEmbedding as number[]);
+            }
+            return { ...doc, relevanceScore: score };
+          });
+
+          // Sort by relevance score
+          documentsWithScores.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+
+          console.log(`Retrieved ${documentsWithScores.length} documents`);
+          return documentsWithScores.slice(0, 20);
+        } catch (embeddingError) {
+          console.error("Embedding search failed, returning text search results:", embeddingError);
+        }
+      }
+
       console.log(`Retrieved ${documents.length} documents`);
-      return documents;
-    } catch (error: any) {
+      return documents.slice(0, 20);
+    } catch (error) {
       console.error("Document retrieval error:", error);
-      // Return empty array on error to allow processing to continue
       return [];
     }
   }
@@ -271,7 +292,7 @@ class DocumentRetrievalAgent {
 
 // Citation Analysis Agent - Analyzes citation relationships
 class CitationAnalysisAgent {
-  async analyze(documents: any[]): Promise<CitationAnalysisResult> {
+  async analyze(documents: LegalDocument[]): Promise<CitationAnalysisResult> {
     if (documents.length === 0) {
       return {
         totalCitations: 0,
@@ -298,12 +319,12 @@ class CitationAnalysisAgent {
 
       // Calculate citation statistics
       const positiveTreatments = citations.filter(c =>
-        c.treatment === "POSITIVE" || c.treatment === "FOLLOWED"
+        c.treatment === "POSITIVE" || c.treatment === "FOLLOWED" || c.treatment === "AFFIRMED"
       ).length;
 
       const negativeTreatments = citations.filter(c =>
         c.treatment === "NEGATIVE" || c.treatment === "OVERRULED" ||
-        c.treatment === "DISTINGUISHED" || c.treatment === "QUESTIONED"
+        c.treatment === "DISTINGUISHED" || c.treatment === "QUESTIONED" || c.treatment === "CRITICIZED"
       ).length;
 
       // Find key precedents (most cited documents)
@@ -321,7 +342,7 @@ class CitationAnalysisAgent {
           const lastCitation = citations.find(c => c.citedDocumentId === docId);
           return {
             documentId: docId,
-            title: doc?.title || `Document ${docId}`,
+            title: doc?.title || doc?.citation || `Document ${docId}`,
             citationCount: count,
             treatment: lastCitation?.treatment || "NEUTRAL"
           };
@@ -341,7 +362,7 @@ class CitationAnalysisAgent {
         keyPrecedents,
         citationNetwork: citationNetworkEdges
       };
-    } catch (error: any) {
+    } catch (error) {
       console.error("Citation analysis error:", error);
       return {
         totalCitations: 0,
@@ -358,7 +379,7 @@ class CitationAnalysisAgent {
 class InsightGenerationAgent {
   async generate(
     query: string,
-    documents: any[],
+    documents: LegalDocument[],
     citationAnalysis: CitationAnalysisResult
   ): Promise<InsightsResult> {
     try {
@@ -374,8 +395,9 @@ class InsightGenerationAgent {
       const documentSummaries = documents.slice(0, 10).map(doc => ({
         title: doc.title,
         jurisdiction: doc.jurisdiction,
-        summary: doc.holdingSummary || doc.content?.substring(0, 500),
-        citation: doc.citation
+        summary: doc.holdingSummary || (doc.content ? doc.content.substring(0, 500) : ''),
+        citation: doc.citation,
+        blackLetter: doc.blackLetterLaw || ''
       }));
 
       const prompt = `
@@ -421,13 +443,13 @@ class InsightGenerationAgent {
 
       const parsed = JSON.parse(jsonMatch[0]);
       return InsightsSchema.parse(parsed);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Insight generation error:", error);
       return this.fallbackInsights(query, documents);
     }
   }
 
-  private fallbackInsights(query: string, documents: any[]): InsightsResult {
+  private fallbackInsights(query: string, documents: LegalDocument[]): InsightsResult {
     return {
       summary: `Research completed for: "${query}". Found ${documents.length} relevant documents.`,
       keyFindings: documents.slice(0, 3).map(doc =>

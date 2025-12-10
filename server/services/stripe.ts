@@ -9,7 +9,36 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   typescript: true,
 });
 
+export interface CheckoutSessionParams {
+  email: string;
+  priceId: string;
+  userId: number;
+  planId: number;
+  isTrial?: boolean;
+  successUrl: string;
+  cancelUrl: string;
+}
+
+export interface CheckoutSessionResult {
+  success: boolean;
+  id?: string;
+  url?: string | null;
+  error?: string;
+}
+
 export class StripeService {
+  /**
+   * Verifies if an email is a valid student email (ends with .edu or other educational domains)
+   */
+  async verifyStudentEmail(email: string): Promise<boolean> {
+    if (!email) return false;
+
+    // Check if email ends with common educational domains
+    const educationalDomains = ['.edu', '.edu.au', '.ac.uk', '.edu.cn', '.edu.in'];
+    const lowercaseEmail = email.toLowerCase();
+    return educationalDomains.some(domain => lowercaseEmail.endsWith(domain));
+  }
+
   async createCheckoutSession({
     email,
     priceId,
@@ -18,15 +47,7 @@ export class StripeService {
     isTrial = false,
     successUrl,
     cancelUrl,
-  }: {
-    email: string;
-    priceId: string;
-    userId: number;
-    planId: number;
-    isTrial?: boolean;
-    successUrl: string;
-    cancelUrl: string;
-  }) {
+  }: CheckoutSessionParams): Promise<CheckoutSessionResult> {
     try {
       console.log('Creating checkout session...', { email, priceId, userId, planId, isTrial });
 
@@ -61,25 +82,14 @@ export class StripeService {
       const session = await stripe.checkout.sessions.create(sessionConfig);
 
       console.log('Checkout session created:', session.id);
-      return session; // Return the full session object for compatibility
+      return { success: true, id: session.id, url: session.url };
     } catch (error) {
       console.error('Error creating checkout session:', error);
-      throw error; // Throw to allow proper error handling upstream
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create checkout session'
+      };
     }
-  }
-
-  /**
-   * Verifies if an email is a valid student email (ends with .edu)
-   */
-  async verifyStudentEmail(email: string): Promise<boolean> {
-    if (!email) return false;
-
-    // Check if email ends with .edu (common for US universities)
-    // You can extend this to include other educational domains
-    const educationalDomains = ['.edu', '.edu.au', '.ac.uk', '.edu.cn', '.edu.in'];
-
-    const lowercaseEmail = email.toLowerCase();
-    return educationalDomains.some(domain => lowercaseEmail.endsWith(domain));
   }
 
   private async getOrCreateCustomer(email: string): Promise<Stripe.Customer> {
