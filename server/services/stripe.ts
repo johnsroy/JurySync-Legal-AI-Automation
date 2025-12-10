@@ -9,22 +9,46 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   typescript: true,
 });
 
+export interface CheckoutSessionParams {
+  email: string;
+  priceId: string;
+  userId: number;
+  planId: number;
+  isTrial?: boolean;
+  successUrl: string;
+  cancelUrl: string;
+}
+
+export interface CheckoutSessionResult {
+  success: boolean;
+  id?: string;
+  url?: string | null;
+  error?: string;
+}
+
 export class StripeService {
+  /**
+   * Verifies if an email address is a valid student email (.edu domain)
+   * @param email - The email address to verify
+   * @returns true if the email ends with .edu
+   */
+  async verifyStudentEmail(email: string): Promise<boolean> {
+    if (!email) {
+      return false;
+    }
+    // Check if email ends with .edu (case insensitive)
+    return email.toLowerCase().endsWith('.edu');
+  }
+
   async createCheckoutSession({
     email,
     priceId,
     userId,
     planId,
+    isTrial,
     successUrl,
     cancelUrl,
-  }: {
-    email: string;
-    priceId: string;
-    userId: number;
-    planId: number;
-    successUrl: string;
-    cancelUrl: string;
-  }) {
+  }: CheckoutSessionParams): Promise<CheckoutSessionResult> {
     try {
       console.log('Creating checkout session...', { email, priceId, userId, planId });
 
@@ -33,7 +57,7 @@ export class StripeService {
       console.log('Customer retrieved/created:', customer.id);
 
       // Create Checkout Session for subscription
-      const session = await stripe.checkout.sessions.create({
+      const sessionConfig: Stripe.Checkout.SessionCreateParams = {
         customer: customer.id,
         mode: 'subscription',
         payment_method_types: ['card'],
@@ -47,10 +71,19 @@ export class StripeService {
           userId: userId.toString(),
           planId: planId.toString(),
         },
-      });
+      };
+
+      // Add trial period for student plans
+      if (isTrial) {
+        sessionConfig.subscription_data = {
+          trial_period_days: 14,
+        };
+      }
+
+      const session = await stripe.checkout.sessions.create(sessionConfig);
 
       console.log('Checkout session created:', session.id);
-      return { success: true, url: session.url };
+      return { success: true, id: session.id, url: session.url };
     } catch (error) {
       console.error('Error creating checkout session:', error);
       return { 

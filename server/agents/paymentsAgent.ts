@@ -1,8 +1,45 @@
 import { stripe, stripeService } from '../services/stripe';
 import { db } from '../db';
 import { eq } from 'drizzle-orm';
-import { subscriptions, subscriptionPlans } from '@shared/schema/subscriptions';
+import { subscriptions, subscriptionPlans, type Subscription, type SubscriptionPlan } from '@shared/schema/subscriptions';
 import type { User } from '@shared/schema';
+import Stripe from 'stripe';
+
+// Type definitions for PaymentsAgent responses
+interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+}
+
+interface CheckoutResult {
+  success: boolean;
+  sessionId?: string;
+  error?: string;
+}
+
+interface CancellationResult {
+  success: boolean;
+  error?: string;
+}
+
+interface SubscriptionStatusResult {
+  success: boolean;
+  subscription?: {
+    id: number;
+    userId: number;
+    planId: number;
+    stripeCustomerId: string;
+    stripeSubscriptionId: string;
+    status: string;
+    currentPeriodStart: Date;
+    currentPeriodEnd: Date;
+    cancelAtPeriodEnd: boolean;
+    createdAt: Date;
+    plan: SubscriptionPlan;
+    stripeSubscription: Stripe.Subscription;
+  } | null;
+  error?: string;
+}
 
 export class PaymentsAgent {
   constructor() {
@@ -11,10 +48,7 @@ export class PaymentsAgent {
     }
   }
 
-  async validateUserForSubscription(user: User, planId: number): Promise<{ 
-    isValid: boolean; 
-    error?: string; 
-  }> {
+  async validateUserForSubscription(user: User, planId: number): Promise<ValidationResult> {
     try {
       if (!user) {
         return { isValid: false, error: 'User not authenticated' };
@@ -50,11 +84,7 @@ export class PaymentsAgent {
     }
   }
 
-  async initializeCheckout(user: User, planId: number, interval: 'month' | 'year'): Promise<{ 
-    success: boolean; 
-    sessionId?: string; 
-    error?: string; 
-  }> {
+  async initializeCheckout(user: User, planId: number, interval: 'month' | 'year'): Promise<CheckoutResult> {
     try {
       const validation = await this.validateUserForSubscription(user, planId);
       if (!validation.isValid) {
@@ -96,10 +126,7 @@ export class PaymentsAgent {
     }
   }
 
-  async cancelSubscription(user: User): Promise<{ 
-    success: boolean; 
-    error?: string; 
-  }> {
+  async cancelSubscription(user: User): Promise<CancellationResult> {
     try {
       const subscription = await db
         .select()
@@ -129,44 +156,102 @@ export class PaymentsAgent {
     }
   }
 
-  async getSubscriptionStatus(user: User): Promise<{
-    success: boolean;
-    subscription?: any;
-    error?: string;
-  }> {
+  async getSubscriptionStatus(user: User): Promise<SubscriptionStatusResult> {
     try {
-      const subscription = await db
+      const subscriptionResult = await db
         .select()
         .from(subscriptions)
         .where(eq(subscriptions.userId, user.id))
         .limit(1);
 
-      if (!subscription || subscription.length === 0) {
+      if (!subscriptionResult || subscriptionResult.length === 0) {
         return { success: true, subscription: null };
       }
 
+      const subscription = subscriptionResult[0];
+
       // Get plan details
-      const plan = await db
+      const planResult = await db
         .select()
         .from(subscriptionPlans)
-        .where(eq(subscriptionPlans.id, subscription[0].planId))
+        .where(eq(subscriptionPlans.id, subscription.planId))
         .limit(1);
 
-      const stripeSubscription = await stripe.subscriptions.retrieve(
-        subscription[0].stripeSubscriptionId
-      );
+      if (!planResult || planResult.length === 0) {
+        return { success: false, error: 'Subscription plan not found' };
+      }
 
-      return { 
-        success: true, 
+      const plan = planResult[0];
+
+      // Get Stripe subscription details
+      let stripeSubscription: Stripe.Subscription;
+      try {
+        stripeSubscription = await stripe.subscriptions.retrieve(
+          subscription.stripeSubscriptionId
+        );
+      } catch (stripeError) {
+        console.error('Failed to retrieve Stripe subscription:', stripeError);
+        // Return local data even if Stripe fails
+        return {
+          success: true,
+          subscription: {
+            ...subscription,
+            plan,
+            stripeSubscription: null as unknown as Stripe.Subscription
+          }
+        };
+      }
+
+      return {
+        success: true,
         subscription: {
-          ...subscription[0],
-          plan: plan[0],
+          ...subscription,
+          plan,
           stripeSubscription
         }
       };
     } catch (error) {
       console.error('Subscription status error:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Failed to fetch subscription status' };
+    }
+  }
+
+  /**
+   * Reactivate a canceled subscription before it expires
+   */
+  async reactivateSubscription(user: User): Promise<CancellationResult> {
+    try {
+      const subscriptionResult = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, user.id))
+        .limit(1);
+
+      if (!subscriptionResult || subscriptionResult.length === 0) {
+        return { success: false, error: 'No subscription found' };
+      }
+
+      const subscription = subscriptionResult[0];
+
+      if (!subscription.cancelAtPeriodEnd) {
+        return { success: false, error: 'Subscription is not scheduled for cancellation' };
+      }
+
+      // Reactivate in Stripe
+      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        cancel_at_period_end: false
+      });
+
+      // Update local database
+      await db
+        .update(subscriptions)
+        .set({ cancelAtPeriodEnd: false })
+        .where(eq(subscriptions.id, subscription.id));
+
+      return { success: true };
+    } catch (error) {
+      console.error('Reactivation error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to reactivate subscription' };
     }
   }
 }
