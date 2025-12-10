@@ -1,3 +1,7 @@
+import dotenv from "dotenv";
+// Load environment variables FIRST, before any other imports
+dotenv.config();
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic } from "./vite";
@@ -7,7 +11,6 @@ import connectPg from "connect-pg-simple";
 import { db } from "./db";
 import cors from "cors";
 import debug from "debug";
-import dotenv from "dotenv";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import passport from "passport";
@@ -37,7 +40,6 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 const log = debug("app:server");
-dotenv.config();
 
 // Create Express application
 const app = express();

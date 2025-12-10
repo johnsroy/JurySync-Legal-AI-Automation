@@ -4,7 +4,7 @@ import { contractTemplates } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
-import PDFNet from '@pdftron/pdfnet-node';
+import pdfParse from 'pdf-parse';
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 
@@ -27,39 +27,14 @@ export async function parsePdfTemplate(pdfBuffer: Buffer): Promise<string> {
     throw new Error("Invalid PDF buffer provided");
   }
 
-  let pdfdoc = null;
   try {
-    // Initialize PDFTron with proper licensing
-    await PDFNet.initialize();
+    // Parse PDF using pdf-parse library
+    const data = await pdfParse(pdfBuffer);
 
-    // Create document from buffer
-    pdfdoc = await PDFNet.PDFDoc.createFromBuffer(pdfBuffer);
-    await pdfdoc.initSecurityHandler();
-
-    let extractedText = '';
-    const pageCount = await pdfdoc.getPageCount();
-    console.log(`Processing PDF with ${pageCount} pages`);
-
-    for (let i = 1; i <= pageCount; i++) {
-      try {
-        const page = await pdfdoc.getPage(i);
-        const reader = await PDFNet.TextExtractor.create();
-        await reader.begin(page);
-
-        // Extract text with layout analysis
-        const pageText = await reader.getAsText();
-        extractedText += pageText + '\n';
-
-        console.log(`Successfully processed page ${i}`);
-      } catch (pageError) {
-        console.error(`Error processing page ${i}:`, pageError);
-        // Continue with next page even if current page fails
-        continue;
-      }
-    }
+    console.log(`Processing PDF with ${data.numpages} pages`);
 
     // Clean up extracted text with improved formatting
-    const cleanedText = extractedText
+    const cleanedText = data.text
       .replace(/\r\n/g, '\n')
       .replace(/\s+/g, ' ')
       .replace(/\n{3,}/g, '\n\n') // Normalize multiple line breaks
@@ -73,12 +48,7 @@ export async function parsePdfTemplate(pdfBuffer: Buffer): Promise<string> {
     return formatTemplateText(cleanedText);
   } catch (error) {
     console.error("PDF parsing error:", error);
-    throw new Error(`Enhanced PDF parsing failed: ${error.message}`);
-  } finally {
-    if (pdfdoc) {
-      pdfdoc.destroy();
-    }
-    await PDFNet.terminate();
+    throw new Error(`Enhanced PDF parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 

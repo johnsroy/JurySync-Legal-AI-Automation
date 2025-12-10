@@ -6,13 +6,9 @@ import type { LegalDocument } from '@shared/schema';
 import { z } from 'zod';
 
 // Initialize Anthropic client
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error('Missing ANTHROPIC_API_KEY environment variable');
-}
-
-const anthropic = new Anthropic({
+const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
-});
+}) : null;
 
 // Validation schemas
 const embeddingSchema = z.object({
@@ -130,12 +126,17 @@ export class LegalResearchService {
   async initialize() {
     if (!this.initialized) {
       try {
-        await this.loadPrePopulatedDocuments();
+        if (anthropic) {
+          await this.loadPrePopulatedDocuments();
+        } else {
+          console.warn('Legal research service skipping document loading - Anthropic API key not configured');
+        }
         this.initialized = true;
         console.log('Legal research service initialized successfully');
       } catch (error) {
         console.error('Failed to initialize legal research service:', error);
-        throw error;
+        // Don't throw - allow server to start even if this fails
+        this.initialized = true;
       }
     }
   }
@@ -235,6 +236,7 @@ ${text.substring(0, 8000)}`
           content: `347 U.S. 483 (1954). This landmark case overturned Plessy v. Ferguson and declared state laws establishing separate public schools for black and white students to be unconstitutional. The Supreme Court's unanimous decision stated that "separate educational facilities are inherently unequal."`,
           documentType: "CASE_LAW",
           jurisdiction: "United States",
+          legalTopic: "Constitutional Law",
           date: new Date("1954-05-17"),
           status: "ACTIVE",
           metadata: {

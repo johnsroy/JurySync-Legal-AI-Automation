@@ -1,9 +1,10 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
-import * as schema from "@shared/schema";
+import dotenv from 'dotenv';
+// Load environment variables for database connection
+dotenv.config();
 
-neonConfig.webSocketConstructor = ws;
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as schema from "@shared/schema";
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -12,12 +13,11 @@ if (!process.env.DATABASE_URL) {
 }
 
 // Improved connection pool settings
-export const pool = new Pool({ 
+export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 10, // Reduced from 20 to prevent connection overload
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000, // Increased from 2000 to allow more time for connection
-  maxUses: 7500,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
 });
 
