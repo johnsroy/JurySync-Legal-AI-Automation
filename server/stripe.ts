@@ -153,16 +153,222 @@ export async function handleWebhook(req: Request, res: Response) {
 }
 
 async function handleSubscriptionChange(subscription: Stripe.Subscription) {
-  // TODO: Implement subscription status update in database
-  console.log('Subscription changed:', subscription.id, subscription.status);
+  try {
+    const customerId = subscription.customer as string;
+    const status = subscription.status;
+    const priceId = subscription.items.data[0]?.price.id;
+    const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+    const cancelAtPeriodEnd = subscription.cancel_at_period_end;
+
+    console.log('Processing subscription change:', {
+      subscriptionId: subscription.id,
+      customerId,
+      status,
+      priceId
+    });
+
+    // Import db and users table dynamically to avoid circular dependencies
+    const { db } = await import('./db');
+    const { users } = await import('@shared/schema');
+    const { eq } = await import('drizzle-orm');
+
+    // Map Stripe status to our subscription status
+    let subscriptionStatus: string;
+    switch (status) {
+      case 'active':
+        subscriptionStatus = 'ACTIVE';
+        break;
+      case 'past_due':
+        subscriptionStatus = 'PAST_DUE';
+        break;
+      case 'canceled':
+      case 'unpaid':
+        subscriptionStatus = 'CANCELLED';
+        break;
+      case 'trialing':
+        subscriptionStatus = 'TRIAL';
+        break;
+      case 'incomplete':
+      case 'incomplete_expired':
+        subscriptionStatus = 'INCOMPLETE';
+        break;
+      default:
+        subscriptionStatus = 'UNKNOWN';
+    }
+
+    // Find and update user by Stripe customer ID
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.stripeCustomerId, customerId))
+      .limit(1);
+
+    if (existingUser) {
+      await db
+        .update(users)
+        .set({
+          subscriptionStatus,
+          stripePriceId: priceId,
+          subscriptionEndsAt: currentPeriodEnd,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, existingUser.id));
+
+      console.log(`Updated subscription for user ${existingUser.id}: ${subscriptionStatus}`);
+    } else {
+      console.warn(`No user found with Stripe customer ID: ${customerId}`);
+    }
+
+    // Also update/insert into subscriptions table if it exists
+    try {
+      const { subscriptions } = await import('@shared/schema');
+
+      const subscriptionRecord = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.stripeSubscriptionId, subscription.id))
+        .limit(1);
+
+      if (subscriptionRecord.length > 0) {
+        await db
+          .update(subscriptions)
+          .set({
+            status: subscriptionStatus,
+            currentPeriodEnd,
+            cancelAtPeriodEnd,
+            updatedAt: new Date()
+          })
+          .where(eq(subscriptions.stripeSubscriptionId, subscription.id));
+      }
+    } catch (e) {
+      // Subscriptions table may not exist, that's okay
+      console.log('Subscriptions table not available, skipping');
+    }
+
+  } catch (error) {
+    console.error('Error handling subscription change:', error);
+    throw error;
+  }
 }
 
 async function handleSuccessfulPayment(invoice: Stripe.Invoice) {
-  // TODO: Implement successful payment handling
-  console.log('Payment succeeded:', invoice.id);
+  try {
+    const customerId = invoice.customer as string;
+    const amountPaid = invoice.amount_paid;
+    const invoiceId = invoice.id;
+    const subscriptionId = invoice.subscription as string;
+
+    console.log('Processing successful payment:', {
+      invoiceId,
+      customerId,
+      amountPaid: amountPaid / 100, // Convert cents to dollars
+      subscriptionId
+    });
+
+    // Import db dynamically
+    const { db } = await import('./db');
+    const { users } = await import('@shared/schema');
+    const { eq } = await import('drizzle-orm');
+
+    // Find user and update their status
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.stripeCustomerId, customerId))
+      .limit(1);
+
+    if (existingUser) {
+      // Update user's subscription status to ACTIVE on successful payment
+      await db
+        .update(users)
+        .set({
+          subscriptionStatus: 'ACTIVE',
+          trialUsed: true,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, existingUser.id));
+
+      console.log(`Payment successful for user ${existingUser.id}, subscription activated`);
+    } else {
+      console.warn(`No user found with Stripe customer ID: ${customerId}`);
+    }
+
+    // Log payment in metrics if available
+    try {
+      const { metricsEvents } = await import('@shared/schema');
+      await db.insert(metricsEvents).values({
+        userId: existingUser?.id || 0,
+        modelId: 'stripe',
+        taskType: 'payment_successful',
+        processingTimeMs: 0,
+        successful: true,
+        costSavingEstimate: amountPaid,
+        timestamp: new Date()
+      });
+    } catch (e) {
+      // Metrics table may not exist
+    }
+
+  } catch (error) {
+    console.error('Error handling successful payment:', error);
+    throw error;
+  }
 }
 
 async function handleFailedPayment(invoice: Stripe.Invoice) {
-  // TODO: Implement failed payment handling
-  console.log('Payment failed:', invoice.id);
+  try {
+    const customerId = invoice.customer as string;
+    const invoiceId = invoice.id;
+    const attemptCount = invoice.attempt_count;
+
+    console.log('Processing failed payment:', {
+      invoiceId,
+      customerId,
+      attemptCount
+    });
+
+    // Import db dynamically
+    const { db } = await import('./db');
+    const { users } = await import('@shared/schema');
+    const { eq } = await import('drizzle-orm');
+
+    // Find user and update their status
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.stripeCustomerId, customerId))
+      .limit(1);
+
+    if (existingUser) {
+      // Update user's subscription status to PAST_DUE on failed payment
+      await db
+        .update(users)
+        .set({
+          subscriptionStatus: 'PAST_DUE',
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, existingUser.id));
+
+      console.log(`Payment failed for user ${existingUser.id}, subscription marked as past due`);
+
+      // If this is a repeated failure (3+ attempts), consider suspending access
+      if (attemptCount >= 3) {
+        await db
+          .update(users)
+          .set({
+            subscriptionStatus: 'SUSPENDED',
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, existingUser.id));
+
+        console.log(`User ${existingUser.id} suspended after ${attemptCount} failed payment attempts`);
+      }
+    } else {
+      console.warn(`No user found with Stripe customer ID: ${customerId}`);
+    }
+
+  } catch (error) {
+    console.error('Error handling failed payment:', error);
+    throw error;
+  }
 }

@@ -9,15 +9,21 @@ export const subscriptionPlans = pgTable("subscription_plans", {
   name: text("name").notNull(),
   description: text("description").notNull(),
   stripePriceId: text("stripe_price_id").notNull(),
+  stripePriceIdMonthly: text("stripe_price_id_monthly"),
+  stripePriceIdYearly: text("stripe_price_id_yearly"),
   price: integer("price").notNull(),
+  priceMonthly: integer("price_monthly"),
+  priceYearly: integer("price_yearly"),
   interval: text("interval").notNull(),
   features: text("features").array(),
+  isStudent: boolean("is_student").default(false),
+  isPopular: boolean("is_popular").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
 });
 
 export const subscriptions = pgTable("subscriptions", {
-  id: integer("id").primaryKey(),
+  id: serial("id").primaryKey(),
   userId: integer("user_id")
     .notNull()
     .references(() => users.id),
@@ -27,10 +33,11 @@ export const subscriptions = pgTable("subscriptions", {
   stripeCustomerId: text("stripe_customer_id").notNull(),
   stripeSubscriptionId: text("stripe_subscription_id").notNull(),
   status: text("status").notNull(),
-  currentPeriodStart: timestamp("current_period_start").notNull(),
-  currentPeriodEnd: timestamp("current_period_end").notNull(),
+  currentPeriodStart: timestamp("current_period_start"),
+  currentPeriodEnd: timestamp("current_period_end"),
   cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Relations

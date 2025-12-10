@@ -1,9 +1,9 @@
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true
-});
+/**
+ * Legal Research Service - Client Side
+ *
+ * This service handles legal document analysis and research queries by calling
+ * the backend API endpoints. API keys are kept secure on the server.
+ */
 
 export interface LegalAnalysis {
   summary: string;
@@ -23,79 +23,149 @@ export interface LegalAnalysis {
   }[];
 }
 
+export interface ResearchResult {
+  title: string;
+  source: string;
+  relevance: number;
+  summary: string;
+  citations: string[];
+}
+
+export interface ResearchResponse {
+  success: boolean;
+  results: ResearchResult[];
+  recommendations: string[];
+  timestamp: string;
+  error?: string;
+}
+
+export interface ResearchFilters {
+  jurisdiction?: string;
+  legalTopic?: string;
+  dateRange?: {
+    start?: string;
+    end?: string;
+  };
+}
+
+/**
+ * Analyzes a legal document using the backend API
+ * @param content - The document content to analyze
+ * @returns Legal analysis including summary, principles, precedents, and recommendations
+ */
 export async function analyzeLegalDocument(content: string): Promise<LegalAnalysis> {
   try {
-    console.log('Starting legal document analysis...');
+    console.log('Sending document for analysis...');
 
     if (!content || content.trim().length === 0) {
       throw new Error('No content provided for analysis');
     }
 
-    const promptTemplate = `Analyze the following legal document content in detail. Provide a comprehensive analysis that includes:
-
-    1. An executive summary of the key findings
-    2. Key legal principles and their implications
-    3. Relevant case law and precedents that apply
-    4. Citations and references to support the analysis
-    5. Actionable recommendations
-
-    Document Content:
-    ${content.slice(0, 8000)} // Limit content length to avoid token limits
-
-    Format the response as a JSON object with this structure:
-    {
-      "summary": "executive summary text",
-      "analysis": {
-        "legalPrinciples": ["principle 1", "principle 2", ...],
-        "keyPrecedents": [
-          {
-            "case": "case name",
-            "relevance": "relevance to current document",
-            "impact": "potential impact on interpretation"
-          }
-        ],
-        "recommendations": ["recommendation 1", "recommendation 2", ...]
+    const response = await fetch('/api/legal-research/analyze-document', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
-      "citations": [
-        {
-          "source": "source name",
-          "reference": "reference details",
-          "context": "how this applies to the current document"
-        }
-      ]
-    }`;
-
-    console.log('Sending request to OpenAI...');
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-0125-preview",
-      messages: [
-        { 
-          role: "system", 
-          content: "You are a legal expert specializing in document analysis, regulatory compliance, and legal research. Provide detailed, professional analysis with actionable insights." 
-        },
-        { 
-          role: "user", 
-          content: promptTemplate 
-        }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-      max_tokens: 4000
+      credentials: 'include', // Include session credentials
+      body: JSON.stringify({ content }),
     });
 
-    const responseContent = completion.choices[0].message.content;
-    if (!responseContent) {
-      throw new Error('No analysis generated from AI model');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Analysis failed with status ${response.status}`);
     }
 
-    console.log('Parsing response...');
-    const parsedResponse = JSON.parse(responseContent) as LegalAnalysis;
-    console.log('Analysis complete:', parsedResponse);
+    const data = await response.json();
 
-    return parsedResponse;
+    if (!data.success) {
+      throw new Error(data.error || 'Analysis failed');
+    }
+
+    console.log('Analysis complete');
+    return {
+      summary: data.summary,
+      analysis: data.analysis,
+      citations: data.citations,
+    };
   } catch (error) {
     console.error('Legal analysis error:', error);
     throw new Error(error instanceof Error ? error.message : 'Failed to analyze legal document');
+  }
+}
+
+/**
+ * Performs legal research using the backend API
+ * @param query - The research query
+ * @param filters - Optional filters for jurisdiction, topic, date range
+ * @returns Research results with recommendations
+ */
+export async function performLegalResearch(
+  query: string,
+  filters?: ResearchFilters
+): Promise<ResearchResponse> {
+  try {
+    console.log('Performing legal research...');
+
+    if (!query || query.trim().length === 0) {
+      throw new Error('No query provided for research');
+    }
+
+    const response = await fetch('/api/legal-research/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ query, filters }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Research failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Research failed');
+    }
+
+    console.log('Research complete');
+    return data;
+  } catch (error) {
+    console.error('Legal research error:', error);
+    throw new Error(error instanceof Error ? error.message : 'Failed to perform legal research');
+  }
+}
+
+/**
+ * Fetches available research filters from the backend
+ * @returns Available jurisdictions and legal topics
+ */
+export async function getResearchFilters(): Promise<{
+  jurisdictions: string[];
+  legalTopics: string[];
+}> {
+  try {
+    const response = await fetch('/api/legal-research/filters', {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch filters with status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch filters');
+    }
+
+    return data.filters;
+  } catch (error) {
+    console.error('Error fetching filters:', error);
+    // Return empty arrays as fallback
+    return { jurisdictions: [], legalTopics: [] };
   }
 }

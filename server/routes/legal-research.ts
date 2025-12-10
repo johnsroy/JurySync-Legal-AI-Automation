@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../db";
-import { legalResearchReports, legalDocuments } from "@shared/schema";
-import { generateLegalResearch } from "../services/legal-research-service";
+import { legalResearchReports, legalDocuments, legalAnalyses } from "@shared/schema";
+import { generateLegalResearch, analyzeLegalDocumentContent } from "../services/legal-research-service";
 import { z } from "zod";
 import { desc, eq, and, gte, lte } from 'drizzle-orm';
 
@@ -18,6 +18,10 @@ const researchRequestSchema = z.object({
       end: z.string().optional()
     }).optional()
   }).optional()
+});
+
+const documentAnalysisRequestSchema = z.object({
+  content: z.string().min(1, "Document content is required")
 });
 
 // Get available research filters
@@ -155,6 +159,58 @@ router.post("/analyze", async (req, res) => {
       success: false,
       error: error.message || "Research failed",
       details: error.message
+    });
+  }
+});
+
+// Document analysis endpoint - replaces client-side OpenAI calls
+router.post("/analyze-document", async (req, res) => {
+  try {
+    console.log("Received document analysis request");
+
+    const validatedData = documentAnalysisRequestSchema.parse(req.body);
+
+    if (!validatedData.content || validatedData.content.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "No content provided for analysis"
+      });
+    }
+
+    console.log("Analyzing document with content length:", validatedData.content.length);
+
+    // Analyze the document using the backend service
+    const analysis = await analyzeLegalDocumentContent(validatedData.content);
+
+    // Store analysis if user is authenticated
+    if (req.user?.id) {
+      try {
+        await db.insert(legalAnalyses).values({
+          userId: req.user.id,
+          documentContent: validatedData.content.substring(0, 10000), // Truncate for storage
+          analysis: analysis,
+          timestamp: new Date()
+        });
+      } catch (storeError) {
+        console.warn("Failed to store analysis:", storeError);
+        // Continue even if storage fails
+      }
+    }
+
+    return res.json({
+      success: true,
+      ...analysis
+    });
+
+  } catch (error: any) {
+    console.error("Document Analysis Error:", {
+      error,
+      message: error.message
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Document analysis failed"
     });
   }
 });

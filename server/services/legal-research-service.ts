@@ -2,7 +2,7 @@ import { OpenAI } from "openai";
 import { z } from "zod";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ apiKey: process.env.VITE_OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Response schema validation
 const legalResearchResponseSchema = z.object({
@@ -118,5 +118,123 @@ export async function generateLegalResearch(
     }
 
     throw new Error(error.message || "Failed to generate legal research");
+  }
+}
+
+// Document analysis schema
+const legalAnalysisResponseSchema = z.object({
+  summary: z.string(),
+  analysis: z.object({
+    legalPrinciples: z.array(z.string()),
+    keyPrecedents: z.array(z.object({
+      case: z.string(),
+      relevance: z.string(),
+      impact: z.string()
+    })),
+    recommendations: z.array(z.string())
+  }),
+  citations: z.array(z.object({
+    source: z.string(),
+    reference: z.string(),
+    context: z.string()
+  }))
+});
+
+export type LegalAnalysisResponse = z.infer<typeof legalAnalysisResponseSchema>;
+
+/**
+ * Analyzes a legal document and provides comprehensive insights
+ * This replaces the client-side OpenAI call for security
+ */
+export async function analyzeLegalDocumentContent(content: string): Promise<LegalAnalysisResponse> {
+  try {
+    console.log('Starting legal document analysis...');
+
+    if (!content || content.trim().length === 0) {
+      throw new Error('No content provided for analysis');
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.');
+    }
+
+    const promptTemplate = `Analyze the following legal document content in detail. Provide a comprehensive analysis that includes:
+
+    1. An executive summary of the key findings
+    2. Key legal principles and their implications
+    3. Relevant case law and precedents that apply
+    4. Citations and references to support the analysis
+    5. Actionable recommendations
+
+    Document Content:
+    ${content.slice(0, 8000)}
+
+    Format the response as a JSON object with this structure:
+    {
+      "summary": "executive summary text",
+      "analysis": {
+        "legalPrinciples": ["principle 1", "principle 2", ...],
+        "keyPrecedents": [
+          {
+            "case": "case name",
+            "relevance": "relevance to current document",
+            "impact": "potential impact on interpretation"
+          }
+        ],
+        "recommendations": ["recommendation 1", "recommendation 2", ...]
+      },
+      "citations": [
+        {
+          "source": "source name",
+          "reference": "reference details",
+          "context": "how this applies to the current document"
+        }
+      ]
+    }`;
+
+    console.log('Sending request to OpenAI...');
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal expert specializing in document analysis, regulatory compliance, and legal research. Provide detailed, professional analysis with actionable insights."
+        },
+        {
+          role: "user",
+          content: promptTemplate
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+      max_tokens: 4000
+    });
+
+    const responseContent = completion.choices[0].message.content;
+    if (!responseContent) {
+      throw new Error('No analysis generated from AI model');
+    }
+
+    console.log('Parsing response...');
+    const parsedResponse = JSON.parse(responseContent);
+
+    // Validate and return the response
+    const validatedResponse = legalAnalysisResponseSchema.parse(parsedResponse);
+    console.log('Analysis complete');
+
+    return validatedResponse;
+  } catch (error: any) {
+    console.error('Legal analysis error:', error);
+
+    if (error instanceof z.ZodError) {
+      throw new Error("Invalid response format from AI model");
+    }
+
+    if (error.response?.status === 429) {
+      throw new Error("Rate limit exceeded. Please try again later.");
+    }
+
+    throw new Error(error.message || 'Failed to analyze legal document');
   }
 }

@@ -15,6 +15,7 @@ export class StripeService {
     priceId,
     userId,
     planId,
+    isTrial = false,
     successUrl,
     cancelUrl,
   }: {
@@ -22,18 +23,19 @@ export class StripeService {
     priceId: string;
     userId: number;
     planId: number;
+    isTrial?: boolean;
     successUrl: string;
     cancelUrl: string;
   }) {
     try {
-      console.log('Creating checkout session...', { email, priceId, userId, planId });
+      console.log('Creating checkout session...', { email, priceId, userId, planId, isTrial });
 
       // Create a customer if they don't exist
       const customer = await this.getOrCreateCustomer(email);
       console.log('Customer retrieved/created:', customer.id);
 
       // Create Checkout Session for subscription
-      const session = await stripe.checkout.sessions.create({
+      const sessionConfig: Stripe.Checkout.SessionCreateParams = {
         customer: customer.id,
         mode: 'subscription',
         payment_method_types: ['card'],
@@ -47,17 +49,37 @@ export class StripeService {
           userId: userId.toString(),
           planId: planId.toString(),
         },
-      });
+      };
+
+      // Add trial period for student plans
+      if (isTrial) {
+        sessionConfig.subscription_data = {
+          trial_period_days: 14,
+        };
+      }
+
+      const session = await stripe.checkout.sessions.create(sessionConfig);
 
       console.log('Checkout session created:', session.id);
-      return { success: true, url: session.url };
+      return session; // Return the full session object for compatibility
     } catch (error) {
       console.error('Error creating checkout session:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to create checkout session' 
-      };
+      throw error; // Throw to allow proper error handling upstream
     }
+  }
+
+  /**
+   * Verifies if an email is a valid student email (ends with .edu)
+   */
+  async verifyStudentEmail(email: string): Promise<boolean> {
+    if (!email) return false;
+
+    // Check if email ends with .edu (common for US universities)
+    // You can extend this to include other educational domains
+    const educationalDomains = ['.edu', '.edu.au', '.ac.uk', '.edu.cn', '.edu.in'];
+
+    const lowercaseEmail = email.toLowerCase();
+    return educationalDomains.some(domain => lowercaseEmail.endsWith(domain));
   }
 
   private async getOrCreateCustomer(email: string): Promise<Stripe.Customer> {
