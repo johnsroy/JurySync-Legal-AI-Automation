@@ -1,20 +1,57 @@
-import { OpenAI } from "openai";
+import OpenAI from "openai";
+import { ChromaClient, Collection } from 'chromadb';
+import { v4 as uuidv4 } from 'uuid';
 
-const openai = new OpenAI();
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Initialize ChromaDB client
+let chromaClient: ChromaClient | null = null;
+let legalDocumentsCollection: Collection | null = null;
+
+// Initialize ChromaDB connection
+async function initializeChroma(): Promise<void> {
+  if (chromaClient && legalDocumentsCollection) {
+    return;
+  }
+
+  try {
+    chromaClient = new ChromaClient();
+    legalDocumentsCollection = await chromaClient.getOrCreateCollection({
+      name: "legal_research_documents",
+      metadata: {
+        description: "Legal documents for research and similarity search"
+      }
+    });
+    console.log("ChromaDB collection initialized successfully");
+  } catch (error) {
+    console.error("Failed to initialize ChromaDB:", error);
+    // Continue without ChromaDB - use in-memory fallback
+  }
+}
+
+// Initialize on module load
+initializeChroma().catch(console.error);
 
 /**
  * Creates an embedding vector for the given text using OpenAI's embedding model
  * @param text - The text to create an embedding for
- * @returns A number array representing the embedding vector
+ * @returns A numerical embedding vector (1536 dimensions for text-embedding-3-small)
  */
 export async function createEmbedding(text: string): Promise<number[]> {
-  try {
-    if (!text || text.trim().length === 0) {
-      throw new Error("Text cannot be empty");
-    }
+  if (!text || text.trim().length === 0) {
+    throw new Error("Text cannot be empty");
+  }
 
-    // Truncate text if it's too long (OpenAI has a token limit)
-    const MAX_CHARS = 8000;
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY environment variable is not set");
+  }
+
+  try {
+    // Truncate text if too long (max ~8000 tokens for embedding model)
+    const MAX_CHARS = 30000;
     const truncatedText = text.length > MAX_CHARS
       ? text.substring(0, MAX_CHARS)
       : text;
@@ -36,18 +73,109 @@ export async function createEmbedding(text: string): Promise<number[]> {
 }
 
 /**
- * Creates embeddings for multiple texts in batch
+ * Creates an embedding and stores it in ChromaDB
+ * @param id - Unique identifier for the document
+ * @param text - The text content to embed
+ * @param metadata - Additional metadata to store with the embedding
+ * @returns The generated embedding ID
+ */
+export async function createAndStoreEmbedding(
+  id: string,
+  text: string,
+  metadata: Record<string, any> = {}
+): Promise<string> {
+  await initializeChroma();
+
+  const embedding = await createEmbedding(text);
+  const embeddingId = id || uuidv4();
+
+  if (legalDocumentsCollection) {
+    await legalDocumentsCollection.add({
+      ids: [embeddingId],
+      embeddings: [embedding],
+      metadatas: [{ ...metadata, timestamp: new Date().toISOString() }],
+      documents: [text.substring(0, 10000)] // Store truncated text for reference
+    });
+  }
+
+  return embeddingId;
+}
+
+/**
+ * Searches for similar documents using cosine similarity
+ * @param query - The query text to search for
+ * @param limit - Maximum number of results to return
+ * @returns Array of similar document IDs with their distances
+ */
+export async function searchSimilarDocuments(
+  query: string,
+  limit: number = 10
+): Promise<{
+  ids: string[];
+  distances: number[];
+  documents: string[];
+  metadatas: Record<string, any>[];
+}> {
+  await initializeChroma();
+
+  if (!legalDocumentsCollection) {
+    return { ids: [], distances: [], documents: [], metadatas: [] };
+  }
+
+  const queryEmbedding = await createEmbedding(query);
+
+  const results = await legalDocumentsCollection.query({
+    queryEmbeddings: [queryEmbedding],
+    nResults: limit
+  });
+
+  return {
+    ids: results.ids?.[0] || [],
+    distances: results.distances?.[0] || [],
+    documents: results.documents?.[0] || [],
+    metadatas: results.metadatas?.[0] || []
+  };
+}
+
+/**
+ * Calculates cosine similarity between two embedding vectors
+ * @param a - First embedding vector
+ * @param b - Second embedding vector
+ * @returns Cosine similarity score (0-1)
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    throw new Error("Vectors must have the same length");
+  }
+
+  const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+  const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+  const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+
+  if (magnitudeA === 0 || magnitudeB === 0) {
+    return 0;
+  }
+
+  return dotProduct / (magnitudeA * magnitudeB);
+}
+
+/**
+ * Batch creates embeddings for multiple texts
  * @param texts - Array of texts to create embeddings for
  * @returns Array of embedding vectors
  */
 export async function createBatchEmbeddings(texts: string[]): Promise<number[][]> {
-  try {
-    if (!texts || texts.length === 0) {
-      return [];
-    }
+  if (!texts || texts.length === 0) {
+    return [];
+  }
 
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY environment variable is not set");
+  }
+
+  try {
     // Filter out empty texts and truncate long ones
-    const MAX_CHARS = 8000;
+    const MAX_CHARS = 30000;
     const processedTexts = texts
       .filter(text => text && text.trim().length > 0)
       .map(text => text.length > MAX_CHARS ? text.substring(0, MAX_CHARS) : text);
@@ -69,32 +197,40 @@ export async function createBatchEmbeddings(texts: string[]): Promise<number[][]
 }
 
 /**
- * Calculates cosine similarity between two embedding vectors
- * @param embedding1 - First embedding vector
- * @param embedding2 - Second embedding vector
- * @returns Cosine similarity score (0-1)
+ * Deletes an embedding from ChromaDB by ID
+ * @param id - The ID of the embedding to delete
  */
-export function cosineSimilarity(embedding1: number[], embedding2: number[]): number {
-  if (embedding1.length !== embedding2.length) {
-    throw new Error("Embeddings must have the same length");
+export async function deleteEmbedding(id: string): Promise<void> {
+  await initializeChroma();
+
+  if (legalDocumentsCollection) {
+    await legalDocumentsCollection.delete({
+      ids: [id]
+    });
   }
+}
 
-  let dotProduct = 0;
-  let magnitude1 = 0;
-  let magnitude2 = 0;
+/**
+ * Updates an existing embedding in ChromaDB
+ * @param id - The ID of the embedding to update
+ * @param text - The new text content
+ * @param metadata - Updated metadata
+ */
+export async function updateEmbedding(
+  id: string,
+  text: string,
+  metadata: Record<string, any> = {}
+): Promise<void> {
+  await initializeChroma();
 
-  for (let i = 0; i < embedding1.length; i++) {
-    dotProduct += embedding1[i] * embedding2[i];
-    magnitude1 += embedding1[i] * embedding1[i];
-    magnitude2 += embedding2[i] * embedding2[i];
+  const embedding = await createEmbedding(text);
+
+  if (legalDocumentsCollection) {
+    await legalDocumentsCollection.update({
+      ids: [id],
+      embeddings: [embedding],
+      metadatas: [{ ...metadata, updatedAt: new Date().toISOString() }],
+      documents: [text.substring(0, 10000)]
+    });
   }
-
-  magnitude1 = Math.sqrt(magnitude1);
-  magnitude2 = Math.sqrt(magnitude2);
-
-  if (magnitude1 === 0 || magnitude2 === 0) {
-    return 0;
-  }
-
-  return dotProduct / (magnitude1 * magnitude2);
 }

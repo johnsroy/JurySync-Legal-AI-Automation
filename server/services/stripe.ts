@@ -28,16 +28,15 @@ export interface CheckoutSessionResult {
 
 export class StripeService {
   /**
-   * Verifies if an email address is a valid student email (.edu domain)
-   * @param email - The email address to verify
-   * @returns true if the email ends with .edu
+   * Verifies if an email is a valid student email (ends with .edu or other educational domains)
    */
   async verifyStudentEmail(email: string): Promise<boolean> {
-    if (!email) {
-      return false;
-    }
-    // Check if email ends with .edu (case insensitive)
-    return email.toLowerCase().endsWith('.edu');
+    if (!email) return false;
+
+    // Check if email ends with common educational domains
+    const educationalDomains = ['.edu', '.edu.au', '.ac.uk', '.edu.cn', '.edu.in'];
+    const lowercaseEmail = email.toLowerCase();
+    return educationalDomains.some(domain => lowercaseEmail.endsWith(domain));
   }
 
   async createCheckoutSession({
@@ -45,12 +44,12 @@ export class StripeService {
     priceId,
     userId,
     planId,
-    isTrial,
+    isTrial = false,
     successUrl,
     cancelUrl,
   }: CheckoutSessionParams): Promise<CheckoutSessionResult> {
     try {
-      console.log('Creating checkout session...', { email, priceId, userId, planId });
+      console.log('Creating checkout session...', { email, priceId, userId, planId, isTrial });
 
       // Create a customer if they don't exist
       const customer = await this.getOrCreateCustomer(email);
@@ -86,9 +85,9 @@ export class StripeService {
       return { success: true, id: session.id, url: session.url };
     } catch (error) {
       console.error('Error creating checkout session:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to create checkout session' 
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create checkout session'
       };
     }
   }
