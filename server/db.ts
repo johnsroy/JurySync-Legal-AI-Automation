@@ -1,9 +1,9 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
+import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
+import { Pool as PgPool } from 'pg';
+import { drizzle as drizzleNeon } from 'drizzle-orm/neon-serverless';
+import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import ws from "ws";
 import * as schema from "@shared/schema";
-
-neonConfig.webSocketConstructor = ws;
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -11,17 +11,36 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Improved connection pool settings
-export const pool = new Pool({ 
-  connectionString: process.env.DATABASE_URL,
-  max: 10, // Reduced from 20 to prevent connection overload
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000, // Increased from 2000 to allow more time for connection
-  maxUses: 7500,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
-});
+// Detect if using Neon (contains neon.tech) or local PostgreSQL
+const isNeonDb = process.env.DATABASE_URL.includes('neon.tech') || process.env.DATABASE_URL.includes('neon.');
 
-export const db = drizzle(pool, { schema });
+let pool: NeonPool | PgPool;
+let db: ReturnType<typeof drizzleNeon> | ReturnType<typeof drizzlePg>;
+
+if (isNeonDb) {
+  // Use Neon serverless driver with WebSockets
+  neonConfig.webSocketConstructor = ws;
+  pool = new NeonPool({
+    connectionString: process.env.DATABASE_URL,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    maxUses: 7500,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  });
+  db = drizzleNeon(pool as NeonPool, { schema });
+} else {
+  // Use standard pg driver for local PostgreSQL
+  pool = new PgPool({
+    connectionString: process.env.DATABASE_URL,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  });
+  db = drizzlePg(pool as PgPool, { schema });
+}
+
+export { pool, db };
 
 // Enhanced connection event monitoring
 pool.on('connect', (client: any) => {

@@ -235,6 +235,7 @@ ${text.substring(0, 8000)}`
           content: `347 U.S. 483 (1954). This landmark case overturned Plessy v. Ferguson and declared state laws establishing separate public schools for black and white students to be unconstitutional. The Supreme Court's unanimous decision stated that "separate educational facilities are inherently unequal."`,
           documentType: "CASE_LAW",
           jurisdiction: "United States",
+          legalTopic: "Civil Rights",
           date: new Date("1954-05-17"),
           status: "ACTIVE",
           metadata: {
@@ -242,7 +243,6 @@ ${text.substring(0, 8000)}`
             citation: "347 U.S. 483"
           },
           citations: [],
-          vectorId: null,
           createdAt: new Date(),
           updatedAt: new Date()
         }
